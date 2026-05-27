@@ -134,7 +134,7 @@ struct MinimalisticMusicPlayerView: View {
                 reminderList
             }
             .padding(.horizontal, 12)
-            .padding(.top, 12)
+            .padding(.top, 6)
             .padding(.bottom, ReminderLiveActivityManager.baselineMinimalisticBottomPadding)
             .frame(maxWidth: .infinity)
             .frame(height: calculateDynamicHeight(), alignment: .top)
@@ -1145,17 +1145,17 @@ struct MinimalisticAlbumArtView: View {
             )
             .clipped()
             .clipShape(RoundedRectangle(cornerRadius: albumArtCornerRadius))
-            .scaleEffect(x: 1.08, y: 1.1)
+            .scaleEffect(x: 1.04, y: 1.05)
             .rotationEffect(.degrees(92))
-            .blur(radius: 16)
+            .blur(radius: 14)
             .opacity(
                 usesLiveCanvasArtwork
-                    ? (musicManager.isPlaying ? 0.55 : 0.18)
-                    : min(0.45, 1 - max(musicManager.albumArt.getBrightness(), 0.3))
+                    ? (musicManager.isPlaying ? 0.35 : 0.12)
+                    : min(0.28, 1 - max(musicManager.albumArt.getBrightness(), 0.3))
             )
             .shadow(
-                color: Color(nsColor: musicManager.avgColor).opacity(usesLiveCanvasArtwork ? 0.22 : 0.12),
-                radius: usesLiveCanvasArtwork ? 10 : 7,
+                color: Color(nsColor: musicManager.avgColor).opacity(usesLiveCanvasArtwork ? 0.14 : 0.08),
+                radius: usesLiveCanvasArtwork ? 6 : 4,
                 x: 0,
                 y: 0
             )

@@ -1075,6 +1075,12 @@ struct GeneralSettings: View {
                     }
                 }
                 .settingsHighlight(id: highlightID("Enable Minimalistic UI"))
+
+                Defaults.Toggle(key: .showBatteryPercentInside) {
+                    Text("Show battery percentage inside icon")
+                }
+                .disabled(!enableMinimalisticUI)
+                .settingsHighlight(id: highlightID("Show battery percentage inside icon"))
             } header: {
                 Text("UI Mode")
             } footer: {

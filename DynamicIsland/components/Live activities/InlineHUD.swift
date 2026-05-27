@@ -109,34 +109,37 @@ struct InlineHUD: View {
         let hasBatteryLevel = value > 0
         let capsLockAccentColor = capsLockTintMode.color
 
+        // Widths stay constant whether hovered or not so HUD text/icons do
+        // not slide toward the notch edges when the user moves over it.
+        // Mini BT marquee widths are reduced to keep both wings inside the
+        // minimalistic open notch (420pt) on wider hardware notches.
         let baseInfoWidth: CGFloat = {
             if type == .bluetoothAudio {
                 if showBluetoothDeviceNameMarquee {
-                    return enableMinimalisticUI ? 128 : 140
+                    return enableMinimalisticUI ? 96 : 132
                 }
-                return enableMinimalisticUI ? 64 : 72
-            }
-
-            if type == .capsLock && !showCapsLockLabel {
                 return enableMinimalisticUI ? 56 : 64
             }
 
-            return 100
+            if type == .capsLock && !showCapsLockLabel {
+                return enableMinimalisticUI ? 48 : 56
+            }
+
+            return 92
         }()
 
         let infoWidth: CGFloat = {
-            var width = baseInfoWidth + gestureProgress / 2
-            if !hoverAnimation { width -= 8 }
+            let width = baseInfoWidth + gestureProgress / 2
             let minimum: CGFloat = {
                 if type == .bluetoothAudio {
                     if showBluetoothDeviceNameMarquee {
-                        return enableMinimalisticUI ? 112 : 120
+                        return enableMinimalisticUI ? 84 : 112
                     }
-                    return enableMinimalisticUI ? 56 : 68
+                    return enableMinimalisticUI ? 48 : 60
                 }
 
                 if type == .capsLock && !showCapsLockLabel {
-                    return enableMinimalisticUI ? 44 : 52
+                    return enableMinimalisticUI ? 36 : 44
                 }
 
                 return 88
@@ -147,44 +150,43 @@ struct InlineHUD: View {
         let baseTrailingWidth: CGFloat = {
             if type == .bluetoothAudio {
                 if !hasBatteryLevel {
-                    return showBluetoothDeviceNameMarquee ? (enableMinimalisticUI ? 104 : 118) : (enableMinimalisticUI ? 74 : 88)
+                    return showBluetoothDeviceNameMarquee ? (enableMinimalisticUI ? 88 : 110) : (enableMinimalisticUI ? 66 : 80)
                 }
 
                 if useCircularIndicator {
-                    return showBluetoothBatteryPercentageText ? (enableMinimalisticUI ? 108 : 120) : (enableMinimalisticUI ? 72 : 84)
+                    return showBluetoothBatteryPercentageText ? (enableMinimalisticUI ? 92 : 112) : (enableMinimalisticUI ? 64 : 76)
                 }
 
-                return showBluetoothBatteryPercentageText ? (enableMinimalisticUI ? 118 : 136) : (enableMinimalisticUI ? 92 : 108)
+                return showBluetoothBatteryPercentageText ? (enableMinimalisticUI ? 100 : 128) : (enableMinimalisticUI ? 84 : 100)
             }
 
             if type == .capsLock {
                 if showCapsLockLabel {
-                    return enableMinimalisticUI ? 84 : 96
+                    return enableMinimalisticUI ? 76 : 88
                 }
                 return 0
             }
 
-            return 100
+            return 92
         }()
 
         let trailingWidth: CGFloat = {
-            var width = baseTrailingWidth + gestureProgress / 2
-            if !hoverAnimation { width -= 8 }
+            let width = baseTrailingWidth + gestureProgress / 2
             let minimum: CGFloat = {
                 if type == .bluetoothAudio {
                     if !hasBatteryLevel {
-                        return showBluetoothDeviceNameMarquee ? (enableMinimalisticUI ? 96 : 110) : (enableMinimalisticUI ? 62 : 88)
+                        return showBluetoothDeviceNameMarquee ? (enableMinimalisticUI ? 80 : 102) : (enableMinimalisticUI ? 56 : 80)
                     }
 
                     if useCircularIndicator {
-                        return showBluetoothBatteryPercentageText ? (enableMinimalisticUI ? 92 : 110) : (enableMinimalisticUI ? 56 : 72)
+                        return showBluetoothBatteryPercentageText ? (enableMinimalisticUI ? 80 : 102) : (enableMinimalisticUI ? 48 : 64)
                     }
 
-                    return showBluetoothBatteryPercentageText ? (enableMinimalisticUI ? 104 : 120) : (enableMinimalisticUI ? 72 : 90)
+                    return showBluetoothBatteryPercentageText ? (enableMinimalisticUI ? 88 : 112) : (enableMinimalisticUI ? 64 : 82)
                 }
 
                 if type == .capsLock {
-                    return showCapsLockLabel ? (enableMinimalisticUI ? 68 : 80) : 0
+                    return showCapsLockLabel ? (enableMinimalisticUI ? 60 : 72) : 0
                 }
 
                 return 90
@@ -415,14 +417,14 @@ struct InlineHUD: View {
         var body: some View {
             ZStack {
                 Circle()
-                    .stroke(Color.white.opacity(0.18), lineWidth: 2.6)
+                    .stroke(Color.white.opacity(0.18), lineWidth: 2)
 
                 Circle()
                     .trim(from: 0, to: max(clampedValue, 0.015))
                     .rotation(.degrees(-90))
-                    .stroke(indicatorColor, style: StrokeStyle(lineWidth: 2.8, lineCap: .round))
+                    .stroke(indicatorColor, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
             }
-            .frame(width: 22, height: 22)
+            .frame(width: 16, height: 16)
             .animation(.smooth(duration: 0.18), value: clampedValue)
         }
     }

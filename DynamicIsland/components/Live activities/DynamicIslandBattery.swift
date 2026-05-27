@@ -28,6 +28,7 @@ struct BatteryView: View {
     var isInLowPowerMode: Bool
     var batteryWidth: CGFloat = 26
     var isForNotification: Bool
+    var showPercentInside: Bool = false
 
     var animationStyle: DynamicIslandAnimations = DynamicIslandAnimations()
 
@@ -79,7 +80,31 @@ struct BatteryView: View {
                 )
                 .padding(.leading, 2)
 
-            if iconStatus != "" && (isForNotification || showPowerStatusIcons) {
+            if showPercentInside {
+                let showsStatusGlyph = iconStatus != "" && (isForNotification || showPowerStatusIcons)
+                let bodyHeight = (batteryWidth - 2.75) - 18
+                let glyphColor: Color = isCharging ? .white : .black
+                let statusSymbol: String? = {
+                    guard showsStatusGlyph else { return nil }
+                    if isCharging { return "bolt.fill" }
+                    if isPluggedIn { return "powerplug.fill" }
+                    return nil
+                }()
+                HStack(spacing: 0.5) {
+                    Text("\(Int(levelBattery))")
+                        .font(.system(size: batteryWidth * 0.42, weight: .heavy, design: .rounded))
+                        .foregroundStyle(glyphColor)
+                        .minimumScaleFactor(0.5)
+                        .lineLimit(1)
+                    if let statusSymbol {
+                        Image(systemName: statusSymbol)
+                            .font(.system(size: batteryWidth * 0.22, weight: .black))
+                            .foregroundStyle(glyphColor)
+                    }
+                }
+                .frame(width: batteryWidth - 7, height: bodyHeight, alignment: .center)
+                .padding(.leading, 2)
+            } else if iconStatus != "" && (isForNotification || showPowerStatusIcons) {
                 ZStack {
                     Image(iconStatus)
                         .resizable()
@@ -93,6 +118,100 @@ struct BatteryView: View {
                 .frame(width: batteryWidth, height: batteryWidth)
             }
         }
+    }
+}
+
+/// Pill battery for the minimalist notch, matching the charging HUD style.
+struct MinimalisticBatteryView: View {
+    @Default(.showPowerStatusIcons) var showPowerStatusIcons
+    var levelBattery: Float
+    var isPluggedIn: Bool
+    var isCharging: Bool
+    var isInLowPowerMode: Bool
+    var bodyWidth: CGFloat = 28
+    var bodyHeight: CGFloat = 16
+    var isForNotification: Bool
+    var showPercentInside: Bool = false
+
+    private var clamped: CGFloat {
+        max(0, min(CGFloat(levelBattery), 100))
+    }
+
+    private var batteryColor: Color {
+        if isInLowPowerMode {
+            return .yellow
+        } else if clamped <= 20 && !isCharging && !isPluggedIn {
+            return .red
+        } else if isCharging || isPluggedIn || clamped == 100 {
+            return .green
+        } else {
+            return .white
+        }
+    }
+
+    private var showsStatusGlyph: Bool {
+        (isCharging || isPluggedIn) && (isForNotification || showPowerStatusIcons)
+    }
+
+    private var statusSymbol: String? {
+        guard showsStatusGlyph else { return nil }
+        if isCharging { return "bolt.fill" }
+        if isPluggedIn { return "powerplug.fill" }
+        return nil
+    }
+
+    private var glyphColor: Color {
+        isCharging ? .white : .black
+    }
+
+    private var terminalHeight: CGFloat {
+        max(4, bodyHeight * 0.38)
+    }
+
+    var body: some View {
+        HStack(spacing: 1.5) {
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(batteryColor.opacity(0.3))
+
+                GeometryReader { geo in
+                    Rectangle()
+                        .fill(batteryColor.gradient)
+                        .frame(width: max(0, (clamped / 100) * geo.size.width))
+                }
+
+                if showPercentInside {
+                    HStack(spacing: 0.5) {
+                        Text("\(Int(clamped))")
+                            .font(.system(size: bodyHeight * 0.6, weight: .heavy, design: .rounded))
+                            .foregroundStyle(glyphColor)
+                            .minimumScaleFactor(0.5)
+                            .lineLimit(1)
+                        if let statusSymbol {
+                            Image(systemName: statusSymbol)
+                                .font(.system(size: bodyHeight * 0.42, weight: .black))
+                                .foregroundStyle(glyphColor)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    .padding(.horizontal, 2)
+                } else if let statusSymbol {
+                    Image(systemName: statusSymbol)
+                        .font(.system(size: bodyHeight * 0.6, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                }
+            }
+            .frame(width: bodyWidth, height: bodyHeight)
+            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+
+            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                .fill(clamped == 100 ? batteryColor.gradient : batteryColor.opacity(0.4).gradient)
+                .frame(width: 2, height: terminalHeight)
+        }
+        .animation(.smooth(duration: 0.18), value: clamped)
+        .animation(.smooth(duration: 0.18), value: isCharging)
+        .animation(.smooth(duration: 0.18), value: isPluggedIn)
     }
 }
 
