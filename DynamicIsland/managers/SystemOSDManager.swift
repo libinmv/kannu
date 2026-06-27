@@ -17,6 +17,7 @@
  */
 
 import Foundation
+import AppKit
 import os
 
 class SystemOSDManager {
@@ -30,8 +31,53 @@ class SystemOSDManager {
         var lastSuspendedPID: Int32 = -1
         // True while suppressing the native OSD (between disable/enableSystemHUD).
         var active = false
+        // True while the Mac is asleep — watcher pauses, not cancelled.
+        var systemSleeping = false
     }
     private static let suppressionState = OSAllocatedUnfairLock(initialState: SuppressionState())
+
+    /// Call once at startup to register sleep/wake observers.
+    /// Safe to call multiple times — observers are registered only once.
+    private static let sleepWakeSetupOnce: Void = {
+        let nc = NSWorkspace.shared.notificationCenter
+        nc.addObserver(
+            forName: NSWorkspace.willSleepNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            handleSystemSleep()
+        }
+        nc.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            handleSystemWake()
+        }
+    }()
+
+    // MARK: - Sleep / Wake
+
+    private static func handleSystemSleep() {
+        // Mark as sleeping so the watcher loop exits its current poll immediately.
+        suppressionState.withLock { $0.systemSleeping = true }
+        // Stop the watcher task — no more pgrep spawns while sleeping.
+        stopSuppressionWatcher()
+    }
+
+    private static func handleSystemWake() {
+        suppressionState.withLock { $0.systemSleeping = false }
+        // If suppression was still active when we went to sleep, restart the watcher.
+        let active = suppressionState.withLock { $0.active }
+        if active {
+            // Reset the last-suspended PID so the watcher immediately re-suspends
+            // the fresh OSDUIHelper that launchd may have spawned during wake.
+            suppressionState.withLock { $0.lastSuspendedPID = -1 }
+            startSuppressionWatcher()
+        }
+    }
+
+    // MARK: - Public API
 
     /// Re-enables the system HUD by restarting OSDUIHelper
     public static func enableSystemHUD() {
@@ -48,6 +94,7 @@ class SystemOSDManager {
             let stopTask = Process()
             stopTask.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
             stopTask.arguments = ["-9", "OSDUIHelper"]
+            stopTask.standardError = Pipe() // silence "no such process" stderr
             try stopTask.run()
             stopTask.waitUntilExit()
             
@@ -95,6 +142,8 @@ class SystemOSDManager {
     /// background watcher that re-suspends any future incarnation launchd
     /// spawns (macOS auto-exits OSDUIHelper on idle).
     public static func disableSystemHUD() {
+        // Ensure sleep/wake observers are registered.
+        _ = sleepWakeSetupOnce
         suppressionState.withLock { $0.active = true }
         Task.detached(priority: .background) {
             await disableSystemHUDAsync()
@@ -185,9 +234,23 @@ class SystemOSDManager {
     /// SIGSTOP can hit it. Polling every 150ms is cheap (a single pgrep per
     /// tick when nothing changed) and shrinks the visible-OSD window enough
     /// to feel instant.
+    ///
+    /// The loop exits immediately when the Mac sleeps (systemSleeping == true)
+    /// and is restarted by handleSystemWake() when the machine wakes up again.
+    /// This prevents the ~192,000 pgrep subprocess spawns that would otherwise
+    /// accumulate over an 8-hour sleep and exhaust the process table / fd limits.
     private static func startSuppressionWatcher() {
         let newTask = Task.detached(priority: .background) {
             while !Task.isCancelled {
+                // Pause the watcher entirely while the system is asleep.
+                // handleSystemWake() will cancel this task and spawn a fresh one.
+                let sleeping = suppressionState.withLock { $0.systemSleeping }
+                if sleeping {
+                    // Sleep in larger chunks so we respond to cancellation promptly.
+                    try? await Task.sleep(nanoseconds: 1_000_000_000) // 1s
+                    continue
+                }
+
                 let currentPID = osduiHelperPID()
                 let lastPID = suppressionState.withLock { $0.lastSuspendedPID }
 
@@ -224,9 +287,13 @@ class SystemOSDManager {
         task.arguments = ["-n", "OSDUIHelper"]
         let pipe = Pipe()
         task.standardOutput = pipe
+        task.standardError = Pipe() // silence "No matching processes..." stderr
         do {
             try task.run()
             task.waitUntilExit()
+            // pgrep exits 1 when no process found — check status to avoid
+            // parsing an empty string as a valid PID.
+            guard task.terminationStatus == 0 else { return nil }
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             let trimmed = String(data: data, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -241,6 +308,7 @@ class SystemOSDManager {
         let stop = Process()
         stop.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
         stop.arguments = ["-STOP", "OSDUIHelper"]
+        stop.standardError = Pipe() // silence "no such process" stderr
         do {
             try stop.run()
             stop.waitUntilExit()
@@ -257,15 +325,16 @@ class SystemOSDManager {
         
         let pipe = Pipe()
         task.standardOutput = pipe
+        task.standardError = Pipe() // silence "No matching processes..." stderr
         
         do {
             try task.run()
             task.waitUntilExit()
             
+            guard task.terminationStatus == 0 else { return false }
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            
-            return task.terminationStatus == 0 && !output!.isEmpty
+            let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return !output.isEmpty
         } catch {
             return false
         }

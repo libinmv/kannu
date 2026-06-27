@@ -26,13 +26,54 @@ actor AnimatedArtworkManager {
     private var cachedVideoURL: URL?
     private var cachedKey: String?
 
+    // MARK: - Token failure backoff
+    //
+    // When MusicKit returns a developer-token error (e.g. 404 "Client not found"),
+    // there is no point hammering the Apple token service on every track change.
+    // We track consecutive failures and back off exponentially so that a
+    // persistent MusicKit misconfiguration (wrong bundle ID, revoked token, etc.)
+    // doesn't generate hundreds of network round-trips overnight.
+    //
+    // Back-off schedule: 30s → 60s → 120s → 240s → 300s (capped)
+    // The counter is reset whenever a song changes (new key) or on success.
+    private var tokenFailureCount: Int = 0
+    private var tokenFailureLastAttempt: Date? = nil
+    private static let maxBackoffSeconds: TimeInterval = 300 // 5 minutes cap
+
+    private func tokenBackoffInterval() -> TimeInterval {
+        guard tokenFailureCount > 0 else { return 0 }
+        let base: TimeInterval = 30
+        let exponential = base * pow(2.0, Double(tokenFailureCount - 1))
+        return min(exponential, Self.maxBackoffSeconds)
+    }
+
+    private func isWithinTokenBackoff() -> Bool {
+        guard tokenFailureCount > 0, let last = tokenFailureLastAttempt else { return false }
+        return Date().timeIntervalSince(last) < tokenBackoffInterval()
+    }
+
     func fetchAnimatedArtworkURL(title: String, artist: String) async -> URL? {
         let key = "\(title)|\(artist)"
+
+        // Return the cached result for the same song immediately.
         if key == cachedKey {
             return cachedVideoURL
         }
 
+        // New song — reset the token backoff so a fresh attempt is always made.
+        if key != cachedKey {
+            tokenFailureCount = 0
+            tokenFailureLastAttempt = nil
+        }
+
         cachedKey = key
+
+        // If MusicKit token has been consistently failing, honour the back-off
+        // window before making another network request.
+        if isWithinTokenBackoff() {
+            cachedVideoURL = nil
+            return nil
+        }
 
         guard await requestMusicAuthorization() else {
             cachedVideoURL = nil
@@ -49,6 +90,10 @@ actor AnimatedArtworkManager {
             return nil
         }
 
+        // Success — clear any outstanding failure state.
+        tokenFailureCount = 0
+        tokenFailureLastAttempt = nil
+
         cachedSongID = songID
         cachedVideoURL = videoURL
         return videoURL
@@ -58,6 +103,8 @@ actor AnimatedArtworkManager {
         cachedKey = nil
         cachedSongID = nil
         cachedVideoURL = nil
+        tokenFailureCount = 0
+        tokenFailureLastAttempt = nil
     }
 
     // MARK: - MusicKit Authorization
@@ -93,6 +140,9 @@ actor AnimatedArtworkManager {
             return song.id.rawValue
         } catch {
             print("[AnimatedArtworkManager] Search failed: \(error)")
+            // Record a token failure if this is a developer token / auth error so
+            // subsequent calls back off instead of immediately re-hitting the network.
+            recordTokenFailureIfNeeded(for: error)
             return nil
         }
     }
@@ -149,7 +199,34 @@ actor AnimatedArtworkManager {
             return nil
         } catch {
             print("[AnimatedArtworkManager] Editorial video fetch failed: \(error)")
+            recordTokenFailureIfNeeded(for: error)
             return nil
         }
+    }
+
+    // MARK: - Token Backoff Helpers
+
+    /// Increments the failure counter when the error looks like a persistent
+    /// MusicKit token/auth failure (HTTP 401, 403, 404 from the token service).
+    /// Transient network errors (timeout, no connection) are NOT counted so that
+    /// a brief offline period doesn't trigger the long back-off.
+    private func recordTokenFailureIfNeeded(for error: Error) {
+        let description = String(describing: error).lowercased()
+        // Match developer-token errors (ICError -8200), auth failures, or HTTP 4xx
+        // from the Apple Music API token service.
+        let looksLikeTokenError =
+            description.contains("developertokenrequestfailed") ||
+            description.contains("developertoken") ||
+            description.contains("-8200") ||
+            description.contains("401") ||
+            description.contains("403") ||
+            (description.contains("404") && description.contains("token"))
+
+        guard looksLikeTokenError else { return }
+
+        tokenFailureCount += 1
+        tokenFailureLastAttempt = Date()
+        let backoff = tokenBackoffInterval()
+        print("[AnimatedArtworkManager] Token failure #\(tokenFailureCount); backing off for \(Int(backoff))s")
     }
 }
