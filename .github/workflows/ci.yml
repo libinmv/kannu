@@ -57,7 +57,7 @@ jobs:
             security list-keychains -d user -s $KEYCHAIN_PATH
             
             # Import certificate into the custom keychain
-            security import $CERTIFICATE_PATH -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+            security import $CERTIFICATE_PATH -P "$CERTIFICATE_PASSWORD" -A -f pkcs12 -k $KEYCHAIN_PATH
             
             # CRITICAL: Allow codesign tool to access the private key without a UI prompt
             # Since we created this keychain with password "", we can authorize it!
