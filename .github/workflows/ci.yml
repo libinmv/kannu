@@ -47,10 +47,12 @@ jobs:
             KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
             echo -n "$CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
             
-            # Create a temporary keychain with an empty password
-            security create-keychain -p "" $KEYCHAIN_PATH
+            KEYCHAIN_PASSWORD="actions"
+            
+            # Create a temporary keychain with a non-empty password
+            security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
             security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-            security unlock-keychain -p "" $KEYCHAIN_PATH
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
             
             # Set it as the default so Xcode's provisioning engine finds it
             security default-keychain -s $KEYCHAIN_PATH
@@ -60,8 +62,8 @@ jobs:
             security import $CERTIFICATE_PATH -P "$CERTIFICATE_PASSWORD" -A -f pkcs12 -k $KEYCHAIN_PATH
             
             # CRITICAL: Allow codesign tool to access the private key without a UI prompt
-            # Since we created this keychain with password "", we can authorize it!
-            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" $KEYCHAIN_PATH
+            # macOS 14+ silently fails this command if the keychain password is empty!
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
             
             # Dynamically extract Identity and Team ID from the certificate
             FULL_IDENTITY=$(security find-identity -v -p codesigning $KEYCHAIN_PATH | head -n 1 | grep -o '".*"' | tr -d '"')
