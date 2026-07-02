@@ -1572,7 +1572,7 @@ struct Charge: View {
             } else {
                 ContentUnavailableView {
                     VStack(spacing: 16) {
-                        Image("battery.100percent.slash")
+                        Image(systemName: "battery.100percent.slash")
                             .font(.title)
                         Text("Battery settings and informations are only available on MacBooks")
                             .font(.title3)
