@@ -801,10 +801,15 @@ struct MusicSliderView: View {
                 }
             }
         }
+        .onAppear {
+            guard !isLiveStream else { return }
+            guard !dragging else { return }
+            setSliderValueWithoutAnimation(MusicManager.shared.estimatedPlaybackPosition())
+        }
         .onChange(of: currentDate) { newDate in
             guard !isLiveStream else { return }
             guard !dragging, timestampDate.timeIntervalSince(lastDragged) > -1 else { return }
-            sliderValue = MusicManager.shared.estimatedPlaybackPosition(at: newDate)
+            setSliderValueWithoutAnimation(MusicManager.shared.estimatedPlaybackPosition(at: newDate))
         }
         .onChange(of: isPlaying) { _, playing in
             // Snap slider to the exact position when music pauses so
@@ -817,6 +822,14 @@ struct MusicSliderView: View {
             if isLive {
                 sliderValue = 0
             }
+        }
+    }
+
+    private func setSliderValueWithoutAnimation(_ value: Double) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            sliderValue = value
         }
     }
 
