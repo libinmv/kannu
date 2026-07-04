@@ -38,6 +38,7 @@ struct DynamicIslandHeader: View {
     @Default(.clipboardDisplayMode) var clipboardDisplayMode
     @Default(.showBatteryIndicator) var showBatteryIndicator
     @Default(.showBatteryPercentInside) var showBatteryPercentInside
+    @Default(.showMinimalisticBatteryIndicator) var showMinimalisticBatteryIndicator
     @Default(.enableMinimalisticUI) var enableMinimalisticUI
     
     var body: some View {
@@ -233,7 +234,9 @@ struct DynamicIslandHeader: View {
 
                 if vm.notchState == .open && showBatteryIndicator {
                     if enableMinimalisticUI {
-                        if !shouldUseDynamicIslandMode(for: vm.screen) {
+                        // In minimalistic notch mode, show the battery pill only when
+                        // showMinimalisticBatteryIndicator is enabled (and not DI mode).
+                        if !shouldUseDynamicIslandMode(for: vm.screen) && showMinimalisticBatteryIndicator {
                             MinimalisticBatteryView(
                                 levelBattery: batteryModel.levelBattery,
                                 isPluggedIn: batteryModel.isPluggedIn,
@@ -245,6 +248,7 @@ struct DynamicIslandHeader: View {
                                 showPercentInside: showBatteryPercentInside
                             )
                             .padding(.trailing, 4)
+                            .transition(.opacity.combined(with: .scale(scale: 0.85)))
                         }
                     } else {
                         DynamicIslandBatteryView(

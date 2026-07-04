@@ -110,19 +110,18 @@ struct MinimalisticMusicView: View {
     // MARK: - Visualizer
     
     private var visualizerView: some View {
-        HStack {
+        let width = CGFloat(Defaults[.visualizerBarCount]) * 4
+        return HStack {
             Rectangle()
-                .fill(Defaults[.coloredSpectrogram] ? Color(nsColor: musicManager.avgColor).gradient : Color.gray.gradient)
-                .frame(width: 50, alignment: .center)
+                .fill((Defaults[.coloredSpectrogram] ? Color(nsColor: musicManager.avgColor) : Color.gray).spectrogramGradient())
+                .frame(width: width, alignment: .center)
                 .mask {
                     AudioVisualizerView(isPlaying: $musicManager.isPlaying)
-                        .frame(width: 16, height: 12)
+                        .frame(width: width, height: 12)
                 }
-                .frame(width: max(0, vm.effectiveClosedNotchHeight - (isHovering ? 0 : 12)),
-                       height: max(0, vm.effectiveClosedNotchHeight - (isHovering ? 0 : 12)), alignment: .center)
+                .frame(width: width, height: max(0, vm.effectiveClosedNotchHeight - (isHovering ? 0 : 12)), alignment: .center)
         }
-        .frame(width: max(0, vm.effectiveClosedNotchHeight - (isHovering ? 0 : 12)),
-               height: max(0, vm.effectiveClosedNotchHeight - (isHovering ? 0 : 12)), alignment: .center)
+        .frame(width: width, height: max(0, vm.effectiveClosedNotchHeight - (isHovering ? 0 : 12)), alignment: .center)
     }
 }
 

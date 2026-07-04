@@ -23,6 +23,7 @@ import AppKit
 import Cocoa
 import SwiftUI
 import simd
+import Defaults
 
 /// NSView-based real-time audio spectrum visualizer
 class RealTimeAudioSpectrum: NSView {
@@ -48,7 +49,7 @@ class RealTimeAudioSpectrum: NSView {
 
     private func setupBars() {
         let barWidth: CGFloat = 2
-        let barCount = 4
+        let barCount = Defaults[.visualizerBarCount]
         let spacing: CGFloat = barWidth
         let totalWidth = CGFloat(barCount) * (barWidth + spacing)
         let totalHeight: CGFloat = 14
@@ -108,11 +109,14 @@ class RealTimeAudioSpectrum: NSView {
         // Debug: log magnitudes periodically
         debugLogCounter += 1
         if debugLogCounter % 60 == 0 { // Every 2 seconds at 30fps
-            print("📊 [Spectrum] Magnitudes: [\(magnitudes.x), \(magnitudes.y), \(magnitudes.z), \(magnitudes.w)]")
+            if magnitudes.count >= 4 {
+                print("📊 [Spectrum] Magnitudes: [\(magnitudes[0]), \(magnitudes[1]), \(magnitudes[2]), \(magnitudes[3])]")
+            }
         }
         
         // Update each bar with its corresponding band magnitude
         for (index, barLayer) in barLayers.enumerated() {
+            guard index < magnitudes.count else { break }
             let magnitude = magnitudes[index]
             // Map magnitude (0-1) to scale (0.2 - 1.0) for visual appeal
             let scale = max(0.2, min(1.0, CGFloat(magnitude) * 1.5 + 0.2))

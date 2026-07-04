@@ -22,6 +22,7 @@ import AtollExtensionKit
 import Lottie
 import LottieUI
 import CryptoKit
+import Defaults
 
 // MARK: - Color Conversion
 
@@ -473,11 +474,11 @@ struct ExtensionEdgeContentView: View {
             )
         case let .spectrum(color: colorDescriptor):
             Rectangle()
-                .fill((colorDescriptor.isAccent ? accent : colorDescriptor.swiftUIColor).gradient)
-                .frame(width: 48, height: 14)
+                .fill((colorDescriptor.isAccent ? accent : colorDescriptor.swiftUIColor).spectrogramGradient())
+                .frame(width: CGFloat(Defaults[.visualizerBarCount]) * 4, height: 14)
                 .mask {
                     AudioVisualizerView(isPlaying: .constant(true))
-                        .frame(width: 16, height: 12)
+                        .frame(width: CGFloat(Defaults[.visualizerBarCount]) * 4, height: 12)
                 }
         case let .animation(data, size):
             let resolvedWidth = min(size.width, availableWidth)

@@ -29,11 +29,13 @@
 
 AudioProcessor::AudioProcessor( float sr ) : sampleRate( sr )
 {
-    // Single biquad per band
-    setupBiquad( 0, FilterType::LowPass, 250.0f, 0.707f );
-    setupBiquad( 1, FilterType::BandPass, 707.0f, 0.40f );
-    setupBiquad( 2, FilterType::BandPass, 3464.0f, 0.85f );
-    setupBiquad( 3, FilterType::HighPass, 6000.0f, 0.707f );
+    // Six biquads to cover the frequency spectrum
+    setupBiquad( 0, FilterType::LowPass, 150.0f, 0.707f );
+    setupBiquad( 1, FilterType::BandPass, 400.0f, 0.40f );
+    setupBiquad( 2, FilterType::BandPass, 1000.0f, 0.60f );
+    setupBiquad( 3, FilterType::BandPass, 2500.0f, 0.60f );
+    setupBiquad( 4, FilterType::BandPass, 5000.0f, 0.85f );
+    setupBiquad( 5, FilterType::HighPass, 8000.0f, 0.707f );
 }
 
 AudioProcessor::~AudioProcessor()
@@ -73,6 +75,7 @@ void AudioProcessor::process( const float* __restrict__ buffer,
 
 float AudioProcessor::getBand( int i ) const
 {
+    if ( __builtin_expect( i < 0 || i >= kBands, 0 ) ) return 0.0f;
     return bandParams[i].load( std::memory_order_relaxed );
 }
 

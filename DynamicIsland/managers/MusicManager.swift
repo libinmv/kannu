@@ -491,6 +491,7 @@ class MusicManager: ObservableObject {
 
     @Published var animations: DynamicIslandAnimations = .init()
     @Published var avgColor: NSColor = .white
+    @Published var secondaryColor: NSColor = .gray
     @Published var bundleIdentifier: String? = nil
     @Published var songDuration: TimeInterval = 0
     @Published var elapsedTime: TimeInterval = 0
@@ -1137,10 +1138,11 @@ class MusicManager: ObservableObject {
     }
 
     func calculateAverageColor() {
-        albumArt.averageColor { [weak self] color in
+        albumArt.prominentOpposingColors { [weak self] primary, secondary in
             DispatchQueue.main.async {
                 withAnimation(.smooth) {
-                    self?.avgColor = color ?? .white
+                    self?.avgColor = primary
+                    self?.secondaryColor = secondary
                 }
             }
         }

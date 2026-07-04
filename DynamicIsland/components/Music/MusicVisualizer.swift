@@ -23,6 +23,7 @@
 import AppKit
 import Cocoa
 import SwiftUI
+import Defaults
 
 class AudioSpectrum: NSView {
     private var barLayers: [CAShapeLayer] = []
@@ -47,7 +48,7 @@ class AudioSpectrum: NSView {
 
     private func setupBars() {
         let barWidth: CGFloat = 2
-        let barCount = 4
+        let barCount = Defaults[.visualizerBarCount]
         let spacing: CGFloat = barWidth
         let totalWidth = CGFloat(barCount) * (barWidth + spacing)
         let totalHeight: CGFloat = 14

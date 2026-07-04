@@ -62,10 +62,6 @@ let audioIOProc: AudioDeviceIOProc = {
                 if absVal > maxVal { maxVal = absVal }
             }
             os_log(.debug, log: audioTapLog, "🔊 Audio callback fired %d times, buffer size: %d, max amplitude: %f", callbackCount, floatCount, maxVal)
-            
-            // Also log the current band values from the bridge
-            let mags = scanner.bridge.getSmoothedMagnitudes()
-            os_log(.debug, log: audioTapLog, "🎚️ Bridge magnitudes: [%f, %f, %f, %f]", mags.x, mags.y, mags.z, mags.w)
         }
     }
 
@@ -109,13 +105,14 @@ class AudioTap: NSObject {
     
     let bridge = AudioBridge()
     var isPaused: Bool = false
-    private var displayMagnitudes = simd_float4(0, 0, 0, 0)
+    private var displayMagnitudes: [Float] = Array(repeating: 0, count: 6)
 
     // CoreAudio stuff
     private var tapID: AudioObjectID = kAudioObjectUnknown
     private var aggregateDeviceID: AudioObjectID = kAudioObjectUnknown
     private var ioProcID: AudioDeviceIOProcID? = nil
     private var captureIsRunning = false
+    private var updateTimer: Timer?
     
     // Serial queue to prevent race conditions
     private let audioQueue = DispatchQueue(label: "com.atoll.audiotap", qos: .userInitiated)
@@ -140,17 +137,19 @@ class AudioTap: NSObject {
         super.init()
     }
 
-    // Helper function to smooth out the magnitudes for prettifying purposes
-    func getSmoothedMagnitudes() -> simd_float4 {
-        // Zero bridging overhead. Just passing 16 bytes of memory.
-        let targetLevels = bridge.getSmoothedMagnitudes()
-
+    @objc private func updateSmoothedMagnitudes() {
+        let nsMagnitudes = bridge.getSmoothedMagnitudes()
+        let targetLevels = nsMagnitudes.map { $0.floatValue }
+        
         let smoothingFactor: Float = 0.4
+        
+        for i in 0..<min(targetLevels.count, displayMagnitudes.count) {
+            let difference = targetLevels[i] - displayMagnitudes[i]
+            displayMagnitudes[i] += difference * smoothingFactor
+        }
+    }
 
-        // Vector math! This does all 4 calculations simultaneously.
-        let difference = targetLevels - displayMagnitudes
-        displayMagnitudes += difference * smoothingFactor
-
+    func getSmoothedMagnitudes() -> [Float] {
         return displayMagnitudes
     }
 
@@ -260,6 +259,14 @@ class AudioTap: NSObject {
 
         captureIsRunning = true
         callbackCount = 0
+        
+        DispatchQueue.main.async { [weak self] in
+            self?.updateTimer?.invalidate()
+            let timer = Timer(timeInterval: 1.0 / 60.0, target: self as Any, selector: #selector(self?.updateSmoothedMagnitudes), userInfo: nil, repeats: true)
+            RunLoop.main.add(timer, forMode: .common)
+            self?.updateTimer = timer
+        }
+        
         print("🟢 [AudioTap] CoreAudio CATap flowing through Aggregate Device!")
     }
     
@@ -276,6 +283,11 @@ class AudioTap: NSObject {
         tapID = kAudioObjectUnknown
         aggregateDeviceID = kAudioObjectUnknown
         ioProcID = nil
+        
+        DispatchQueue.main.async { [weak self] in
+            self?.updateTimer?.invalidate()
+            self?.updateTimer = nil
+        }
     }
 
     func restartCapture() {
@@ -325,8 +337,12 @@ class AudioTap: NSObject {
         ioProcID = nil
         captureIsRunning = false
         
-        // Reset display magnitudes
-        displayMagnitudes = simd_float4(0, 0, 0, 0)
+        DispatchQueue.main.async { [weak self] in
+            self?.updateTimer?.invalidate()
+            self?.updateTimer = nil
+            // Reset display magnitudes safely on main thread
+            self?.displayMagnitudes = Array(repeating: 0, count: 6)
+        }
 
         print("🔴 [AudioTap] CoreAudio CATap capture stopped")
     }

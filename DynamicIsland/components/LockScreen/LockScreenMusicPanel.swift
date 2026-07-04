@@ -344,7 +344,7 @@ struct LockScreenMusicPanel: View {
             }
             .frame(maxWidth: .infinity, minHeight: 30, maxHeight: 30, alignment: .leading)
 
-            visualizer(width: 20, height: 16)
+            visualizer(height: 16)
         }
         .frame(height: 60)
     }
@@ -380,7 +380,7 @@ struct LockScreenMusicPanel: View {
             }
             .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
 
-            visualizer(width: 24, height: 20)
+            visualizer(height: 20)
         }
     }
 
@@ -430,10 +430,11 @@ struct LockScreenMusicPanel: View {
     }
 
     @ViewBuilder
-    private func visualizer(width: CGFloat, height: CGFloat) -> some View {
+    private func visualizer(height: CGFloat) -> some View {
+        let width = CGFloat(Defaults[.visualizerBarCount]) * 4
         if Defaults[.useMusicVisualizer] {
             Rectangle()
-                .fill(Defaults[.coloredSpectrogram] ? Color(nsColor: musicManager.avgColor).gradient : Color.gray.gradient)
+                .fill((Defaults[.coloredSpectrogram] ? Color(nsColor: musicManager.avgColor) : Color.gray).spectrogramGradient())
                 .mask {
                     AudioVisualizerView(isPlaying: .constant(musicManager.isPlaying))
                         .frame(width: width, height: height)

@@ -25,6 +25,7 @@ protocol GraphData {
     var color: Color { get }
     var icon: String { get }
     var type: GraphType { get }
+    var rankingType: ProcessRankingType? { get }
 }
 
 enum GraphType {
@@ -40,6 +41,7 @@ struct SingleGraphData: GraphData {
     let color: Color
     let icon: String
     let type: GraphType = .single
+    let rankingType: ProcessRankingType?
 }
 
 // Dual value graph data (for network/disk)
@@ -54,6 +56,7 @@ struct DualGraphData: GraphData {
     let color: Color // Primary color for the component
     let icon: String
     let type: GraphType = .dual
+    let rankingType: ProcessRankingType?
 }
 
 struct NotchStatsView: View {
@@ -86,7 +89,8 @@ struct NotchStatsView: View {
                 value: statsManager.cpuUsageString,
                 data: statsManager.cpuHistory,
                 color: .blue,
-                icon: "cpu"
+                icon: "cpu",
+                rankingType: .cpu
             ))
         }
 
@@ -96,7 +100,8 @@ struct NotchStatsView: View {
                 value: statsManager.memoryUsageString,
                 data: statsManager.memoryHistory,
                 color: .green,
-                icon: "memorychip"
+                icon: "memorychip",
+                rankingType: .memory
             ))
         }
 
@@ -106,7 +111,8 @@ struct NotchStatsView: View {
                 value: statsManager.gpuUsageString,
                 data: statsManager.gpuHistory,
                 color: .purple,
-                icon: "display"
+                icon: "display",
+                rankingType: .gpu
             ))
         }
 
@@ -120,7 +126,8 @@ struct NotchStatsView: View {
                 positiveColor: .orange,
                 negativeColor: .red,
                 color: .orange,
-                icon: "network"
+                icon: "network",
+                rankingType: .network
             ))
         }
 
@@ -134,7 +141,8 @@ struct NotchStatsView: View {
                 positiveColor: .cyan,
                 negativeColor: .yellow,
                 color: .cyan,
-                icon: "internaldrive"
+                icon: "internaldrive",
+                rankingType: .disk
             ))
         }
 
@@ -214,36 +222,32 @@ struct NotchStatsView: View {
                 RankedProcessPopover(
                     rankingType: rankingType,
                     onHoverChange: { hovering in
-                        switch graphData.title {
-                        case "CPU":
+                        switch rankingType {
+                        case .cpu:
                             isHoveringCPUPopover = hovering
-                        case "Memory":
+                        case .memory:
                             isHoveringMemoryPopover = hovering
-                        case "GPU":
+                        case .gpu:
                             isHoveringGPUPopover = hovering
-                        case "Network":
+                        case .network:
                             isHoveringNetworkPopover = hovering
-                        case "Disk":
+                        case .disk:
                             isHoveringDiskPopover = hovering
-                        default:
-                            break
                         }
                     }
                 )
                 .onDisappear {
-                    switch graphData.title {
-                    case "CPU":
+                    switch rankingType {
+                    case .cpu:
                         isHoveringCPUPopover = false
-                    case "Memory":
+                    case .memory:
                         isHoveringMemoryPopover = false
-                    case "GPU":
+                    case .gpu:
                         isHoveringGPUPopover = false
-                    case "Network":
+                    case .network:
                         isHoveringNetworkPopover = false
-                    case "Disk":
+                    case .disk:
                         isHoveringDiskPopover = false
-                    default:
-                        break
                     }
                     DispatchQueue.main.async {
                         updateStatsPopoverState()
@@ -264,54 +268,41 @@ struct NotchStatsView: View {
     }
 
     private func handleGraphClick(for graphData: GraphData) {
-        switch graphData.title {
-        case "CPU":
+        switch graphData.rankingType {
+        case .cpu:
             showingCPUPopover = true
-        case "Memory":
+        case .memory:
             showingMemoryPopover = true
-        case "GPU":
+        case .gpu:
             showingGPUPopover = true
-        case "Network":
+        case .network:
             showingNetworkPopover = true
-        case "Disk":
+        case .disk:
             showingDiskPopover = true
-        default:
+        case nil:
             break
         }
     }
 
     private func bindingForGraph(_ graphData: GraphData) -> Binding<Bool> {
-        switch graphData.title {
-        case "CPU":
+        switch graphData.rankingType {
+        case .cpu:
             return $showingCPUPopover
-        case "Memory":
+        case .memory:
             return $showingMemoryPopover
-        case "GPU":
+        case .gpu:
             return $showingGPUPopover
-        case "Network":
+        case .network:
             return $showingNetworkPopover
-        case "Disk":
+        case .disk:
             return $showingDiskPopover
-        default:
+        case nil:
             return .constant(false)
         }
     }
 
     private func rankingTypeForGraph(_ graphData: GraphData) -> ProcessRankingType? {
-        switch graphData.title {
-        case "CPU":
-            return .cpu
-        case "Memory":
-            return .memory
-        case "GPU":
-            return .gpu
-        case "Network":
-            return .network
-        case "Disk":
-            return .disk
-        default:
-            return nil
-        }
+        graphData.rankingType
     }
     
     // Helper function to create graph views using unified component
@@ -495,7 +486,7 @@ struct UnifiedStatsCard: View {
             .frame(height: 36) // Match boring.notch exactly - reduced from 50
             
             // Click hint - shown for graphs that open popovers
-            if ["CPU", "Memory", "GPU", "Network", "Disk"].contains(graphData.title) {
+            if graphData.rankingType != nil {
                 Text("Click for details")
                     .font(.caption2)
                     .foregroundStyle(Color.white.opacity(0.75))

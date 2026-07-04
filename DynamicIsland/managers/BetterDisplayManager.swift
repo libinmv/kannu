@@ -146,10 +146,10 @@ final class BetterDisplayManager: ObservableObject {
         isDetected = Self.checkInstallation()
         isRunning = Self.checkRunning()
         if wasDetected != isDetected {
-            NSLog("📺 BetterDisplay detection changed: detected=\(isDetected)")
+            NSLog("%@", "📺 BetterDisplay detection changed: detected=\(isDetected)")
         }
         if wasRunning != isRunning {
-            NSLog("📺 BetterDisplay running state changed: running=\(isRunning)")
+            NSLog("%@", "📺 BetterDisplay running state changed: running=\(isRunning)")
         }
         refreshListeningState()
     }
@@ -212,7 +212,7 @@ final class BetterDisplayManager: ObservableObject {
             return
         }
 
-        NSLog("📺 BetterDisplay OSD raw payload: \(notificationString)")
+        NSLog("%@", "📺 BetterDisplay OSD raw payload: \(notificationString)")
 
         do {
             let osd = try JSONDecoder().decode(
@@ -227,11 +227,12 @@ final class BetterDisplayManager: ObservableObject {
             let symbolText = osd.customSymbol ?? "nil"
             let textValue = osd.text ?? "nil"
             NSLog(
+                "%@",
                 "📺 BetterDisplay decoded payload: displayID=\(displayIDText) target=\(targetText) iconID=\(iconIDText) value=\(valueText) maxValue=\(maxValueText) customSymbol=\(symbolText) text=\(textValue)"
             )
             routeOSDToHUD(osd)
         } catch {
-            NSLog("⚠️ BetterDisplay OSD decode error: \(error.localizedDescription)")
+            NSLog("%@", "⚠️ BetterDisplay OSD decode error: \(error.localizedDescription)")
         }
     }
 
@@ -252,6 +253,7 @@ final class BetterDisplayManager: ObservableObject {
         let normalizedText = String(format: "%.3f", normalizedValue)
 
         NSLog(
+            "%@",
             "📺 BetterDisplay routed payload: category=\(categoryName(category)) target=\(targetText) displayID=\(displayIDText) resolvedScreen=\(resolvedScreenText) isExternal=\(isExternalDisplay) rawValue=\(valueText) maxValue=\(maxValueText) normalized=\(normalizedText) hasVolumeData=\(hasVolumeData) inferredMute=\(inferredMute) externalVolumeListener=\(externalVolumeListenerEnabled)"
         )
 
@@ -346,7 +348,7 @@ final class BetterDisplayManager: ObservableObject {
             let index = displayID - 1
             if NSScreen.screens.indices.contains(index) {
                 let fallback = NSScreen.screens[index]
-                NSLog("📺 BetterDisplay resolveScreen: displayID=\(displayID) resolved via index fallback to '\(fallback.localizedName)'")
+                NSLog("%@", "📺 BetterDisplay resolveScreen: displayID=\(displayID) resolved via index fallback to '\(fallback.localizedName)'")
                 return fallback
             }
         }
@@ -356,8 +358,8 @@ final class BetterDisplayManager: ObservableObject {
             let num = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
             return (screen.localizedName, num)
         }
-        NSLog("📺 BetterDisplay resolveScreen: looking for displayID=\(displayID) (UInt32=\(target)) among screens: \(availableScreens)")
-        NSLog("📺 BetterDisplay resolveScreen: no match found for displayID=\(displayID), HUD will show on all screens")
+        NSLog("%@", "📺 BetterDisplay resolveScreen: looking for displayID=\(displayID) (UInt32=\(target)) among screens: \(availableScreens)")
+        NSLog("%@", "📺 BetterDisplay resolveScreen: no match found for displayID=\(displayID), HUD will show on all screens")
         return nil
     }
 
@@ -494,7 +496,7 @@ final class BetterDisplayManager: ObservableObject {
                 )
             }
         } catch {
-            NSLog("⚠️ BetterDisplay request encode error: \(error.localizedDescription)")
+            NSLog("%@", "⚠️ BetterDisplay request encode error: \(error.localizedDescription)")
             completion?(nil)
         }
     }

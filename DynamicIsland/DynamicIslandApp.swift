@@ -1089,7 +1089,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         savePanel.begin { response in
             guard response == .OK, let url = savePanel.url else { return }
             
-            Task {
+            Task.detached(priority: .utility) {
                 do {
                     let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
                     try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)

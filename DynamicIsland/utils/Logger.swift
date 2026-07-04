@@ -154,22 +154,6 @@ struct ViewLifecycleTracker: ViewModifier {
 }
 
 // Global overrides to filter scattered print and NSLog statements throughout the app
-public func print(_ items: Any..., separator: String = " ", terminator: String = "\n") {
-    let configuredLevel = Defaults[.logLevel]
-    if configuredLevel == .none { return }
-    
-    let message = items.map { "\($0)" }.joined(separator: separator)
-    let lowerMessage = message.lowercased()
-    
-    let isError = message.contains("❌") || lowerMessage.contains("error") || lowerMessage.contains("failed")
-    let isWarning = message.contains("⚠️") || lowerMessage.contains("warning")
-    
-    let simulatedLevel: LogLevel = isError ? .error : (isWarning ? .warning : .debug)
-    
-    if simulatedLevel.rawValue > configuredLevel.rawValue { return }
-    
-    Swift.print(message, terminator: terminator)
-}
 
 public func NSLog(_ format: String, _ args: CVarArg...) {
     let configuredLevel = Defaults[.logLevel]
