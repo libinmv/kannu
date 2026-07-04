@@ -1,20 +1,35 @@
+/*
+ * Atoll (DynamicIsland)
+ * Copyright (C) 2024-2026 Atoll Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
 import Foundation
 
-// USD per million tokens, matched by model-family substring. Public list prices verified 2026-07-03.
-enum ModelPricing {
-    private static let perMillion: [(match: String, input: Double, output: Double)] = [
-        ("opus",     5.0, 25.0),
-        ("sonnet",   3.0, 15.0),
-        ("haiku",    1.0,  5.0),
-        ("gpt-5",    1.25, 10.0),
-    ]
-
-    static func cost(model: String, inputTokens: Int, outputTokens: Int) -> Double? {
-        guard inputTokens > 0 || outputTokens > 0 else { return 0.0 }
-        let key = model.lowercased()
-        guard let rate = perMillion.first(where: { key.contains($0.match) }) else { return nil }
-        let inCost = Double(inputTokens) / 1_000_000 * rate.input
-        let outCost = Double(outputTokens) / 1_000_000 * rate.output
-        return inCost + outCost
+/// Utility to resolve LLM model pricing dynamically
+struct ModelPricing {
+    /// Resolves prompt and completion rates for a given model
+    /// Rates are per 1M tokens or as defined by the pricing.json structure
+    static func resolveRates(for modelId: String) -> (prompt: Double, completion: Double) {
+        // Try to get dynamic rates from the manager (Remote or Local Bundled Fallback)
+        if let dynamicRates = ModelPricingManager.shared.getPricing(for: modelId) {
+            return dynamicRates
+        }
+        
+        // If the manager has no data (e.g. initialization failed),
+        // use a static safe default to avoid 0.0 calculations.
+        return (0.000002, 0.000002)
     }
 }
