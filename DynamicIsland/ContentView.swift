@@ -100,13 +100,27 @@ struct ContentView: View {
         
         // When inline sneak peek is active in closed notch, use the wider inline width
         // so the outer maxWidth frame doesn't clip the expanded content
+        let airPodsListeningModeSneakActive = vm.notchState == .closed
+            && coordinator.sneakPeek.show
+            && coordinator.sneakPeek.type == .bluetoothAudio
+            && coordinator.sneakPeek.value < 0
+            && AirPodsListeningMode.fromHUDSymbol(coordinator.sneakPeek.icon) != nil
         let inlineSneakPeekActive = vm.notchState == .closed
-            && coordinator.expandingView.show
-            && (coordinator.expandingView.type == .music || coordinator.expandingView.type == .timer)
+            && (
+                coordinator.expandingView.show
+                    && (coordinator.expandingView.type == .music || coordinator.expandingView.type == .timer)
+                    && Defaults[.sneakPeekStyles] == .inline
+                || airPodsListeningModeSneakActive
+            )
             && Defaults[.enableSneakPeek]
-            && Defaults[.sneakPeekStyles] == .inline
         if inlineSneakPeekActive {
-            let inlineWidth: CGFloat = 460
+            let inlineWidth: CGFloat = airPodsListeningModeSneakActive
+                ? InlineHUD.airPodsListeningModeWidth(
+                    closedNotchWidth: vm.closedNotchSize.width,
+                    gestureProgress: gestureProgress,
+                    minimalistic: Defaults[.enableMinimalisticUI]
+                ) + notchHorizontalPadding * 2
+                : 460
             return CGSize(width: max(baseSize.width, inlineWidth), height: baseSize.height)
         }
         
@@ -526,6 +540,7 @@ struct ContentView: View {
             .padding(.horizontal, isIslandMode ? dynamicIslandShadowInset : 0)
             .padding(.bottom, isIslandMode ? dynamicIslandShadowInset : 0)
             .padding(.top, pillTopOffset)
+            .accessibilityIdentifier("AtollNotch")
     }
 
     private var configuredMainLayout: some View {
@@ -893,6 +908,9 @@ struct ContentView: View {
                       let canShowMusicDuringExpansion = !isCurrentScreenExpansionVisible
                           || currentScreenExpansionType == .music
                           || expansionMatchesSecondary
+                      let isAirPodsListeningModeSneak = coordinator.sneakPeek.type == .bluetoothAudio
+                          && coordinator.sneakPeek.value < 0
+                          && AirPodsListeningMode.fromHUDSymbol(coordinator.sneakPeek.icon) != nil
 
                       if currentScreenExpansionType == .battery
                             && isBatteryHUDVisibleOnCurrentScreen
@@ -910,7 +928,7 @@ struct ContentView: View {
                             styleOverride: batteryModel.activeTemporaryHUDKind.map { resolvedBatteryNotificationStyle(for: $0) }
                         )
                         .id(batteryModel.activeTemporaryHUDToken)
-                      } else if isSneakPeekVisibleOnCurrentScreen && Defaults[.inlineHUD] && (coordinator.sneakPeek.type != .music) && (coordinator.sneakPeek.type != .battery) && (coordinator.sneakPeek.type != .timer) && (coordinator.sneakPeek.type != .reminder) && !coordinator.sneakPeek.type.isExtensionPayload && ((coordinator.sneakPeek.type != .volume && coordinator.sneakPeek.type != .brightness && coordinator.sneakPeek.type != .backlight) || vm.notchState == .closed) {
+                      } else if isSneakPeekVisibleOnCurrentScreen && (Defaults[.inlineHUD] || isAirPodsListeningModeSneak) && (coordinator.sneakPeek.type != .music) && (coordinator.sneakPeek.type != .battery) && (coordinator.sneakPeek.type != .timer) && (coordinator.sneakPeek.type != .reminder) && !coordinator.sneakPeek.type.isExtensionPayload && ((coordinator.sneakPeek.type != .volume && coordinator.sneakPeek.type != .brightness && coordinator.sneakPeek.type != .backlight) || vm.notchState == .closed) {
                           InlineHUD(type: $coordinator.sneakPeek.type, value: $coordinator.sneakPeek.value, icon: $coordinator.sneakPeek.icon, hoverAnimation: $isHovering, gestureProgress: $gestureProgress)
                               .transition(
                                   coordinator.sneakPeek.type == .capsLock
@@ -969,7 +987,7 @@ struct ContentView: View {
                        }
                       
                       if isSneakPeekVisibleOnCurrentScreen {
-                          if (coordinator.sneakPeek.type != .music) && (coordinator.sneakPeek.type != .battery) && (coordinator.sneakPeek.type != .timer) && (coordinator.sneakPeek.type != .reminder) && (coordinator.sneakPeek.type != .capsLock) && !coordinator.sneakPeek.type.isExtensionPayload && !Defaults[.inlineHUD] && ((coordinator.sneakPeek.type != .volume && coordinator.sneakPeek.type != .brightness && coordinator.sneakPeek.type != .backlight) || vm.notchState == .closed) {
+                          if (coordinator.sneakPeek.type != .music) && (coordinator.sneakPeek.type != .battery) && (coordinator.sneakPeek.type != .timer) && (coordinator.sneakPeek.type != .reminder) && (coordinator.sneakPeek.type != .capsLock) && !coordinator.sneakPeek.type.isExtensionPayload && !Defaults[.inlineHUD] && !isAirPodsListeningModeSneak && ((coordinator.sneakPeek.type != .volume && coordinator.sneakPeek.type != .brightness && coordinator.sneakPeek.type != .backlight) || vm.notchState == .closed) {
                               SystemEventIndicatorModifier(eventType: $coordinator.sneakPeek.type, value: $coordinator.sneakPeek.value, icon: $coordinator.sneakPeek.icon, sendEventBack: { _ in
                                   //
                               })
@@ -1072,6 +1090,8 @@ struct ContentView: View {
                                   NotchTimerView()
                               case .stats:
                                   NotchStatsView()
+                              case .llmUsage:
+                                  NotchLLMUsageView()
                               case .colorPicker:
                                   NotchColorPickerView()
                             case .notes:

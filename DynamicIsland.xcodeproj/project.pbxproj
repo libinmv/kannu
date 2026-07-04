@@ -28,6 +28,8 @@
 		7EE1D73F2E6B1E1200997219 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7EE1D73E2E6B1E1200997219 /* IOKit.framework */; };
 		7EF10C122F817ECF004229A0 /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7EF10C112F817ECF004229A0 /* Accelerate.framework */; };
 		7EF19C172F577040005B9929 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 7EF19C162F577040005B9929 /* SwiftTerm */; };
+		A3C83CAF84544DCE386C3BB8 /* DynamicIslandUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54078F29304A9DBBEFBDF932 /* DynamicIslandUITests.swift */; };
+		F910B9C812C7AEFE2293F7D2 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4A9C58195E197C19F691DA62 /* Cocoa.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -43,6 +45,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		4A9C58195E197C19F691DA62 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
+		54078F29304A9DBBEFBDF932 /* DynamicIslandUITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DynamicIslandUITests.swift; sourceTree = "<group>"; };
 		7E25ECA02E6C6C3800700E72 /* CoreBrightness.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreBrightness.framework; path = /System/Library/PrivateFrameworks/CoreBrightness.framework; sourceTree = "<absolute>"; };
 		7E25ECA22E6C6E2600700E72 /* OSD.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OSD.framework; path = /System/Library/PrivateFrameworks/OSD.framework; sourceTree = "<absolute>"; };
 		7E25ECA42E6C6E7800700E72 /* DisplayServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = DisplayServices.framework; path = /System/Library/PrivateFrameworks/DisplayServices.framework; sourceTree = "<absolute>"; };
@@ -55,6 +59,8 @@
 		7EE1D73C2E6B1E0B00997219 /* ApplicationServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ApplicationServices.framework; path = System/Library/Frameworks/ApplicationServices.framework; sourceTree = SDKROOT; };
 		7EE1D73E2E6B1E1200997219 /* IOKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOKit.framework; path = System/Library/Frameworks/IOKit.framework; sourceTree = SDKROOT; };
 		7EF10C112F817ECF004229A0 /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
+		A058D80A7EF44593B0F24EB7 /* DynamicIslandUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DynamicIslandUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		DAA671E7B1B26733F02166C5 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F4C1DD09EC134302938E84F6 /* MediaRemoteAdapter.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MediaRemoteAdapter.framework; path = Frameworks/MediaRemoteAdapter.framework; sourceTree = SOURCE_ROOT; };
 		F54406E72CD4987A00C7AFD9 /* Atoll.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Atoll.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -110,6 +116,14 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		C288A7D2D7F2EBA801C0C21F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F910B9C812C7AEFE2293F7D2 /* Cocoa.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		F54406E42CD4987A00C7AFD9 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -134,6 +148,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		2402D98A7C199588E79096D5 /* OS X */ = {
+			isa = PBXGroup;
+			children = (
+				4A9C58195E197C19F691DA62 /* Cocoa.framework */,
+			);
+			name = "OS X";
+			sourceTree = "<group>";
+		};
 		7E81303F2E3FB40500E08F3F /* mediaremote-adapter */ = {
 			isa = PBXGroup;
 			children = (
@@ -152,6 +174,7 @@
 				7E25ECA22E6C6E2600700E72 /* OSD.framework */,
 				7EE1D73E2E6B1E1200997219 /* IOKit.framework */,
 				7EE1D73C2E6B1E0B00997219 /* ApplicationServices.framework */,
+				2402D98A7C199588E79096D5 /* OS X */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -168,6 +191,16 @@
 			path = LottieAnimations;
 			sourceTree = "<group>";
 		};
+		BF9102C8771E45168EF97D18 /* DynamicIslandUITests */ = {
+			isa = PBXGroup;
+			children = (
+				54078F29304A9DBBEFBDF932 /* DynamicIslandUITests.swift */,
+				DAA671E7B1B26733F02166C5 /* Info.plist */,
+			);
+			name = DynamicIslandUITests;
+			path = DynamicIslandUITests;
+			sourceTree = "<group>";
+		};
 		F54406DE2CD4987A00C7AFD9 = {
 			isa = PBXGroup;
 			children = (
@@ -177,6 +210,7 @@
 				7E81303F2E3FB40500E08F3F /* mediaremote-adapter */,
 				F54406E92CD4987A00C7AFD9 /* DynamicIsland */,
 				F54406E82CD4987A00C7AFD9 /* Products */,
+				BF9102C8771E45168EF97D18 /* DynamicIslandUITests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -184,6 +218,7 @@
 			isa = PBXGroup;
 			children = (
 				F54406E72CD4987A00C7AFD9 /* Atoll.app */,
+				A058D80A7EF44593B0F24EB7 /* DynamicIslandUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -191,6 +226,23 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		9CA407B492164F5AEF356E38 /* DynamicIslandUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0EE2CF1552DB8896698C28BD /* Build configuration list for PBXNativeTarget "DynamicIslandUITests" */;
+			buildPhases = (
+				A11BBB270825A1AC5909239B /* Sources */,
+				C288A7D2D7F2EBA801C0C21F /* Frameworks */,
+				9C06E3344924740808B96105 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = DynamicIslandUITests;
+			productName = DynamicIslandUITests;
+			productReference = A058D80A7EF44593B0F24EB7 /* DynamicIslandUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		F54406E62CD4987A00C7AFD9 /* DynamicIsland */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = F54406F62CD4987B00C7AFD9 /* Build configuration list for PBXNativeTarget "DynamicIsland" */;
@@ -277,11 +329,19 @@
 			projectRoot = "";
 			targets = (
 				F54406E62CD4987A00C7AFD9 /* DynamicIsland */,
+				9CA407B492164F5AEF356E38 /* DynamicIslandUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		9C06E3344924740808B96105 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		F54406E52CD4987A00C7AFD9 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -320,6 +380,14 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		A11BBB270825A1AC5909239B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A3C83CAF84544DCE386C3BB8 /* DynamicIslandUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		F54406E32CD4987A00C7AFD9 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -330,6 +398,60 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
+		76C88DDCF7D65738FAD9DB22 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ENABLE_TESTING_SEARCH_PATHS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PLATFORM_DIR)/Developer/Library/Frameworks",
+				);
+				INFOPLIST_FILE = DynamicIslandUITests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.atoll.DynamicIslandUITests;
+				PRODUCT_MODULE_NAME = DynamicIslandUITests;
+				PRODUCT_NAME = DynamicIslandUITests;
+				SDKROOT = macosx;
+				SWIFT_TESTING_FRAMEWORK = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = DynamicIsland;
+				USES_SWIFT_TESTING = YES;
+			};
+			name = Debug;
+		};
+		80C3D48B29D18AD34C41AA75 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ENABLE_TESTING_SEARCH_PATHS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PLATFORM_DIR)/Developer/Library/Frameworks",
+				);
+				INFOPLIST_FILE = DynamicIslandUITests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.atoll.DynamicIslandUITests;
+				PRODUCT_MODULE_NAME = DynamicIslandUITests;
+				PRODUCT_NAME = DynamicIslandUITests;
+				SDKROOT = macosx;
+				SWIFT_TESTING_FRAMEWORK = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = DynamicIsland;
+				USES_SWIFT_TESTING = YES;
+			};
+			name = Release;
+		};
 		F54406F42CD4987B00C7AFD9 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -596,6 +718,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		0EE2CF1552DB8896698C28BD /* Build configuration list for PBXNativeTarget "DynamicIslandUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				80C3D48B29D18AD34C41AA75 /* Release */,
+				76C88DDCF7D65738FAD9DB22 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		F54406E22CD4987A00C7AFD9 /* Build configuration list for PBXProject "DynamicIsland" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

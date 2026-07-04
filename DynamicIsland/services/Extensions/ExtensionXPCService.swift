@@ -22,7 +22,7 @@ import Defaults
 import AtollExtensionKit
 
 @MainActor
-final class ExtensionXPCService: NSObject, AtollXPCServiceProtocol {
+final class ExtensionXPCService: NSObject, @preconcurrency AtollXPCServiceProtocol {
     private let bundleIdentifier: String
     private weak var host: ExtensionXPCServiceHost?
     private weak var connection: NSXPCConnection?

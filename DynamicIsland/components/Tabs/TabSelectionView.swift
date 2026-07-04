@@ -82,6 +82,11 @@ struct TabSelectionView: View {
             tabsArray.append(TabModel(label: "Stats", icon: "chart.xyaxis.line", view: .stats))
         }
 
+        // Usage tab only shown when LLM usage feature is enabled
+        if Defaults[.enableLLMUsageFeature] {
+            tabsArray.append(TabModel(label: "Usage", icon: "chart.bar.doc.horizontal", view: .llmUsage))
+        }
+
         if Defaults[.enableNotes] || (Defaults[.enableClipboardManager] && Defaults[.clipboardDisplayMode] == .separateTab) {
             let label = Defaults[.enableNotes] ? "Notes" : "Clipboard"
             let icon = Defaults[.enableNotes] ? "note.text" : "doc.on.clipboard"

@@ -40,6 +40,13 @@ extension NSItemProvider {
     /// Loads raw data for the given type identifier
     func loadData() async -> Data? {
         guard hasItemConformingToTypeIdentifier(UTType.data.identifier) else { return nil }
+        
+        final class ProviderWrapper: @unchecked Sendable {
+            let provider: NSItemProvider
+            init(_ provider: NSItemProvider) { self.provider = provider }
+        }
+        let wrapper = ProviderWrapper(self)
+
         return await withCheckedContinuation { (cont: CheckedContinuation<Data?, Never>) in
             loadItem(forTypeIdentifier: UTType.data.identifier, options: nil) { item, error in
                 if let error {
@@ -52,7 +59,7 @@ extension NSItemProvider {
                         cont.resume(returning: nil)
                         return
                     }
-                    self.suggestedName = self.suggestedName ?? url.lastPathComponent
+                    wrapper.provider.suggestedName = wrapper.provider.suggestedName ?? url.lastPathComponent
                     let fileManager = FileManager.default
                     let folderURL = url.deletingLastPathComponent()
                     do {

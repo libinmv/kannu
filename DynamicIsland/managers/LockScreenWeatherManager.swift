@@ -1124,13 +1124,17 @@ private final class LockScreenWeatherLocationProvider: NSObject, CLLocationManag
         }
     }
 
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        lastLocation = locations.last
-        flushContinuations(with: lastLocation)
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        Task { @MainActor in
+            self.lastLocation = locations.last
+            self.flushContinuations(with: self.lastLocation)
+        }
     }
 
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        flushContinuations(with: nil)
+    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        Task { @MainActor in
+            self.flushContinuations(with: nil)
+        }
     }
 
     private func flushContinuations(with location: CLLocation?) {

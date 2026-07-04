@@ -45,6 +45,13 @@ final class ExtensionXPCServiceHost: NSObject, NSXPCListenerDelegate {
     func start() {
         guard listener == nil else { return }
 
+        // In UI testing environments (like CI), the mach-services entitlement might be stripped
+        // to bypass amfid ad-hoc signing crashes. Starting the listener without the entitlement crashes the app.
+        if AppRuntimeEnvironment.isUITesting {
+            Logger.log("Bypassing Atoll XPC listener for UI testing", category: .extensions)
+            return
+        }
+
         let listener = NSXPCListener(machServiceName: ExtensionXPCServiceConstants.machServiceName)
         listener.delegate = self
         self.listener = listener
