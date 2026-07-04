@@ -62,8 +62,8 @@ actor AnimatedArtworkManager {
 
         // If MusicKit token has been consistently failing, honour the back-off
         // window before making another network request.
+        // We do NOT cache this failure, allowing a retry on the same song once backoff expires.
         if isWithinTokenBackoff() {
-            cachedVideoURL = nil
             return nil
         }
 
@@ -71,21 +71,17 @@ actor AnimatedArtworkManager {
             return nil
         }
 
+        // Auth and backoff checks passed. Cache the key and clear old video URL.
         cachedKey = key
         cachedVideoURL = nil
 
         guard let songID = await searchSongID(title: title, artist: artist) else {
-            cachedVideoURL = nil
             return nil
         }
 
         guard let videoURL = await fetchEditorialVideoURL(songID: songID) else {
-            cachedVideoURL = nil
             return nil
         }
-
-        // Success — clear any outstanding failure state.
-        resetTokenFailureState()
 
         cachedSongID = songID
         cachedVideoURL = videoURL
@@ -123,6 +119,8 @@ actor AnimatedArtworkManager {
 
         do {
             let response = try await request.response()
+            resetTokenFailureState()
+            
             let normalizedTitle = title.lowercased()
             let normalizedArtist = artist.lowercased()
 
@@ -165,6 +163,7 @@ actor AnimatedArtworkManager {
         do {
             let request = MusicDataRequest(urlRequest: URLRequest(url: url))
             let response = try await request.response()
+            resetTokenFailureState()
 
             guard let json = try JSONSerialization.jsonObject(with: response.data) as? [String: Any],
                   let data = json["data"] as? [[String: Any]],
