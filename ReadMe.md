@@ -121,6 +121,8 @@ Atoll builds upon the work of several open-source projects and draws inspiration
 
 - Wick - Thanks Nate for allowing us to replicate the iOS like Timer design for the Lock Screen Widget
 
+- [**OpenUsage**](https://github.com/robinebers/openusage) - LLM Usage Tracking features
+
 ## Contributors
 
 <a href="https://github.com/Ebullioscopic/Atoll/graphs/contributors">
