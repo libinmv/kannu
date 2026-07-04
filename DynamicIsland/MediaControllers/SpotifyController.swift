@@ -53,6 +53,9 @@ class SpotifyController: MediaControllerProtocol {
     private var lastCanvasRequestTrackURI: String?
     private var lastCanvasRequestDate: Date = .distantPast
     private let canvasResolver = SpotifyCanvasResolver()
+    private let trackMetadataResolver = SpotifyTrackMetadataResolver()
+    private var artistMetadataFetchTask: Task<Void, Never>?
+    private var currentArtistTrackURI: String?
 
     init() {
         setupPlaybackStateChangeObserver()
@@ -81,12 +84,16 @@ class SpotifyController: MediaControllerProtocol {
             .sink { [weak self] _ in
                 self?.lastCanvasRequestTrackURI = nil
                 self?.lastCanvasRequestDate = .distantPast
+                self?.artistMetadataFetchTask?.cancel()
+                self?.artistMetadataFetchTask = nil
+                self?.currentArtistTrackURI = nil
                 if let self {
                     var updatedState = self.playbackState
                     updatedState.liveArtworkURL = nil
                     self.playbackState = updatedState
                 }
                 Task {
+                    await self?.trackMetadataResolver.clearCache()
                     await self?.updatePlaybackInfo()
                 }
             }
@@ -96,6 +103,7 @@ class SpotifyController: MediaControllerProtocol {
         notificationTask?.cancel()
         artworkFetchTask?.cancel()
         canvasFetchTask?.cancel()
+        artistMetadataFetchTask?.cancel()
         sessionChangeCancellable?.cancel()
     }
 
@@ -141,12 +149,14 @@ class SpotifyController: MediaControllerProtocol {
         let trackIdentifier = descriptor.atIndex(10)?.stringValue ?? ""
         let spotifyURLString = descriptor.atIndex(11)?.stringValue ?? ""
         let trackURI = Self.canonicalTrackURI(from: trackIdentifier, spotifyURLString: spotifyURLString)
+        let cachedArtistResult = await trackMetadataResolver.cachedArtistResult(for: trackURI)
+        let displayArtist = cachedArtistResult?.displayName ?? currentTrackArtist
 
         var state = PlaybackState(
             bundleIdentifier: Self.bundleIdentifier,
             isPlaying: isPlaying,
             title: currentTrack,
-            artist: currentTrackArtist,
+            artist: displayArtist,
             album: currentTrackAlbum,
             currentTime: currentTime,
             duration: duration,
@@ -177,9 +187,20 @@ class SpotifyController: MediaControllerProtocol {
             canvasFetchTask = nil
         }
 
+        let isSameArtistTrack = trackURI == currentArtistTrackURI
+
+        if !isSameArtistTrack {
+            currentArtistTrackURI = trackURI.isEmpty ? nil : trackURI
+            artistMetadataFetchTask?.cancel()
+            artistMetadataFetchTask = nil
+        }
+
         playbackState = state
 
         if !trackURI.isEmpty {
+            if cachedArtistResult == nil {
+                scheduleArtistMetadataFetchIfNeeded(for: trackURI)
+            }
             scheduleCanvasFetchIfNeeded(for: trackURI)
         }
 
@@ -202,6 +223,7 @@ class SpotifyController: MediaControllerProtocol {
                         }
                         var updatedState = currentState
                         updatedState.artwork = data
+                        updatedState.artist = self.playbackState.artist
                         updatedState.liveArtworkURL = self.playbackState.liveArtworkURL
                         self.playbackState = updatedState
                         self.lastArtworkURL = artworkURL
@@ -212,6 +234,33 @@ class SpotifyController: MediaControllerProtocol {
                         self?.artworkFetchTask = nil
                     }
                 }
+            }
+        }
+    }
+
+    private func scheduleArtistMetadataFetchIfNeeded(for trackURI: String) {
+        guard !trackURI.isEmpty else { return }
+        guard artistMetadataFetchTask == nil else { return }
+
+        artistMetadataFetchTask = Task { [weak self] in
+            guard let self else { return }
+
+            let displayName = await self.trackMetadataResolver.artistDisplayName(for: trackURI)
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                guard self.currentArtistTrackURI == trackURI else {
+                    self.artistMetadataFetchTask = nil
+                    return
+                }
+
+                if let displayName, self.playbackState.artist != displayName {
+                    var updatedState = self.playbackState
+                    updatedState.artist = displayName
+                    self.playbackState = updatedState
+                }
+
+                self.artistMetadataFetchTask = nil
             }
         }
     }
@@ -322,6 +371,181 @@ class SpotifyController: MediaControllerProtocol {
             CharacterSet.alphanumerics.contains(scalar)
         }
     }
+}
+
+private actor SpotifyTrackMetadataResolver {
+    private struct CacheEntry {
+        let displayName: String?
+        let expiresAt: Date
+    }
+
+    private struct TrackResponse: Decodable {
+        let artists: [Artist]
+    }
+
+    private struct Artist: Decodable {
+        let name: String
+    }
+
+    private var cache: [String: CacheEntry] = [:]
+
+    func clearCache() {
+        cache.removeAll()
+    }
+
+    func cachedArtistResult(for trackURI: String) -> SpotifyArtistCacheResult? {
+        guard !trackURI.isEmpty,
+              let entry = cache[trackURI],
+              entry.expiresAt > Date()
+        else {
+            return nil
+        }
+
+        return SpotifyArtistCacheResult(displayName: entry.displayName)
+    }
+
+    func artistDisplayName(for trackURI: String) async -> String? {
+        if let cached = cachedArtistResult(for: trackURI) {
+            return cached.displayName
+        }
+
+        let displayName = await fetchArtistDisplayName(for: trackURI, retryOnUnauthorized: true)
+        let cacheLifetime: TimeInterval = displayName == nil ? 300 : 3600
+        cache[trackURI] = CacheEntry(displayName: displayName, expiresAt: Date().addingTimeInterval(cacheLifetime))
+        return displayName
+    }
+
+    private func fetchArtistDisplayName(for trackURI: String, retryOnUnauthorized: Bool) async -> String? {
+        guard let trackID = Self.trackID(from: trackURI) else {
+            return nil
+        }
+
+        if let displayName = await fetchPublicEmbedArtistDisplayName(for: trackID) {
+            return displayName
+        }
+
+        guard let accessToken = await SpotifyAuthManager.shared.validAccessToken() else {
+            return nil
+        }
+
+        var components = URLComponents(string: "https://api.spotify.com/v1/tracks/\(trackID)")
+        components?.queryItems = [
+            URLQueryItem(name: "market", value: "from_token")
+        ]
+
+        guard let url = components?.url else {
+            return nil
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                return nil
+            }
+
+            if httpResponse.statusCode == 401, retryOnUnauthorized {
+                await SpotifyAuthManager.shared.invalidateAccessToken()
+                return await fetchArtistDisplayName(for: trackURI, retryOnUnauthorized: false)
+            }
+
+            guard (200..<300).contains(httpResponse.statusCode) else {
+                return nil
+            }
+
+            let track = try JSONDecoder().decode(TrackResponse.self, from: data)
+            let artistNames = track.artists
+                .map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+
+            guard !artistNames.isEmpty else {
+                return nil
+            }
+
+            return artistNames.joined(separator: ", ")
+        } catch {
+            return nil
+        }
+    }
+
+    private func fetchPublicEmbedArtistDisplayName(for trackID: String) async -> String? {
+        guard let url = URL(string: "https://open.spotify.com/embed/track/\(trackID)") else {
+            return nil
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue(
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36",
+            forHTTPHeaderField: "User-Agent"
+        )
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200..<300).contains(httpResponse.statusCode),
+                  let html = String(data: data, encoding: .utf8)
+            else {
+                return nil
+            }
+
+            return Self.artistDisplayNameFromEmbedHTML(html)
+        } catch {
+            return nil
+        }
+    }
+
+    static func artistDisplayNameFromEmbedHTML(_ html: String) -> String? {
+        guard let scriptStart = html.range(of: #"<script id="__NEXT_DATA__""#),
+              let openingTagEnd = html[scriptStart.upperBound...].range(of: ">"),
+              let scriptEnd = html[openingTagEnd.upperBound...].range(of: "</script>")
+        else {
+            return nil
+        }
+
+        let jsonString = String(html[openingTagEnd.upperBound..<scriptEnd.lowerBound])
+        guard let data = jsonString.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let props = root["props"] as? [String: Any],
+              let pageProps = props["pageProps"] as? [String: Any],
+              let state = pageProps["state"] as? [String: Any],
+              let stateData = state["data"] as? [String: Any],
+              let entity = stateData["entity"] as? [String: Any],
+              let artists = entity["artists"] as? [[String: Any]]
+        else {
+            return nil
+        }
+
+        let artistNames = artists
+            .compactMap { $0["name"] as? String }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard !artistNames.isEmpty else {
+            return nil
+        }
+
+        return artistNames.joined(separator: ", ")
+    }
+
+    private static func trackID(from trackURI: String) -> String? {
+        let components = trackURI.split(separator: ":")
+        guard components.count == 3,
+              components[0] == "spotify",
+              components[1] == "track"
+        else {
+            return nil
+        }
+
+        let identifier = String(components[2])
+        return identifier.isEmpty ? nil : identifier
+    }
+}
+
+private struct SpotifyArtistCacheResult: Sendable {
+    let displayName: String?
 }
 
 private actor SpotifyCanvasResolver {
