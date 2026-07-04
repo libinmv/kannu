@@ -2525,6 +2525,10 @@ private struct DevicesSettingsView: View {
                     Text("Scroll device name in HUD")
                 }
                 .settingsHighlight(id: highlightID("Scroll device name in HUD"))
+                Defaults.Toggle(key: .showAirPodsListeningModeChanges) {
+                    Text("Show AirPods listening mode changes")
+                }
+                .settingsHighlight(id: highlightID("Show AirPods listening mode changes"))
                 VStack(alignment: .leading, spacing: 12) {
                     Text("HUD icon style")
                         .font(.system(size: 13, weight: .semibold))

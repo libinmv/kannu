@@ -72,7 +72,12 @@ struct SystemEventIndicatorModifier: View {
                         .frame(width: 20, height: 15)
                         .foregroundStyle(.white)
                 case .bluetoothAudio:
-                    if !icon.isEmpty {
+                    if value < 0, let mode = AirPodsListeningMode.fromHUDSymbol(icon) {
+                        AirPodsListeningModeSymbol(mode: mode)
+                            .contentTransition(.interpolate)
+                            .frame(width: 20, height: 15)
+                            .foregroundStyle(.white)
+                    } else if !icon.isEmpty {
                         Image(systemName: icon)
                             .contentTransition(.interpolate)
                             .frame(width: 20, height: 15)
@@ -95,7 +100,16 @@ struct SystemEventIndicatorModifier: View {
             case .backlight:
                 ProgressSection(value: $value, showPercentages: showProgressPercentages)
             case .bluetoothAudio:
-                ProgressSection(value: $value, showPercentages: showProgressPercentages, colorMode: .battery)
+                if value < 0, let mode = AirPodsListeningMode.fromHUDSymbol(icon) {
+                    Text(mode.displayName)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .allowsTightening(true)
+                } else {
+                    ProgressSection(value: $value, showPercentages: showProgressPercentages, colorMode: .battery)
+                }
             default:
                 ProgressSection(value: $value, showPercentages: showProgressPercentages)
             }
