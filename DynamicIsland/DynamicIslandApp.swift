@@ -793,6 +793,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }.store(in: &cancellables)
 
+        // Agent status (traffic light live activity)
+        if Defaults[.enableAgentStatusFeature] {
+            _ = AgentHookInstaller.shared // triggers legacy hook migration
+            CursorAgentStatusMonitor.shared.start()
+        }
+        Defaults.publisher(.enableAgentStatusFeature, options: []).sink { change in
+            Task { @MainActor in
+                if change.newValue {
+                    CursorAgentStatusMonitor.shared.start()
+                } else {
+                    CursorAgentStatusMonitor.shared.stop()
+                }
+            }
+        }.store(in: &cancellables)
+
         // Note: Polling setting removed - now uses event-driven private API detection only
 
         NotificationCenter.default.addObserver(

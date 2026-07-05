@@ -1141,18 +1141,24 @@ extension Defaults.Keys {
     static let timerControlWindowEnabled = Key<Bool>("timerControlWindowEnabled", default: true)
     
     // MARK: ColorPicker Feature
-    static let enableColorPickerFeature = Key<Bool>("enableColorPickerFeature", default: true)
+    static let enableColorPickerFeature = Key<Bool>("enableColorPickerFeature", default: false)
     static let showColorFormats = Key<Bool>("showColorFormats", default: true)
     static let colorPickerDisplayMode = Key<ColorPickerDisplayMode>("colorPickerDisplayMode", default: .panel)
     static let colorHistorySize = Key<Int>("colorHistorySize", default: 10)
     static let showColorPickerIcon = Key<Bool>("showColorPickerIcon", default: true)
     
     // MARK: Clipboard Feature
-    static let enableClipboardManager = Key<Bool>("enableClipboardManager", default: true)
+    static let enableClipboardManager = Key<Bool>("enableClipboardManager", default: false)
     static let clipboardHistorySize = Key<Int>("clipboardHistorySize", default: 3)
     static let showClipboardIcon = Key<Bool>("showClipboardIcon", default: true)
     static let clipboardDisplayMode = Key<ClipboardDisplayMode>("clipboardDisplayMode", default: .panel)
     
+    // MARK: Agent Status Feature (Cursor)
+    static let enableAgentStatusFeature = Key<Bool>("enableAgentStatusFeature", default: false)
+    static let agentStatusStaleMinutes = Key<Int>("agentStatusStaleMinutes", default: 30)
+    static let agentStoppedCollapseMinutes = Key<Int>("agentStoppedCollapseMinutes", default: 5)
+    static let showAgentStoppedIndicator = Key<Bool>("showAgentStoppedIndicator", default: false)
+
     // MARK: Screen Assistant Feature
     static let enableScreenAssistant = Key<Bool>("enableScreenAssistant", default: true)
     static let screenAssistantDisplayMode = Key<ScreenAssistantDisplayMode>("screenAssistantDisplayMode", default: .panel)

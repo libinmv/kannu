@@ -197,7 +197,6 @@
 				54078F29304A9DBBEFBDF932 /* DynamicIslandUITests.swift */,
 				DAA671E7B1B26733F02166C5 /* Info.plist */,
 			);
-			name = DynamicIslandUITests;
 			path = DynamicIslandUITests;
 			sourceTree = "<group>";
 		};
@@ -583,7 +582,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 12;
 				DEVELOPMENT_ASSET_PATHS = "\"DynamicIsland/Preview Content\"";
-				DEVELOPMENT_TEAM = 9Y64TRM77N;
+				DEVELOPMENT_TEAM = 3Z7WX43G8Q;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -656,7 +655,7 @@
 				CURRENT_PROJECT_VERSION = 12;
 				DEVELOPMENT_ASSET_PATHS = "\"DynamicIsland/Preview Content\"";
 				DEVELOPMENT_TEAM = "";
-				"DEVELOPMENT_TEAM[sdk=macosx*]" = 9Y64TRM77N;
+				"DEVELOPMENT_TEAM[sdk=macosx*]" = 3Z7WX43G8Q;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;

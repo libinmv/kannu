@@ -66,6 +66,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
     case shortcuts
     case notes
     case terminal
+    case agentStatus
     case about
 
     var id: String { rawValue }
@@ -80,7 +81,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .clipboard, .screenAssistant, .colorPicker, .shelf,
              .downloads, .shortcuts:                                         return .utilities
         case .stats, .terminal:                                              return .developer
-        case .extensions:                                                    return .integrations
+        case .extensions, .agentStatus:                                      return .integrations
         case .about:                                                         return .info
         }
     }
@@ -107,6 +108,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .shortcuts: return String(localized: "Shortcuts")
         case .notes: return String(localized: "Notes")
         case .terminal: return String(localized: "Terminal")
+        case .agentStatus: return String(localized: "Agent Status")
         case .about: return String(localized: "About")
         }
     }
@@ -133,6 +135,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .shortcuts: return "keyboard"
         case .notes: return "note.text"
         case .terminal: return "apple.terminal"
+        case .agentStatus: return "light.beacon.max"
         case .about: return "info.circle"
         }
     }
@@ -159,6 +162,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .shortcuts: return .orange
         case .notes: return Color(red: 0.979, green: 0.716, blue: 0.153, opacity: 1.000)
         case .terminal: return Color(red: 0.2, green: 0.8, blue: 0.4)
+        case .agentStatus: return .yellow
         case .about: return .secondary
         }
     }
@@ -509,6 +513,7 @@ struct SettingsView: View {
             .terminal,
             // Integrations
             .extensions,
+            .agentStatus,
             // Info
             .about
         ]
@@ -929,6 +934,8 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .terminal, title: "Scrollback lines", keywords: ["terminal", "scrollback", "buffer", "history"], highlightID: SettingsTab.terminal.highlightID(for: "Scrollback lines")),
             SettingsSearchEntry(tab: .terminal, title: "Option as Meta", keywords: ["terminal", "option", "meta", "alt", "key"], highlightID: SettingsTab.terminal.highlightID(for: "Option as Meta")),
             SettingsSearchEntry(tab: .terminal, title: "Mouse reporting", keywords: ["terminal", "mouse", "reporting", "vim", "tmux"], highlightID: SettingsTab.terminal.highlightID(for: "Mouse reporting")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Enable Cursor Agent Status", keywords: ["agent", "cursor", "status", "traffic", "light", "ai", "notch"], highlightID: SettingsTab.agentStatus.highlightID(for: "Enable Cursor Agent Status")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Editor Hooks", keywords: ["agent", "cursor", "vscode", "copilot", "codex", "hook", "install", "integration"], highlightID: SettingsTab.agentStatus.highlightID(for: "Cursor Hook")),
         ]
     }
 
@@ -999,6 +1006,10 @@ struct SettingsView: View {
         case .screenAssistant:
             SettingsForm(tab: .screenAssistant) {
                 ScreenAssistantSettings()
+            }
+        case .agentStatus:
+            SettingsForm(tab: .agentStatus) {
+                AgentStatusSettings()
             }
         case .colorPicker:
             SettingsForm(tab: .colorPicker) {
@@ -8632,5 +8643,155 @@ private extension QuickShareProvider {
 
     var symbolFallbackName: String {
         id == "System Share Menu" ? "square.and.arrow.up.on.square" : "square.and.arrow.up"
+    }
+}
+
+struct AgentStatusSettings: View {
+    @ObservedObject var monitor = CursorAgentStatusMonitor.shared
+    @ObservedObject var hookInstaller = AgentHookInstaller.shared
+    @Default(.enableAgentStatusFeature) var enableAgentStatusFeature
+    @Default(.agentStatusStaleMinutes) var agentStatusStaleMinutes
+    @Default(.agentStoppedCollapseMinutes) var agentStoppedCollapseMinutes
+    @Default(.showAgentStoppedIndicator) var showAgentStoppedIndicator
+
+    private func highlightID(_ title: String) -> String {
+        SettingsTab.agentStatus.highlightID(for: title)
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                Defaults.Toggle(key: .enableAgentStatusFeature) {
+                    Text("Enable Agent Status")
+                }
+                .settingsHighlight(id: highlightID("Enable Cursor Agent Status"))
+            } header: {
+                Text("Agent Status")
+            } footer: {
+                Text("Shows a traffic light in the notch while AI agents run in your editor: yellow when an agent is thinking, green when it is executing a task, and red when it has stopped.")
+            }
+
+            if enableAgentStatusFeature {
+                Section {
+                    legendRow(color: .yellow, title: String(localized: "Thinking"), detail: String(localized: "The agent is reasoning or composing a response"))
+                    legendRow(color: .green, title: String(localized: "Executing"), detail: String(localized: "The agent is running tools and doing work"))
+                    legendRow(color: .red, title: String(localized: "Stopped"), detail: String(localized: "The agent has finished or was aborted"))
+                    HStack {
+                        Text("Current State")
+                        Spacer()
+                        Text(stateDescription(monitor.trafficLightState))
+                            .foregroundColor(.secondary)
+                    }
+                } header: {
+                    Text("Traffic Light")
+                }
+
+                Section {
+                    Defaults.Toggle(key: .showAgentStoppedIndicator) {
+                        Text("Keep red light visible when idle")
+                    }
+                    .settingsHighlight(id: highlightID("Keep red light visible when idle"))
+
+                    HStack {
+                        Text("Hide indicator after agent stops for")
+                        Spacer()
+                        Picker("", selection: $agentStoppedCollapseMinutes) {
+                            Text("1 minute").tag(1)
+                            Text("2 minutes").tag(2)
+                            Text("5 minutes").tag(5)
+                            Text("10 minutes").tag(10)
+                            Text("15 minutes").tag(15)
+                        }
+                        .pickerStyle(.menu)
+                        .frame(minWidth: 120)
+                    }
+                    .disabled(showAgentStoppedIndicator)
+                    .opacity(showAgentStoppedIndicator ? 0.5 : 1.0)
+                    .settingsHighlight(id: highlightID("Hide red light after"))
+
+                    HStack {
+                        Text("Consider agents inactive after")
+                        Spacer()
+                        Picker("", selection: $agentStatusStaleMinutes) {
+                            Text("10 minutes").tag(10)
+                            Text("15 minutes").tag(15)
+                            Text("30 minutes").tag(30)
+                            Text("60 minutes").tag(60)
+                        }
+                        .pickerStyle(.menu)
+                        .frame(minWidth: 120)
+                    }
+                    .settingsHighlight(id: highlightID("Consider agents inactive after"))
+                } header: {
+                    Text("Indicator")
+                } footer: {
+                    Text("The entire traffic light disappears once an agent has been stopped for the chosen time, and returns when an agent starts working again. Sessions with no activity beyond the inactive window are ignored entirely. While the red light is kept visible when idle, the hide delay has no effect.")
+                }
+
+                Section {
+                    ForEach(AgentHookProvider.allCases) { provider in
+                        hookRow(for: provider)
+                    }
+                    .settingsHighlight(id: highlightID("Cursor Hook"))
+
+                    if let error = hookInstaller.lastError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                } header: {
+                    Text("Editor Hooks")
+                } footer: {
+                    Text("Installs hooks that report agent activity in real time for the most accurate status: Cursor (~/.cursor/hooks.json), VS Code Copilot (~/.copilot/hooks), and Codex CLI (~/.codex/hooks.json). Existing hooks are preserved and the hooks never block your agents. Without a hook, Atoll falls back to polling Cursor's agent transcripts.")
+                }
+            }
+        }
+        .onAppear {
+            hookInstaller.refresh()
+        }
+        .navigationTitle("Agent Status")
+    }
+
+    @ViewBuilder
+    private func hookRow(for provider: AgentHookProvider) -> some View {
+        let installed = hookInstaller.isInstalled(provider)
+        HStack {
+            Circle()
+                .fill(installed ? Color.green : Color.secondary.opacity(0.5))
+                .frame(width: 8, height: 8)
+            Text(provider.displayName)
+            Spacer()
+            Button(installed ? "Remove" : "Install") {
+                if installed {
+                    hookInstaller.uninstall(provider)
+                } else {
+                    hookInstaller.install(provider)
+                }
+            }
+        }
+    }
+
+    private func stateDescription(_ state: AgentTrafficLightState) -> String {
+        switch state {
+        case .thinking: return String(localized: "Thinking")
+        case .executing: return String(localized: "Executing")
+        case .stopped: return String(localized: "Stopped")
+        case .inactive: return String(localized: "Inactive")
+        }
+    }
+
+    @ViewBuilder
+    private func legendRow(color: Color, title: String, detail: String) -> some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(color)
+                .frame(width: 10, height: 10)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
     }
 }
