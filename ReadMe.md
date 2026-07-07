@@ -1,6 +1,6 @@
-# AgentStat Dynamic Island
+# കണ്ണ് (Kannu)
 
-AgentStat Dynamic Island is a macOS fork of [Atoll](https://github.com/Ebullioscopic/Atoll) focused on **AI agent status** in the MacBook notch. It shows a traffic-light indicator while Cursor, VS Code Copilot, or Codex agents run, with optional custom notch backgrounds and mobile push notifications.
+**Kannu** is a macOS notch utility focused on **AI agent status** in the MacBook notch. It shows a traffic-light indicator while Cursor, VS Code Copilot, or Codex agents run, with optional custom notch backgrounds and mobile push notifications.
 
 This project is licensed under GPL v3. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for upstream attribution.
 
@@ -9,10 +9,10 @@ This project is licensed under GPL v3. See [LICENSE](LICENSE) and [NOTICE](NOTIC
 - **Agent status traffic light** — yellow (thinking), green (executing), red (stopped), fed by editor hooks and transcript polling.
 - **Custom notch skins** — upload a background image clipped to the notch shape, with optional dark scrim for readability.
 - **Mobile notifications (optional)** — push agent state changes to iPhone, Apple Watch, or Android via ntfy, Pushover, or a custom webhook.
-- Media controls, live activities, lock screen widgets, stats, timers, clipboard, and shelf (inherited from Atoll).
+- Media controls, live activities, lock screen widgets, stats, timers, clipboard, and shelf.
 - **Keyboard shortcuts off by default** — enable globally in Settings → Shortcuts when you want hotkeys.
 
-Calendar, terminal, and color picker features from upstream Atoll are removed in this fork.
+Calendar, terminal, and color picker features from the upstream notch lineage are removed in this fork.
 
 ## Requirements
 
@@ -24,14 +24,14 @@ Calendar, terminal, and color picker features from upstream Atoll are removed in
 ## Build from Source
 
 1. Open `DynamicIsland.xcodeproj` in Xcode.
-2. Select the **AgentStat** scheme and your Mac as the run destination.
+2. Select the **Kannu** scheme and your Mac as the run destination.
 3. Build and run (⌘R).
 
-Application support data is stored under `~/Library/Application Support/AgentStatDynamicIsland/`. Agent status hooks continue to write to `~/.atoll/agent-status/` for compatibility with existing Cursor hook installers.
+Application support data is stored under `~/Library/Application Support/Kannu/`. Agent status hooks write to `~/.kannu/agent-status/`.
 
 ## Quick Start
 
-1. Launch AgentStat and complete onboarding.
+1. Launch Kannu and complete onboarding.
 2. Open **Settings → Agent Status** and install editor hooks for Cursor (recommended).
 3. Run an AI agent in Cursor — the notch shows the traffic-light status when collapsed.
 4. Optionally upload a notch skin under **Settings → Appearance → Notch skin**.
@@ -51,7 +51,7 @@ Notifications are debounced (~2 seconds) and skip the inactive state unless you 
 
 ## Phase 2 — Windows and Linux
 
-See [docs/PHASE2.md](docs/PHASE2.md) for the planned shared `agentstat-core` watcher and Tauri-based shells for Windows 11 and Linux.
+See [docs/PHASE2.md](docs/PHASE2.md) for the planned shared `kannu-core` watcher and Tauri-based shells for Windows 11 and Linux.
 
 ## License
 
@@ -59,4 +59,4 @@ GPL v3 — see [LICENSE](LICENSE).
 
 ## Acknowledgments
 
-AgentStat Dynamic Island is derived from [Atoll](https://github.com/Ebullioscopic/Atoll), which builds on [Boring.Notch](https://github.com/TheBoredTeam/boring.notch) and other projects listed in the upstream README.
+Kannu builds on [Boring.Notch](https://github.com/TheBoredTeam/boring.notch) and other open-source macOS notch projects listed in upstream documentation.

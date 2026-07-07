@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -147,7 +147,7 @@ class LockScreenManager: ObservableObject {
         LockScreenTimerWidgetManager.shared.handleLockStateChange(isLocked: true)
         TimerControlWindowManager.shared.hide(animated: false)
         
-        // THEN trigger lock icon in Atoll (only if enabled in settings)
+        // THEN trigger lock icon in Kannu (only if enabled in settings)
         if Defaults[.enableLockScreenLiveActivity] {
             print("[\(timestamp())] LockScreenManager: 🔴 Starting lock icon live activity")
             coordinator.toggleExpandingView(status: true, type: .lockScreen)

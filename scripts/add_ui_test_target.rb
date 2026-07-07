@@ -23,7 +23,7 @@ ui_test_target.add_file_references([file_ref])
 
 ui_test_target.build_configurations.each do |config|
   config.build_settings['TEST_TARGET_NAME'] = 'DynamicIsland'
-  config.build_settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'com.atoll.DynamicIslandUITests'
+  config.build_settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'com.kannu.DynamicIslandUITests'
   config.build_settings['INFOPLIST_FILE'] = 'DynamicIslandUITests/Info.plist'
   config.build_settings['SWIFT_VERSION'] = '5.0'
   config.build_settings['MACOSX_DEPLOYMENT_TARGET'] = '14.0'

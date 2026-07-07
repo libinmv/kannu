@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@ class ClipboardWindowManager: ObservableObject {
     static let shared = ClipboardWindowManager()
     
     private var clipboardWindow: NSWindow?
+    private var clipboardWindowDelegate: WindowDelegate?
     
     private init() {}
     
@@ -71,10 +72,13 @@ class ClipboardWindowManager: ObservableObject {
         window.contentView = hostingView
         
         // Handle window closing
-        window.delegate = WindowDelegate { [weak self] window in
+        let delegate = WindowDelegate { [weak self] window in
             ScreenCaptureVisibilityManager.shared.unregister(window)
             self?.clipboardWindow = nil
+            self?.clipboardWindowDelegate = nil
         }
+        window.delegate = delegate
+        clipboardWindowDelegate = delegate
 
         ScreenCaptureVisibilityManager.shared.register(window, scope: .panelsOnly)
         

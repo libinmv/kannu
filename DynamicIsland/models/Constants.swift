@@ -1,9 +1,9 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * Originally from boring.notch project
- * Modified and adapted for Atoll (DynamicIsland)
+ * Modified and adapted for Kannu (കണ്ണ്)
  * See NOTICE for details.
  *
  * This program is free software: you can redistribute it and/or modify
@@ -36,12 +36,21 @@ let temporaryDirectory = FileManager.default.urls(for: .cachesDirectory, in: .us
 let spacing: CGFloat = 16
 
 enum AppSupportPaths {
-    static let subdirectory = "AgentStatDynamicIsland"
-    static let legacySubdirectory = "DynamicIsland"
+    static let subdirectory = "Kannu"
+    static let legacySubdirectories = ["AgentStatDynamicIsland", "DynamicIsland"]
 
     static var root: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let primary = base.appendingPathComponent(subdirectory, isDirectory: true)
+        if !FileManager.default.fileExists(atPath: primary.path) {
+            for legacy in legacySubdirectories {
+                let legacyURL = base.appendingPathComponent(legacy, isDirectory: true)
+                if FileManager.default.fileExists(atPath: legacyURL.path) {
+                    try? FileManager.default.moveItem(at: legacyURL, to: primary)
+                    break
+                }
+            }
+        }
         try? FileManager.default.createDirectory(at: primary, withIntermediateDirectories: true)
         return primary
     }
@@ -118,13 +127,13 @@ struct CustomIdleAnimation: Codable, Hashable, Equatable, Defaults.Serializable,
     
     /// Get the effective transform config (override or default)
     func getTransformConfig() -> AnimationTransformConfig {
-        let override = Defaults[.animationTransformOverrides][id.uuidString]
-        if let override = override {
-            print("📋 [CustomIdleAnimation] Found override for '\(name)': \(override)")
-        } else {
-            print("📋 [CustomIdleAnimation] No override for '\(name)', using default")
+        if let override = Defaults[.animationTransformOverrides][id.uuidString] {
+            return override
         }
-        return override ?? .default
+        if id == BuiltInIdleAnimation.eyesID {
+            return BuiltInIdleAnimation.eyesTransform
+        }
+        return .default
     }
 }
 
@@ -158,13 +167,69 @@ enum AnimationLoopMode: String, Codable, CaseIterable {
 }
 
 enum AnimationSource: Codable, Hashable, Equatable {
+    case shimmer
+    case neonEyes
     case lottieFile(URL)        // Local file (in app support or bundle)
     case lottieURL(URL)         // Remote URL
-    
+    case videoFile(URL)         // Local MP4/video for idle or easter egg
+
+    private enum CodingKeys: String, CodingKey {
+        case shimmer
+        case neonEyes
+        case lottieFile
+        case lottieURL
+        case videoFile
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if container.contains(.shimmer) {
+            self = .shimmer
+            return
+        }
+        if container.contains(.neonEyes) {
+            self = .neonEyes
+            return
+        }
+        if let url = try container.decodeIfPresent(URL.self, forKey: .lottieFile) {
+            self = .lottieFile(url)
+            return
+        }
+        if let url = try container.decodeIfPresent(URL.self, forKey: .lottieURL) {
+            self = .lottieURL(url)
+            return
+        }
+        if let url = try container.decodeIfPresent(URL.self, forKey: .videoFile) {
+            self = .videoFile(url)
+            return
+        }
+        throw DecodingError.dataCorrupted(
+            DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Unknown animation source")
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .shimmer:
+            try container.encode(true, forKey: .shimmer)
+        case .neonEyes:
+            try container.encode(true, forKey: .neonEyes)
+        case .lottieFile(let url):
+            try container.encode(url, forKey: .lottieFile)
+        case .lottieURL(let url):
+            try container.encode(url, forKey: .lottieURL)
+        case .videoFile(let url):
+            try container.encode(url, forKey: .videoFile)
+        }
+    }
+
     var displayType: String {
         switch self {
+        case .shimmer, .neonEyes: return "Built-in"
         case .lottieFile: return "Local"
         case .lottieURL: return "Remote"
+        case .videoFile: return "Video"
         }
     }
 }
@@ -927,10 +992,11 @@ extension Defaults.Keys {
     static let settingsIconInNotch = Key<Bool>("settingsIconInNotch", default: true)
     static let lightingEffect = Key<Bool>("lightingEffect", default: true)
     static let accentColor = Key<Color>("accentColor", default: Color.blue)
+    static let notchFillColor = Key<Color>("notchFillColor", default: Color.black)
     static let enableShadow = Key<Bool>("enableShadow", default: true)
     static let cornerRadiusScaling = Key<Bool>("cornerRadiusScaling", default: true)
     static let useModernCloseAnimation = Key<Bool>("useModernCloseAnimation", default: true)
-    static let showNotHumanFace = Key<Bool>("showNotHumanFace", default: false)
+    static let showNotHumanFace = Key<Bool>("showNotHumanFace", default: true)
     static let customIdleAnimations = Key<[CustomIdleAnimation]>("customIdleAnimations", default: [])
     static let selectedIdleAnimation = Key<CustomIdleAnimation?>("selectedIdleAnimation", default: nil)
     static let animationTransformOverrides = Key<[String: AnimationTransformConfig]>("animationTransformOverrides", default: [:])
@@ -1216,6 +1282,7 @@ extension Defaults.Keys {
     static let enableAgentStatusFeature = Key<Bool>("enableAgentStatusFeature", default: true)
     static let agentStatusStaleMinutes = Key<Int>("agentStatusStaleMinutes", default: 30)
     static let agentStoppedCollapseMinutes = Key<Int>("agentStoppedCollapseMinutes", default: 5)
+    static let agentInactiveDisplayMinutes = Key<Int>("agentInactiveDisplayMinutes", default: 5)
     static let showAgentStoppedIndicator = Key<Bool>("showAgentStoppedIndicator", default: false)
 
     // MARK: Agent Status Mobile Notifications
@@ -1460,7 +1527,7 @@ extension Defaults.Keys {
         Defaults[.enableLunarIntegration] = isIntegrationEnabled && selectedProvider == .lunar
     }
 
-    /// AgentStat removed calendar/reminder features; keep persisted Atoll prefs from re-enabling them.
+    /// Kannu removed calendar/reminder features; keep persisted legacy prefs from re-enabling them.
     static func enforceRemovedFeatureDefaults() {
         Defaults[.showCalendar] = false
         Defaults[.enableReminderLiveActivity] = false

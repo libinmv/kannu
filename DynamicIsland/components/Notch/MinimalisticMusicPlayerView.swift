@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -203,7 +203,7 @@ struct MinimalisticMusicPlayerView: View {
             let chars = Array(newText)
 
             animationTask = Task {
-                for (i, c) in chars.enumerated() {
+                for (_, c) in chars.enumerated() {
                     if Task.isCancelled { return }
                     try? await Task.sleep(for: .milliseconds(Int(30 / max(playbackRate, 0.1))))
                     if Task.isCancelled { return }
@@ -759,11 +759,11 @@ struct MinimalisticMusicPlayerView: View {
             )
         case .shuffle:
             controlButton(icon: "shuffle", isActive: musicManager.isShuffled) {
-                Task { await musicManager.toggleShuffle() }
+                Task { musicManager.toggleShuffle() }
             }
         case .repeatMode:
             controlButton(icon: repeatIcon, isActive: musicManager.repeatMode != .off, symbolEffect: .replace) {
-                Task { await musicManager.toggleRepeat() }
+                Task { musicManager.toggleRepeat() }
             }
         case .mediaOutput:
             MinimalisticMediaOutputButton()

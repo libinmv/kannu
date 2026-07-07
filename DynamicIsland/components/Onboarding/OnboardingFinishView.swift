@@ -1,9 +1,9 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * Originally from boring.notch project
- * Modified and adapted for Atoll (DynamicIsland)
+ * Modified and adapted for Kannu (കണ്ണ്)
  * See NOTICE for details.
  *
  * This program is free software: you can redistribute it and/or modify
@@ -59,19 +59,6 @@ struct OnboardingFinishView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .keyboardShortcut(.defaultAction)
-                
-                // Privacy Policy Link
-                Button(action: {
-                    if let url = URL(string: "https://ebullioscopic.github.io/DynamicIsland/privacy-policy") {
-                        NSWorkspace.shared.open(url)
-                    }
-                }) {
-                    Text("Privacy Policy")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 4)
             }
             .padding(24)
         }

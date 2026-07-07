@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -551,7 +551,7 @@ final class ExtensionRPCService {
                       let fileData = Data(base64Encoded: dataStr) else { continue }
 
                 let tempDir = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("AtollExtensionFiles", isDirectory: true)
+                    .appendingPathComponent("KannuExtensionFiles", isDirectory: true)
                 try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
                 let fileURL = tempDir.appendingPathComponent(fileName)
                 guard (try? fileData.write(to: fileURL)) != nil else { continue }

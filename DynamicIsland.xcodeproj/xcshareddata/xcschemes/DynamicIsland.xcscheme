@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "F54406E62CD4987A00C7AFD9"
-               BuildableName = "AgentStat.app"
+               BuildableName = "Kannu.app"
                BlueprintName = "DynamicIsland"
                ReferencedContainer = "container:DynamicIsland.xcodeproj">
             </BuildableReference>
@@ -57,7 +57,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "F54406E62CD4987A00C7AFD9"
-            BuildableName = "AgentStat.app"
+            BuildableName = "Kannu.app"
             BlueprintName = "DynamicIsland"
             ReferencedContainer = "container:DynamicIsland.xcodeproj">
          </BuildableReference>
@@ -74,7 +74,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "F54406E62CD4987A00C7AFD9"
-            BuildableName = "AgentStat.app"
+            BuildableName = "Kannu.app"
             BlueprintName = "DynamicIsland"
             ReferencedContainer = "container:DynamicIsland.xcodeproj">
          </BuildableReference>

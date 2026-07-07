@@ -1,9 +1,9 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * Originally from boring.notch project
- * Modified and adapted for Atoll (DynamicIsland)
+ * Modified and adapted for Kannu (കണ്ണ്)
  * See NOTICE for details.
  *
  * This program is free software: you can redistribute it and/or modify
@@ -139,7 +139,7 @@ class WebcamManager: NSObject, ObservableObject {
     /// Checks if any camera devices are available and sets up capture session if needed
     func checkCameraAvailability() {
         let availableDevices = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.external, .builtInWideAngleCamera, .deskViewCamera, .externalUnknown],
+            deviceTypes: [.external, .builtInWideAngleCamera, .deskViewCamera],
             mediaType: .video,
             position: .unspecified
         ).devices
@@ -149,6 +149,17 @@ class WebcamManager: NSObject, ObservableObject {
         DispatchQueue.main.async {
             self.availableCameras = availableDevices
             self.cameraAvailable = hasAvailableDevices
+            self.reconcileSelectedCameraID()
+        }
+    }
+
+    /// Ensures the persisted camera selection matches an available device.
+    func reconcileSelectedCameraID() {
+        guard !availableCameras.isEmpty else { return }
+
+        let currentID = Defaults[.selectedCameraID]
+        if currentID.isEmpty || !availableCameras.contains(where: { $0.uniqueID == currentID }) {
+            Defaults[.selectedCameraID] = availableCameras[0].uniqueID
         }
     }
     
@@ -168,19 +179,23 @@ class WebcamManager: NSObject, ObservableObject {
             do {
                 // Get available devices
                 let discoverySession = AVCaptureDevice.DiscoverySession(
-                    deviceTypes: [.external, .builtInWideAngleCamera, .deskViewCamera, .externalUnknown],
+                    deviceTypes: [.external, .builtInWideAngleCamera, .deskViewCamera],
                     mediaType: .video,
                     position: .unspecified
                 )
                 
                 let devices = discoverySession.devices
                 let selectedID = Defaults[.selectedCameraID]
-                
+
                 let videoDevice: AVCaptureDevice?
                 if !selectedID.isEmpty {
                     videoDevice = devices.first(where: { $0.uniqueID == selectedID }) ?? devices.first
                 } else {
                     videoDevice = devices.first
+                }
+
+                if let videoDevice, Defaults[.selectedCameraID] != videoDevice.uniqueID {
+                    Defaults[.selectedCameraID] = videoDevice.uniqueID
                 }
                 
                 guard let videoDevice = videoDevice else {

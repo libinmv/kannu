@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -199,11 +199,20 @@ final class AudioRouteManager: ObservableObject {
             mElement: kAudioObjectPropertyElementMain
         )
 
-        var name: CFString = "" as CFString
-        var dataSize = UInt32(MemoryLayout<CFString?>.size)
-        let status = AudioObjectGetPropertyData(deviceID, &address, 0, nil, &dataSize, &name)
-        guard status == noErr else { return nil }
-        return name as String
+        var unmanagedName: Unmanaged<CFString>?
+        var dataSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        let status = withUnsafeMutablePointer(to: &unmanagedName) { pointer in
+            AudioObjectGetPropertyData(
+                deviceID,
+                &address,
+                0,
+                nil,
+                &dataSize,
+                UnsafeMutableRawPointer(pointer)
+            )
+        }
+        guard status == noErr, let cfName = unmanagedName?.takeRetainedValue() else { return nil }
+        return cfName as String
     }
 
     private func transportType(for deviceID: AudioDeviceID) -> UInt32 {

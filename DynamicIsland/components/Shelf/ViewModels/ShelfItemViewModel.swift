@@ -1,9 +1,9 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * Originally from boring.notch project
- * Modified and adapted for Atoll (DynamicIsland)
+ * Modified and adapted for Kannu (കണ്ണ്)
  * See NOTICE for details.
  *
  * This program is free software: you can redistribute it and/or modify
@@ -237,7 +237,6 @@ final class ShelfItemViewModel: ObservableObject {
             if case .link(let url) = itm.kind { return url }
             return nil
         }
-        let selectedFolderURLs = selectedFileURLs.filter { isDirectory($0) }
         // URLs valid for Open/Open With (exclude folders)
         let selectedOpenableURLs = selectedItems.compactMap { itm -> URL? in
             if let u = itm.fileURL { return isDirectory(u) ? nil : u }
@@ -503,7 +502,7 @@ final class ShelfItemViewModel: ObservableObject {
                     let urls = await selected.asyncCompactMap { item -> URL? in
                         if case .file = item.kind {
                             // Use immediate update for user-initiated menu action
-                            return await ShelfStateViewModel.shared.resolveAndUpdateBookmark(for: item)
+                            return ShelfStateViewModel.shared.resolveAndUpdateBookmark(for: item)
                         }
                         return nil
                     }
@@ -574,21 +573,15 @@ final class ShelfItemViewModel: ObservableObject {
                 guard !fileURLs.isEmpty else { break }
 
                 Task {
-                    do {
-                        // Create ZIP in a temporary location while holding access to selected resources
-                        if let zipTempURL = try await fileURLs.accessSecurityScopedResources(accessor: { urls in
-                            await TemporaryFileStorageService.shared.createZip(from: urls)
-                        }) {
-                            if let bookmark = try? Bookmark(url: zipTempURL) {
-                                let newItem = ShelfItem(kind: .file(bookmark: bookmark.data), isTemporary: true)
-                                ShelfStateViewModel.shared.add([newItem])
-                            } else {
-                                // Fallback: reveal the temporary file in Finder
-                                NSWorkspace.shared.activateFileViewerSelecting([zipTempURL])
-                            }
+                    if let zipTempURL = await fileURLs.accessSecurityScopedResources(accessor: { urls in
+                        await TemporaryFileStorageService.shared.createZip(from: urls)
+                    }) {
+                        if let bookmark = try? Bookmark(url: zipTempURL) {
+                            let newItem = ShelfItem(kind: .file(bookmark: bookmark.data), isTemporary: true)
+                            ShelfStateViewModel.shared.add([newItem])
+                        } else {
+                            NSWorkspace.shared.activateFileViewerSelecting([zipTempURL])
                         }
-                    } catch {
-                        print("❌ Compress failed: \(error)")
                     }
                 }
                 
@@ -715,15 +708,17 @@ final class ShelfItemViewModel: ObservableObject {
                     self.panel = panel
                 }
                 @objc func changed(_ sender: Any?) {
-                    if popup?.indexOfSelectedItem == 1 {
-                        chooserDelegate?.mode = .all
-                    } else {
-                        chooserDelegate?.mode = .recommended
-                    }
-                    if let panel = panel {
-                        panel.validateVisibleColumns()
-                        let currentDir = panel.directoryURL
-                        panel.directoryURL = currentDir
+                    Task { @MainActor in
+                        if popup?.indexOfSelectedItem == 1 {
+                            chooserDelegate?.mode = .all
+                        } else {
+                            chooserDelegate?.mode = .recommended
+                        }
+                        if let panel = panel {
+                            panel.validateVisibleColumns()
+                            let currentDir = panel.directoryURL
+                            panel.directoryURL = currentDir
+                        }
                     }
                 }
             }
@@ -827,7 +822,7 @@ final class ShelfItemViewModel: ObservableObject {
                     }
                 } catch {
                     print("❌ Failed to remove background: \(error.localizedDescription)")
-                    await showErrorAlert(title: "Background Removal Failed", message: error.localizedDescription)
+                    showErrorAlert(title: "Background Removal Failed", message: error.localizedDescription)
                 }
             }
         }
@@ -857,7 +852,7 @@ final class ShelfItemViewModel: ObservableObject {
                     }
                 } catch {
                     print("❌ Failed to create PDF: \(error.localizedDescription)")
-                    await showErrorAlert(title: "PDF Creation Failed", message: error.localizedDescription)
+                    showErrorAlert(title: "PDF Creation Failed", message: error.localizedDescription)
                 }
             }
         }

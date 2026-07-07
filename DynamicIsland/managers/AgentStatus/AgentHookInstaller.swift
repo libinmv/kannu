@@ -21,12 +21,12 @@ enum AgentHookProvider: String, CaseIterable, Identifiable {
 /// file into a shared directory that `CursorAgentStatusMonitor` watches.
 ///
 /// Per-provider layout:
-/// - Cursor:  script `~/.cursor/hooks/atoll-agent-status.sh`, entries merged
+/// - Cursor:  script `~/.cursor/hooks/kannu-agent-status.sh`, entries merged
 ///   into `~/.cursor/hooks.json` (relative command paths).
-/// - VS Code: script `~/.copilot/atoll-agent-status.sh`, self-contained hook
-///   file `~/.copilot/hooks/atoll-agent-status.json` (Copilot loads every
+/// - VS Code: script `~/.copilot/kannu-agent-status.sh`, self-contained hook
+///   file `~/.copilot/hooks/kannu-agent-status.json` (Copilot loads every
 ///   JSON file in that folder).
-/// - Codex:   script `~/.codex/atoll-agent-status.sh`, entries merged into
+/// - Codex:   script `~/.codex/kannu-agent-status.sh`, entries merged into
 ///   `~/.codex/hooks.json`, plus `features.hooks = true` in
 ///   `~/.codex/config.toml`.
 @MainActor
@@ -36,7 +36,7 @@ final class AgentHookInstaller: ObservableObject {
     @Published private(set) var installedProviders: Set<AgentHookProvider> = []
     @Published private(set) var lastError: String?
 
-    static let scriptName = "atoll-agent-status.sh"
+    static let scriptName = "kannu-agent-status.sh"
 
     private static var home: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -44,7 +44,7 @@ final class AgentHookInstaller: ObservableObject {
 
     /// Shared directory all hooks write status files into.
     static var statusDirectory: URL {
-        home.appendingPathComponent(".atoll/agent-status", isDirectory: true)
+        home.appendingPathComponent(".kannu/agent-status", isDirectory: true)
     }
 
     // MARK: - Per-provider paths
@@ -52,7 +52,7 @@ final class AgentHookInstaller: ObservableObject {
     static var cursorHooksConfigURL: URL { home.appendingPathComponent(".cursor/hooks.json") }
     static var cursorScriptURL: URL { home.appendingPathComponent(".cursor/hooks/\(scriptName)") }
 
-    static var vscodeHookFileURL: URL { home.appendingPathComponent(".copilot/hooks/atoll-agent-status.json") }
+    static var vscodeHookFileURL: URL { home.appendingPathComponent(".copilot/hooks/kannu-agent-status.json") }
     static var vscodeScriptURL: URL { home.appendingPathComponent(".copilot/\(scriptName)") }
 
     static var codexHooksConfigURL: URL { home.appendingPathComponent(".codex/hooks.json") }
@@ -60,7 +60,10 @@ final class AgentHookInstaller: ObservableObject {
     static var codexScriptURL: URL { home.appendingPathComponent(".codex/\(scriptName)") }
 
     private init() {
+        migrateLegacyStatusDirectoryIfNeeded()
         migrateLegacyCursorInstallIfNeeded()
+        migrateLegacyHookScriptsIfNeeded()
+        migrateIncorrectAwaitingInputHooksIfNeeded()
         refresh()
     }
 
@@ -135,6 +138,7 @@ final class AgentHookInstaller: ObservableObject {
         ("UserPromptSubmit", "thinking"),
         ("PreToolUse", "executing"),
         ("PostToolUse", "executing"),
+        ("PermissionRequest", "awaiting_input"),
         ("Stop", "stopped")
     ]
 
@@ -143,12 +147,12 @@ final class AgentHookInstaller: ObservableObject {
     private static func writeScript(to url: URL) throws {
         let script = """
         #!/bin/bash
-        # Installed by Atoll: reports AI agent status for the notch traffic light.
-        # Usage: atoll-agent-status.sh <state> <provider>  (hook JSON arrives on stdin)
+        # Installed by Kannu: reports AI agent status for the notch traffic light.
+        # Usage: kannu-agent-status.sh <state> <provider>  (hook JSON arrives on stdin)
 
         STATE="${1:-thinking}"
         PROVIDER="${2:-unknown}"
-        STATUS_DIR="$HOME/.atoll/agent-status"
+        STATUS_DIR="$HOME/.kannu/agent-status"
         mkdir -p "$STATUS_DIR"
 
         INPUT=$(cat)
@@ -163,8 +167,18 @@ final class AgentHookInstaller: ObservableObject {
         ID=$(printf '%s' "$ID" | tr -cd 'A-Za-z0-9_-')
         [ -z "$ID" ] && ID="default"
 
+        NAME=$(extract name)
+        [ -z "$NAME" ] && NAME=$(extract title)
+        [ -z "$NAME" ] && NAME=$(extract conversation_title)
+        NAME=$(printf '%s' "$NAME" | tr -d '\\n\\r')
+        NAME=$(printf '%s' "$NAME" | sed 's/"/\\\\"/g')
+
         TS=$(($(date +%s) * 1000))
-        printf '{"state":"%s","ts":%s,"provider":"%s"}' "$STATE" "$TS" "$PROVIDER" > "$STATUS_DIR/$PROVIDER-$ID.json"
+        if [ -n "$NAME" ]; then
+          printf '{"state":"%s","ts":%s,"provider":"%s","name":"%s"}' "$STATE" "$TS" "$PROVIDER" "$NAME" > "$STATUS_DIR/$PROVIDER-$ID.json"
+        else
+          printf '{"state":"%s","ts":%s,"provider":"%s"}' "$STATE" "$TS" "$PROVIDER" > "$STATUS_DIR/$PROVIDER-$ID.json"
+        fi
 
         # Never block the agent: always allow gating events.
         echo '{"permission":"allow","continue":true}'
@@ -367,6 +381,53 @@ final class AgentHookInstaller: ObservableObject {
     }
 
     // MARK: - Legacy migration
+
+    /// Rewrites Cursor hooks that incorrectly mapped pre-tool events to awaiting_input.
+    private func migrateIncorrectAwaitingInputHooksIfNeeded() {
+        guard Self.checkInstalled(.cursor),
+              let config = Self.readJSON(at: Self.cursorHooksConfigURL),
+              let hooks = config["hooks"] as? [String: Any] else { return }
+
+        let staleEvents = ["beforeShellExecution", "beforeMCPExecution", "beforeReadFile"]
+        let hasStaleAwaitingHooks = staleEvents.contains { event in
+            guard let entries = hooks[event] as? [[String: Any]] else { return false }
+            return entries.contains { ($0["command"] as? String)?.contains("awaiting_input") == true }
+        }
+
+        guard hasStaleAwaitingHooks else { return }
+        install(.cursor)
+    }
+
+    /// Copies status JSON from older `~/.atoll/agent-status` into `~/.kannu/agent-status`.
+    private func migrateLegacyStatusDirectoryIfNeeded() {
+        let legacy = Self.home.appendingPathComponent(".atoll/agent-status", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: legacy.path) else { return }
+        try? FileManager.default.createDirectory(at: Self.statusDirectory, withIntermediateDirectories: true)
+        guard let files = try? FileManager.default.contentsOfDirectory(at: legacy, includingPropertiesForKeys: nil) else { return }
+        for file in files where file.pathExtension == "json" {
+            let destination = Self.statusDirectory.appendingPathComponent(file.lastPathComponent)
+            if !FileManager.default.fileExists(atPath: destination.path) {
+                try? FileManager.default.copyItem(at: file, to: destination)
+            }
+        }
+    }
+
+    /// Reinstalls hooks that still reference legacy script names or status paths.
+    private func migrateLegacyHookScriptsIfNeeded() {
+        let legacyMarkers = ["atoll-agent-status", ".atoll/agent-status", ".cursor/atoll/agent-status"]
+        for provider in AgentHookProvider.allCases {
+            let scriptURL: URL
+            switch provider {
+            case .cursor: scriptURL = Self.cursorScriptURL
+            case .vscode: scriptURL = Self.vscodeScriptURL
+            case .codex: scriptURL = Self.codexScriptURL
+            }
+            guard FileManager.default.fileExists(atPath: scriptURL.path),
+                  let content = try? String(contentsOf: scriptURL, encoding: .utf8),
+                  legacyMarkers.contains(where: { content.contains($0) }) else { continue }
+            install(provider)
+        }
+    }
 
     /// Earlier builds installed a Cursor-only hook whose script wrote into
     /// `~/.cursor/atoll/agent-status`. Rewrites it to the shared layout.

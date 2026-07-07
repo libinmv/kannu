@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -50,7 +50,7 @@ enum LunarControlCategory {
 /// - Detect whether Lunar is installed and running
 /// - Observe app launch / termination to connect / disconnect automatically
 /// - Connect to Lunar's TCP socket on localhost:23803 and listen for DDC changes
-/// - Route brightness / contrast / volume events to Atoll's HUD pipeline
+/// - Route brightness / contrast / volume events to Kannu's HUD pipeline
 @MainActor
 final class LunarManager: ObservableObject {
     static let shared = LunarManager()
@@ -59,8 +59,8 @@ final class LunarManager: ObservableObject {
     nonisolated static let bundleID = "fyi.lunar.Lunar"
 
     /// UserDefaults suite used by Lunar to store its API key.
-    private static let lunarDomain = "fyi.lunar.Lunar"
-    private static let apiKeyKey = "apiKey"
+    nonisolated private static let lunarDomain = "fyi.lunar.Lunar"
+    nonisolated private static let apiKeyKey = "apiKey"
 
     // MARK: Published state
 
@@ -110,7 +110,7 @@ final class LunarManager: ObservableObject {
         refreshConnectionState()
     }
 
-    /// Called when Atoll is about to quit so Lunar's native OSD is restored.
+    /// Called when Kannu is about to quit so Lunar's native OSD is restored.
     func appWillTerminate() {
         setLunarHideOSD(false)
     }

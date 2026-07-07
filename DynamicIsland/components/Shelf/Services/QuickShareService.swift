@@ -1,9 +1,9 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * Originally from boring.notch project
- * Modified and adapted for Atoll (DynamicIsland)
+ * Modified and adapted for Kannu (കണ്ണ്)
  * See NOTICE for details.
  *
  * This program is free software: you can redistribute it and/or modify
@@ -61,92 +61,86 @@ class QuickShareService: ObservableObject {
     
     @MainActor
     func discoverAvailableProviders() async {
-        // Move the heavy NSSharingService enumeration off the main thread
-        let result: (providers: [QuickShareProvider], services: [String: NSSharingService]) = await Task.detached(priority: .userInitiated) {
-            let testItems: [Any] = [
-                URL(string: "https://apple.com")! as NSURL,
-                "Test Text" as NSString
-            ]
+        let testItems: [Any] = [
+            URL(string: "https://apple.com")! as NSURL,
+            "Test Text" as NSString
+        ]
 
-            var nativeServices = NSSharingService.sharingServices(forItems: testItems)
+        var nativeServices = KannuSharingServicesForItems(testItems)
 
-            // Manually inject essential system services that the static list may omit
-            let manualServiceNames: [NSSharingService.Name] = [
-                .composeEmail,
-                .sendViaAirDrop,
-                .composeMessage,
-                .addToSafariReadingList
-            ]
-            for name in manualServiceNames {
-                if let service = NSSharingService(named: name),
-                   !nativeServices.contains(where: { $0.title == service.title }) {
-                    nativeServices.append(service)
-                }
+        // Manually inject essential system services that the static list may omit
+        let manualServiceNames: [NSSharingService.Name] = [
+            .composeEmail,
+            .sendViaAirDrop,
+            .composeMessage,
+            .addToSafariReadingList
+        ]
+        for name in manualServiceNames {
+            if let service = NSSharingService(named: name),
+               !nativeServices.contains(where: { $0.title == service.title }) {
+                nativeServices.append(service)
+            }
+        }
+
+        var providers: [QuickShareProvider] = []
+        var services: [String: NSSharingService] = [:]
+
+        // Process each service inside an autoreleasepool so that
+        // the large intermediate TIFF / bitmap buffers are freed
+        // immediately instead of accumulating across the loop.
+        for svc in nativeServices {
+            let (provider, shouldCache) = autoreleasepool { () -> (QuickShareProvider, Bool) in
+                let title = svc.title
+
+                // Downscale to a small thumbnail and store as compressed PNG
+                // to keep total memory footprint minimal.
+                let imgData: Data? = {
+                    let src = svc.image
+                    let thumbSize = NSSize(width: 32, height: 32)
+                    let thumb = NSImage(size: thumbSize)
+                    thumb.lockFocus()
+                    src.draw(in: NSRect(origin: .zero, size: thumbSize),
+                             from: NSRect(origin: .zero, size: src.size),
+                             operation: .copy, fraction: 1.0)
+                    thumb.unlockFocus()
+
+                    guard let tiff = thumb.tiffRepresentation,
+                          let bitmap = NSBitmapImageRep(data: tiff) else { return nil }
+                    return bitmap.representation(using: .png, properties: [:])
+                }()
+
+                let supportsRawText = svc.canPerform(withItems: ["Test Text"])
+                let prov = QuickShareProvider(id: title, imageData: imgData, supportsRawText: supportsRawText)
+                let isNew = !providers.contains(prov)
+                return (prov, isNew)
             }
 
-            var providers: [QuickShareProvider] = []
-            var services: [String: NSSharingService] = [:]
-
-            // Process each service inside an autoreleasepool so that
-            // the large intermediate TIFF / bitmap buffers are freed
-            // immediately instead of accumulating across the loop.
-            for svc in nativeServices {
-                let (provider, shouldCache) = autoreleasepool { () -> (QuickShareProvider, Bool) in
-                    let title = svc.title
-
-                    // Downscale to a small thumbnail and store as compressed PNG
-                    // to keep total memory footprint minimal.
-                    let imgData: Data? = {
-                        let src = svc.image
-                        let thumbSize = NSSize(width: 32, height: 32)
-                        let thumb = NSImage(size: thumbSize)
-                        thumb.lockFocus()
-                        src.draw(in: NSRect(origin: .zero, size: thumbSize),
-                                 from: NSRect(origin: .zero, size: src.size),
-                                 operation: .copy, fraction: 1.0)
-                        thumb.unlockFocus()
-
-                        guard let tiff = thumb.tiffRepresentation,
-                              let bitmap = NSBitmapImageRep(data: tiff) else { return nil }
-                        return bitmap.representation(using: .png, properties: [:])
-                    }()
-
-                    let supportsRawText = svc.canPerform(withItems: ["Test Text"])
-                    let prov = QuickShareProvider(id: title, imageData: imgData, supportsRawText: supportsRawText)
-                    let isNew = !providers.contains(prov)
-                    return (prov, isNew)
-                }
-
-                if shouldCache {
-                    providers.append(provider)
-                    services[provider.id] = svc
-                }
+            if shouldCache {
+                providers.append(provider)
+                services[provider.id] = svc
             }
+        }
 
-            // Move AirDrop to the top
-            if let idx = providers.firstIndex(where: { $0.id == "AirDrop" }) {
-                let ad = providers.remove(at: idx)
-                providers.insert(ad, at: 0)
-            }
+        // Move AirDrop to the top
+        if let idx = providers.firstIndex(where: { $0.id == "AirDrop" }) {
+            let ad = providers.remove(at: idx)
+            providers.insert(ad, at: 0)
+        }
 
-            if !providers.contains(where: { $0.id == "LocalSend" }) {
-                providers.insert(QuickShareProvider(id: "LocalSend", imageData: nil, supportsRawText: true), at: min(1, providers.count))
-            }
+        if !providers.contains(where: { $0.id == "LocalSend" }) {
+            providers.insert(QuickShareProvider(id: "LocalSend", imageData: nil, supportsRawText: true), at: min(1, providers.count))
+        }
 
-            // System Share Menu fallback
-            if !providers.contains(where: { $0.id == "System Share Menu" }) {
-                providers.append(QuickShareProvider(id: "System Share Menu", imageData: nil, supportsRawText: true))
-            }
+        // System Share Menu fallback
+        if !providers.contains(where: { $0.id == "System Share Menu" }) {
+            providers.append(QuickShareProvider(id: "System Share Menu", imageData: nil, supportsRawText: true))
+        }
 
-            return (providers, services)
-        }.value
-
-        var providers = result.providers
         if let idx = providers.firstIndex(where: { $0.id == "LocalSend" }) {
             providers[idx].imageData = localSendIconData()
         }
 
-        self.cachedServices = result.services
+        self.cachedServices = services
         self.availableProviders = providers
         self.hasDiscovered = true
         self.discoveryTask = nil

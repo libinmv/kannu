@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -10,9 +10,9 @@
 
 import Foundation
 
-enum AtollDistributedNotifications {
-    static let didBecomeActive = Notification.Name("com.ebullioscopic.Atoll.lifecycle.didBecomeActive")
-    static let didBecomeIdle = Notification.Name("com.ebullioscopic.Atoll.lifecycle.didBecomeIdle")
+enum KannuDistributedNotifications {
+    static let didBecomeActive = Notification.Name("com.kannu.app.lifecycle.didBecomeActive")
+    static let didBecomeIdle = Notification.Name("com.kannu.app.lifecycle.didBecomeIdle")
 
     enum UserInfoKey {
         static let sourcePID = "sourcePID"

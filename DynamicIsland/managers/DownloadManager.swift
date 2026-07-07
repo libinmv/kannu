@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,11 +20,14 @@ import Foundation
 import SwiftUI
 import Observation
 import Defaults
+import Combine
 
 @Observable
 @MainActor
 class DownloadManager {
     static let shared = DownloadManager()
+    
+    private var defaultsCancellable: AnyCancellable?
     
     private(set) var isDownloading: Bool = false
     private(set) var isDownloadCompleted: Bool = false
@@ -46,7 +49,7 @@ class DownloadManager {
         requestDownloadsPermissionIfNeeded()
         startMonitoringIfNeeded()
         
-        Defaults.publisher(.enableDownloadListener)
+        defaultsCancellable = Defaults.publisher(.enableDownloadListener)
             .sink { [weak self] _ in
                 guard let self else { return }
                 Task { @MainActor in

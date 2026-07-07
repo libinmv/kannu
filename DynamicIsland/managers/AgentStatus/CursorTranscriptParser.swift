@@ -113,7 +113,7 @@ enum CursorTranscriptParser {
         let role = (json["role"] as? String) ?? (json["type"] as? String) ?? "unknown"
         let message = json["message"] as? [String: Any] ?? [:]
         var toolUses: [String] = []
-        var stopReason: String? = message["stop_reason"] as? String
+        let stopReason: String? = message["stop_reason"] as? String
 
         if let content = message["content"] as? [[String: Any]] {
             for block in content {

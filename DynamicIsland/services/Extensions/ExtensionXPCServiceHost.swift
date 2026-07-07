@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,9 +20,9 @@ import AppKit
 import Foundation
 import AtollExtensionKit
 
-/// Shared constants for the Atoll extension XPC service.
+/// Shared constants for the Kannu extension XPC service.
 enum ExtensionXPCServiceConstants {
-    static let machServiceName = "com.ebullioscopic.Atoll.xpc"
+    static let machServiceName = "com.kannu.app.xpc"
 }
 
 @MainActor
@@ -48,7 +48,7 @@ final class ExtensionXPCServiceHost: NSObject {
         // In UI testing environments (like CI), the mach-services entitlement might be stripped
         // to bypass amfid ad-hoc signing crashes. Starting the listener without the entitlement crashes the app.
         if AppRuntimeEnvironment.isUITesting {
-            Logger.log("Bypassing Atoll XPC listener for UI testing", category: .extensions)
+            Logger.log("Bypassing Kannu XPC listener for UI testing", category: .extensions)
             return
         }
 
@@ -57,14 +57,14 @@ final class ExtensionXPCServiceHost: NSObject {
         self.listener = listener
         listener.resume()
 
-        Logger.log("Started Atoll XPC listener", category: .extensions)
+        Logger.log("Started Kannu XPC listener", category: .extensions)
     }
 
     func stop() {
         listener?.invalidate()
         listener = nil
         clientContexts.removeAll()
-        Logger.log("Stopped Atoll XPC listener", category: .extensions)
+        Logger.log("Stopped Kannu XPC listener", category: .extensions)
     }
 
     func acceptNewConnection(_ connection: NSXPCConnection) -> Bool {

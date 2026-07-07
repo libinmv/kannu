@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -343,7 +343,7 @@ struct TimerLiveActivity: View {
     @ViewBuilder
     private func middleSectionView() -> some View {
         Rectangle()
-            .fill(.black)
+            .fill(.clear)
             .frame(width: middleSectionWidth, height: notchContentHeight)
     }
 
@@ -403,7 +403,7 @@ struct TimerLiveActivity: View {
         let barWidth = shouldDisplayLabel ? resolvedTextWidth : availableWidth
 
         return Rectangle()
-            .fill(.black)
+            .fill(.clear)
             .frame(width: infoWidth, height: notchContentHeight)
             .overlay(alignment: .leading) {
                 VStack(alignment: .leading, spacing: showsBarHere ? 4 : 0) {

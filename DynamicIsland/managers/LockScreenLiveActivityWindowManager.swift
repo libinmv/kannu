@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -129,7 +129,9 @@ class LockScreenLiveActivityWindowManager {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.handleScreenGeometryChange(reason: "screen-parameters")
+            Task { @MainActor in
+                self?.handleScreenGeometryChange(reason: "screen-parameters")
+            }
         }
 
         let workspaceCenter = NSWorkspace.shared.notificationCenter
@@ -138,7 +140,9 @@ class LockScreenLiveActivityWindowManager {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.handleScreenGeometryChange(reason: "screens-did-wake")
+            Task { @MainActor in
+                self?.handleScreenGeometryChange(reason: "screens-did-wake")
+            }
         }
         workspaceObservers = [wakeObserver]
     }

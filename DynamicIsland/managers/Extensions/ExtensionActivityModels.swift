@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -67,7 +67,7 @@ enum ExtensionValidationError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .featureDisabled:
-            return "Extensions feature is currently disabled in Atoll."
+            return "Extensions feature is currently disabled in Kannu."
         case .unauthorized:
             return "Your app is not authorized to post this content."
         case .invalidDescriptor(let reason):
@@ -75,7 +75,7 @@ enum ExtensionValidationError: LocalizedError, Equatable {
         case .rateLimited:
             return "Too many requests in a short period. Please slow down."
         case .exceedsCapacity:
-            return "Atoll reached its limit for simultaneous extension content."
+            return "Kannu reached its limit for simultaneous extension content."
         case .duplicateIdentifier:
             return "An item with the same identifier already exists."
         case .unsupportedContent:

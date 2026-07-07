@@ -1,9 +1,9 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * Originally from boring.notch project
- * Modified and adapted for Atoll (DynamicIsland)
+ * Modified and adapted for Kannu (കണ്ണ്)
  * See NOTICE for details.
  *
  * This program is free software: you can redistribute it and/or modify
@@ -77,6 +77,16 @@ func enabledStandardTabCount() -> Int {
 
     // Stats tab
     if Defaults[.enableStatsFeature] {
+        count += 1
+    }
+
+    // LLM Usage tab
+    if Defaults[.enableLLMUsageFeature] {
+        count += 1
+    }
+
+    // Agent Status tab
+    if Defaults[.enableAgentStatusFeature] {
         count += 1
     }
 

@@ -14,9 +14,17 @@ struct AgentTrafficLightIndicator: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            trafficLightCircle(color: .red, isActive: activeState == .stopped, shouldPulse: false)
-            trafficLightCircle(color: .yellow, isActive: activeState == .thinking, shouldPulse: true)
-            trafficLightCircle(color: .green, isActive: activeState == .executing, shouldPulse: true)
+            trafficLightCircle(color: .red, isActive: activeState.showsRedTrafficLight, shouldPulse: false)
+            trafficLightCircle(
+                color: .yellow,
+                isActive: activeState.showsYellowTrafficLight,
+                shouldPulse: activeState.showsYellowTrafficLight
+            )
+            trafficLightCircle(
+                color: .green,
+                isActive: activeState.showsGreenTrafficLight,
+                shouldPulse: activeState.showsGreenTrafficLight
+            )
         }
     }
 
@@ -31,8 +39,10 @@ struct AgentTrafficLightIndicator: View {
 
 struct AgentTrafficLightLiveActivity: View {
     @EnvironmentObject var vm: DynamicIslandViewModel
+    @ObservedObject private var monitor = CursorAgentStatusMonitor.shared
     let isHovering: Bool
     let gestureProgress: CGFloat
+    var onHoverAgentCenter: ((Bool) -> Void)? = nil
 
     private var notchContentHeight: CGFloat {
         max(0, vm.effectiveClosedNotchHeight - (isHovering ? 0 : 12))
@@ -51,6 +61,10 @@ struct AgentTrafficLightLiveActivity: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .frame(width: contentWidth, height: notchContentHeight)
             .frame(height: outerHeight)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                onHoverAgentCenter?(hovering)
+            }
     }
 }
 

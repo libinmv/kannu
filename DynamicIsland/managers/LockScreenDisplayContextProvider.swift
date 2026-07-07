@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -100,7 +100,9 @@ final class LockScreenDisplayContextProvider {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.refresh(reason: "screen-parameters")
+            Task { @MainActor in
+                self?.refresh(reason: "screen-parameters")
+            }
         }
 
         let workspaceCenter = NSWorkspace.shared.notificationCenter
@@ -109,7 +111,9 @@ final class LockScreenDisplayContextProvider {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.refresh(reason: "screens-did-wake")
+            Task { @MainActor in
+                self?.refresh(reason: "screens-did-wake")
+            }
         }
 
         let spaceObserver = workspaceCenter.addObserver(
@@ -117,7 +121,9 @@ final class LockScreenDisplayContextProvider {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.refresh(reason: "space-changed")
+            Task { @MainActor in
+                self?.refresh(reason: "space-changed")
+            }
         }
 
         workspaceObservers = [wakeObserver, spaceObserver]

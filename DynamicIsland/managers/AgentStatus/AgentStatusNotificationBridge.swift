@@ -93,10 +93,10 @@ final class AgentStatusNotificationBridge: ObservableObject {
     private func notificationPayload(for state: AgentTrafficLightState, isTest: Bool) -> NotificationPayload {
         if isTest {
             return NotificationPayload(
-                title: "AgentStat Test",
+                title: "Kannu Test",
                 body: "Mobile notifications are configured correctly.",
                 priority: 3,
-                tag: "agentstat-test"
+                tag: "kannu-test"
             )
         }
 
@@ -114,6 +114,13 @@ final class AgentStatusNotificationBridge: ObservableObject {
                 body: "Your AI agent is running tools and doing work.",
                 priority: 4,
                 tag: "agent-executing"
+            )
+        case .awaitingInput:
+            return NotificationPayload(
+                title: "Agent Needs Input",
+                body: "Your AI agent is waiting for your approval or response.",
+                priority: 5,
+                tag: "agent-awaiting-input"
             )
         case .stopped:
             return NotificationPayload(
@@ -150,7 +157,7 @@ final class AgentStatusNotificationBridge: ObservableObject {
         request.setValue(payload.title, forHTTPHeaderField: "Title")
         request.setValue(String(payload.priority), forHTTPHeaderField: "Priority")
         request.setValue(payload.tag, forHTTPHeaderField: "Tags")
-        request.setValue("agentstat", forHTTPHeaderField: "X-AgentStat")
+        request.setValue("kannu", forHTTPHeaderField: "X-Kannu")
 
         let (_, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
@@ -205,7 +212,7 @@ final class AgentStatusNotificationBridge: ObservableObject {
             "title": payload.title,
             "body": payload.body,
             "timestamp": ISO8601DateFormatter().string(from: .now),
-            "source": "AgentStatDynamicIsland"
+            "source": "Kannu"
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 

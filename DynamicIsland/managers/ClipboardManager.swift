@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,7 +25,7 @@ import Defaults
 
 // Clipboard item data structure
 struct ClipboardItem: Identifiable, Codable {
-    let id = UUID()
+    let id: UUID
     let type: ClipboardItemType
     let timestamp: Date
     let preview: String
@@ -38,6 +38,7 @@ struct ClipboardItem: Identifiable, Codable {
     let rtfData: Data? // RTF is typically small, so we can keep this
     
     init(stringData: String, type: ClipboardItemType) {
+        self.id = UUID()
         self.stringData = stringData
         self.imageFileName = nil
         self.fileURLs = nil
@@ -48,6 +49,7 @@ struct ClipboardItem: Identifiable, Codable {
     }
     
     init(imageData: Data) {
+        self.id = UUID()
         self.stringData = nil
         self.fileURLs = nil
         self.rtfData = nil
@@ -70,6 +72,7 @@ struct ClipboardItem: Identifiable, Codable {
     }
     
     init(fileURLs: [String]) {
+        self.id = UUID()
         self.stringData = nil
         self.imageFileName = nil
         self.fileURLs = fileURLs
@@ -85,6 +88,7 @@ struct ClipboardItem: Identifiable, Codable {
     }
     
     init(rtfData: Data, plainText: String) {
+        self.id = UUID()
         // RTF data is typically small, so we can keep it in UserDefaults
         self.stringData = plainText
         self.imageFileName = nil
@@ -358,10 +362,9 @@ class ClipboardManager: ObservableObject {
         
         // Step 1: Check what types are available
         let hasFileURLs = pasteboard.canReadObject(forClasses: [NSURL.self], options: nil)
-        let hasImageData = pasteboard.data(forType: .png) != nil || 
-                          pasteboard.data(forType: .tiff) != nil || 
+        let hasImageData = pasteboard.data(forType: .png) != nil ||
+                          pasteboard.data(forType: .tiff) != nil ||
                           pasteboard.data(forType: NSPasteboard.PasteboardType("public.jpeg")) != nil
-        let hasString = pasteboard.string(forType: .string) != nil
         
         // Step 2: Smart detection based on context
         

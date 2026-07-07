@@ -3,7 +3,7 @@ import os
 
 // Codex/ChatGPT rate-limit usage from chatgpt.com/backend-api/wham/usage; request+response shape per OpenUsage.
 struct CodexQuotaClient {
-    private static let log = os.Logger(subsystem: "com.atoll.DynamicIsland", category: "CodexQuota")
+    private static let log = os.Logger(subsystem: "com.kannu.app", category: "CodexQuota")
     let session: URLSession
     init(session: URLSession = URLSession(configuration: .ephemeral)) { self.session = session }
 
@@ -31,15 +31,15 @@ struct CodexQuotaClient {
     }
 
     // Never throws: any credential/network/parse failure yields (nil, nil).
-    func fetchLimits() async -> (session: UsageLimit?, week: UsageLimit?) {
+    func fetchLimits() async -> QuotaFetchResult {
         guard let creds = loadCredentials() else {
             Self.log.notice("no credentials: auth.json/Keychain missing or unparseable")
-            return (nil, nil)
+            return QuotaFetchResult(errorMessage: "Codex not signed in")
         }
         var request = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/wham/usage")!)
         request.setValue("Bearer \(creds.accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("Atoll", forHTTPHeaderField: "User-Agent")
+        request.setValue("Kannu", forHTTPHeaderField: "User-Agent")
         if let accountId = creds.accountId, !accountId.isEmpty {
             request.setValue(accountId, forHTTPHeaderField: "ChatGPT-Account-Id")
         }
@@ -48,7 +48,7 @@ struct CodexQuotaClient {
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 let code = (response as? HTTPURLResponse)?.statusCode ?? -1
                 Self.log.error("wham/usage HTTP \(code) — \(code == 401 || code == 403 ? "auth/credential" : "request") failure")
-                return (nil, nil)
+                return QuotaFetchResult(errorMessage: "Codex quota API HTTP \(code)")
             }
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -56,17 +56,20 @@ struct CodexQuotaClient {
             if let decoded = try? decoder.decode(UsageResponse.self, from: data) {
                 let sessionLimit = decoded.rateLimit?.primaryWindow.map { limit(from: $0, now: now) }
                 let weekLimit = decoded.rateLimit?.secondaryWindow.map { limit(from: $0, now: now) }
-                if sessionLimit != nil || weekLimit != nil { return (sessionLimit, weekLimit) }
+                if sessionLimit != nil || weekLimit != nil {
+                    return QuotaFetchResult(session: sessionLimit, week: weekLimit)
+                }
             }
             let sessionLimit = headerFallback(http, key: "x-codex-primary-used-percent")
             let weekLimit = headerFallback(http, key: "x-codex-secondary-used-percent")
             if sessionLimit == nil && weekLimit == nil {
                 Self.log.error("wham/usage 200 but no usage found — response shape may have changed (\(data.count) bytes)")
+                return QuotaFetchResult(errorMessage: "Codex quota response missing usage data")
             }
-            return (sessionLimit, weekLimit)
+            return QuotaFetchResult(session: sessionLimit, week: weekLimit)
         } catch {
             Self.log.error("wham/usage request errored: \(error.localizedDescription, privacy: .public)")
-            return (nil, nil)
+            return QuotaFetchResult(errorMessage: error.localizedDescription)
         }
     }
 

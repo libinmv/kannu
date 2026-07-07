@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -56,7 +56,7 @@ class ModelPricingManager: ObservableObject {
     
     @Published private(set) var pricingData: ModelPricingData?
     
-    private let remoteURL = URL(string: "https://raw.githubusercontent.com/Ebullioscopic/Atoll/feat/dynamic-pricing-workflow/DynamicIsland/managers/LLMUsage/pricing.json")!
+    private let remoteURL = URL(string: "https://raw.githubusercontent.com/Ebullioscopic/Kannu/feat/dynamic-pricing-workflow/DynamicIsland/managers/LLMUsage/pricing.json")!
     
     private init() {
         loadInitialPricing()

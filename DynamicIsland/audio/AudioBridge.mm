@@ -1,7 +1,7 @@
 /*
- * Atoll (DynamicIsland)
+ * Kannu (കണ്ണ്)
  * Original work Copyright (C) 2026 ZephyrCodesStuff (https://github.com/ZephyrCodesStuff/rtaudio)
- * Modified work Copyright (C) 2026 Atoll Contributors
+ * Modified work Copyright (C) 2026 Kannu Contributors
  *
  * Objective-C++ implementation bridging AudioProcessor to Swift.
  *

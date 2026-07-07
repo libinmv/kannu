@@ -9,12 +9,15 @@ final class CursorAgentStatusMonitor: ObservableObject {
     static let shared = CursorAgentStatusMonitor()
 
     @Published private(set) var trafficLightState: AgentTrafficLightState = .inactive
+    @Published private(set) var shouldShowTrafficLight = false
+    @Published private(set) var sessions: [AgentSessionStatus] = []
 
     private var eventStream: FSEventStreamRef?
     private var rescanTask: Task<Void, Never>?
     private var pollTimer: Timer?
     private var isRunning = false
     private var watchedPaths: [String] = []
+    private var hadHookFilesThisCycle = false
 
     private init() {}
 
@@ -43,6 +46,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
             self.eventStream = nil
         }
         trafficLightState = .inactive
+        shouldShowTrafficLight = false
+        sessions = []
     }
 
     private func installWatchers() {
@@ -111,28 +116,156 @@ final class CursorAgentStatusMonitor: ObservableObject {
         guard isRunning else { return }
 
         let staleMinutes = Defaults[.agentStatusStaleMinutes]
+        let collapseMinutes = Defaults[.agentStoppedCollapseMinutes]
+        let inactiveMinutes = Defaults[.agentInactiveDisplayMinutes]
 
-        // Hook-reported status is the most accurate signal and works for any
-        // supported tool (Cursor, VS Code, Codex).
-        if let hookState = hookReportedState(staleMinutes: staleMinutes) {
-            trafficLightState = hookState
+        let hookSessions = parseHookSessions(
+            staleMinutes: staleMinutes,
+            collapseMinutes: collapseMinutes,
+            inactiveMinutes: inactiveMinutes
+        )
+        sessions = hookSessions.sorted { $0.updatedAt > $1.updatedAt }
+        hadHookFilesThisCycle = hookSessions.contains { _ in true } || hadRecentHookFiles(staleMinutes: staleMinutes)
+
+        let visibleSessions = hookSessions.filter(\.isVisible)
+        if !visibleSessions.isEmpty {
+            applyDisplay(from: visibleSessions)
             return
         }
 
-        // Transcript polling is a Cursor-only fallback.
-        guard isCursorRunning() else {
+        if hookSessions.isEmpty == false {
+            shouldShowTrafficLight = false
             trafficLightState = .inactive
             return
         }
 
+        guard !hadHookFilesThisCycle, isCursorRunning() else {
+            shouldShowTrafficLight = false
+            trafficLightState = .inactive
+            sessions = []
+            return
+        }
+
+        let transcriptSessions = buildTranscriptSessions(
+            staleMinutes: staleMinutes,
+            collapseMinutes: collapseMinutes,
+            inactiveMinutes: inactiveMinutes
+        )
+        sessions = transcriptSessions.sorted { $0.updatedAt > $1.updatedAt }
+        let visibleTranscript = transcriptSessions.filter(\.isVisible)
+        if visibleTranscript.isEmpty {
+            shouldShowTrafficLight = false
+            trafficLightState = .inactive
+        } else {
+            applyDisplay(from: visibleTranscript)
+        }
+    }
+
+    private func applyDisplay(from visible: [AgentSessionStatus]) {
+        var state = AgentTrafficLightMapper.aggregate(visible)
+        if state == .inactive && Defaults[.showAgentStoppedIndicator] == false {
+            // inactive dim state is visible
+        } else if state == .inactive && Defaults[.showAgentStoppedIndicator] {
+            state = .stopped
+        }
+        trafficLightState = state
+        shouldShowTrafficLight = true
+    }
+
+    private func hadRecentHookFiles(staleMinutes: Int) -> Bool {
+        let directory = AgentHookInstaller.statusDirectory
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.contentModificationDateKey]
+        ) else { return false }
+        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+        let staleMs = Int64(staleMinutes) * 60_000
+        return files.contains { file in
+            guard file.pathExtension == "json" else { return false }
+            if let mtime = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate {
+                let tsMs = Int64(mtime.timeIntervalSince1970 * 1000)
+                return nowMs - tsMs <= staleMs
+            }
+            return true
+        }
+    }
+
+    private func parseHookSessions(
+        staleMinutes: Int,
+        collapseMinutes: Int,
+        inactiveMinutes: Int,
+        now: Date = Date()
+    ) -> [AgentSessionStatus] {
+        let directory = AgentHookInstaller.statusDirectory
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.contentModificationDateKey]
+        ) else { return [] }
+
+        let nowMs = Int64(now.timeIntervalSince1970 * 1000)
+        let staleMs = Int64(staleMinutes) * 60_000
+        let collapseMs = Int64(collapseMinutes) * 60_000
+        let inactiveMs = Int64(inactiveMinutes) * 60_000
+
+        var results: [AgentSessionStatus] = []
+
+        for file in files where file.pathExtension == "json" {
+            guard let data = try? Data(contentsOf: file),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let state = json["state"] as? String else { continue }
+
+            var tsMs = (json["ts"] as? NSNumber)?.int64Value ?? 0
+            if tsMs <= 0,
+               let mtime = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate {
+                tsMs = Int64(mtime.timeIntervalSince1970 * 1000)
+            }
+
+            guard nowMs - tsMs <= staleMs else {
+                try? FileManager.default.removeItem(at: file)
+                continue
+            }
+
+            let provider = (json["provider"] as? String) ?? "unknown"
+            let conversationID = file.deletingPathExtension().lastPathComponent
+                .replacingOccurrences(of: "\(provider)-", with: "")
+            let chatName = normalizedChatName(
+                json["name"] as? String ?? json["title"] as? String ?? json["conversation_title"] as? String
+            )
+            let ageMs = nowMs - tsMs
+            let resolved = AgentTrafficLightMapper.resolveHookState(
+                rawState: state,
+                ageMs: ageMs,
+                collapseMs: collapseMs,
+                inactiveMs: inactiveMs
+            )
+
+            results.append(
+                AgentSessionStatus(
+                    id: file.deletingPathExtension().lastPathComponent,
+                    provider: provider,
+                    conversationID: conversationID,
+                    chatName: chatName,
+                    rawState: state,
+                    displayState: resolved.state,
+                    updatedAt: Date(timeIntervalSince1970: TimeInterval(tsMs) / 1000),
+                    isVisible: resolved.visible
+                )
+            )
+        }
+
+        return enrichChatNames(fromComposerStore: results)
+    }
+
+    private func buildTranscriptSessions(
+        staleMinutes: Int,
+        collapseMinutes: Int,
+        inactiveMinutes: Int
+    ) -> [AgentSessionStatus] {
         let paths = CursorTranscriptParser.listRecentTranscriptPaths(maxAgeMinutes: staleMinutes)
-        guard !paths.isEmpty else {
-            trafficLightState = .inactive
-            return
-        }
+        guard !paths.isEmpty else { return [] }
 
-        var snapshots: [AgentSessionSnapshot] = []
         var ids = Set<String>()
+        var snapshots: [AgentSessionSnapshot] = []
 
         for path in paths {
             let sessionID = CursorTranscriptParser.sessionID(from: path)
@@ -164,73 +297,57 @@ final class CursorAgentStatusMonitor: ObservableObject {
             )
         }
 
-        guard let mostRecent = snapshots.max(by: { $0.lastActivityMs < $1.lastActivityMs }) else {
-            trafficLightState = .inactive
-            return
+        return snapshots.map { snapshot in
+            let mapped = AgentTrafficLightMapper.map(
+                session: snapshot,
+                staleMinutes: staleMinutes,
+                stoppedCollapseMinutes: collapseMinutes,
+                inactiveDisplayMinutes: inactiveMinutes
+            )
+            return AgentSessionStatus(
+                id: "cursor-\(snapshot.sessionID)",
+                provider: "cursor",
+                conversationID: snapshot.sessionID,
+                chatName: normalizedChatName(composerMeta[snapshot.sessionID]?.name),
+                rawState: snapshot.composerStatus ?? "transcript",
+                displayState: mapped.state,
+                updatedAt: Date(timeIntervalSince1970: TimeInterval(snapshot.lastActivityMs) / 1000),
+                isVisible: mapped.visible
+            )
         }
-
-        trafficLightState = AgentTrafficLightMapper.map(
-            session: mostRecent,
-            staleMinutes: staleMinutes,
-            stoppedCollapseMinutes: Defaults[.agentStoppedCollapseMinutes]
-        )
     }
 
-    /// Aggregates per-conversation status files written by the agent hooks.
-    /// Multiple concurrent sessions resolve as: any executing wins, then any
-    /// thinking, then stopped. Active states that stopped updating are treated
-    /// as stopped; entries older than the stale window are ignored entirely.
-    private func hookReportedState(staleMinutes: Int, now: Date = Date()) -> AgentTrafficLightState? {
-        let directory = AgentHookInstaller.statusDirectory
-        guard let files = try? FileManager.default.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: [.contentModificationDateKey]
-        ) else { return nil }
+    private func normalizedChatName(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
 
-        let nowMs = Int64(now.timeIntervalSince1970 * 1000)
-        let staleMs = Int64(staleMinutes) * 60_000
-        let collapseMs = Int64(Defaults[.agentStoppedCollapseMinutes]) * 60_000
-        let activeStaleMs: Int64 = 360_000
+    private func enrichChatNames(fromComposerStore sessions: [AgentSessionStatus]) -> [AgentSessionStatus] {
+        let unresolvedCursorIDs = Set(
+            sessions
+                .filter { $0.provider.lowercased() == "cursor" && normalizedChatName($0.chatName) == nil }
+                .map(\.conversationID)
+        )
+        guard !unresolvedCursorIDs.isEmpty else { return sessions }
 
-        var anyExecuting = false
-        var anyThinking = false
-        var anyStopped = false
-
-        for file in files where file.pathExtension == "json" {
-            guard let data = try? Data(contentsOf: file),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let state = json["state"] as? String else { continue }
-
-            var tsMs = (json["ts"] as? NSNumber)?.int64Value ?? 0
-            if tsMs <= 0,
-               let mtime = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate {
-                tsMs = Int64(mtime.timeIntervalSince1970 * 1000)
+        let composerMeta = CursorComposerStore.loadComposerMeta(forIDs: unresolvedCursorIDs)
+        return sessions.map { session in
+            guard session.provider.lowercased() == "cursor",
+                  normalizedChatName(session.chatName) == nil,
+                  let name = normalizedChatName(composerMeta[session.conversationID]?.name) else {
+                return session
             }
-
-            guard nowMs - tsMs <= staleMs else {
-                try? FileManager.default.removeItem(at: file)
-                continue
-            }
-
-            let ageMs = nowMs - tsMs
-            switch state {
-            case "executing" where ageMs <= activeStaleMs:
-                anyExecuting = true
-            case "thinking" where ageMs <= activeStaleMs:
-                anyThinking = true
-            default:
-                // Stopped (or abandoned active) sessions keep the red light
-                // only for the collapse window, then the indicator hides.
-                if ageMs <= collapseMs {
-                    anyStopped = true
-                }
-            }
+            return AgentSessionStatus(
+                id: session.id,
+                provider: session.provider,
+                conversationID: session.conversationID,
+                chatName: name,
+                rawState: session.rawState,
+                displayState: session.displayState,
+                updatedAt: session.updatedAt,
+                isVisible: session.isVisible
+            )
         }
-
-        if anyExecuting { return .executing }
-        if anyThinking { return .thinking }
-        if anyStopped { return .stopped }
-        return nil
     }
 
     private func isCursorRunning() -> Bool {

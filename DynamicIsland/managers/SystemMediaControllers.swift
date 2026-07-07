@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -274,7 +274,7 @@ final class SystemVolumeController {
             var value = Float32(0)
             let status = getData(selector: kAudioDevicePropertyVolumeScalar, element: element, data: &value)
             if status == noErr {
-                if element == kAudioObjectPropertyElementMaster {
+                if element == kAudioObjectPropertyElementMain {
                     masterVolume = value
                 }
                 accumulator += value
@@ -399,8 +399,13 @@ final class SystemVolumeController {
         for element in preferredElements(for: selector) {
             var address = makeAddress(selector: selector, element: element)
             guard propertyExists(deviceID: currentDeviceID, address: &address) else { continue }
-            var size = UInt32(MemoryLayout<T>.size)
-            lastStatus = AudioObjectGetPropertyData(currentDeviceID, &address, 0, nil, &size, &data)
+            lastStatus = withUnsafeMutableBytes(of: &data) { buffer in
+                guard let baseAddress = buffer.baseAddress else {
+                    return OSStatus(kAudioHardwareIllegalOperationError)
+                }
+                var size = UInt32(buffer.count)
+                return AudioObjectGetPropertyData(currentDeviceID, &address, 0, nil, &size, baseAddress)
+            }
             if lastStatus == noErr {
                 cache(element: element, for: selector)
                 return lastStatus
@@ -414,8 +419,13 @@ final class SystemVolumeController {
         for element in preferredElements(for: selector) {
             var address = makeAddress(selector: selector, element: element)
             guard propertyExists(deviceID: currentDeviceID, address: &address) else { continue }
-            let size = UInt32(MemoryLayout<T>.size)
-            lastStatus = AudioObjectSetPropertyData(currentDeviceID, &address, 0, nil, size, &data)
+            lastStatus = withUnsafeMutableBytes(of: &data) { buffer in
+                guard let baseAddress = buffer.baseAddress else {
+                    return OSStatus(kAudioHardwareIllegalOperationError)
+                }
+                let size = UInt32(buffer.count)
+                return AudioObjectSetPropertyData(currentDeviceID, &address, 0, nil, size, baseAddress)
+            }
             if lastStatus == noErr {
                 cache(element: element, for: selector)
                 return lastStatus
@@ -429,8 +439,13 @@ final class SystemVolumeController {
         guard propertyExists(deviceID: currentDeviceID, address: &address) else {
             return kAudioHardwareUnknownPropertyError
         }
-        var size = UInt32(MemoryLayout<T>.size)
-        return AudioObjectGetPropertyData(currentDeviceID, &address, 0, nil, &size, &data)
+        return withUnsafeMutableBytes(of: &data) { buffer in
+            guard let baseAddress = buffer.baseAddress else {
+                return OSStatus(kAudioHardwareIllegalOperationError)
+            }
+            var size = UInt32(buffer.count)
+            return AudioObjectGetPropertyData(currentDeviceID, &address, 0, nil, &size, baseAddress)
+        }
     }
 
     private func setData<T>(selector: AudioObjectPropertySelector, element: AudioObjectPropertyElement, data: inout T) -> OSStatus {
@@ -438,8 +453,13 @@ final class SystemVolumeController {
         guard propertyExists(deviceID: currentDeviceID, address: &address) else {
             return kAudioHardwareUnknownPropertyError
         }
-        let size = UInt32(MemoryLayout<T>.size)
-        return AudioObjectSetPropertyData(currentDeviceID, &address, 0, nil, size, &data)
+        return withUnsafeMutableBytes(of: &data) { buffer in
+            guard let baseAddress = buffer.baseAddress else {
+                return OSStatus(kAudioHardwareIllegalOperationError)
+            }
+            let size = UInt32(buffer.count)
+            return AudioObjectSetPropertyData(currentDeviceID, &address, 0, nil, size, baseAddress)
+        }
     }
 
     private func volumeElements() -> [AudioObjectPropertyElement] {

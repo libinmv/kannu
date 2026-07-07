@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,7 +27,7 @@ final class SystemKeyboardBacklightController {
 
     var onBacklightChange: ((Float) -> Void)?
 
-    private let workerQueue = DispatchQueue(label: "com.atoll.keyboardBacklight", qos: .userInitiated)
+    private let workerQueue = DispatchQueue(label: "com.kannu.keyboardBacklight", qos: .userInitiated)
     private let notificationCenter = NotificationCenter.default
     private var isRunning = false
 

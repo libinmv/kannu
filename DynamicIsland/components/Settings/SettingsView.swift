@@ -800,6 +800,7 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .appearance, title: "Mirror shape", keywords: ["mirror shape", "circle", "rectangle"], highlightID: SettingsTab.appearance.highlightID(for: "Mirror shape")),
             SettingsSearchEntry(tab: .appearance, title: "Idle Animation", keywords: ["face animation", "idle", "cool face"], highlightID: SettingsTab.appearance.highlightID(for: "Idle Animation")),
             SettingsSearchEntry(tab: .appearance, title: "App icon", keywords: ["app icon", "custom icon"], highlightID: SettingsTab.appearance.highlightID(for: "App icon")),
+            SettingsSearchEntry(tab: .appearance, title: "Notch fill color", keywords: ["notch color", "background", "fill", "appearance"], highlightID: SettingsTab.appearance.highlightID(for: "Notch fill color")),
             SettingsSearchEntry(tab: .appearance, title: "Notch skin", keywords: ["notch skin", "background", "wallpaper", "custom skin"], highlightID: SettingsTab.appearance.highlightID(for: "Notch skin")),
             SettingsSearchEntry(tab: .appearance, title: "Skin scrim opacity", keywords: ["scrim", "overlay", "darken", "notch skin"], highlightID: SettingsTab.appearance.highlightID(for: "Skin scrim opacity")),
 
@@ -2226,21 +2227,21 @@ private struct ExternalDisplayIntegrationsSection: View {
         switch thirdPartyDDCProvider {
         case .betterDisplay:
             if !betterDisplayManager.isDetected {
-                return "Install [BetterDisplay](https://betterdisplay.pro) to control external display brightness (and optional volume) through Atoll's HUD."
+                return "Install [BetterDisplay](https://betterdisplay.pro) to control external display brightness (and optional volume) through Kannu's HUD."
             }
             if !betterDisplayManager.isRunning {
                 return "BetterDisplay is installed but not currently running. Launch BetterDisplay to enable integration."
             }
-            return "BetterDisplay OSD events will be routed through Atoll's active HUD style. Brightness is always routed; volume is routed when external volume control listener is enabled below. Make sure BetterDisplay's OSD integration is enabled in Settings › Application › Integration."
+            return "BetterDisplay OSD events will be routed through Kannu's active HUD style. Brightness is always routed; volume is routed when external volume control listener is enabled below. Make sure BetterDisplay's OSD integration is enabled in Settings › Application › Integration."
         case .lunar:
             if !lunarManager.isDetected {
-                return "Install [Lunar](https://lunar.fyi) to control external display brightness, contrast, and optional volume through Atoll's HUD via DDC."
+                return "Install [Lunar](https://lunar.fyi) to control external display brightness, contrast, and optional volume through Kannu's HUD via DDC."
             }
             if !lunarManager.isRunning {
                 return "Lunar is installed but not currently running. Launch Lunar to enable integration."
             }
             if lunarManager.isConnected {
-                return "Connected to Lunar's DDC socket. Brightness and contrast adjustments are shown through Atoll's HUD; volume follows when external volume control listener is enabled below."
+                return "Connected to Lunar's DDC socket. Brightness and contrast adjustments are shown through Kannu's HUD; volume follows when external volume control listener is enabled below."
             }
             return "Lunar is running but the socket connection is not yet established. It will connect automatically."
         }
@@ -2350,8 +2351,8 @@ private struct ExternalDisplayIntegrationsSection: View {
 
                     Text(
                         enableExternalVolumeControlListener
-                        ? "Atoll's built-in volume key interception is disabled while external volume listening is on. Volume HUD/OSD will follow \(thirdPartyDDCProvider.displayName) payloads."
-                        : "Atoll keeps native volume key interception. External provider volume payloads are ignored while this is off."
+                        ? "Kannu's built-in volume key interception is disabled while external volume listening is on. Volume HUD/OSD will follow \(thirdPartyDDCProvider.displayName) payloads."
+                        : "Kannu keeps native volume key interception. External provider volume payloads are ignored while this is off."
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -2376,13 +2377,13 @@ private struct ExternalDisplayIntegrationsSection: View {
                     }
                     .buttonStyle(.link)
                 } else {
-                    Text("Enable to route BetterDisplay or Lunar display adjustments through Atoll's active HUD style.")
+                    Text("Enable to route BetterDisplay or Lunar display adjustments through Kannu's active HUD style.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             } footer: {
                 if enableThirdPartyDDCIntegration {
-                    Text("Atoll always listens to selected-provider brightness events, and listens to provider volume events only when external volume listener is enabled.")
+                    Text("Kannu always listens to selected-provider brightness events, and listens to provider volume events only when external volume listener is enabled.")
                         .foregroundStyle(.secondary)
                         .font(.caption)
                 }
@@ -3001,7 +3002,7 @@ struct Media: View {
                     }
                     .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
                     .settingsHighlight(id: highlightID("Keep album art visible during fullscreen artwork"))
-                    Text("Right-click the album art on the lock screen to set it as the wallpaper. Right-click again or click the background to restore the original wallpaper. If a canvas is available, Atoll can also keep the same album art + player layout on top of the live canvas.")
+                    Text("Right-click the album art on the lock screen to set it as the wallpaper. Right-click again or click the background to restore the original wallpaper. If a canvas is available, Kannu can also keep the same album art + player layout on top of the live canvas.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -3096,54 +3097,7 @@ struct About: View {
                 }
 
                 UpdaterSettingsView(updater: updaterController.updater)
-
-                HStack(spacing: 30) {
-                    Spacer(minLength: 0)
-                    Button {
-                        NSWorkspace.shared.open(sponsorPage)
-                    } label: {
-                        VStack(spacing: 5) {
-                            Image(systemName: "cup.and.saucer.fill")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(.white)
-                            Text("Donate")
-                                .foregroundStyle(.white)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    Spacer(minLength: 0)
-                    Button {
-                        NSWorkspace.shared.open(productPage)
-                    } label: {
-                        VStack(spacing: 5) {
-                            Image("Github")
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 18)
-                            Text("GitHub")
-                                .foregroundStyle(.white)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    Spacer(minLength: 0)
-                }
-                .buttonStyle(PlainButtonStyle())
-                Text("Your support funds software development learning for students in 9th–12th grade.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
             }
-            VStack(spacing: 0) {
-                Divider()
-                Text("Made with ❤️ by Ebullioscopic")
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 5)
-                    .padding(.bottom, 7)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 10)
-            }
-            .frame(maxWidth: .infinity, alignment: .center)
-            .background(.regularMaterial)
         }
         .toolbar {
             //            Button("Welcome window") {
@@ -3715,6 +3669,7 @@ struct Appearance: View {
     @Default(.customNotchSkins) private var customNotchSkins
     @Default(.selectedNotchSkinID) private var selectedNotchSkinID
     @Default(.notchSkinScrimOpacity) private var notchSkinScrimOpacity
+    @Default(.notchFillColor) private var notchFillColor
     @ObservedObject private var notchSkinManager = NotchSkinManager.shared
     @Default(.openNotchWidth) var openNotchWidth
     @Default(.closedNotchWidth) var closedNotchWidth
@@ -3839,6 +3794,29 @@ struct Appearance: View {
             }
 
             notchWidthControls()
+
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 10) {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(notchFillColor)
+                            .frame(width: 36, height: 24)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
+                            )
+                        Text("Current fill")
+                            .foregroundStyle(.secondary)
+                            .font(.caption)
+                        Spacer()
+                        NotchFillColorWell(color: $notchFillColor)
+                            .frame(width: 48, height: 28)
+                    }
+                }
+                .settingsHighlight(id: highlightID("Notch fill color"))
+            } header: {
+                Text("Notch appearance")
+            }
 
             Section {
                 if #available(macOS 26.0, *) {
@@ -4127,6 +4105,12 @@ struct Appearance: View {
                             Text(device.localizedName)
                                 .tag(device.uniqueID)
                         }
+                    }
+                    .onAppear {
+                        webcamManager.reconcileSelectedCameraID()
+                    }
+                    .onChange(of: webcamManager.availableCameras.map(\.uniqueID)) { _, _ in
+                        webcamManager.reconcileSelectedCameraID()
                     }
                     .onChange(of: selectedCameraID) { _, _ in
                         if Defaults[.showMirror] {
@@ -4510,7 +4494,6 @@ struct Appearance: View {
             let dynamicRange = Double(recommendedMin)...900
             
             let closedRange = Double(80)...400
-            let minimalisticRange = Double(250)...600
 
             let widthBinding = Binding<Double>(
                 get: { Double(openNotchWidth) },
@@ -4820,7 +4803,7 @@ struct LockScreenSettings: View {
                     }
                     .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
                     .settingsHighlight(id: highlightID("Keep album art visible during fullscreen artwork"))
-                    Text("Right-click the album art on the lock screen to set it as the wallpaper. Right-click again or click the background to restore the original wallpaper. If a canvas is available, Atoll can also keep the same album art + player layout on top of the live canvas.")
+                    Text("Right-click the album art on the lock screen to set it as the wallpaper. Right-click again or click the background to restore the original wallpaper. If a canvas is available, Kannu can also keep the same album art + player layout on top of the live canvas.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -6566,7 +6549,7 @@ struct StatsSettings: View {
                 } header: {
                     Text("LLM Providers")
                 } footer: {
-                    Text("Choose which AI providers appear in the Usage tab.")
+                    Text("Choose which AI providers appear in the Usage tab. Quota requires each CLI to be signed in locally (Claude: ~/.claude/.credentials.json, Codex: ~/.codex/auth.json, Cursor: signed into the Cursor app). Full Disk Access is not required for usage monitoring.")
                         .multilineTextAlignment(.trailing)
                         .foregroundStyle(.secondary)
                         .font(.caption)
@@ -7484,7 +7467,7 @@ struct NotesSettingsView: View {
                 } header: {
                     Text("Apple Notes")
                 } footer: {
-                    Text("Two-way sync with the macOS Notes app. Notes created in Atoll appear in the Atoll folder in Notes, and your existing Apple Notes are imported into the notch. Grant Automation permission for Notes when prompted.")
+                    Text("Two-way sync with the macOS Notes app. Notes created in Kannu appear in the Kannu folder in Notes, and your existing Apple Notes are imported into the notch. Grant Automation permission for Notes when prompted.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -7496,6 +7479,45 @@ struct NotesSettingsView: View {
 
 // MARK: - Quick Share Provider Icon
 
+struct NotchFillColorWell: NSViewRepresentable {
+    @Binding var color: Color
+
+    func makeNSView(context: Context) -> NSColorWell {
+        let well = NSColorWell()
+        well.target = context.coordinator
+        well.action = #selector(Coordinator.colorChanged(_:))
+        well.color = nsColor(from: color)
+        return well
+    }
+
+    func updateNSView(_ well: NSColorWell, context: Context) {
+        let updated = nsColor(from: color)
+        if !well.color.isEqual(updated) {
+            well.color = updated
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(color: $color)
+    }
+
+    private func nsColor(from color: Color) -> NSColor {
+        NSColor(color).usingColorSpace(.sRGB) ?? NSColor(color)
+    }
+
+    final class Coordinator: NSObject {
+        var color: Binding<Color>
+
+        init(color: Binding<Color>) {
+            self.color = color
+        }
+
+        @objc func colorChanged(_ sender: NSColorWell) {
+            let picked = sender.color.usingColorSpace(.sRGB) ?? sender.color
+            color.wrappedValue = Color(nsColor: picked)
+        }
+    }
+}
 
 struct AppIconImage: View {
     let bundleIdentifiers: [String]
@@ -7606,6 +7628,7 @@ struct AgentStatusSettings: View {
     @Default(.enableAgentStatusFeature) var enableAgentStatusFeature
     @Default(.agentStatusStaleMinutes) var agentStatusStaleMinutes
     @Default(.agentStoppedCollapseMinutes) var agentStoppedCollapseMinutes
+    @Default(.agentInactiveDisplayMinutes) var agentInactiveDisplayMinutes
     @Default(.showAgentStoppedIndicator) var showAgentStoppedIndicator
     @Default(.enableAgentStatusMobileNotifications) var enableMobileNotifications
     @Default(.agentStatusNotificationProvider) var notificationProvider
@@ -7631,13 +7654,13 @@ struct AgentStatusSettings: View {
             } header: {
                 Text("Agent Status")
             } footer: {
-                Text("Shows a traffic light in the notch while AI agents run in your editor: yellow when an agent is thinking, green when it is executing a task, and red when it has stopped.")
+                Text("Shows a traffic light in the notch while AI agents run in your editor: green while the agent is working, yellow when it needs your input, and red when it has stopped.")
             }
 
             if enableAgentStatusFeature {
                 Section {
-                    legendRow(color: .yellow, title: String(localized: "Thinking"), detail: String(localized: "The agent is reasoning or composing a response"))
-                    legendRow(color: .green, title: String(localized: "Executing"), detail: String(localized: "The agent is running tools and doing work"))
+                    legendRow(color: .green, title: String(localized: "Active"), detail: String(localized: "The agent is thinking, planning, executing tools, or otherwise working"))
+                    legendRow(color: .yellow, title: String(localized: "Awaiting Input"), detail: String(localized: "The agent needs your approval or a response"))
                     legendRow(color: .red, title: String(localized: "Stopped"), detail: String(localized: "The agent has finished or was aborted"))
                     HStack {
                         Text("Current State")
@@ -7673,6 +7696,22 @@ struct AgentStatusSettings: View {
                     .settingsHighlight(id: highlightID("Hide red light after"))
 
                     HStack {
+                        Text("Show dim traffic light for")
+                        Spacer()
+                        Picker("", selection: $agentInactiveDisplayMinutes) {
+                            Text("1 minute").tag(1)
+                            Text("2 minutes").tag(2)
+                            Text("5 minutes").tag(5)
+                            Text("10 minutes").tag(10)
+                        }
+                        .pickerStyle(.menu)
+                        .frame(minWidth: 120)
+                    }
+                    .disabled(showAgentStoppedIndicator)
+                    .opacity(showAgentStoppedIndicator ? 0.5 : 1.0)
+                    .settingsHighlight(id: highlightID("Dim traffic light duration"))
+
+                    HStack {
                         Text("Consider agents inactive after")
                         Spacer()
                         Picker("", selection: $agentStatusStaleMinutes) {
@@ -7688,7 +7727,7 @@ struct AgentStatusSettings: View {
                 } header: {
                     Text("Indicator")
                 } footer: {
-                    Text("The entire traffic light disappears once an agent has been stopped for the chosen time, and returns when an agent starts working again. Sessions with no activity beyond the inactive window are ignored entirely. While the red light is kept visible when idle, the hide delay has no effect.")
+                    Text("After an agent stops, the red light stays visible for the chosen time, then all lights dim for the inactive duration, then the traffic light disappears entirely. While the red light is kept visible when idle, the hide and dim delays have no effect.")
                 }
 
                 Section {
@@ -7704,8 +7743,6 @@ struct AgentStatusSettings: View {
                     }
                 } header: {
                     Text("Editor Hooks")
-                } footer: {
-                    Text("Installs hooks that report agent activity in real time for the most accurate status: Cursor (~/.cursor/hooks.json), VS Code Copilot (~/.copilot/hooks), and Codex CLI (~/.codex/hooks.json). Existing hooks are preserved and the hooks never block your agents. Without a hook, AgentStat falls back to polling Cursor's agent transcripts.")
                 }
 
                 Section {
@@ -7786,10 +7823,11 @@ struct AgentStatusSettings: View {
     @ViewBuilder
     private func hookRow(for provider: AgentHookProvider) -> some View {
         let installed = hookInstaller.isInstalled(provider)
-        HStack {
+        HStack(spacing: 10) {
             Circle()
                 .fill(installed ? Color.green : Color.secondary.opacity(0.5))
                 .frame(width: 8, height: 8)
+            AgentProviderIconView(source: .init(hookProvider: provider), size: 18)
             Text(provider.displayName)
             Spacer()
             Button(installed ? "Remove" : "Install") {
@@ -7806,6 +7844,7 @@ struct AgentStatusSettings: View {
         switch state {
         case .thinking: return String(localized: "Thinking")
         case .executing: return String(localized: "Executing")
+        case .awaitingInput: return String(localized: "Awaiting Input")
         case .stopped: return String(localized: "Stopped")
         case .inactive: return String(localized: "Inactive")
         }

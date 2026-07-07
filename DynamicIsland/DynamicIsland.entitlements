@@ -6,7 +6,7 @@
     <true/>
     <key>com.apple.security.mach-services</key>
     <array>
-        <string>com.ebullioscopic.Atoll.xpc</string>
+        <string>com.kannu.app.xpc</string>
     </array>
     <key>com.apple.security.automation.apple-events</key>
     <true/>

@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,6 +35,7 @@ struct DynamicIslandHeader: View {
     @Default(.timerDisplayMode) var timerDisplayMode
     @Default(.showClipboardIcon) var showClipboardIcon
     @Default(.showColorPickerIcon) var showColorPickerIcon
+    @Default(.notchFillColor) private var notchFillColor
     @Default(.clipboardDisplayMode) var clipboardDisplayMode
     @Default(.showBatteryIndicator) var showBatteryIndicator
     @Default(.showBatteryPercentInside) var showBatteryPercentInside
@@ -60,10 +61,10 @@ struct DynamicIslandHeader: View {
 
             if vm.notchState == .open {
                 let spacerWidth = min(vm.closedNotchSize.width, 300)
+                let spacerHeight = max(24, vm.effectiveClosedNotchHeight)
                 Rectangle()
-                    .fill(enableMinimalisticUI ? .clear : (NSScreen.screens
-                        .first(where: { $0.localizedName == coordinator.selectedScreen })?.safeAreaInsets.top ?? 0 > 0 ? .black : .clear))
-                    .frame(width: spacerWidth)
+                    .fill(enableMinimalisticUI || !selectedScreenHasPhysicalNotch ? .clear : notchFillColor)
+                    .frame(width: spacerWidth, height: spacerHeight)
                     .mask {
                         NotchShape()
                     }
@@ -116,7 +117,7 @@ struct DynamicIslandHeader: View {
                         .popover(isPresented: $showClipboardPopover, arrowEdge: .bottom) {
                             ClipboardPopover()
                         }
-                        .onChange(of: showClipboardPopover) { isActive in
+                        .onChange(of: showClipboardPopover) { _, isActive in
                             vm.isClipboardPopoverActive = isActive
                             
                             // If popover was closed, trigger a hover recheck
@@ -153,7 +154,7 @@ struct DynamicIslandHeader: View {
                         .popover(isPresented: $showTimerPopover, arrowEdge: .bottom) {
                             TimerPopover()
                         }
-                        .onChange(of: showTimerPopover) { isActive in
+                        .onChange(of: showTimerPopover) { _, isActive in
                             vm.isTimerPopoverActive = isActive
                             if !isActive {
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -237,7 +238,7 @@ struct DynamicIslandHeader: View {
         }
         .foregroundColor(.gray)
         .environmentObject(vm)
-        .onChange(of: coordinator.shouldToggleClipboardPopover) { _ in
+        .onChange(of: coordinator.shouldToggleClipboardPopover) { _, _ in
             // Only toggle if clipboard is enabled
             if Defaults[.enableClipboardManager] {
                 switch clipboardDisplayMode {
@@ -276,6 +277,10 @@ struct DynamicIslandHeader: View {
 }
 
 private extension DynamicIslandHeader {
+    var selectedScreenHasPhysicalNotch: Bool {
+        NSScreen.screens.first(where: { $0.localizedName == coordinator.selectedScreen })?.safeAreaInsets.top ?? 0 > 0
+    }
+
     var shouldSuppressStatusIndicators: Bool {
         Defaults[.settingsIconInNotch]
             && Defaults[.enableClipboardManager]

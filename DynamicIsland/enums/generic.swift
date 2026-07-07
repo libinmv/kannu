@@ -1,9 +1,9 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * Originally from boring.notch project
- * Modified and adapted for Atoll (DynamicIsland)
+ * Modified and adapted for Kannu (കണ്ണ്)
  * See NOTICE for details.
  *
  * This program is free software: you can redistribute it and/or modify
@@ -29,7 +29,7 @@ public enum Style {
     case floating
 }
 
-/// Controls how Atoll renders on external and non-notched displays.
+/// Controls how Kannu renders on external and non-notched displays.
 /// - `notch`: Standard notch shape (concave top corners blending into the screen edge).
 /// - `dynamicIsland`: Pill-shaped island with continuously rounded corners,
 ///   inspired by DynamicNotchKit's floating style. Only applies to screens
@@ -76,6 +76,7 @@ public enum NotchViews {
     case timer
     case stats
     case llmUsage
+    case agentStatus
     case notes
     case clipboard
     case extensionExperience

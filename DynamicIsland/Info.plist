@@ -8,17 +8,17 @@
 		<true/>
 	</dict>
 	<key>NSAppleMusicUsageDescription</key>
-	<string>Atoll uses Apple Music to fetch animated artwork for the lock screen wallpaper.</string>
+	<string>Kannu uses Apple Music to fetch animated artwork for the lock screen wallpaper.</string>
 	<key>NSAudioCaptureUsageDescription</key>
-	<string>Atoll needs audio capture permission to display the real-time music waveform visualizer.</string>
+	<string>Kannu needs audio capture permission to display the real-time music waveform visualizer.</string>
 	<key>NSScreenCaptureUsageDescription</key>
-	<string>Atoll needs screen recording permission to capture screenshots for the AI assistant feature.</string>
+	<string>Kannu needs screen recording permission to capture screenshots for the AI assistant feature.</string>
 	<key>SUEnableDownloaderService</key>
 	<true/>
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/Ebullioscopic/Atoll/main/Updates/appcast.xml</string>
+	<string></string>
 	<key>SUPublicEDKey</key>
 	<string>q2YQaJ1umGkaIJWMGN9Isj5fx/YlUtxnzHEBqFtfZcg=</string>
 	<key>UTImportedTypeDeclarations</key>

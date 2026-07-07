@@ -1,9 +1,9 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * Originally from boring.notch project
- * Modified and adapted for Atoll (DynamicIsland)
+ * Modified and adapted for Kannu (കണ്ണ്)
  * See NOTICE for details.
  *
  * This program is free software: you can redistribute it and/or modify
@@ -83,6 +83,10 @@ struct TabSelectionView: View {
         // Usage tab only shown when LLM usage feature is enabled
         if Defaults[.enableLLMUsageFeature] {
             tabsArray.append(TabModel(label: "Usage", icon: "chart.bar.doc.horizontal", view: .llmUsage))
+        }
+
+        if Defaults[.enableAgentStatusFeature] {
+            tabsArray.append(TabModel(label: "Agent", icon: "light.beacon.max", view: .agentStatus))
         }
 
         if Defaults[.enableNotes] || (Defaults[.enableClipboardManager] && Defaults[.clipboardDisplayMode] == .separateTab) {

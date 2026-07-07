@@ -1,7 +1,7 @@
 /*
- * Atoll (DynamicIsland)
+ * Kannu (കണ്ണ്)
  * Original work Copyright (C) 2026 ZephyrCodesStuff (https://github.com/ZephyrCodesStuff/rtaudio)
- * Modified work Copyright (C) 2026 Atoll Contributors
+ * Modified work Copyright (C) 2026 Kannu Contributors
  *
  * CoreAudio tap for capturing real-time audio from music applications.
  * Uses macOS 14.2+ Process Tap API for efficient audio capture.
@@ -26,7 +26,7 @@ import CoreAudio
 import simd
 import os.log
 
-private let audioTapLog = OSLog(subsystem: "com.atoll.dynamicisland", category: "AudioTap")
+private let audioTapLog = OSLog(subsystem: "com.kannu.app", category: "AudioTap")
 
 // Debug: track callback invocations
 private var callbackCount: Int = 0
@@ -100,7 +100,7 @@ private func getAudioObjectID(for pid: pid_t) -> AudioObjectID? {
 }
 
 /// Singleton class for real-time audio capture from music apps
-class AudioTap: NSObject {
+class AudioTap: NSObject, @unchecked Sendable {
     static let shared = AudioTap()
     
     let bridge = AudioBridge()
@@ -115,7 +115,7 @@ class AudioTap: NSObject {
     private var updateTimer: Timer?
     
     // Serial queue to prevent race conditions
-    private let audioQueue = DispatchQueue(label: "com.atoll.audiotap", qos: .userInitiated)
+    private let audioQueue = DispatchQueue(label: "com.kannu.audiotap", qos: .userInitiated)
     
     // Debounce restart requests
     private var pendingRestartWorkItem: DispatchWorkItem?
@@ -222,7 +222,7 @@ class AudioTap: NSObject {
         // Create the Aggregate Device (a "virtual microphone" that we can route the tap into)
         let tapList = [[kAudioSubTapUIDKey: tapUID]]
         let aggregateDict: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "Atoll_Virtual_Tap",
+            kAudioAggregateDeviceNameKey: "Kannu_Virtual_Tap",
             kAudioAggregateDeviceUIDKey: UUID().uuidString,
             kAudioAggregateDeviceIsPrivateKey: true,  // Hides it from the user's sound settings
             kAudioAggregateDeviceTapListKey: tapList,
