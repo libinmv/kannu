@@ -135,7 +135,15 @@ struct DynamicIslandArtworkSourceView: View {
 
     var body: some View {
         Group {
-            if let liveCanvasURL {
+            if !musicManager.hasActiveSession {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
+                    .overlay {
+                        Image(systemName: "music.note")
+                            .font(.system(size: 28, weight: .light))
+                            .foregroundStyle(.gray.opacity(0.55))
+                    }
+            } else if let liveCanvasURL {
                 DynamicIslandArtworkVideoView(url: liveCanvasURL, videoGravity: .resizeAspectFill)
             } else {
                 Image(nsImage: musicManager.albumArt)
@@ -151,6 +159,7 @@ struct DynamicIslandArtworkSourceView: View {
 
 struct MusicPlayerView: View {
     @EnvironmentObject var vm: DynamicIslandViewModel
+    @ObservedObject private var musicManager = MusicManager.shared
     let albumArtNamespace: Namespace.ID
 
     var body: some View {
@@ -160,6 +169,8 @@ struct MusicPlayerView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .opacity(musicManager.hasActiveSession ? 1 : 0.72)
+        .animation(.smooth(duration: 0.25), value: musicManager.hasActiveSession)
     }
 }
 
@@ -233,9 +244,11 @@ struct AlbumArtView: View {
 
             }
             .buttonStyle(PlainButtonStyle())
-            .scaleEffect(musicManager.isPlaying ? 1 : 0.85)
+            .scaleEffect(musicManager.hasActiveSession && musicManager.isPlaying ? 1 : 0.85)
             
-            albumArtDarkOverlay
+            if musicManager.hasActiveSession {
+                albumArtDarkOverlay
+            }
         }
     }
 
@@ -322,20 +335,24 @@ struct MusicControlsView: View {
     private func songInfo(width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             MusicTitleMarqueeView(
-                text: musicManager.songTitle,
-                isExplicit: musicManager.isCurrentTrackExplicit,
+                text: musicManager.hasActiveSession ? musicManager.songTitle : "Now Playing",
+                isExplicit: musicManager.hasActiveSession && musicManager.isCurrentTrackExplicit,
                 font: .headline,
                 nsFont: .headline,
-                textColor: .white,
+                textColor: musicManager.hasActiveSession ? .white : .white.opacity(0.55),
                 frameWidth: width,
                 badgeHeight: 14
             )
             MarqueeText(
-                $musicManager.artistName,
+                musicManager.hasActiveSession
+                    ? $musicManager.artistName
+                    : .constant("Nothing playing"),
                 font: .headline,
                 nsFont: .headline,
-                textColor: Defaults[.playerColorTinting] ? Color(nsColor: musicManager.avgColor)
-                    .ensureMinimumBrightness(factor: 0.6) : .gray,
+                textColor: musicManager.hasActiveSession
+                    ? (Defaults[.playerColorTinting] ? Color(nsColor: musicManager.avgColor)
+                        .ensureMinimumBrightness(factor: 0.6) : .gray)
+                    : .gray.opacity(0.65),
                 frameWidth: width
             )
             .fontWeight(.medium)
@@ -396,6 +413,8 @@ struct MusicControlsView: View {
             }
             .padding(.top, 5)
             .frame(height: 36)
+            .opacity(musicManager.hasActiveSession ? 1 : 0.45)
+            .allowsHitTesting(musicManager.hasActiveSession)
         }
     }
 
@@ -688,15 +707,7 @@ struct NotchHomeView: View {
     @ObservedObject var batteryModel = BatteryStatusViewModel.shared
     @ObservedObject var coordinator = DynamicIslandViewCoordinator.shared
     @ObservedObject private var extensionNotchExperienceManager = ExtensionNotchExperienceManager.shared
-    @ObservedObject private var musicManager = MusicManager.shared
-    @Default(.showStandardMediaControls) private var showStandardMediaControls
-    @Default(.autoHideInactiveNotchMediaPlayer) private var autoHideInactiveNotchMediaPlayer
     let albumArtNamespace: Namespace.ID
-
-    /// Whether the music player should actively display (enabled AND has real content).
-    private var shouldShowMusicPlayer: Bool {
-        showStandardMediaControls && (!autoHideInactiveNotchMediaPlayer || musicManager.hasActiveSession)
-    }
     
     var body: some View {
         Group {
@@ -719,26 +730,9 @@ struct NotchHomeView: View {
                     MinimalisticMusicPlayerView(albumArtNamespace: albumArtNamespace)
                 }
             } else {
-                // Normal mode: Show full music player with optional calendar and webcam
-                if shouldShowMusicPlayer {
-                    MusicPlayerView(albumArtNamespace: albumArtNamespace)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                
-                if Defaults[.showCalendar] {
-                    Group {
-                        if shouldShowMusicPlayer {
-                            CalendarView()
-                        } else {
-                            StandaloneCalendarView()
-                        }
-                    }
+                // Home tab: Now Playing (inactive placeholder until media starts)
+                MusicPlayerView(albumArtNamespace: albumArtNamespace)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .onHover { isHovering in
-                        vm.isHoveringCalendar = isHovering
-                    }
-                    .environmentObject(vm)
-                }
                 
                 if Defaults[.showMirror],
                    webcamManager.cameraAvailable,

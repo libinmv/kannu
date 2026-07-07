@@ -26,7 +26,7 @@ enum ExtensionXPCServiceConstants {
 }
 
 @MainActor
-final class ExtensionXPCServiceHost: NSObject, NSXPCListenerDelegate {
+final class ExtensionXPCServiceHost: NSObject {
     static let shared = ExtensionXPCServiceHost()
 
     private final class ClientContext {
@@ -38,7 +38,7 @@ final class ExtensionXPCServiceHost: NSObject, NSXPCListenerDelegate {
             self.bundleIdentifier = bundleIdentifier
         }
     }
-
+                                                                                            
     private var listener: NSXPCListener?
     private var clientContexts: [ObjectIdentifier: ClientContext] = [:]
 
@@ -67,7 +67,7 @@ final class ExtensionXPCServiceHost: NSObject, NSXPCListenerDelegate {
         Logger.log("Stopped Atoll XPC listener", category: .extensions)
     }
 
-    func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
+    func acceptNewConnection(_ connection: NSXPCConnection) -> Bool {
         guard let bundleIdentifier = resolveBundleIdentifier(for: connection) else {
             Logger.log("Rejected XPC connection without bundle identifier", category: .extensions)
             return false
@@ -158,5 +158,21 @@ final class ExtensionXPCServiceHost: NSObject, NSXPCListenerDelegate {
     private func removeConnection(_ connection: NSXPCConnection) {
         clientContexts.removeValue(forKey: ObjectIdentifier(connection))
         Logger.log("Removed XPC connection", category: .extensions)
+    }
+}
+
+extension ExtensionXPCServiceHost: NSXPCListenerDelegate {
+    nonisolated func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated {
+                ExtensionXPCServiceHost.shared.acceptNewConnection(connection)
+            }
+        }
+
+        return DispatchQueue.main.sync {
+            MainActor.assumeIsolated {
+                ExtensionXPCServiceHost.shared.acceptNewConnection(connection)
+            }
+        }
     }
 }

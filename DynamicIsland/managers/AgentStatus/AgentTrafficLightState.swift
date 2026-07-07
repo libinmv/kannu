@@ -78,3 +78,14 @@ enum AgentTrafficLightMapper {
         return stoppedOrInactive()
     }
 }
+
+extension AgentTrafficLightState {
+    var notificationKey: String {
+        switch self {
+        case .thinking: return "thinking"
+        case .executing: return "executing"
+        case .stopped: return "stopped"
+        case .inactive: return "inactive"
+        }
+    }
+}
