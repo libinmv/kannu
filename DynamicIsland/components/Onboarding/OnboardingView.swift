@@ -21,12 +21,10 @@
  */
 
 import SwiftUI
-import AVFoundation
 import Defaults
 
 enum OnboardingStep {
     case welcome
-    case cameraPermission
     case musicPermission
     case profileSelection
     case finished
@@ -45,31 +43,9 @@ struct OnboardingView: View {
             case .welcome:
                 WelcomeView {
                     withAnimation(.easeInOut(duration: 0.6)) {
-                        step = .cameraPermission
+                        step = .musicPermission
                     }
                 }
-                .transition(.opacity)
-
-            case .cameraPermission:
-                PermissionRequestView(
-                    icon: Image(systemName: "camera.fill"),
-                    title: String(localized: "Enable Camera Access"),
-                    description: String(localized: "Kannu includes a mirror feature that lets you quickly check your appearance using your camera, right from the notch. Camera access is required only to show this live preview. You can turn the mirror feature on or off at any time in the app."),
-                    privacyNote: String(localized: "Your camera is never used without your consent, and nothing is recorded or stored."),
-                    onAllow: {
-                        Task {
-                            await requestCameraPermission()
-                            withAnimation(.easeInOut(duration: 0.6)) {
-                                step = .musicPermission
-                            }
-                        }
-                    },
-                    onSkip: {
-                        withAnimation(.easeInOut(duration: 0.6)) {
-                            step = .musicPermission
-                        }
-                    }
-                )
                 .transition(.opacity)
 
             case .musicPermission:
@@ -120,9 +96,5 @@ struct OnboardingView: View {
         } message: {
             Text("This is optional. You can change it any time from the menu bar.")
         }
-    }
-
-    func requestCameraPermission() async {
-        await AVCaptureDevice.requestAccess(for: .video)
     }
 }

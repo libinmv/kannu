@@ -1,5 +1,9 @@
 # കണ്ണ് (Kannu)
 
+<p align="center">
+  <img src=".github/assets/kannu-logo.png" alt="Kannu logo" width="160">
+</p>
+
 **Kannu** is a macOS notch utility focused on **AI agent status** in the MacBook notch. It shows a traffic-light indicator while Cursor, VS Code Copilot, or Codex agents run, with optional custom notch backgrounds and mobile push notifications.
 
 This project is licensed under GPL v3. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for upstream attribution.
@@ -19,7 +23,7 @@ Calendar, terminal, and color picker features from the upstream notch lineage ar
 - macOS 14.0 or later (optimised for macOS 15+).
 - MacBook with a notch, or a non-notch Mac using floating Dynamic Island pill mode.
 - Xcode 15+ to build from source.
-- Permissions as needed: Accessibility, Camera, Screen Recording, Music.
+- Permissions as needed: Accessibility, Screen Recording, Music.
 
 ## Build from Source
 
@@ -28,6 +32,35 @@ Calendar, terminal, and color picker features from the upstream notch lineage ar
 3. Build and run (⌘R).
 
 Application support data is stored under `~/Library/Application Support/Kannu/`. Agent status hooks write to `~/.kannu/agent-status/`.
+
+## Create a DMG
+
+From the repo root, build a Release app and package it:
+
+```bash
+xcodebuild build \
+  -project DynamicIsland.xcodeproj \
+  -scheme DynamicIsland \
+  -configuration Release \
+  -destination "platform=macOS" \
+  -derivedDataPath build \
+  CODE_SIGN_IDENTITY="-" \
+  CODE_SIGNING_REQUIRED=NO \
+  build
+
+chmod +x scripts/create-dmg.sh
+./scripts/create-dmg.sh
+```
+
+This writes `build/Kannu.dmg` with `Kannu.app` and an Applications shortcut.
+
+## Publish on GitHub
+
+1. Commit and push your changes (including `.github/assets/` branding files).
+2. Tag a release, for example `git tag v2.2.0 && git push origin v2.2.0`.
+3. The [Release workflow](.github/workflows/release.yml) builds the DMG and attaches it to the GitHub Release for that tag.
+
+For wider distribution outside GitHub, sign the app with a Developer ID certificate before creating the DMG so macOS Gatekeeper accepts it. The CI workflow produces an unsigned ad-hoc build suitable for testing and source builds.
 
 ## Quick Start
 

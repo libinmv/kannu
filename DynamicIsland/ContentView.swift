@@ -37,7 +37,6 @@ import UIKit
 @MainActor
 struct ContentView: View {
     @EnvironmentObject var vm: DynamicIslandViewModel
-    @EnvironmentObject var webcamManager: WebcamManager
 
     @ObservedObject var coordinator = DynamicIslandViewCoordinator.shared
     @ObservedObject var musicManager = MusicManager.shared
@@ -823,7 +822,6 @@ struct ContentView: View {
         .environmentObject(privacyManager)
         .background(dragDetector)
         .environmentObject(vm)
-        .environmentObject(webcamManager)
     }
 
     private func installRootLifecycleHandlers<Content: View>(on view: Content) -> some View {

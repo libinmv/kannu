@@ -703,7 +703,6 @@ struct MusicControlsView: View {
 
 struct NotchHomeView: View {
     @EnvironmentObject var vm: DynamicIslandViewModel
-    @ObservedObject var webcamManager = WebcamManager.shared
     @ObservedObject var batteryModel = BatteryStatusViewModel.shared
     @ObservedObject var coordinator = DynamicIslandViewCoordinator.shared
     @ObservedObject private var extensionNotchExperienceManager = ExtensionNotchExperienceManager.shared
@@ -733,15 +732,6 @@ struct NotchHomeView: View {
                 // Home tab: Now Playing (inactive placeholder until media starts)
                 MusicPlayerView(albumArtNamespace: albumArtNamespace)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                
-                if Defaults[.showMirror],
-                   webcamManager.cameraAvailable,
-                   vm.notchState == .open {
-                    CameraPreviewView(webcamManager: webcamManager)
-                        .scaledToFit()
-                        .opacity(vm.notchState == .closed ? 0 : 1)
-                        .blur(radius: vm.notchState == .closed ? 20 : 0)
-                }
             }
         }
         .transition(.opacity.animation(.smooth.speed(0.9))

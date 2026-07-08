@@ -2,7 +2,7 @@
  * Kannu (കണ്ണ്)
  * Copyright (C) 2024-2026 Kannu Contributors
  *
- * Procedural neon eyes animation inspired by the bundled eyes artwork.
+ * Procedural neon eyes animation inspired by `.github/assets/eyes.jpeg`.
  */
 
 import SwiftUI

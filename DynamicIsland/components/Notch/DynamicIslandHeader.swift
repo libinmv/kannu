@@ -21,7 +21,6 @@ import SwiftUI
 
 struct DynamicIslandHeader: View {
     @EnvironmentObject var vm: DynamicIslandViewModel
-    @EnvironmentObject var webcamManager: WebcamManager
     @ObservedObject var batteryModel = BatteryStatusViewModel.shared
     @ObservedObject var coordinator = DynamicIslandViewCoordinator.shared
     @ObservedObject var clipboardManager = ClipboardManager.shared
@@ -72,23 +71,6 @@ struct DynamicIslandHeader: View {
 
             HStack(spacing: 4) {
                 if vm.notchState == .open && !enableMinimalisticUI {
-                    if Defaults[.showMirror] {
-                        Button(action: {
-                            vm.toggleCameraPreview()
-                        }) {
-                            Capsule()
-                                .fill(.black)
-                                .frame(width: 30, height: 30)
-                                .overlay {
-                                    Image(systemName: "web.camera")
-                                        .foregroundColor(.white)
-                                        .padding()
-                                        .imageScale(.medium)
-                                }
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                    }
-                    
                     if Defaults[.enableClipboardManager]
                         && showClipboardIcon
                         && clipboardDisplayMode != .separateTab {
@@ -293,5 +275,4 @@ private extension DynamicIslandHeader {
 #Preview {
     DynamicIslandHeader()
         .environmentObject(DynamicIslandViewModel())
-        .environmentObject(WebcamManager.shared)
 }

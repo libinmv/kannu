@@ -1527,9 +1527,10 @@ extension Defaults.Keys {
         Defaults[.enableLunarIntegration] = isIntegrationEnabled && selectedProvider == .lunar
     }
 
-    /// Kannu removed calendar/reminder features; keep persisted legacy prefs from re-enabling them.
+    /// Kannu removed calendar/reminder/mirror features; keep persisted legacy prefs from re-enabling them.
     static func enforceRemovedFeatureDefaults() {
         Defaults[.showCalendar] = false
+        Defaults[.showMirror] = false
         Defaults[.enableReminderLiveActivity] = false
         Defaults[.enableLockScreenReminderWidget] = false
         Defaults[.lockScreenShowCalendarEvent] = false
