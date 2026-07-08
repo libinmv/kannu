@@ -1,9 +1,9 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * Originally from boring.notch project
- * Modified and adapted for Atoll (DynamicIsland)
+ * Modified and adapted for Kannu (കണ്ണ്)
  * See NOTICE for details.
  *
  * This program is free software: you can redistribute it and/or modify
@@ -35,6 +35,33 @@ let appVersion = "\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as
 let temporaryDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
 let spacing: CGFloat = 16
 
+enum AppSupportPaths {
+    static let subdirectory = "Kannu"
+    static let legacySubdirectories = ["AgentStatDynamicIsland", "DynamicIsland"]
+
+    static var root: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let primary = base.appendingPathComponent(subdirectory, isDirectory: true)
+        if !FileManager.default.fileExists(atPath: primary.path) {
+            for legacy in legacySubdirectories {
+                let legacyURL = base.appendingPathComponent(legacy, isDirectory: true)
+                if FileManager.default.fileExists(atPath: legacyURL.path) {
+                    try? FileManager.default.moveItem(at: legacyURL, to: primary)
+                    break
+                }
+            }
+        }
+        try? FileManager.default.createDirectory(at: primary, withIntermediateDirectories: true)
+        return primary
+    }
+
+    static func child(_ name: String) -> URL {
+        let dir = root.appendingPathComponent(name, isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+}
+
 struct CustomVisualizer: Codable, Hashable, Equatable, Defaults.Serializable {
     let UUID: UUID
     var name: String
@@ -55,16 +82,30 @@ struct CustomAppIcon: Codable, Hashable, Equatable, Defaults.Serializable, Ident
         self.addedAt = addedAt
     }
 
-    static let iconDirectory: URL = {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let dir = base.appendingPathComponent("DynamicIsland", isDirectory: true)
-            .appendingPathComponent("AppIcons", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
-    }()
+    static let iconDirectory: URL = AppSupportPaths.child("AppIcons")
 
     var fileURL: URL {
         Self.iconDirectory.appendingPathComponent(fileName)
+    }
+}
+
+struct CustomNotchSkin: Codable, Hashable, Equatable, Defaults.Serializable, Identifiable {
+    let id: UUID
+    var name: String
+    var fileName: String
+    var addedAt: Date
+
+    init(id: UUID = UUID(), name: String, fileName: String, addedAt: Date = .now) {
+        self.id = id
+        self.name = name
+        self.fileName = fileName
+        self.addedAt = addedAt
+    }
+
+    static let skinDirectory: URL = AppSupportPaths.child("NotchSkins")
+
+    var fileURL: URL {
+        Self.skinDirectory.appendingPathComponent(fileName)
     }
 }
 
@@ -86,13 +127,13 @@ struct CustomIdleAnimation: Codable, Hashable, Equatable, Defaults.Serializable,
     
     /// Get the effective transform config (override or default)
     func getTransformConfig() -> AnimationTransformConfig {
-        let override = Defaults[.animationTransformOverrides][id.uuidString]
-        if let override = override {
-            print("📋 [CustomIdleAnimation] Found override for '\(name)': \(override)")
-        } else {
-            print("📋 [CustomIdleAnimation] No override for '\(name)', using default")
+        if let override = Defaults[.animationTransformOverrides][id.uuidString] {
+            return override
         }
-        return override ?? .default
+        if id == BuiltInIdleAnimation.eyesID {
+            return BuiltInIdleAnimation.eyesTransform
+        }
+        return .default
     }
 }
 
@@ -126,13 +167,69 @@ enum AnimationLoopMode: String, Codable, CaseIterable {
 }
 
 enum AnimationSource: Codable, Hashable, Equatable {
+    case shimmer
+    case neonEyes
     case lottieFile(URL)        // Local file (in app support or bundle)
     case lottieURL(URL)         // Remote URL
-    
+    case videoFile(URL)         // Local MP4/video for idle or easter egg
+
+    private enum CodingKeys: String, CodingKey {
+        case shimmer
+        case neonEyes
+        case lottieFile
+        case lottieURL
+        case videoFile
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if container.contains(.shimmer) {
+            self = .shimmer
+            return
+        }
+        if container.contains(.neonEyes) {
+            self = .neonEyes
+            return
+        }
+        if let url = try container.decodeIfPresent(URL.self, forKey: .lottieFile) {
+            self = .lottieFile(url)
+            return
+        }
+        if let url = try container.decodeIfPresent(URL.self, forKey: .lottieURL) {
+            self = .lottieURL(url)
+            return
+        }
+        if let url = try container.decodeIfPresent(URL.self, forKey: .videoFile) {
+            self = .videoFile(url)
+            return
+        }
+        throw DecodingError.dataCorrupted(
+            DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Unknown animation source")
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .shimmer:
+            try container.encode(true, forKey: .shimmer)
+        case .neonEyes:
+            try container.encode(true, forKey: .neonEyes)
+        case .lottieFile(let url):
+            try container.encode(url, forKey: .lottieFile)
+        case .lottieURL(let url):
+            try container.encode(url, forKey: .lottieURL)
+        case .videoFile(let url):
+            try container.encode(url, forKey: .videoFile)
+        }
+    }
+
     var displayType: String {
         switch self {
+        case .shimmer, .neonEyes: return "Built-in"
         case .lottieFile: return "Local"
         case .lottieURL: return "Remote"
+        case .videoFile: return "Video"
         }
     }
 }
@@ -341,6 +438,30 @@ enum ScreenAssistantDisplayMode: String, CaseIterable, Codable, Defaults.Seriali
         switch self {
         case .popover: return String(localized: "Shows screen assistant as a dropdown attached to the AI button")
         case .panel: return String(localized: "Shows screen assistant in a floating panel near the notch")
+        }
+    }
+}
+
+enum AgentStatusNotificationProvider: String, CaseIterable, Codable, Defaults.Serializable, Identifiable {
+    case ntfy
+    case pushover
+    case webhook
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .ntfy: return "ntfy"
+        case .pushover: return "Pushover"
+        case .webhook: return "Webhook"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .ntfy: return String(localized: "Send push notifications via ntfy.sh (iPhone, Apple Watch, Android)")
+        case .pushover: return String(localized: "Send push notifications via Pushover (iPhone and Apple Watch)")
+        case .webhook: return String(localized: "POST JSON to a custom URL for your own integrations")
         }
     }
 }
@@ -871,15 +992,16 @@ extension Defaults.Keys {
     static let settingsIconInNotch = Key<Bool>("settingsIconInNotch", default: true)
     static let lightingEffect = Key<Bool>("lightingEffect", default: true)
     static let accentColor = Key<Color>("accentColor", default: Color.blue)
+    static let notchFillColor = Key<Color>("notchFillColor", default: Color.black)
     static let enableShadow = Key<Bool>("enableShadow", default: true)
     static let cornerRadiusScaling = Key<Bool>("cornerRadiusScaling", default: true)
     static let useModernCloseAnimation = Key<Bool>("useModernCloseAnimation", default: true)
-    static let showNotHumanFace = Key<Bool>("showNotHumanFace", default: false)
+    static let showNotHumanFace = Key<Bool>("showNotHumanFace", default: true)
     static let customIdleAnimations = Key<[CustomIdleAnimation]>("customIdleAnimations", default: [])
     static let selectedIdleAnimation = Key<CustomIdleAnimation?>("selectedIdleAnimation", default: nil)
     static let animationTransformOverrides = Key<[String: AnimationTransformConfig]>("animationTransformOverrides", default: [:])
     static let tileShowLabels = Key<Bool>("tileShowLabels", default: false)
-    static let showCalendar = Key<Bool>("showCalendar", default: true)
+    static let showCalendar = Key<Bool>("showCalendar", default: false)
     static let hideCompletedReminders = Key<Bool>("hideCompletedReminders", default: true)
     static let hideAllDayEvents = Key<Bool>("hideAllDayEvents", default: false)
     static let sliderColor = Key<SliderColorEnum>(
@@ -895,6 +1017,9 @@ extension Defaults.Keys {
     static let selectedVisualizer = Key<CustomVisualizer?>("selectedVisualizer", default: nil)
     static let customAppIcons = Key<[CustomAppIcon]>("customAppIcons", default: [])
     static let selectedAppIconID = Key<String?>("selectedAppIconID", default: nil)
+    static let customNotchSkins = Key<[CustomNotchSkin]>("customNotchSkins", default: [])
+    static let selectedNotchSkinID = Key<String?>("selectedNotchSkinID", default: nil)
+    static let notchSkinScrimOpacity = Key<Double>("notchSkinScrimOpacity", default: 0.0)
     
         // MARK: Gestures
     static let enableGestures = Key<Bool>("enableGestures", default: true)
@@ -924,7 +1049,7 @@ extension Defaults.Keys {
     static let musicSkipBehavior = Key<MusicSkipBehavior>("musicSkipBehavior", default: .track)
     static let musicControlWindowEnabled = Key<Bool>("musicControlWindowEnabled", default: false)
     static let showStandardMediaControls = Key<Bool>("showStandardMediaControls", default: true)
-    static let autoHideInactiveNotchMediaPlayer = Key<Bool>("autoHideInactiveNotchMediaPlayer", default: true)
+    static let autoHideInactiveNotchMediaPlayer = Key<Bool>("autoHideInactiveNotchMediaPlayer", default: false)
     static let cachedMusicLiveActivityPreference = Key<Bool?>("cachedMusicLiveActivityPreference", default: nil)
     static let cachedLockScreenMediaWidgetPreference = Key<Bool?>("cachedLockScreenMediaWidgetPreference", default: nil)
     static let cachedMusicControlWindowPreference = Key<Bool?>("cachedMusicControlWindowPreference", default: nil)
@@ -932,7 +1057,7 @@ extension Defaults.Keys {
     static let enableLockScreenMediaWidget = Key<Bool>("enableLockScreenMediaWidget", default: true)
     static let enableLockScreenWeatherWidget = Key<Bool>("enableLockScreenWeatherWidget", default: true)
     static let enableLockScreenFocusWidget = Key<Bool>("enableLockScreenFocusWidget", default: true)
-    static let enableLockScreenReminderWidget = Key<Bool>("enableLockScreenReminderWidget", default: true)
+    static let enableLockScreenReminderWidget = Key<Bool>("enableLockScreenReminderWidget", default: false)
     static let enableLockScreenTimerWidget = Key<Bool>("enableLockScreenTimerWidget", default: true)
     static let lockScreenWeatherRefreshInterval = Key<TimeInterval>("lockScreenWeatherRefreshInterval", default: 30 * 60)
     static let lockScreenWeatherShowsLocation = Key<Bool>("lockScreenWeatherShowsLocation", default: true)
@@ -983,7 +1108,7 @@ extension Defaults.Keys {
     static let lockScreenReminderChipStyle = Key<LockScreenReminderChipStyle>("lockScreenReminderChipStyle", default: .eventColor)
     static let lockScreenReminderWidgetHorizontalAlignment = Key<String>("lockScreenReminderWidgetHorizontalAlignment", default: "center")
     static let lockScreenReminderWidgetVerticalOffset = Key<Double>("lockScreenReminderWidgetVerticalOffset", default: 0)
-    static let lockScreenShowCalendarEvent = Key<Bool>("lockScreenShowCalendarEvent", default: true)
+    static let lockScreenShowCalendarEvent = Key<Bool>("lockScreenShowCalendarEvent", default: false)
     static let lockScreenCalendarEventLookaheadWindow = Key<String>("lockScreenCalendarEventLookaheadWindow", default: "3h")
     static let lockScreenCalendarSelectionMode = Key<String>("lockScreenCalendarSelectionMode", default: "all")
     static let lockScreenSelectedCalendarIDs = Key<Set<String>>("lockScreenSelectedCalendarIDs", default: [])
@@ -1134,25 +1259,42 @@ extension Defaults.Keys {
     
     
     // MARK: Reminder Live Activity
-    static let enableReminderLiveActivity = Key<Bool>("enableReminderLiveActivity", default: true)
+    static let enableReminderLiveActivity = Key<Bool>("enableReminderLiveActivity", default: false)
     static let reminderPresentationStyle = Key<ReminderPresentationStyle>("reminderPresentationStyle", default: .ringCountdown)
     static let reminderLeadTime = Key<Int>("reminderLeadTime", default: 5)
     static let reminderSneakPeekDuration = Key<Double>("reminderSneakPeekDuration", default: 5)
     static let timerControlWindowEnabled = Key<Bool>("timerControlWindowEnabled", default: true)
     
     // MARK: ColorPicker Feature
-    static let enableColorPickerFeature = Key<Bool>("enableColorPickerFeature", default: true)
+    static let enableColorPickerFeature = Key<Bool>("enableColorPickerFeature", default: false)
     static let showColorFormats = Key<Bool>("showColorFormats", default: true)
     static let colorPickerDisplayMode = Key<ColorPickerDisplayMode>("colorPickerDisplayMode", default: .panel)
     static let colorHistorySize = Key<Int>("colorHistorySize", default: 10)
     static let showColorPickerIcon = Key<Bool>("showColorPickerIcon", default: true)
     
     // MARK: Clipboard Feature
-    static let enableClipboardManager = Key<Bool>("enableClipboardManager", default: true)
+    static let enableClipboardManager = Key<Bool>("enableClipboardManager", default: false)
     static let clipboardHistorySize = Key<Int>("clipboardHistorySize", default: 3)
     static let showClipboardIcon = Key<Bool>("showClipboardIcon", default: true)
     static let clipboardDisplayMode = Key<ClipboardDisplayMode>("clipboardDisplayMode", default: .panel)
     
+    // MARK: Agent Status Feature (Cursor)
+    static let enableAgentStatusFeature = Key<Bool>("enableAgentStatusFeature", default: true)
+    static let agentStatusStaleMinutes = Key<Int>("agentStatusStaleMinutes", default: 30)
+    static let agentStoppedCollapseMinutes = Key<Int>("agentStoppedCollapseMinutes", default: 5)
+    static let agentInactiveDisplayMinutes = Key<Int>("agentInactiveDisplayMinutes", default: 5)
+    static let showAgentStoppedIndicator = Key<Bool>("showAgentStoppedIndicator", default: false)
+
+    // MARK: Agent Status Mobile Notifications
+    static let enableAgentStatusMobileNotifications = Key<Bool>("enableAgentStatusMobileNotifications", default: false)
+    static let agentStatusNotificationProvider = Key<AgentStatusNotificationProvider>("agentStatusNotificationProvider", default: .ntfy)
+    static let agentStatusNtfyTopic = Key<String>("agentStatusNtfyTopic", default: "")
+    static let agentStatusNtfyServerURL = Key<String>("agentStatusNtfyServerURL", default: "https://ntfy.sh")
+    static let agentStatusPushoverUserKey = Key<String>("agentStatusPushoverUserKey", default: "")
+    static let agentStatusPushoverAppToken = Key<String>("agentStatusPushoverAppToken", default: "")
+    static let agentStatusWebhookURL = Key<String>("agentStatusWebhookURL", default: "")
+    static let agentStatusNotifyOnInactive = Key<Bool>("agentStatusNotifyOnInactive", default: false)
+
     // MARK: Screen Assistant Feature
     static let enableScreenAssistant = Key<Bool>("enableScreenAssistant", default: true)
     static let screenAssistantDisplayMode = Key<ScreenAssistantDisplayMode>("screenAssistantDisplayMode", default: .panel)
@@ -1182,7 +1324,7 @@ extension Defaults.Keys {
     static let enableExtensionFileSharing = Key<Bool>("enableExtensionFileSharing", default: true)
     
     // MARK: Keyboard Shortcuts
-    static let enableShortcuts = Key<Bool>("enableShortcuts", default: true)
+    static let enableShortcuts = Key<Bool>("enableShortcuts", default: false)
     
     // MARK: System HUD Feature
     static let enableSystemHUD = Key<Bool>("enableSystemHUD", default: true)
@@ -1383,6 +1525,16 @@ extension Defaults.Keys {
         let selectedProvider = Defaults[.thirdPartyDDCProvider]
         Defaults[.enableBetterDisplayIntegration] = isIntegrationEnabled && selectedProvider == .betterDisplay
         Defaults[.enableLunarIntegration] = isIntegrationEnabled && selectedProvider == .lunar
+    }
+
+    /// Kannu removed calendar/reminder/mirror features; keep persisted legacy prefs from re-enabling them.
+    static func enforceRemovedFeatureDefaults() {
+        Defaults[.showCalendar] = false
+        Defaults[.showMirror] = false
+        Defaults[.enableReminderLiveActivity] = false
+        Defaults[.enableLockScreenReminderWidget] = false
+        Defaults[.lockScreenShowCalendarEvent] = false
+        Defaults[.enableThirdPartyCalendarApp] = false
     }
 
     private static func normalizeMusicAuxControls() {

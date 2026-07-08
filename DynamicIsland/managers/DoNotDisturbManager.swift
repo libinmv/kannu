@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -536,7 +536,7 @@ private extension DoNotDisturbManager {
     }
 
     /// When using the log-stream mode, `log stream` only delivers future events — it misses any
-    /// focus mode that was already active when Atoll launched. This one-shot `log show` reads
+    /// focus mode that was already active when Kannu launched. This one-shot `log show` reads
     /// recent duetexpertd debug logs to find the most recent `semanticModeIdentifier` event and
     /// seeds the initial focus state from it. Tries progressively larger windows so the common
     /// case (focus toggled recently) resolves in ~1-2s without scanning a full day of logs.

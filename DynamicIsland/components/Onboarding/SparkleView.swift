@@ -1,9 +1,9 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * Originally from boring.notch project
- * Modified and adapted for Atoll (DynamicIsland)
+ * Modified and adapted for Kannu (കണ്ണ്)
  * See NOTICE for details.
  *
  * This program is free software: you can redistribute it and/or modify
@@ -70,8 +70,6 @@ class SparkleNSView: NSView {
         emitterLayer.emitterPosition = CGPoint(x: bounds.width / 2, y: bounds.height / 2)
         
         // Adjust birth rate based on view size
-        let area = bounds.width * bounds.height
-        let baseBirthRate: Float = 50
         let adjustedBirthRate = 20 // Assuming 200x200 as base size
         emitterLayer.emitterCells?.first?.birthRate = Float(adjustedBirthRate)
     }

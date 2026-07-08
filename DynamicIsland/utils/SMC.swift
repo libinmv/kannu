@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -169,7 +169,7 @@ public class SMC {
         let device: io_object_t
         
         let matchingDictionary: CFMutableDictionary = IOServiceMatching("AppleSMC")
-        result = IOServiceGetMatchingServices(kIOMasterPortDefault, matchingDictionary, &iterator)
+        result = IOServiceGetMatchingServices(kIOMainPortDefault, matchingDictionary, &iterator)
         if result != kIOReturnSuccess {
             print("Error IOServiceGetMatchingServices(): " + (String(cString: mach_error_string(result), encoding: String.Encoding.ascii) ?? "unknown error"))
             return

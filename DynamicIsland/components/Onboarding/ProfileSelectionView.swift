@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,15 +35,15 @@ struct ProfileSelectionView: View {
         UserProfile(
             id: "developer",
             name: String(localized: "Developer"),
-            icon: "terminal.fill",
-            description: String(localized: "Code and debug with color picker, stats monitoring, and screen assistant."),
+            icon: "light.beacon.max",
+            description: String(localized: "Track AI agent activity with traffic-light status, stats monitoring, and editor hooks."),
             gradient: [Color.blue, Color.purple]
         ),
         UserProfile(
             id: "designer",
             name: String(localized: "Designer"),
             icon: "paintbrush.fill",
-            description: String(localized: "Create and design with color picker, mirror, and visual effects."),
+            description: String(localized: "Create and design with custom notch skins and visual effects."),
             gradient: [Color.pink, Color.orange]
         ),
         UserProfile(
@@ -57,7 +57,7 @@ struct ProfileSelectionView: View {
             id: "student",
             name: String(localized: "Student"),
             icon: "book.fill",
-            description: String(localized: "Stay organized with calendar, timer, and battery monitoring."),
+            description: String(localized: "Stay organized with timer, battery monitoring, and media controls."),
             gradient: [Color.indigo, Color.cyan]
         )
     ]
@@ -207,20 +207,16 @@ func applyProfileSettings(_ profiles: Set<String>) {
     // Developer Profile Settings
     let isDeveloper = profiles.contains("developer")
     if isDeveloper {
-        Defaults[.enableColorPickerFeature] = true
+        Defaults[.enableAgentStatusFeature] = true
         Defaults[.enableStatsFeature] = true
-        Defaults[.enableTerminalFeature] = true
         Defaults[.enableTimerFeature] = true
         Defaults[.enableScreenAssistant] = true
-        Defaults[.showMirror] = false
         Defaults[.enableMinimalisticUI] = false
     }
-    
+
     // Designer Profile Settings
     let isDesigner = profiles.contains("designer")
     if isDesigner {
-        Defaults[.enableColorPickerFeature] = true
-        Defaults[.showMirror] = true
         Defaults[.lightingEffect] = true
         Defaults[.inlineHUD] = true
         Defaults[.enableStatsFeature] = false
@@ -228,27 +224,22 @@ func applyProfileSettings(_ profiles: Set<String>) {
         Defaults[.enableMinimalisticUI] = false
         Defaults[.enableScreenAssistant] = false
     }
-    
+
     // Light Use Profile Settings
     let isLightUse = profiles.contains("lightuse")
     if isLightUse {
         Defaults[.enableMinimalisticUI] = true
-        Defaults[.enableColorPickerFeature] = false
-        Defaults[.showMirror] = false
         Defaults[.enableStatsFeature] = false
         Defaults[.enableTimerFeature] = true
         Defaults[.inlineHUD] = true
         Defaults[.enableScreenAssistant] = false
         Defaults[.enableLyrics] = false
     }
-    
+
     // Student Profile Settings
     let isStudent = profiles.contains("student")
     if isStudent {
         Defaults[.enableTimerFeature] = true
-        Defaults[.showCalendar] = true
-        Defaults[.enableColorPickerFeature] = false
-        Defaults[.showMirror] = false
         Defaults[.enableStatsFeature] = false
         Defaults[.enableMinimalisticUI] = false
         Defaults[.enableScreenAssistant] = false

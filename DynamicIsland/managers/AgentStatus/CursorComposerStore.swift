@@ -1,0 +1,194 @@
+import Foundation
+import SQLite3
+
+struct ComposerMeta: Equatable {
+    let composerID: String
+    let status: String?
+    let updatedMs: Int64
+    let checkpointMs: Int64
+    let createdMs: Int64
+    let name: String?
+}
+
+enum CursorComposerStore {
+    private static let globalDBPath: String = {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Cursor/User/globalStorage/state.vscdb")
+            .path
+    }()
+
+    private static let workspaceStorageRoot: URL = {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Cursor/User/workspaceStorage", isDirectory: true)
+    }()
+
+    static func loadComposerMeta(forIDs ids: Set<String>) -> [String: ComposerMeta] {
+        guard !ids.isEmpty else { return [:] }
+
+        var merged: [String: ComposerMeta] = loadComposerHeaders(from: globalDBPath)
+
+        for meta in loadFromDatabase(path: globalDBPath) {
+            if ids.contains(meta.composerID) {
+                mergeMeta(&merged, meta)
+            }
+        }
+
+        guard let workspaceDirs = try? FileManager.default.contentsOfDirectory(
+            at: workspaceStorageRoot,
+            includingPropertiesForKeys: nil
+        ) else {
+            return filter(merged, ids: ids)
+        }
+
+        for dir in workspaceDirs where dir.hasDirectoryPath {
+            let dbPath = dir.appendingPathComponent("state.vscdb").path
+            for meta in loadFromDatabase(path: dbPath) {
+                guard ids.contains(meta.composerID) else { continue }
+                mergeMeta(&merged, meta)
+            }
+        }
+
+        return filter(merged, ids: ids)
+    }
+
+    private static func filter(_ merged: [String: ComposerMeta], ids: Set<String>) -> [String: ComposerMeta] {
+        merged.filter { ids.contains($0.key) }
+    }
+
+    private static func mergeMeta(_ merged: inout [String: ComposerMeta], _ meta: ComposerMeta) {
+        if let existing = merged[meta.composerID] {
+            if meta.updatedMs >= existing.updatedMs {
+                merged[meta.composerID] = meta
+            }
+        } else {
+            merged[meta.composerID] = meta
+        }
+    }
+
+    private static func loadComposerHeaders(from path: String) -> [String: ComposerMeta] {
+        guard FileManager.default.fileExists(atPath: path) else { return [:] }
+
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else { return [:] }
+        defer { sqlite3_close(db) }
+
+        var stmt: OpaquePointer?
+        let sql = "SELECT value FROM ItemTable WHERE key='composer.composerHeaders'"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return [:] }
+        defer { sqlite3_finalize(stmt) }
+
+        guard sqlite3_step(stmt) == SQLITE_ROW, let valueText = sqlite3_column_text(stmt, 0) else {
+            return [:]
+        }
+
+        let jsonString = String(cString: valueText)
+        guard let data = jsonString.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let composers = root["allComposers"] as? [[String: Any]] else {
+            return [:]
+        }
+
+        var results: [String: ComposerMeta] = [:]
+        for entry in composers {
+            guard let meta = parseComposerHeaderEntry(entry) else { continue }
+            results[meta.composerID] = meta
+        }
+        return results
+    }
+
+    private static func parseComposerHeaderEntry(_ dict: [String: Any]) -> ComposerMeta? {
+        guard let id = dict["composerId"] as? String, !id.isEmpty else { return nil }
+        let checkpoint = int64(from: dict["conversationCheckpointLastUpdatedAt"])
+        let updated = max(int64(from: dict["lastUpdatedAt"]), checkpoint)
+        return ComposerMeta(
+            composerID: id,
+            status: dict["status"] as? String,
+            updatedMs: updated,
+            checkpointMs: checkpoint,
+            createdMs: int64(from: dict["createdAt"]),
+            name: dict["name"] as? String
+        )
+    }
+
+    private static func loadFromDatabase(path: String) -> [ComposerMeta] {
+        guard FileManager.default.fileExists(atPath: path) else { return [] }
+
+        var db: OpaquePointer?
+        let flags = SQLITE_OPEN_READONLY
+        guard sqlite3_open_v2(path, &db, flags, nil) == SQLITE_OK, let db else { return [] }
+        defer { sqlite3_close(db) }
+
+        var results: [ComposerMeta] = []
+        let sql = "SELECT key, value FROM ItemTable WHERE key LIKE '%composer%'"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return [] }
+        defer { sqlite3_finalize(stmt) }
+
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let valueText = sqlite3_column_text(stmt, 1) else { continue }
+            let jsonString = String(cString: valueText)
+            results.append(contentsOf: parseComposerJSON(jsonString))
+        }
+
+        return results
+    }
+
+    private static func parseComposerJSON(_ jsonString: String) -> [ComposerMeta] {
+        guard let data = jsonString.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) else {
+            return []
+        }
+
+        if let array = root as? [[String: Any]] {
+            return array.compactMap(parseComposerEntry)
+        }
+
+        if let dict = root as? [String: Any] {
+            if let allComposers = dict["allComposers"] as? [[String: Any]] {
+                return allComposers.compactMap(parseComposerEntry)
+            }
+            if let composerID = dict["composerId"] as? String ?? dict["composerID"] as? String {
+                if let entry = parseComposerEntry(dict) {
+                    return [entry]
+                }
+                return [ComposerMeta(
+                    composerID: composerID,
+                    status: dict["status"] as? String,
+                    updatedMs: int64(from: dict["lastUpdatedAt"] ?? dict["updatedAt"] ?? dict["updated_ms"]),
+                    checkpointMs: int64(from: dict["checkpointMs"] ?? dict["checkpoint_ms"]),
+                    createdMs: int64(from: dict["createdAt"] ?? dict["created_ms"]),
+                    name: dict["name"] as? String
+                )]
+            }
+        }
+
+        return []
+    }
+
+    private static func parseComposerEntry(_ dict: [String: Any]) -> ComposerMeta? {
+        let id = (dict["composerId"] as? String)
+            ?? (dict["composerID"] as? String)
+            ?? (dict["id"] as? String)
+        guard let id, !id.isEmpty else { return nil }
+
+        return ComposerMeta(
+            composerID: id,
+            status: dict["status"] as? String ?? dict["composerStatus"] as? String,
+            updatedMs: int64(from: dict["lastUpdatedAt"] ?? dict["updatedAt"] ?? dict["updated_ms"]),
+            checkpointMs: int64(from: dict["checkpointMs"] ?? dict["checkpoint_ms"]),
+            createdMs: int64(from: dict["createdAt"] ?? dict["created_ms"]),
+            name: dict["name"] as? String
+        )
+    }
+
+    private static func int64(from value: Any?) -> Int64 {
+        switch value {
+        case let number as NSNumber:
+            return number.int64Value
+        case let string as String:
+            return Int64(string) ?? 0
+        default:
+            return 0
+        }
+    }
+}

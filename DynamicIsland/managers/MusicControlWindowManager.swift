@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -137,7 +137,9 @@ final class MusicControlWindowManager {
             window.orderOut(nil)
             window.alphaValue = 0
             if tearDown {
-                self?.tearDownWindowResources(using: window)
+                Task { @MainActor [weak self] in
+                    self?.tearDownWindowResources(using: window)
+                }
             }
         }
     }

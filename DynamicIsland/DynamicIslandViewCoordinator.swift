@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,7 +29,6 @@ enum SneakContentType: Equatable {
     case battery
     case download
     case timer
-    case reminder
     case recording
     case doNotDisturb
     case bluetoothAudio
@@ -50,7 +49,6 @@ extension SneakContentType {
              (.battery, .battery),
              (.download, .download),
              (.timer, .timer),
-             (.reminder, .reminder),
              (.recording, .recording),
              (.doNotDisturb, .doNotDisturb),
              (.bluetoothAudio, .bluetoothAudio),
@@ -105,7 +103,7 @@ class DynamicIslandViewCoordinator: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var hoverOpenSuppressedUntil: Date = .distantPast
     
-    private static let tabOrder: [NotchViews] = [.home, .shelf, .timer, .stats, .llmUsage, .colorPicker, .notes, .clipboard, .terminal, .extensionExperience]
+    private static let tabOrder: [NotchViews] = [.home, .shelf, .timer, .stats, .llmUsage, .agentStatus, .notes, .clipboard, .extensionExperience]
     
     /// Direction of the most recent tab switch (true = forward/right, false = backward/left)
     @Published var tabSwitchForward: Bool = true
@@ -226,8 +224,6 @@ class DynamicIslandViewCoordinator: ObservableObject {
         // Observe all tab-affecting settings to enforce minimum notch width
         Publishers.MergeMany(
             Defaults.publisher(.showStandardMediaControls).map { _ in () }.eraseToAnyPublisher(),
-            Defaults.publisher(.showCalendar).map { _ in () }.eraseToAnyPublisher(),
-            Defaults.publisher(.showMirror).map { _ in () }.eraseToAnyPublisher(),
             Defaults.publisher(.dynamicShelf).map { _ in () }.eraseToAnyPublisher(),
             Defaults.publisher(.enableTimerFeature).map { _ in () }.eraseToAnyPublisher(),
             Defaults.publisher(.timerDisplayMode).map { _ in () }.eraseToAnyPublisher(),
@@ -235,7 +231,6 @@ class DynamicIslandViewCoordinator: ObservableObject {
             Defaults.publisher(.enableNotes).map { _ in () }.eraseToAnyPublisher(),
             Defaults.publisher(.enableClipboardManager).map { _ in () }.eraseToAnyPublisher(),
             Defaults.publisher(.clipboardDisplayMode).map { _ in () }.eraseToAnyPublisher(),
-            Defaults.publisher(.enableTerminalFeature).map { _ in () }.eraseToAnyPublisher(),
             Defaults.publisher(.enableMinimalisticUI).map { _ in () }.eraseToAnyPublisher()
         )
         .debounce(for: .milliseconds(100), scheduler: DispatchQueue.main)
@@ -341,15 +336,13 @@ class DynamicIslandViewCoordinator: ObservableObject {
         switch type {
         case .timer:
             resolvedDuration = 10
-        case .reminder:
-            resolvedDuration = Defaults[.reminderSneakPeekDuration]
         case .extensionLiveActivity:
             resolvedDuration = duration
         default:
             resolvedDuration = duration
         }
         sneakPeekDuration = resolvedDuration
-        let bypassedTypes: [SneakContentType] = [.music, .timer, .reminder, .bluetoothAudio]
+        let bypassedTypes: [SneakContentType] = [.music, .timer, .bluetoothAudio]
         
         // Check if it's an extension type
         let isExtensionType: Bool

@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,7 +20,7 @@ import Foundation
 import Network
 import Defaults
 
-/// WebSocket server for Atoll RPC.
+/// WebSocket server for Kannu RPC.
 /// Uses Apple's Network.framework (`NWListener`) — no external dependencies.
 /// Listens on localhost:9020 for JSON-RPC 2.0 requests over WebSocket.
 @MainActor
@@ -31,7 +31,7 @@ final class ExtensionRPCServer {
     private var connections: [UUID: RPCClientConnection] = [:]
     private var shelfSubscribers: Set<String> = [] // bundleIdentifiers subscribed to shelf events
     private let port: UInt16 = 9020
-    private let queue = DispatchQueue(label: "com.ebullioscopic.Atoll.rpc.server", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "com.kannu.app.rpc.server", qos: .userInitiated)
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
 
@@ -157,7 +157,7 @@ final class ExtensionRPCServer {
     private func handleListenerState(_ state: NWListener.State) {
         switch state {
         case .ready:
-            Logger.log("Started Atoll RPC WebSocket server on port \(port)", category: .extensions)
+            Logger.log("Started Kannu RPC WebSocket server on port \(port)", category: .extensions)
         case .failed(let error):
             Logger.log("RPC server failed: \(error.localizedDescription)", category: .extensions)
             // Attempt restart after delay

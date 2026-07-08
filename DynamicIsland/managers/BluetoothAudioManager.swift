@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -38,7 +38,6 @@ class BluetoothAudioManager: ObservableObject {
     // MARK: - Private Properties
     private var observers: [NSObjectProtocol] = []
     private var cancellables = Set<AnyCancellable>()
-    private let coordinator = DynamicIslandViewCoordinator.shared
     private var pollingTimer: Timer?
     private let bluetoothPreferencesSuite = "/Library/Preferences/com.apple.Bluetooth"
     private let batteryReader = BluetoothLEBatteryReader()
@@ -842,7 +841,7 @@ class BluetoothAudioManager: ObservableObject {
             let updatedDevice = device.withBatteryLevel(refreshedLevel)
             updatedDevices.append(updatedDevice)
 
-            if let refreshedLevel {
+            if refreshedLevel != nil {
                 clearMissingBatteryInfo(forName: device.name, address: device.address)
             } else {
                 logMissingBatteryInfo(forName: device.name, address: device.address)
@@ -991,10 +990,11 @@ class BluetoothAudioManager: ObservableObject {
 
     private func updateActiveBluetoothHUDBattery(with level: Int?) {
         guard let level else { return }
-        DispatchQueue.main.async {
-            guard self.coordinator.sneakPeek.show,
-                  self.coordinator.sneakPeek.type == .bluetoothAudio else { return }
-            self.coordinator.sneakPeek.value = CGFloat(level) / 100.0
+        Task { @MainActor in
+            let coordinator = DynamicIslandViewCoordinator.shared
+            guard coordinator.sneakPeek.show,
+                  coordinator.sneakPeek.type == .bluetoothAudio else { return }
+            coordinator.sneakPeek.value = CGFloat(level) / 100.0
         }
     }
 
@@ -1239,7 +1239,7 @@ class BluetoothAudioManager: ObservableObject {
         if #available(macOS 12.0, *) {
             servicePort = kIOMainPortDefault
         } else {
-            servicePort = kIOMasterPortDefault
+            servicePort = kIOMainPortDefault
         }
 
         let kernResult = IOServiceGetMatchingServices(servicePort, matchingDict, &iterator)
@@ -1821,7 +1821,7 @@ class BluetoothAudioManager: ObservableObject {
         HUDSuppressionCoordinator.shared.suppressVolumeHUD(for: 1.5)
 
         Task { @MainActor in
-            coordinator.toggleSneakPeek(
+            DynamicIslandViewCoordinator.shared.toggleSneakPeek(
                 status: true,
                 type: .bluetoothAudio,
                 duration: 2.5,
@@ -1880,7 +1880,7 @@ class BluetoothAudioManager: ObservableObject {
         HUDSuppressionCoordinator.shared.suppressVolumeHUD(for: 1.5)
 
         Task { @MainActor in
-            coordinator.toggleSneakPeek(
+            DynamicIslandViewCoordinator.shared.toggleSneakPeek(
                 status: true,
                 type: .bluetoothAudio,
                 duration: 2.5,

@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,13 +24,14 @@ import Foundation
 
 // Chat message model
 struct ChatMessage: Identifiable, Codable {
-    let id = UUID()
+    let id: UUID
     let content: String
     let isFromUser: Bool
     let timestamp: Date
     let attachedFiles: [ScreenAssistantFile]?
     
     init(content: String, isFromUser: Bool, attachedFiles: [ScreenAssistantFile]? = nil) {
+        self.id = UUID()
         self.content = content
         self.isFromUser = isFromUser
         self.timestamp = Date()
@@ -40,7 +41,7 @@ struct ChatMessage: Identifiable, Codable {
 
 // Screen Assistant item data structure
 struct ScreenAssistantFile: Identifiable, Codable {
-    let id = UUID()
+    let id: UUID
     let name: String
     let type: FileType
     let timestamp: Date
@@ -76,6 +77,7 @@ struct ScreenAssistantFile: Identifiable, Codable {
     }
     
     init(fileURL: URL) {
+        self.id = UUID()
         // Defensive initialization with nil coalescing
         self.name = fileURL.lastPathComponent.isEmpty ? "Unknown File" : fileURL.lastPathComponent
         self.fileURL = fileURL.absoluteString
@@ -101,6 +103,7 @@ struct ScreenAssistantFile: Identifiable, Codable {
     }
     
     init(audioFileName: String, name: String) {
+        self.id = UUID()
         self.name = name
         self.type = .audio
         self.fileURL = nil
@@ -204,28 +207,19 @@ class ScreenAssistantManager: NSObject, ObservableObject {
         let newFiles = urls.compactMap { url -> ScreenAssistantFile? in
             // Wrap in autoreleasepool to manage memory
             return autoreleasepool {
-                do {
-                    // Verify file exists
-                    guard FileManager.default.fileExists(atPath: url.path) else {
-                        print("❌ ScreenAssistant: File does not exist at \(url.path)")
-                        return nil
-                    }
-                    
-                    // Verify file is readable
-                    guard FileManager.default.isReadableFile(atPath: url.path) else {
-                        print("❌ ScreenAssistant: File is not readable at \(url.path)")
-                        return nil
-                    }
-                    
-                    // Create file entry with error handling
-                    let file = ScreenAssistantFile(fileURL: url)
-                    print("✅ ScreenAssistant: Created file entry for \(file.name)")
-                    return file
-                    
-                } catch {
-                    print("❌ ScreenAssistant: Error creating file entry - \(error)")
+                guard FileManager.default.fileExists(atPath: url.path) else {
+                    print("❌ ScreenAssistant: File does not exist at \(url.path)")
                     return nil
                 }
+
+                guard FileManager.default.isReadableFile(atPath: url.path) else {
+                    print("❌ ScreenAssistant: File is not readable at \(url.path)")
+                    return nil
+                }
+
+                let file = ScreenAssistantFile(fileURL: url)
+                print("✅ ScreenAssistant: Created file entry for \(file.name)")
+                return file
             }
         }
         
@@ -243,13 +237,7 @@ class ScreenAssistantManager: NSObject, ObservableObject {
             
             self.attachedFiles.append(contentsOf: newFiles)
             print("📁 ScreenAssistant: Total attached files: \(self.attachedFiles.count)")
-            
-            // Save to defaults with error handling
-            do {
-                self.saveFilesToDefaults()
-            } catch {
-                print("❌ ScreenAssistant: Failed to save files after adding - \(error)")
-            }
+            self.saveFilesToDefaults()
         }
     }
     

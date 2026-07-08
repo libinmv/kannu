@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@ import SwiftUI
 import Defaults
 import LottieUI
 import UniformTypeIdentifiers
+import AVKit
 
 // MARK: - Editor State for Sheet Presentation
 private struct EditorState: Identifiable {
@@ -61,15 +62,16 @@ struct IdleAnimationsSettingsSection: View {
                                 animation: animation,
                                 isSelected: selectedIdleAnimation?.id == animation.id,
                                 onSelect: {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        selectedIdleAnimation = animation
-                                    }
+                                    selectAndPreview(animation)
                                 },
                                 onDelete: animation.isBuiltIn ? nil : {
                                     selectedForDeletion = animation
                                     showingDeleteAlert = true
                                 },
                                 onEdit: {
+                                    if case .videoFile = animation.source { return }
+                                    if case .shimmer = animation.source { return }
+                                    if case .neonEyes = animation.source { return }
                                     print("🔧 [Edit] Attempting to edit animation: \(animation.name)")
                                     print("🔧 [Edit] Animation source: \(animation.source)")
                                     
@@ -77,6 +79,9 @@ struct IdleAnimationsSettingsSection: View {
                                     editingExistingAnimation = animation
                                     
                                     switch animation.source {
+                                    case .shimmer, .neonEyes:
+                                        return
+
                                     case .lottieFile(let url):
                                         print("🔧 [Edit] Lottie file URL: \(url)")
                                         print("🔧 [Edit] File exists: \(FileManager.default.fileExists(atPath: url.path))")
@@ -87,6 +92,11 @@ struct IdleAnimationsSettingsSection: View {
                                         print("🔧 [Edit] Lottie URL: \(url)")
                                         editorSourceURL = url
                                         editorIsRemote = true
+
+                                    case .videoFile(let url):
+                                        print("🔧 [Edit] Video file URL: \(url)")
+                                        editorSourceURL = url
+                                        editorIsRemote = false
                                     }
                                     
                                     // Show editor with slight delay to ensure state is set
@@ -129,12 +139,12 @@ struct IdleAnimationsSettingsSection: View {
             }
         } footer: {
             if showNotHumanFace {
-                Text("Choose animation to display when Atoll is idle. Tap to select, hold to delete custom animations.")
+                Text("Shimmer is the default idle style. Idle animations play briefly at :15 and :45 each hour when the notch is inactive.")
             }
         }
         .fileImporter(
             isPresented: $showingFilePicker,
-            allowedContentTypes: [UTType.json],
+            allowedContentTypes: [UTType.json, UTType.mpeg4Movie, UTType.movie],
             allowsMultipleSelection: false
         ) { result in
             handleFileImport(result)
@@ -181,10 +191,7 @@ struct IdleAnimationsSettingsSection: View {
                             }
                         }
                     } else {
-                        // New import - just select it
-                        withAnimation {
-                            selectedIdleAnimation = animation
-                        }
+                        selectAndPreview(animation)
                     }
                     showingEditor = false
                     // Reset editor state
@@ -198,7 +205,7 @@ struct IdleAnimationsSettingsSection: View {
             Button("Cancel", role: .cancel) { }
             Button("Delete", role: .destructive) {
                 if let animation = selectedForDeletion {
-                    IdleAnimationManager.shared.deleteAnimation(animation)
+                    _ = IdleAnimationManager.shared.deleteAnimation(animation)
                 }
             }
         } message: {
@@ -213,14 +220,40 @@ struct IdleAnimationsSettingsSection: View {
         }
     }
     
+    private func selectAndPreview(_ animation: CustomIdleAnimation) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            selectedIdleAnimation = animation
+        }
+        IdleAnimationPreviewManager.shared.startPreview(with: animation)
+    }
+    
     // MARK: - Import Handlers
     
     private func handleFileImport(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
             guard let url = urls.first else { return }
-            
-            // Show editor instead of directly importing
+
+            let ext = url.pathExtension.lowercased()
+            if ext == "mp4" || ext == "mov" {
+                guard url.startAccessingSecurityScopedResource() else {
+                    importError = "Could not access the selected video file"
+                    showingError = true
+                    return
+                }
+                defer { url.stopAccessingSecurityScopedResource() }
+
+                switch IdleAnimationManager.shared.importVideoFile(from: url) {
+                case .success(let animation):
+                    selectAndPreview(animation)
+                case .failure(let error):
+                    importError = error.localizedDescription
+                    showingError = true
+                }
+                return
+            }
+
+            // Show editor instead of directly importing Lottie files
             editorSourceURL = url
             editorIsRemote = false
             editedAnimation = nil
@@ -367,6 +400,15 @@ struct AnimationPreview: View {
     
     var body: some View {
         switch animation.source {
+        case .shimmer:
+            NotchShimmerView()
+                .frame(width: 60, height: 40)
+
+        case .neonEyes:
+            NeonEyesAnimationView(playbackMode: .oneShot, placement: .center)
+                .frame(width: 60, height: 40)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
         case .lottieFile(let url):
             LottieView(state: LUStateData(
                 type: .loadedFrom(url),
@@ -382,7 +424,31 @@ struct AnimationPreview: View {
                 loopMode: .loop
             ))
             .frame(width: 60, height: 40)
+
+        case .videoFile(let url):
+            VideoPreviewThumbnail(url: url)
+                .frame(width: 60, height: 40)
         }
+    }
+}
+
+private struct VideoPreviewThumbnail: View {
+    let url: URL
+    @State private var player: AVPlayer?
+
+    var body: some View {
+        VideoPlayer(player: player)
+            .disabled(true)
+            .onAppear {
+                let item = AVPlayerItem(url: url)
+                player = AVPlayer(playerItem: item)
+                player?.isMuted = true
+                player?.play()
+            }
+            .onDisappear {
+                player?.pause()
+                player = nil
+            }
     }
 }
 

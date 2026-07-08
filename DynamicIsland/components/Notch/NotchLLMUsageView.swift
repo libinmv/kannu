@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,19 +25,36 @@ struct NotchLLMUsageView: View {
     private func isEnabled(_ provider: ProviderID) -> Bool { Defaults[provider.enabledKey] }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            ForEach(ProviderID.allCases.filter { isEnabled($0) }) { provider in
-                card(for: provider)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Spacer()
+                Button {
+                    manager.refreshAll(force: true)
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .disabled(manager.isRefreshing)
+            }
+            HStack(alignment: .top, spacing: 10) {
+                ForEach(ProviderID.allCases.filter { isEnabled($0) }) { provider in
+                    card(for: provider)
+                }
             }
         }
         .padding(.horizontal, 8)
-        .onAppear { manager.refreshAll() }
+        .onAppear { manager.refreshAll(force: true) }
     }
 
     @ViewBuilder
     private func card(for provider: ProviderID) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(provider.displayName).font(.headline)
+            HStack(spacing: 8) {
+                AgentProviderIconView(source: .init(providerID: provider), size: 24)
+                Text(provider.displayName).font(.headline)
+                Spacer(minLength: 0)
+            }
             switch manager.results[provider] ?? .loading {
             case .loading:
                 ProgressView().controlSize(.small)
@@ -56,16 +73,31 @@ struct NotchLLMUsageView: View {
     private func success(_ snap: UsageSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             if snap.sessionLimit == nil && snap.weekLimit == nil {
-                window("Today", snap.today, prominent: true)
-                window("Week", snap.week)
-                window("Session", snap.session)
-                Text("quota unavailable").font(.caption2).foregroundStyle(.secondary.opacity(0.7))
+                if snap.logsUnavailable {
+                    Text("No local usage logs yet").font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    window("Today", snap.today, prominent: true)
+                    window("Week", snap.week)
+                    window("Session", snap.session)
+                }
+                if let quotaError = snap.quotaError {
+                    Text(quotaError).font(.caption2).foregroundStyle(.orange).lineLimit(3)
+                } else {
+                    Text("quota unavailable").font(.caption2).foregroundStyle(.secondary.opacity(0.7))
+                }
             } else {
                 if let limit = snap.sessionLimit { quotaGauge("Session", limit) }
                 if let limit = snap.weekLimit { quotaGauge("Week", limit) }
-                VStack(alignment: .leading, spacing: 2) {
-                    window("Today", snap.today, compact: true)
-                    window("Week", snap.week, compact: true)
+                if snap.logsUnavailable {
+                    Text("Token totals unavailable (no local logs)").font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    VStack(alignment: .leading, spacing: 2) {
+                        window("Today", snap.today, compact: true)
+                        window("Week", snap.week, compact: true)
+                    }
+                }
+                if let quotaError = snap.quotaError {
+                    Text(quotaError).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
                 }
             }
         }

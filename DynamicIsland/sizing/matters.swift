@@ -1,9 +1,9 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * Originally from boring.notch project
- * Modified and adapted for Atoll (DynamicIsland)
+ * Modified and adapted for Kannu (കണ്ണ്)
  * See NOTICE for details.
  *
  * This program is free software: you can redistribute it and/or modify
@@ -62,10 +62,8 @@ func maxAllowedNotchWidth() -> CGFloat {
 func enabledStandardTabCount() -> Int {
     var count = 0
 
-    // Home tab
-    if Defaults[.showStandardMediaControls] || Defaults[.showCalendar] || Defaults[.showMirror] {
-        count += 1
-    }
+    // Home / Now Playing tab is always available.
+    count += 1
 
     // Shelf tab
     if Defaults[.dynamicShelf] {
@@ -82,13 +80,18 @@ func enabledStandardTabCount() -> Int {
         count += 1
     }
 
-    // Notes / Clipboard tab
-    if Defaults[.enableNotes] || (Defaults[.enableClipboardManager] && Defaults[.clipboardDisplayMode] == .separateTab) {
+    // LLM Usage tab
+    if Defaults[.enableLLMUsageFeature] {
         count += 1
     }
 
-    // Terminal tab
-    if Defaults[.enableTerminalFeature] {
+    // Agent Status tab
+    if Defaults[.enableAgentStatusFeature] {
+        count += 1
+    }
+
+    // Notes / Clipboard tab
+    if Defaults[.enableNotes] || (Defaults[.enableClipboardManager] && Defaults[.clipboardDisplayMode] == .separateTab) {
         count += 1
     }
 
@@ -142,12 +145,6 @@ func minimalisticOpenNotchSize(isDynamicIslandMode: Bool) -> CGSize {
 
     if Defaults[.enableLyrics] {
         size.height += minimalisticLyricsExtraHeight
-    }
-    
-    let reminderCount = ReminderLiveActivityManager.shared.activeWindowReminders.count
-    if reminderCount > 0 {
-        let reminderHeight = ReminderLiveActivityManager.additionalHeight(forRowCount: reminderCount)
-        size.height += reminderHeight
     }
 
     if DynamicIslandViewCoordinator.shared.timerLiveActivityEnabled && TimerManager.shared.isExternalTimerActive {

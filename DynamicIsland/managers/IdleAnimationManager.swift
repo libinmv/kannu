@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,108 +27,28 @@ class IdleAnimationManager {
     private let storageDirectory: URL
     
     private init() {
-        // Create storage directory in Application Support
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        storageDirectory = appSupport.appendingPathComponent("DynamicIsland/IdleAnimations", isDirectory: true)
-        
-        // Create directory if it doesn't exist
+        storageDirectory = AppSupportPaths.child("IdleAnimations")
         try? FileManager.default.createDirectory(at: storageDirectory, withIntermediateDirectories: true)
-        
-        print("📁 [IdleAnimationManager] Storage directory: \(storageDirectory.path)")
     }
     
     // MARK: - Initialization
     
-    /// Load bundled animations from the LottieAnimations folder
+    /// Seeds built-in Shimmer and Eyes animations and migrates legacy bundled entries.
     func initializeDefaultAnimations() {
-        var animations: [CustomIdleAnimation] = []
-        
-        // Load bundled Lottie files
-        if let bundledAnimations = loadBundledAnimations() {
-            animations.append(contentsOf: bundledAnimations)
-        }
-        
-        // Get existing animations
-        var existing = Defaults[.customIdleAnimations]
-        
-        // Remove any legacy builtInFace entries that may be stored from older versions
-        existing.removeAll { animation in
-            if case .lottieFile(let url) = animation.source, url.absoluteString == "builtin://face" {
-                return true
-            }
-            return false
-        }
-        
-        if existing.isEmpty {
-            // First launch - set everything
-            Defaults[.customIdleAnimations] = animations
-            Defaults[.selectedIdleAnimation] = animations.first
-            print("✅ [IdleAnimationManager] First launch: Initialized with \(animations.count) animations")
+        var animations = Defaults[.customIdleAnimations].filter { !$0.isBuiltIn }
+
+        let builtIns: [CustomIdleAnimation] = [BuiltInIdleAnimation.shimmer, BuiltInIdleAnimation.eyes]
+        animations.insert(contentsOf: builtIns, at: 0)
+        Defaults[.customIdleAnimations] = animations
+
+        let selected = Defaults[.selectedIdleAnimation]
+        if selected == nil {
+            Defaults[.selectedIdleAnimation] = BuiltInIdleAnimation.shimmer
+        } else if let selected, let refreshed = animations.first(where: { $0.id == selected.id }) {
+            Defaults[.selectedIdleAnimation] = refreshed
         } else {
-            // Subsequent launch - ensure all bundled animations are present
-            let existingNames = Set(existing.filter { $0.isBuiltIn }.map { $0.name })
-            
-            // Add any missing bundled animations
-            for bundledAnim in animations where bundledAnim.isBuiltIn {
-                if !existingNames.contains(bundledAnim.name) {
-                    existing.insert(bundledAnim, at: existing.firstIndex(where: { !$0.isBuiltIn }) ?? existing.count)
-                    print("➕ [IdleAnimationManager] Added missing bundled animation: \(bundledAnim.name)")
-                }
-            }
-            
-            Defaults[.customIdleAnimations] = existing
-            
-            // If current selection was the old built-in face (no longer valid), select first available
-            if let selected = Defaults[.selectedIdleAnimation] {
-                let isValid: Bool
-                switch selected.source {
-                case .lottieFile(let url):
-                    isValid = url.absoluteString != "builtin://face"
-                case .lottieURL:
-                    isValid = true
-                }
-                if !isValid {
-                    Defaults[.selectedIdleAnimation] = existing.first
-                    print("🔄 [IdleAnimationManager] Migrated selection from legacy face to: \(existing.first?.name ?? "nil")")
-                }
-            }
-            
-            print("✅ [IdleAnimationManager] Subsequent launch: \(existing.count) total animations")
+            Defaults[.selectedIdleAnimation] = BuiltInIdleAnimation.shimmer
         }
-    }
-    
-    // MARK: - Bundled Animations
-    
-    /// Load animations from the LottieAnimations folder in the bundle
-    private func loadBundledAnimations() -> [CustomIdleAnimation]? {
-        print("📦 [IdleAnimationManager] Loading bundled animations...")
-        
-        // The JSON files are added as individual resources, not in a folder
-        let bundledFiles = ["Dog waiting", "Moody Dog", "Orange Cat Peeping", "Reindeer"]
-        var animations: [CustomIdleAnimation] = []
-        
-        for filename in bundledFiles {
-            if let url = Bundle.main.url(forResource: filename, withExtension: "json") {
-                let animation = CustomIdleAnimation(
-                    name: filename,
-                    source: .lottieFile(url),
-                    speed: 1.0,
-                    isBuiltIn: true
-                )
-                animations.append(animation)
-                print("✅ [IdleAnimationManager] Loaded bundled animation: \(filename)")
-            } else {
-                print("⚠️ [IdleAnimationManager] Could not find bundled animation: \(filename).json")
-            }
-        }
-        
-        guard !animations.isEmpty else {
-            print("⚠️ [IdleAnimationManager] No bundled animations found")
-            return nil
-        }
-        
-        print("📦 [IdleAnimationManager] Loaded \(animations.count) bundled animations")
-        return animations
     }
     
     // MARK: - User Animations
@@ -165,14 +85,44 @@ class IdleAnimationManager {
     /// Import a Lottie JSON file from URL (either local file or download from remote)
     func importLottieFile(from url: URL, name: String? = nil, speed: CGFloat = 1.0) -> Result<CustomIdleAnimation, Error> {
         let fileName = name ?? url.deletingPathExtension().lastPathComponent
-        
+
         // If it's a remote URL, download it first
         if url.scheme == "http" || url.scheme == "https" {
             return importRemoteAnimation(from: url, name: fileName, speed: speed)
         }
-        
+
         // Local file import
         return importLocalFile(from: url, name: fileName, speed: speed)
+    }
+
+    /// Import a local MP4/MOV video for idle animation.
+    func importVideoFile(from sourceURL: URL, name: String? = nil) -> Result<CustomIdleAnimation, Error> {
+        let fileName = name ?? sourceURL.deletingPathExtension().lastPathComponent
+        let ext = sourceURL.pathExtension.lowercased()
+        guard ext == "mp4" || ext == "mov" else {
+            return .failure(AnimationImportError.invalidVideoType)
+        }
+
+        do {
+            let uniqueFileName = "\(UUID().uuidString).\(ext)"
+            let destinationURL = storageDirectory.appendingPathComponent(uniqueFileName)
+            try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+
+            let animation = CustomIdleAnimation(
+                name: fileName,
+                source: .videoFile(destinationURL),
+                speed: 1.0,
+                isBuiltIn: false
+            )
+
+            var animations = Defaults[.customIdleAnimations]
+            animations.append(animation)
+            Defaults[.customIdleAnimations] = animations
+
+            return .success(animation)
+        } catch {
+            return .failure(error)
+        }
     }
     
     /// Import a local Lottie JSON file
@@ -257,12 +207,16 @@ class IdleAnimationManager {
         Defaults[.customIdleAnimations] = animations
         
         // If it's a local file, delete it from storage
-        if case .lottieFile(let url) = animation.source {
-            // Only delete if it's in our storage directory (not bundled)
+        switch animation.source {
+        case .shimmer, .neonEyes:
+            break
+        case .lottieFile(let url), .videoFile(let url):
             if url.path.contains(storageDirectory.path) {
                 try? FileManager.default.removeItem(at: url)
                 print("🗑️ [IdleAnimationManager] Deleted file: \(url.lastPathComponent)")
             }
+        case .lottieURL:
+            break
         }
         
         // If deleted animation was selected, select the first one
@@ -302,13 +256,16 @@ class IdleAnimationManager {
 // MARK: - Error Types
 enum AnimationImportError: LocalizedError {
     case invalidFileType
+    case invalidVideoType
     case invalidJSON
     case downloadFailed
-    
+
     var errorDescription: String? {
         switch self {
         case .invalidFileType:
-            return "Only .json files are supported"
+            return "Only .json files are supported for Lottie imports"
+        case .invalidVideoType:
+            return "Only .mp4 and .mov files are supported for video imports"
         case .invalidJSON:
             return "Invalid Lottie JSON format"
         case .downloadFailed:

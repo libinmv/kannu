@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -319,7 +319,7 @@ final class LocalSendService: NSObject, ObservableObject {
             for path in paths {
                 guard var components = URLComponents(string: "\(scheme)://\(ip):\(port)\(path)") else { continue }
                 components.queryItems = [
-                    URLQueryItem(name: "fingerprint", value: "atoll.localsend.bridge"),
+                    URLQueryItem(name: "fingerprint", value: "kannu.localsend.bridge"),
                 ]
                 guard let url = components.url else { continue }
 
@@ -334,7 +334,7 @@ final class LocalSendService: NSObject, ObservableObject {
                           let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                           let fingerprint = json["fingerprint"] as? String,
                           let alias = json["alias"] as? String,
-                          fingerprint != "atoll.localsend.bridge"
+                          fingerprint != "kannu.localsend.bridge"
                     else {
                         continue
                     }
@@ -599,14 +599,14 @@ final class LocalSendService: NSObject, ObservableObject {
 
     private func sendAnnouncement() {
         let payload: [String: Any] = [
-            "alias": Host.current().localizedName ?? "Atoll",
+            "alias": Host.current().localizedName ?? "Kannu",
             "version": "2.1",
             "deviceModel": "Mac",
             "deviceType": "desktop",
-            "fingerprint": "atoll.localsend.bridge",
+            "fingerprint": "kannu.localsend.bridge",
             "port": defaultPort,
             // Use HTTP here so LocalSend peers can quickly fail over to UDP response
-            // when Atoll is not serving LocalSend register endpoint.
+            // when Kannu is not serving LocalSend register endpoint.
             "protocol": "http",
             "download": false,
             "announcement": true,
@@ -699,7 +699,7 @@ final class LocalSendService: NSObject, ObservableObject {
                let fingerprint = json["fingerprint"] as? String,
                let alias = json["alias"] as? String,
                let callerIP,
-               fingerprint != "atoll.localsend.bridge" {
+               fingerprint != "kannu.localsend.bridge" {
                 let device = LocalSendDeviceInfo(
                     id: fingerprint,
                     alias: alias,
@@ -726,12 +726,12 @@ final class LocalSendService: NSObject, ObservableObject {
             }
 
             let responseJSON: [String: Any] = [
-                "alias": Host.current().localizedName ?? "Atoll",
+                "alias": Host.current().localizedName ?? "Kannu",
                 "version": "2.1",
                 "deviceModel": "Mac",
                 "deviceType": "desktop",
-                "token": "atoll.localsend.bridge",
-                "fingerprint": "atoll.localsend.bridge",
+                "token": "kannu.localsend.bridge",
+                "fingerprint": "kannu.localsend.bridge",
                 "download": false,
                 "hasWebInterface": false,
             ]
@@ -740,11 +740,11 @@ final class LocalSendService: NSObject, ObservableObject {
 
         if method == "GET", path == "/api/localsend/v2/info" {
             let responseJSON: [String: Any] = [
-                "alias": Host.current().localizedName ?? "Atoll",
+                "alias": Host.current().localizedName ?? "Kannu",
                 "version": "2.1",
                 "deviceModel": "Mac",
                 "deviceType": "desktop",
-                "fingerprint": "atoll.localsend.bridge",
+                "fingerprint": "kannu.localsend.bridge",
                 "port": defaultPort,
                 "protocol": "http",
                 "download": false,
@@ -783,7 +783,7 @@ final class LocalSendService: NSObject, ObservableObject {
               let alias = json["alias"] as? String
         else { return }
 
-        if fingerprint == "atoll.localsend.bridge" { return }
+        if fingerprint == "kannu.localsend.bridge" { return }
 
         let ip: String
         if let announced = json["ip"] as? String {
@@ -887,12 +887,12 @@ final class LocalSendService: NSObject, ObservableObject {
 
         let payload: [String: Any] = [
             "info": [
-                "alias": Host.current().localizedName ?? "Atoll",
+                "alias": Host.current().localizedName ?? "Kannu",
                 "version": "2.1",
                 "deviceModel": "Mac",
                 "deviceType": "desktop",
-                "fingerprint": "atoll.localsend.bridge",
-                "token": "atoll.localsend.bridge",
+                "fingerprint": "kannu.localsend.bridge",
+                "token": "kannu.localsend.bridge",
                 "port": defaultPort,
                 "protocol": device.https ? "https" : "http",
                 "download": false,

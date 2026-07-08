@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,13 +43,13 @@ struct DynamicNotchApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra("dynamic.island", systemImage: "mountain.2.fill", isInserted: $showMenuBarIcon) {
+        MenuBarExtra("Kannu", systemImage: "mountain.2.fill", isInserted: $showMenuBarIcon) {
             Button("Settings") {
                 SettingsWindowController.shared.showWindow()
             }
             CheckForUpdatesView(updater: updaterController.updater)
             Divider()
-            Button("Restart Atoll") {
+            Button("Restart Kannu") {
                 guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return }
 
                 let workspace = NSWorkspace.shared
@@ -103,8 +103,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @ObservedObject var coordinator = DynamicIslandViewCoordinator.shared
     var whatsNewWindow: NSWindow?
     var timer: Timer?
-    let calendarManager = CalendarManager.shared
-    let webcamManager = WebcamManager.shared
     let dndManager = DoNotDisturbManager.shared  // NEW: DND detection
     let bluetoothAudioManager = BluetoothAudioManager.shared  // NEW: Bluetooth audio detection
     let idleAnimationManager = IdleAnimationManager.shared  // NEW: Custom idle animations
@@ -125,16 +123,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     // Debouncing mechanism for window size updates
     private var windowSizeUpdateWorkItem: DispatchWorkItem?
-//    let calendarManager = CalendarManager.shared
-//    let webcamManager = WebcamManager.shared
-//    var closeNotchWorkItem: DispatchWorkItem?
-//    private var previousScreens: [NSScreen]?
-//    private var onboardingWindowController: NSWindowController?
-//    private var cancellables = Set<AnyCancellable>()
-//    
-//    // Debouncing mechanism for window size updates
-//    private var windowSizeUpdateWorkItem: DispatchWorkItem?
-    
+
     private func debouncedUpdateWindowSize() {
         // Cancel any existing work item
         windowSizeUpdateWorkItem?.cancel()
@@ -235,10 +224,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationWillTerminate(_ notification: Notification) {
         let userInfo: [String: Any] = [
-            AtollDistributedNotifications.UserInfoKey.sourcePID: NSNumber(value: ProcessInfo.processInfo.processIdentifier)
+            KannuDistributedNotifications.UserInfoKey.sourcePID: NSNumber(value: ProcessInfo.processInfo.processIdentifier)
         ]
         DistributedNotificationCenter.default().postNotificationName(
-            AtollDistributedNotifications.didBecomeIdle,
+            KannuDistributedNotifications.didBecomeIdle,
             object: nil,
             userInfo: userInfo,
             deliverImmediately: true
@@ -365,7 +354,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.contentView = FirstMouseHostingView(
             rootView: ContentView()
                 .environmentObject(viewModel)
-                .environmentObject(webcamManager)
                 //.moveToSky()
         )
         
@@ -488,10 +476,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else if coordinator.currentView == .notes || coordinator.currentView == .clipboard {
             let preferredHeight = coordinator.notesLayoutState.preferredHeight
             baseSize.height = max(baseSize.height, preferredHeight)
-        } else if coordinator.currentView == .terminal {
-            let screenHeight = NSScreen.main?.visibleFrame.height ?? 800
-            let maxFraction = Defaults[.terminalMaxHeightFraction]
-            baseSize.height = min(screenHeight * maxFraction, max(300, screenHeight * maxFraction))
         }
         
         let adjustedContentSize = statsAdjustedNotchSize(
@@ -499,7 +483,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             isStatsTabActive: coordinator.currentView == .stats,
             secondRowProgress: coordinator.statsSecondRowExpansion
         )
-        var result = addShadowPadding(
+        let result = addShadowPadding(
             to: adjustedContentSize,
             isMinimalistic: Defaults[.enableMinimalisticUI]
         )
@@ -558,18 +542,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func shouldAnimateResize(for newSize: CGSize) -> Bool {
-        if Defaults[.enableMinimalisticUI] && !ReminderLiveActivityManager.shared.activeWindowReminders.isEmpty {
-            return false
-        }
         return true
     }
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         let userInfo: [String: Any] = [
-            AtollDistributedNotifications.UserInfoKey.sourcePID: NSNumber(value: ProcessInfo.processInfo.processIdentifier)
+            KannuDistributedNotifications.UserInfoKey.sourcePID: NSNumber(value: ProcessInfo.processInfo.processIdentifier)
         ]
         DistributedNotificationCenter.default().postNotificationName(
-            AtollDistributedNotifications.didBecomeActive,
+            KannuDistributedNotifications.didBecomeActive,
             object: nil,
             userInfo: userInfo,
             deliverImmediately: true
@@ -586,6 +567,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Defaults.Keys.migrateMusicControlSlots()
         Defaults.Keys.migrateCapsLockTintMode()
         Defaults.Keys.migrateThirdPartyDDCIntegration()
+        Defaults.Keys.enforceRemovedFeatureDefaults()
 
         Defaults.publisher(.enableThirdPartyDDCIntegration, options: [])
             .sink { _ in
@@ -702,23 +684,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.debouncedUpdateWindowSize()
         }.store(in: &cancellables)
 
-        // Observe terminal settings changes
-        Defaults.publisher(.enableTerminalFeature, options: []).sink { [weak self] _ in
-            self?.debouncedUpdateWindowSize()
-        }.store(in: &cancellables)
-
-        Defaults.publisher(.terminalMaxHeightFraction, options: []).sink { [weak self] _ in
-            self?.debouncedUpdateWindowSize()
-        }.store(in: &cancellables)
-
         MemoryUsageMonitor.shared.startMonitoring()
-
-        ReminderLiveActivityManager.shared.$activeWindowReminders
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.debouncedUpdateWindowSize()
-            }
-            .store(in: &cancellables)
 
         TimerManager.shared.$activeSource
             .combineLatest(TimerManager.shared.$isTimerActive)
@@ -743,12 +709,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }.store(in: &cancellables)
 
         Defaults.publisher(.enableClipboardManager, options: []).sink { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.updateFeatureShortcutAvailability()
-            }
-        }.store(in: &cancellables)
-
-        Defaults.publisher(.enableColorPickerFeature, options: []).sink { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.updateFeatureShortcutAvailability()
             }
@@ -790,6 +750,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self.dndManager.startMonitoring()
             } else {
                 self.dndManager.stopMonitoring()
+            }
+        }.store(in: &cancellables)
+
+        // Agent status (traffic light live activity)
+        if Defaults[.enableAgentStatusFeature] {
+            _ = AgentHookInstaller.shared // triggers legacy hook migration
+            CursorAgentStatusMonitor.shared.start()
+            AgentStatusNotificationBridge.shared.start()
+        }
+        Defaults.publisher(.enableAgentStatusFeature, options: []).sink { change in
+            Task { @MainActor in
+                if change.newValue {
+                    CursorAgentStatusMonitor.shared.start()
+                    AgentStatusNotificationBridge.shared.start()
+                } else {
+                    CursorAgentStatusMonitor.shared.stop()
+                    AgentStatusNotificationBridge.shared.stop()
+                }
             }
         }.store(in: &cancellables)
 
@@ -937,7 +915,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func installTopMenuItemsIfNeeded() {
         guard let mainMenu = NSApp.mainMenu else { return }
-        if mainMenu.items.contains(where: { $0.identifier?.rawValue == "Atoll.Focus.Menu" }) {
+        if mainMenu.items.contains(where: { $0.identifier?.rawValue == "Kannu.Focus.Menu" }) {
             updateFocusMenuState()
             return
         }
@@ -945,7 +923,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let insertionIndex = preferredMenuInsertionIndex(in: mainMenu)
 
         let focusMenuItem = NSMenuItem(title: "Focus", action: nil, keyEquivalent: "")
-        focusMenuItem.identifier = NSUserInterfaceItemIdentifier("Atoll.Focus.Menu")
+        focusMenuItem.identifier = NSUserInterfaceItemIdentifier("Kannu.Focus.Menu")
         let focusSubmenu = NSMenu(title: "Focus")
 
         let withoutDevTools = NSMenuItem(
@@ -971,7 +949,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         focusUseDevToolsMenuItem = useDevTools
 
         let accessibilityMenuItem = NSMenuItem(title: "Accessibility", action: nil, keyEquivalent: "")
-        accessibilityMenuItem.identifier = NSUserInterfaceItemIdentifier("Atoll.Accessibility.Menu")
+        accessibilityMenuItem.identifier = NSUserInterfaceItemIdentifier("Kannu.Accessibility.Menu")
         let accessibilitySubmenu = NSMenu(title: "Accessibility")
 
         let requestAccessibility = NSMenuItem(
@@ -994,7 +972,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.insertItem(accessibilityMenuItem, at: insertionIndex + 1)
 
         let permissionsMenuItem = NSMenuItem(title: "Permissions", action: nil, keyEquivalent: "")
-        permissionsMenuItem.identifier = NSUserInterfaceItemIdentifier("Atoll.Permissions.Menu")
+        permissionsMenuItem.identifier = NSUserInterfaceItemIdentifier("Kannu.Permissions.Menu")
         let permissionsSubmenu = NSMenu(title: "Permissions")
 
         let requestFullDisk = NSMenuItem(
@@ -1026,7 +1004,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.insertItem(permissionsMenuItem, at: insertionIndex + 2)
 
         let toolsMenuItem = NSMenuItem(title: "Tools", action: nil, keyEquivalent: "")
-        toolsMenuItem.identifier = NSUserInterfaceItemIdentifier("Atoll.Tools.Menu")
+        toolsMenuItem.identifier = NSUserInterfaceItemIdentifier("Kannu.Tools.Menu")
         let toolsSubmenu = NSMenu(title: "Tools")
 
         let loggingLevelItem = NSMenuItem(title: "Logging Level", action: nil, keyEquivalent: "")
@@ -1135,7 +1113,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func exportLogs() {
         let savePanel = NSSavePanel()
-        savePanel.nameFieldStringValue = "Atoll_Logs.zip"
+        savePanel.nameFieldStringValue = "Kannu_Logs.zip"
         savePanel.title = "Export Logs & Crash Reports"
         
         savePanel.begin { response in
@@ -1149,7 +1127,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     let logsFile = tempDir.appendingPathComponent("app_logs.txt")
                     let logProcess = Process()
                     logProcess.executableURL = URL(fileURLWithPath: "/usr/bin/log")
-                    logProcess.arguments = ["show", "--predicate", "subsystem == 'com.Ebullioscopic.Atoll' OR subsystem == 'com.Ebullioscopic.Atoll.dev'", "--info", "--debug", "--last", "2d"]
+                    logProcess.arguments = ["show", "--predicate", "subsystem == 'com.kannu.app' OR subsystem == 'com.kannu.app.dev'", "--info", "--debug", "--last", "2d"]
                     
                     let pipe = Pipe()
                     logProcess.standardOutput = pipe
@@ -1161,13 +1139,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     
                     let diagDir = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Logs/DiagnosticReports")
                     let allFiles = (try? FileManager.default.contentsOfDirectory(at: diagDir, includingPropertiesForKeys: nil)) ?? []
-                    for file in allFiles where file.lastPathComponent.contains("Atoll") {
+                    for file in allFiles where file.lastPathComponent.contains("Kannu") {
                         try? FileManager.default.copyItem(at: file, to: tempDir.appendingPathComponent(file.lastPathComponent))
                     }
                     
                     let sysDiagDir = URL(fileURLWithPath: "/Library/Logs/DiagnosticReports")
                     let sysFiles = (try? FileManager.default.contentsOfDirectory(at: sysDiagDir, includingPropertiesForKeys: nil)) ?? []
-                    for file in sysFiles where file.lastPathComponent.contains("Atoll") {
+                    for file in sysFiles where file.lastPathComponent.contains("Kannu") {
                         try? FileManager.default.copyItem(at: file, to: tempDir.appendingPathComponent(file.lastPathComponent))
                     }
                     
@@ -1245,39 +1223,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        KeyboardShortcuts.onKeyDown(for: .colorPickerPanel) {
-            guard Defaults[.enableShortcuts], Defaults[.enableColorPickerFeature] else { return }
-            ColorPickerPanelManager.shared.toggleColorPickerPanel()
-        }
-
-        KeyboardShortcuts.onKeyDown(for: .toggleTerminalTab) { [weak self] in
-            guard let self else { return }
-            guard Defaults[.enableShortcuts], Defaults[.enableTerminalFeature] else { return }
-
-            if vm.notchState == .closed {
-                closeNotchWorkItem?.cancel()
-                closeNotchWorkItem = nil
-                vm.open()
-                coordinator.currentView = .terminal
-                TerminalManager.shared.refreshTerminalAppearanceIfNeeded()
-                TerminalManager.shared.focusTerminalIfPossible()
-                TerminalManager.shared.refreshTerminalAppearanceIfNeeded()
-            } else {
-                if coordinator.currentView == .terminal {
-                    coordinator.suppressHoverOpen()
-                    TerminalManager.shared.resignTerminalFirstResponderIfNeeded()
-                    vm.close()
-                } else {
-                    closeNotchWorkItem?.cancel()
-                    closeNotchWorkItem = nil
-                    coordinator.currentView = .terminal
-                    TerminalManager.shared.refreshTerminalAppearanceIfNeeded()
-                    TerminalManager.shared.focusTerminalIfPossible()
-                    TerminalManager.shared.refreshTerminalAppearanceIfNeeded()
-                }
-            }
-        }
-
         KeyboardShortcuts.onKeyDown(for: .screenAssistantPanel) { [weak self] in
             guard let self else { return }
             guard Defaults[.enableShortcuts], Defaults[.enableScreenAssistant] else { return }
@@ -1302,9 +1247,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateFeatureShortcutAvailability() {
         updateShortcut(.startDemoTimer, isEnabled: Defaults[.enableShortcuts] && Defaults[.enableTimerFeature])
         updateShortcut(.clipboardHistoryPanel, isEnabled: Defaults[.enableShortcuts] && Defaults[.enableClipboardManager])
-        updateShortcut(.colorPickerPanel, isEnabled: Defaults[.enableShortcuts] && Defaults[.enableColorPickerFeature])
         updateShortcut(.screenAssistantPanel, isEnabled: Defaults[.enableShortcuts] && Defaults[.enableScreenAssistant])
-        updateShortcut(.toggleTerminalTab, isEnabled: Defaults[.enableShortcuts] && Defaults[.enableTerminalFeature])
     }
 
     @MainActor

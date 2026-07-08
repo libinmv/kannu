@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,12 +43,10 @@ class DynamicIslandViewModel: NSObject, ObservableObject {
     var onViewTeardown: (() -> Void)?
     
     @Published var hideOnClosed: Bool = true
-    @Published var isHoveringCalendar: Bool = false
     @Published var isBatteryPopoverActive: Bool = false
     @Published var isClipboardPopoverActive: Bool = false
     @Published var isColorPickerPopoverActive: Bool = false
     @Published var isStatsPopoverActive: Bool = false
-    @Published var isReminderPopoverActive: Bool = false
     @Published var isMediaOutputPopoverActive: Bool = false
     @Published var isTimerPopoverActive: Bool = false
     @Published var shouldRecheckHover: Bool = false
@@ -104,10 +102,6 @@ class DynamicIslandViewModel: NSObject, ObservableObject {
         }
     }
     
-    let webcamManager = WebcamManager.shared
-    @Published var isCameraExpanded: Bool = false
-    @Published var isRequestingAuthorization: Bool = false
-
     @Published var screen: String?
 
     @Published var notchSize: CGSize = getClosedNotchSize()
@@ -142,27 +136,6 @@ class DynamicIslandViewModel: NSObject, ObservableObject {
             .store(in: &cancellables)
         
         setupDetectorObserver()
-
-        ReminderLiveActivityManager.shared.$activeWindowReminders
-            .removeDuplicates()
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                guard let self else { return }
-                let updatedTarget = self.calculateDynamicNotchSize()
-                guard self.notchState == .open else { return }
-                guard self.notchSize != updatedTarget else { return }
-                withAnimation(.smooth) {
-                    self.notchSize = updatedTarget
-                }
-                if let delegate = AppDelegate.shared {
-                    delegate.ensureWindowSize(
-                        addShadowPadding(to: updatedTarget, isMinimalistic: Defaults[.enableMinimalisticUI]),
-                        animated: true,
-                        force: false
-                    )
-                }
-            }
-            .store(in: &cancellables)
 
         // Observe settings + lyrics changes to dynamically resize the notch
         let enableLyricsPublisher = Defaults.publisher(.enableLyrics).map { $0.newValue }
@@ -346,7 +319,9 @@ class DynamicIslandViewModel: NSObject, ObservableObject {
         if Thread.isMainThread {
             applyWindowResize()
         } else {
-            DispatchQueue.main.async(execute: applyWindowResize)
+            Task { @MainActor in
+                applyWindowResize()
+            }
         }
 
         notchSize = targetSize
@@ -413,48 +388,6 @@ class DynamicIslandViewModel: NSObject, ObservableObject {
             withAnimation(self.animationLibrary.animation) {
                 self.close()
             }
-        }
-    }
-    
-    func toggleCameraPreview() {
-        if isRequestingAuthorization {
-            return
-        }
-
-        switch webcamManager.authorizationStatus {
-        case .authorized:
-            if webcamManager.isSessionRunning {
-                webcamManager.stopSession()
-                isCameraExpanded = false
-            } else if webcamManager.cameraAvailable {
-                webcamManager.startSession()
-                isCameraExpanded = true
-            }
-
-        case .denied, .restricted:
-            DispatchQueue.main.async {
-                NSApp.setActivationPolicy(.regular)
-                NSApp.activate(ignoringOtherApps: true)
-
-                let alert = NSAlert()
-                alert.messageText = "Camera Access Required"
-                alert.informativeText = "Please allow camera access in System Settings."
-                alert.addButton(withTitle: "OK")
-                alert.runModal()
-
-                NSApp.setActivationPolicy(.accessory)
-                NSApp.deactivate()
-            }
-
-        case .notDetermined:
-            isRequestingAuthorization = true
-            webcamManager.checkAndRequestVideoAuthorization()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                self.isRequestingAuthorization = false
-            }
-
-        default:
-            break
         }
     }
 }

@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * Swift bridging header for Objective-C/C++ code.
  *
@@ -14,5 +14,6 @@
 #define DynamicIsland_Bridging_Header_h
 
 #import "audio/AudioBridge.h"
+#import "components/Shelf/Services/QuickShareServiceDiscovery.h"
 
 #endif /* DynamicIsland_Bridging_Header_h */

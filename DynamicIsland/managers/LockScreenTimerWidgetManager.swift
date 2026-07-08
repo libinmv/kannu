@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -157,7 +157,6 @@ final class LockScreenTimerWidgetPanelManager {
         hideTask = nil
         animator.isPresented = true
         LockScreenPanelManager.shared.notifyTimerWidgetFrameChanged(animated: false)
-        LockScreenReminderWidgetPanelManager.shared.refreshPosition(animated: true)
     }
 
     func hide(animated: Bool = true) {
@@ -171,7 +170,6 @@ final class LockScreenTimerWidgetPanelManager {
             hideTask = nil
             latestFrame = nil
             LockScreenPanelManager.shared.notifyTimerWidgetFrameChanged(animated: true)
-            LockScreenReminderWidgetPanelManager.shared.refreshPosition(animated: true)
             return
         }
 
@@ -182,7 +180,6 @@ final class LockScreenTimerWidgetPanelManager {
                 self?.hideTask = nil
                 self?.latestFrame = nil
                 LockScreenPanelManager.shared.notifyTimerWidgetFrameChanged(animated: true)
-                LockScreenReminderWidgetPanelManager.shared.refreshPosition(animated: true)
             }
         }
     }
@@ -202,7 +199,6 @@ final class LockScreenTimerWidgetPanelManager {
         }
         updateHostingViewSize(for: window, size: frame.size)
         latestFrame = frame
-        LockScreenReminderWidgetPanelManager.shared.refreshPosition(animated: animated)
     }
 
     func refreshRelativeToMusicPanel(animated: Bool) {
@@ -301,7 +297,9 @@ final class LockScreenTimerWidgetPanelManager {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.handleScreenGeometryChange(reason: "screen-parameters")
+            Task { @MainActor in
+                self?.handleScreenGeometryChange(reason: "screen-parameters")
+            }
         }
 
         let workspaceCenter = NSWorkspace.shared.notificationCenter
@@ -310,7 +308,9 @@ final class LockScreenTimerWidgetPanelManager {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.handleScreenGeometryChange(reason: "screens-did-wake")
+            Task { @MainActor in
+                self?.handleScreenGeometryChange(reason: "screens-did-wake")
+            }
         }
 
         workspaceObservers = [wakeObserver]

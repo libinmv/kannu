@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -85,7 +85,7 @@ final class KeyboardBrightnessSensor {
     }
 
     private static func readStandardRawLevel() throws -> Float {
-        let service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("AppleHIDKeyboardEventDriverV2"))
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleHIDKeyboardEventDriverV2"))
         guard service != 0 else {
             throw SensorError.Keyboard.notStandard
         }
@@ -101,7 +101,8 @@ final class KeyboardBrightnessSensor {
         }
         if CFGetTypeID(property) == CFNumberGetTypeID() {
             var rawValue: Float = 0
-            if CFNumberGetValue(property as! CFNumber, .floatType, &rawValue) {
+            let number = property as! CFNumber
+            if CFNumberGetValue(number, .floatType, &rawValue) {
                 return rawValue / maxKeyboardBrightness
             }
         }
@@ -133,7 +134,7 @@ final class KeyboardBrightnessSensor {
     }
 
     private static func writeStandard(rawLevel: Float) throws {
-        let service = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("AppleHIDKeyboardEventDriverV2"))
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleHIDKeyboardEventDriverV2"))
         guard service != 0 else {
             throw SensorError.Keyboard.notStandard
         }

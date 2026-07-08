@@ -14395,7 +14395,7 @@
         }
       }
     },
-    "Atoll": {
+    "Kannu": {
       "localizations": {
         "ar": {
           "stringUnit": {
@@ -14412,13 +14412,13 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll"
+            "value": "Kannu"
           }
         },
         "en": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Atoll"
+            "value": "Kannu"
           }
         },
         "en-GB": {
@@ -14442,7 +14442,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll"
+            "value": "Kannu"
           }
         },
         "gu": {
@@ -14490,7 +14490,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll"
+            "value": "Kannu"
           }
         },
         "sv": {
@@ -14520,100 +14520,100 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll"
+            "value": "Kannu"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll"
+            "value": "Kannu"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll"
+            "value": "Kannu"
           }
         }
       }
     },
-    "Atoll needs access to save and read AI assistant files.": {
+    "Kannu needs access to save and read AI assistant files.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll benötigt Zugriff, um AI-Assistent-Dateien zu speichern und zu lesen."
+            "value": "Kannu benötigt Zugriff, um AI-Assistent-Dateien zu speichern und zu lesen."
           }
         },
         "ru": {
           "stringUnit": {
-            "value": "Atoll нужен доступ для сохранения ИИ-файлов.",
+            "value": "Kannu нужен доступ для сохранения ИИ-файлов.",
             "state": "translated"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll 需要权限来保存和读取 AI 助手文件。"
+            "value": "Kannu 需要权限来保存和读取 AI 助手文件。"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll ต้องการสิทธิ์เพื่อบันทึกและอ่านไฟล์ผู้ช่วย AI"
+            "value": "Kannu ต้องการสิทธิ์เพื่อบันทึกและอ่านไฟล์ผู้ช่วย AI"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll heeft toegang nodig om AI-assistentbestanden op te slaan en te lezen."
+            "value": "Kannu heeft toegang nodig om AI-assistentbestanden op te slaan en te lezen."
           }
         }
       }
     },
-    "Atoll needs access to save screenshots to your desktop.": {
+    "Kannu needs access to save screenshots to your desktop.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll benötigt Zugriff, um Screenshots auf Ihrem Desktop zu speichern."
+            "value": "Kannu benötigt Zugriff, um Screenshots auf Ihrem Desktop zu speichern."
           }
         },
         "ru": {
           "stringUnit": {
-            "value": "Atoll нужен доступ для сохранения снимков экрана.",
+            "value": "Kannu нужен доступ для сохранения снимков экрана.",
             "state": "translated"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll 需要权限将截图保存到桌面。"
+            "value": "Kannu 需要权限将截图保存到桌面。"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll ต้องการสิทธิ์เพื่อบันทึกภาพหน้าจอไปยังเดสก์ท็อป"
+            "value": "Kannu ต้องการสิทธิ์เพื่อบันทึกภาพหน้าจอไปยังเดสก์ท็อป"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll heeft toegang nodig om schermafbeeldingen op je bureaublad op te slaan."
+            "value": "Kannu heeft toegang nodig om schermafbeeldingen op je bureaublad op te slaan."
           }
         }
       }
     },
-    "Atoll needs Bluetooth access to detect when audio devices connect and display their battery status in the HUD.": {
+    "Kannu needs Bluetooth access to detect when audio devices connect and display their battery status in the HUD.": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll benötigt Bluetooth-Zugriff, um zu erkennen, wenn Audiogeräte verbunden werden, und deren Akkustatus im HUD anzuzeigen."
+            "value": "Kannu benötigt Bluetooth-Zugriff, um zu erkennen, wenn Audiogeräte verbunden werden, und deren Akkustatus im HUD anzuzeigen."
           }
         },
         "gu": {
@@ -14631,30 +14631,30 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll 需要蓝牙访问权限来检测音频设备连接并在 HUD 中显示其电池状态。"
+            "value": "Kannu 需要蓝牙访问权限来检测音频设备连接并在 HUD 中显示其电池状态。"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll ต้องการสิทธิ์บลูทูธเพื่อตรวจจับเมื่ออุปกรณ์เสียงเชื่อมต่อและแสดงสถานะแบตเตอรี่ใน HUD"
+            "value": "Kannu ต้องการสิทธิ์บลูทูธเพื่อตรวจจับเมื่ออุปกรณ์เสียงเชื่อมต่อและแสดงสถานะแบตเตอรี่ใน HUD"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll heeft Bluetooth-toegang nodig om te detecteren wanneer audioapparaten verbinding maken en om hun batterijstatus in de HUD weer te geven."
+            "value": "Kannu heeft Bluetooth-toegang nodig om te detecteren wanneer audioapparaten verbinding maken en om hun batterijstatus in de HUD weer te geven."
           }
         }
       }
     },
-    "Atoll uses AppleScripts to control Spotify and Apple Music": {
+    "Kannu uses AppleScripts to control Spotify and Apple Music": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll verwendet AppleScripts zur Steuerung von Spotify und Apple Music."
+            "value": "Kannu verwendet AppleScripts zur Steuerung von Spotify und Apple Music."
           }
         },
         "gu": {
@@ -14665,26 +14665,26 @@
         },
         "ru": {
           "stringUnit": {
-            "value": "Atoll использует AppleScript для управления Spotify и Apple Music",
+            "value": "Kannu использует AppleScript для управления Spotify и Apple Music",
             "state": "translated"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll 使用 AppleScript 控制 Spotify 和 Apple Music"
+            "value": "Kannu 使用 AppleScript 控制 Spotify 和 Apple Music"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll ใช้ AppleScripts เพื่อควบคุม Spotify และ Apple Music"
+            "value": "Kannu ใช้ AppleScripts เพื่อควบคุม Spotify และ Apple Music"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll gebruikt AppleScripts om Spotify en Apple Music te besturen"
+            "value": "Kannu gebruikt AppleScripts om Spotify en Apple Music te besturen"
           }
         }
       }
@@ -16731,7 +16731,7 @@
         }
       }
     },
-    "Blue dashed box shows actual size in Atoll": {
+    "Blue dashed box shows actual size in Kannu": {
       "localizations": {
         "ar": {
           "stringUnit": {
@@ -16748,13 +16748,13 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Blau gestriffelte Box zeigt die tatsächliche Größe im Atoll an"
+            "value": "Blau gestriffelte Box zeigt die tatsächliche Größe im Kannu an"
           }
         },
         "en": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Blue dashed box shows actual size in Atoll"
+            "value": "Blue dashed box shows actual size in Kannu"
           }
         },
         "en-GB": {
@@ -16766,7 +16766,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "La caja de puntos azul muestra el tamaño real en Atoll"
+            "value": "La caja de puntos azul muestra el tamaño real en Kannu"
           }
         },
         "fi": {
@@ -16778,7 +16778,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "La boîte bleue en pointillés affiche la taille actuelle dans la Atoll"
+            "value": "La boîte bleue en pointillés affiche la taille actuelle dans la Kannu"
           }
         },
         "gu": {
@@ -16826,7 +16826,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Синяя пунктирная рамка — реальный размер в Atoll"
+            "value": "Синяя пунктирная рамка — реальный размер в Kannu"
           }
         },
         "sv": {
@@ -16856,19 +16856,19 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "蓝色虚线框显示 Atoll 中的实际大小"
+            "value": "蓝色虚线框显示 Kannu 中的实际大小"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "กล่องเส้นประสีน้ำเงินแสดงขนาดจริงใน Atoll"
+            "value": "กล่องเส้นประสีน้ำเงินแสดงขนาดจริงใน Kannu"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Het blauw gestippelde vak geeft de werkelijke grootte op Atoll weer"
+            "value": "Het blauw gestippelde vak geeft de werkelijke grootte op Kannu weer"
           }
         }
       }
@@ -21218,7 +21218,7 @@
         }
       }
     },
-    "Choose animation to display when Atoll is idle. Tap to select, hold to delete custom animations.": {
+    "Choose animation to display when Kannu is idle. Tap to select, hold to delete custom animations.": {
       "comment": "A footer label under the section that lists their idle animations.",
       "localizations": {
         "ar": {
@@ -21230,19 +21230,19 @@
         "cs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Vyberte animaci, která se zobrazí, když je Atoll nečinný. Klepnutím vyberte, podržením smažte vlastní animace."
+            "value": "Vyberte animaci, která se zobrazí, když je Kannu nečinný. Klepnutím vyberte, podržením smažte vlastní animace."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Wählen Sie die Animation aus, die angezeigt werden soll, wenn Atoll im Leerlauf ist. Tippen Sie zum Auswählen und halten Sie zum Löschen benutzerdefinierter Animationen gedrückt."
+            "value": "Wählen Sie die Animation aus, die angezeigt werden soll, wenn Kannu im Leerlauf ist. Tippen Sie zum Auswählen und halten Sie zum Löschen benutzerdefinierter Animationen gedrückt."
           }
         },
         "en": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Choose animation to display when Atoll is idle. Tap to select, hold to delete custom animations."
+            "value": "Choose animation to display when Kannu is idle. Tap to select, hold to delete custom animations."
           }
         },
         "en-GB": {
@@ -21254,19 +21254,19 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Elige la animación para que se muestre cuando Atoll esté inactivo. Toque para seleccionar, mantenga presionado para eliminar animaciones personalizadas."
+            "value": "Elige la animación para que se muestre cuando Kannu esté inactivo. Toque para seleccionar, mantenga presionado para eliminar animaciones personalizadas."
           }
         },
         "fi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Valitse animaatio, joka näytetään, kun Atoll on lepotilassa. Napauta valitaksesi, pidä painettuna poistaaksesi mukautetut animaatiot."
+            "value": "Valitse animaatio, joka näytetään, kun Kannu on lepotilassa. Napauta valitaksesi, pidä painettuna poistaaksesi mukautetut animaatiot."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Choisir une animation à afficher lorsque la Atoll est inactive. Touchez pour sélectionner, maintenez pour supprimer."
+            "value": "Choisir une animation à afficher lorsque la Kannu est inactive. Touchez pour sélectionner, maintenez pour supprimer."
           }
         },
         "gu": {
@@ -21302,7 +21302,7 @@
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Velg animasjon som skal vises når Atoll er inaktiv. Trykk for å velge, hold nede for å slette tilpassede animasjoner."
+            "value": "Velg animasjon som skal vises når Kannu er inaktiv. Trykk for å velge, hold nede for å slette tilpassede animasjoner."
           }
         },
         "pl": {
@@ -21326,7 +21326,7 @@
         "sv": {
           "stringUnit": {
             "state": "translated",
-            "value": "Välj animation som ska visas när Atoll är inaktiv. Tryck för att välja, håll ned för att radera anpassade animationer."
+            "value": "Välj animation som ska visas när Kannu är inaktiv. Tryck för att välja, håll ned för att radera anpassade animationer."
           }
         },
         "ta": {
@@ -21356,13 +21356,13 @@
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "เลือกแอนิเมชันที่จะแสดงเมื่อ Atoll ไม่ได้ใช้งาน แตะเพื่อเลือก กดค้างเพื่อลบแอนิเมชันกำหนดเอง"
+            "value": "เลือกแอนิเมชันที่จะแสดงเมื่อ Kannu ไม่ได้ใช้งาน แตะเพื่อเลือก กดค้างเพื่อลบแอนิเมชันกำหนดเอง"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Kies een animatie die moet worden weergegeven wanneer het Atoll inactief is. Tik om te selecteren, houd ingedrukt om aangepaste animaties te verwijderen."
+            "value": "Kies een animatie die moet worden weergegeven wanneer het Kannu inactief is. Tik om te selecteren, houd ingedrukt om aangepaste animaties te verwijderen."
           }
         }
       }
@@ -37966,7 +37966,7 @@
         }
       }
     },
-    "Enable built-in system monitoring to replace macOS HUD notifications with Atoll displays.": {
+    "Enable built-in system monitoring to replace macOS HUD notifications with Kannu displays.": {
       "extractionState": "manual",
       "localizations": {
         "ar": {
@@ -37978,7 +37978,7 @@
         "be": {
           "stringUnit": {
             "state": "translated",
-            "value": "Уключыце ўбудаваны маніторынг сістэмы, каб замяніць апавяшчэнні HUD macOS на дысплеі Atoll."
+            "value": "Уключыце ўбудаваны маніторынг сістэмы, каб замяніць апавяшчэнні HUD macOS на дысплеі Kannu."
           }
         },
         "cs": {
@@ -37990,13 +37990,13 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aktivieren Sie die integrierte Systemüberwachung, um macOS HUD-Benachrichtigungen durch Atoll-Displays zu ersetzen."
+            "value": "Aktivieren Sie die integrierte Systemüberwachung, um macOS HUD-Benachrichtigungen durch Kannu-Displays zu ersetzen."
           }
         },
         "en": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Enable built-in system monitoring to replace macOS HUD notifications with Atoll displays."
+            "value": "Enable built-in system monitoring to replace macOS HUD notifications with Kannu displays."
           }
         },
         "en-GB": {
@@ -38008,7 +38008,7 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Habilite la supervisión del sistema integrado para reemplazar las notificaciones de macOS HUD con pantallas Atoll."
+            "value": "Habilite la supervisión del sistema integrado para reemplazar las notificaciones de macOS HUD con pantallas Kannu."
           }
         },
         "fi": {
@@ -38020,7 +38020,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Activez le système de suivi intégré pour remplacer les notifications macOS avec celles de Atoll."
+            "value": "Activez le système de suivi intégré pour remplacer les notifications macOS avec celles de Kannu."
           }
         },
         "gu": {
@@ -38032,7 +38032,7 @@
         "hi": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS HUD सूचनाओं को Atoll डिस्प्ले से बदलने के लिए अंतर्निहित सिस्टम निगरानी सक्षम करें।"
+            "value": "macOS HUD सूचनाओं को Kannu डिस्प्ले से बदलने के लिए अंतर्निहित सिस्टम निगरानी सक्षम करें।"
           }
         },
         "hu": {
@@ -38074,7 +38074,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Заменяет стандартные HUD-уведомления macOS (яркость/громкость) красивыми элементами Atoll."
+            "value": "Заменяет стандартные HUD-уведомления macOS (яркость/громкость) красивыми элементами Kannu."
           }
         },
         "sv": {
@@ -38086,13 +38086,13 @@
         "ta": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS HUD அறிவிப்புகளுக்குப் பதிலாக Atoll காட்சிகளைப் பயன்படுத்த, உள்ளமைக்கப்பட்ட சிஸ்டம் கண்காணிப்பை இயக்கவும்."
+            "value": "macOS HUD அறிவிப்புகளுக்குப் பதிலாக Kannu காட்சிகளைப் பயன்படுத்த, உள்ளமைக்கப்பட்ட சிஸ்டம் கண்காணிப்பை இயக்கவும்."
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "macOS HUD bildirimlerini Atoll ekranlarıyla değiştirmek için yerleşik sistem izlemeyi etkinleştirin."
+            "value": "macOS HUD bildirimlerini Kannu ekranlarıyla değiştirmek için yerleşik sistem izlemeyi etkinleştirin."
           }
         },
         "uk": {
@@ -38104,19 +38104,19 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "启用内置系统监控，用 Atoll 显示替代 macOS HUD 通知。"
+            "value": "启用内置系统监控，用 Kannu 显示替代 macOS HUD 通知。"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "เปิดใช้การตรวจสอบระบบในตัวเพื่อแทนที่การแจ้งเตือน HUD macOS ด้วยการแสดงผล Atoll"
+            "value": "เปิดใช้การตรวจสอบระบบในตัวเพื่อแทนที่การแจ้งเตือน HUD macOS ด้วยการแสดงผล Kannu"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Schakel ingebouwde systeemmonitoring in om macOS HUD-meldingen te vervangen door Atoll-schermen."
+            "value": "Schakel ingebouwde systeemmonitoring in om macOS HUD-meldingen te vervangen door Kannu-schermen."
           }
         }
       }
@@ -74279,7 +74279,7 @@
       }
     },
     "Recording Detected": {
-      "comment": "A text description of a red dot displayed in the Atoll header when screen recording is active.",
+      "comment": "A text description of a red dot displayed in the Kannu header when screen recording is active.",
       "localizations": {
         "ar": {
           "stringUnit": {
@@ -76240,7 +76240,7 @@
         }
       }
     },
-    "Restart Atoll": {
+    "Restart Kannu": {
       "localizations": {
         "ar": {
           "stringUnit": {
@@ -76257,13 +76257,13 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll Neu Starten"
+            "value": "Kannu Neu Starten"
           }
         },
         "en": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Restart Atoll"
+            "value": "Restart Kannu"
           }
         },
         "en-GB": {
@@ -76287,7 +76287,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Relancer Atoll"
+            "value": "Relancer Kannu"
           }
         },
         "gu": {
@@ -76335,7 +76335,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Перезапустить Atoll"
+            "value": "Перезапустить Kannu"
           }
         },
         "sv": {
@@ -76365,19 +76365,19 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "重启 Atoll"
+            "value": "重启 Kannu"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "รีสตาร์ท Atoll"
+            "value": "รีสตาร์ท Kannu"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atoll opnieuw starten"
+            "value": "Kannu opnieuw starten"
           }
         }
       }
@@ -100329,7 +100329,7 @@
         }
       }
     },
-    "When enabled, the Atoll will expand horizontally to match the animation size": {
+    "When enabled, the Kannu will expand horizontally to match the animation size": {
       "localizations": {
         "ar": {
           "stringUnit": {
@@ -100340,19 +100340,19 @@
         "cs": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pokud je tato funkce povolena, Atoll se rozbalí horizontálně tak, aby odpovídal velikosti animace."
+            "value": "Pokud je tato funkce povolena, Kannu se rozbalí horizontálně tak, aby odpovídal velikosti animace."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Wenn aktiviert, erweitert sich das Atoll horizontal, um der Animationsgröße zu entsprechen"
+            "value": "Wenn aktiviert, erweitert sich das Kannu horizontal, um der Animationsgröße zu entsprechen"
           }
         },
         "en": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "When enabled, the Atoll will expand horizontally to match the animation size"
+            "value": "When enabled, the Kannu will expand horizontally to match the animation size"
           }
         },
         "en-GB": {
@@ -100412,13 +100412,13 @@
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "Når denne funksjonen er aktivert, vil Atoll utvides horisontalt for å tilpasse seg animasjonens størrelse."
+            "value": "Når denne funksjonen er aktivert, vil Kannu utvides horisontalt for å tilpasse seg animasjonens størrelse."
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Po włączeniu Atoll rozszerzy się poziomo, aby dopasować się do rozmiaru animacji."
+            "value": "Po włączeniu Kannu rozszerzy się poziomo, aby dopasować się do rozmiaru animacji."
           }
         },
         "pt-BR": {
@@ -100430,7 +100430,7 @@
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "При включении Atoll будет расширяться по горизонтали в соответствии с размером анимации."
+            "value": "При включении Kannu будет расширяться по горизонтали в соответствии с размером анимации."
           }
         },
         "sv": {
@@ -100448,7 +100448,7 @@
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Etkinleştirildiğinde, Atoll animasyon boyutuna uyacak şekilde yatay olarak genişleyecektir"
+            "value": "Etkinleştirildiğinde, Kannu animasyon boyutuna uyacak şekilde yatay olarak genişleyecektir"
           }
         },
         "uk": {
@@ -100460,19 +100460,19 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "启用后，Atoll 将水平扩展以匹配动画大小"
+            "value": "启用后，Kannu 将水平扩展以匹配动画大小"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "เมื่อเปิดใช้ Atoll จะขยายแนวนอนตามขนาดแอนิเมชัน"
+            "value": "เมื่อเปิดใช้ Kannu จะขยายแนวนอนตามขนาดแอนิเมชัน"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Als deze optie is ingeschakeld, wordt het Atoll horizontaal uitgevouwen zodat het overeenkomt met de animatiegrootte"
+            "value": "Als deze optie is ingeschakeld, wordt het Kannu horizontaal uitgevouwen zodat het overeenkomt met de animatiegrootte"
           }
         }
       }
@@ -101360,7 +101360,7 @@
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Etkinleştirildiğinde, Atoll animasyon boyutuna uyacak şekilde yatay olarak genişleyecektir"
+            "value": "Etkinleştirildiğinde, Kannu animasyon boyutuna uyacak şekilde yatay olarak genişleyecektir"
           }
         },
         "uk": {

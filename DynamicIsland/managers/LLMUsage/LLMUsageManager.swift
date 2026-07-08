@@ -31,8 +31,10 @@ final class LLMUsageManager: ObservableObject {
         isRefreshing = true
         let providers = enabledProviders
         let enabledIDs = Set(providers.map { $0.id })
-        results = results.filter { enabledIDs.contains($0.key) } // drop disabled providers' stale results
-        for p in providers where results[p.id] == nil { results[p.id] = .loading }
+        results = results.filter { enabledIDs.contains($0.key) }
+        for provider in providers {
+            results[provider.id] = .loading
+        }
         Task { await runRefresh(providers: providers) }
     }
 

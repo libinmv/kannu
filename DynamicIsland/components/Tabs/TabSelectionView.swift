@@ -1,9 +1,9 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * Originally from boring.notch project
- * Modified and adapted for Atoll (DynamicIsland)
+ * Modified and adapted for Kannu (കണ്ണ്)
  * See NOTICE for details.
  *
  * This program is free software: you can redistribute it and/or modify
@@ -51,13 +51,10 @@ struct TabSelectionView: View {
     @State private var showQuickSharePopover = false
     @Default(.enableTimerFeature) var enableTimerFeature
     @Default(.enableStatsFeature) var enableStatsFeature
-    @Default(.enableColorPickerFeature) var enableColorPickerFeature
     @Default(.timerDisplayMode) var timerDisplayMode
     @Default(.enableThirdPartyExtensions) private var enableThirdPartyExtensions
     @Default(.enableExtensionNotchExperiences) private var enableExtensionNotchExperiences
     @Default(.enableExtensionNotchTabs) private var enableExtensionNotchTabs
-    @Default(.showCalendar) private var showCalendar
-    @Default(.showMirror) private var showMirror
     @Default(.showStandardMediaControls) private var showStandardMediaControls
     @Default(.enableMinimalisticUI) private var enableMinimalisticUI
     @Namespace var animation
@@ -66,7 +63,7 @@ struct TabSelectionView: View {
         var tabsArray: [TabModel] = []
 
         if homeTabVisible {
-            tabsArray.append(TabModel(label: "Home", icon: "house.fill", view: .home))
+            tabsArray.append(TabModel(label: "Now Playing", icon: "music.note.list", view: .home))
         }
 
         if Defaults[.dynamicShelf] {
@@ -87,13 +84,14 @@ struct TabSelectionView: View {
             tabsArray.append(TabModel(label: "Usage", icon: "chart.bar.doc.horizontal", view: .llmUsage))
         }
 
+        if Defaults[.enableAgentStatusFeature] {
+            tabsArray.append(TabModel(label: "Agent", icon: "light.beacon.max", view: .agentStatus))
+        }
+
         if Defaults[.enableNotes] || (Defaults[.enableClipboardManager] && Defaults[.clipboardDisplayMode] == .separateTab) {
             let label = Defaults[.enableNotes] ? "Notes" : "Clipboard"
             let icon = Defaults[.enableNotes] ? "note.text" : "doc.on.clipboard"
             tabsArray.append(TabModel(label: label, icon: icon, view: .notes))
-        }
-        if Defaults[.enableTerminalFeature] {
-            tabsArray.append(TabModel(label: "Terminal", icon: "apple.terminal", view: .terminal))
         }
         if extensionTabsEnabled {
             for payload in extensionTabPayloads {
@@ -161,10 +159,7 @@ struct TabSelectionView: View {
     }
 
     private var homeTabVisible: Bool {
-        if enableMinimalisticUI {
-            return true
-        }
-        return showStandardMediaControls || showCalendar || showMirror
+        true
     }
 
     private func isSelected(_ tab: TabModel) -> Bool {

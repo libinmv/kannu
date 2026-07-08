@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,7 +41,7 @@ struct HUDNumericLabel: View {
             .onAppear {
                 animatedValue = value
             }
-            .onChange(of: value) { newValue in
+            .onChange(of: value) { _, newValue in
                 withAnimation(animation) {
                     animatedValue = newValue
                 }

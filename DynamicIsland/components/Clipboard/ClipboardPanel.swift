@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -466,6 +466,29 @@ struct ClipboardPanelItemRow: View {
         } else {
             let days = Int(interval / 86400)
             return String(localized: "\(days)d ago")
+        }
+    }
+}
+
+private struct NativeStyleCloseButton: View {
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 8, weight: .medium))
+                .foregroundColor(.white)
+                .frame(width: 13, height: 13)
+                .background(isHovered ? Color.red.opacity(0.8) : Color.red)
+                .clipShape(Circle())
+                .scaleEffect(isHovered ? 1.1 : 1.0)
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.1)) {
+                isHovered = hovering
+            }
         }
     }
 }

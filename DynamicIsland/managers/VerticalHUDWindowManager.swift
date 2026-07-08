@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -254,7 +254,9 @@ final class VerticalHUDWindowManager {
                 context.duration = animationDuration
                 window.nsWindow.animator().alphaValue = 0
             } completionHandler: { [weak self] in
-                self?.applyInteractivity(window, visibleOverride: false)
+                Task { @MainActor in
+                    self?.applyInteractivity(window, visibleOverride: false)
+                }
             }
         }
     }

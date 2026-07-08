@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -175,18 +175,28 @@ struct CircularHUDView: View {
         }
         
         // Get device name
-        var deviceName: CFString = "" as CFString
-        var nameSize = UInt32(MemoryLayout<CFString>.size)
         var nameAddress = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyDeviceNameCFString,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-        
-        guard AudioObjectGetPropertyData(deviceID, &nameAddress, 0, nil, &nameSize, &deviceName) == noErr else {
+        var unmanagedDeviceName: Unmanaged<CFString>?
+        var nameSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        let nameStatus = withUnsafeMutablePointer(to: &unmanagedDeviceName) { pointer in
+            AudioObjectGetPropertyData(
+                deviceID,
+                &nameAddress,
+                0,
+                nil,
+                &nameSize,
+                UnsafeMutableRawPointer(pointer)
+            )
+        }
+
+        guard nameStatus == noErr, let deviceName = unmanagedDeviceName?.takeRetainedValue() else {
             return AudioDeviceInfo(isAirPods: false, isHeadphones: false)
         }
-        
+
         let name = (deviceName as String).lowercased()
         
         // Check for AirPods specifically

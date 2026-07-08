@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -195,7 +195,7 @@ struct LockScreenMusicPanel: View {
             parallaxResumeWorkItem = nil
             isParallaxSuspended = false
         }
-        .onReceive(NotificationCenter.default.publisher(for: .atollArtworkWallpaperDismissed)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .kannuArtworkWallpaperDismissed)) { _ in
             withAnimation(.easeInOut(duration: 0.28)) {
                 isArtworkFullscreen = false
             }
@@ -482,7 +482,7 @@ struct LockScreenMusicPanel: View {
         FullScreenArtworkWindowManager.shared.onDismiss = {
             Task { @MainActor in
                 withAnimation(.easeInOut(duration: 0.28)) {
-                    NotificationCenter.default.post(name: .atollArtworkWallpaperDismissed, object: nil)
+                    NotificationCenter.default.post(name: .kannuArtworkWallpaperDismissed, object: nil)
                 }
             }
         }
@@ -1610,5 +1610,5 @@ final class RightClickNSView: NSView {
 }
 
 extension Notification.Name {
-    static let atollArtworkWallpaperDismissed = Notification.Name("atollArtworkWallpaperDismissed")
+    static let kannuArtworkWallpaperDismissed = Notification.Name("kannuArtworkWallpaperDismissed")
 }

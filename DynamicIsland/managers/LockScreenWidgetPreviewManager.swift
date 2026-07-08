@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -268,12 +268,10 @@ final class LockScreenWidgetPreviewManager: ObservableObject {
 
     private func applyPreviewState() {
         applyFocusPreviewState()
-        applyCalendarPreviewEvents()
     }
 
     private func restorePreviewState() {
         restoreFocusPreviewState()
-        CalendarManager.shared.setLockScreenPreviewEvents(nil)
     }
 
     private func applyFocusPreviewState() {
@@ -297,63 +295,6 @@ final class LockScreenWidgetPreviewManager: ObservableObject {
         manager.currentFocusModeName = cachedFocusState.name
         manager.currentFocusModeIdentifier = cachedFocusState.identifier
         self.cachedFocusState = nil
-    }
-
-    private func applyCalendarPreviewEvents() {
-        let now = Date()
-        let reminderCalendar = CalendarModel(
-            accountName: "Preview",
-            id: "preview.reminders",
-            title: "Reminders",
-            color: .systemBlue,
-            isSubscribed: false,
-            isReminder: true
-        )
-        let reminderEvent = EventModel(
-            id: "preview.reminder.pay-rent",
-            start: now.addingTimeInterval(12 * 60),
-            end: now.addingTimeInterval(42 * 60),
-            title: "Pay rent",
-            location: nil,
-            notes: nil,
-            url: nil,
-            isAllDay: false,
-            type: .reminder(completed: false),
-            calendar: reminderCalendar,
-            participants: [],
-            timeZone: TimeZone.current,
-            hasRecurrenceRules: false,
-            priority: .high,
-            conferenceURL: nil
-        )
-
-        let eventCalendar = CalendarModel(
-            accountName: "Preview",
-            id: "preview.calendar",
-            title: "Calendar",
-            color: .systemOrange,
-            isSubscribed: false,
-            isReminder: false
-        )
-        let event = EventModel(
-            id: "preview.event.standup",
-            start: now.addingTimeInterval(60 * 60),
-            end: now.addingTimeInterval(90 * 60),
-            title: "Design Review",
-            location: "Studio",
-            notes: nil,
-            url: nil,
-            isAllDay: false,
-            type: .event(.accepted),
-            calendar: eventCalendar,
-            participants: [],
-            timeZone: TimeZone.current,
-            hasRecurrenceRules: false,
-            priority: nil,
-            conferenceURL: nil
-        )
-
-        CalendarManager.shared.setLockScreenPreviewEvents([reminderEvent, event])
     }
 }
 

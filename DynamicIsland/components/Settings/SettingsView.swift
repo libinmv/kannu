@@ -8,7 +8,6 @@ import AppKit
 import AVFoundation
 import Combine
 import Defaults
-import EventKit
 import KeyboardShortcuts
 import LaunchAtLogin
 import LottieUI
@@ -54,18 +53,16 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
     case devices
     case extensions
     case timer
-    case calendar
     case hudAndOSD
     case battery
     case stats
     case clipboard
     case screenAssistant
-    case colorPicker
     case downloads
     case shelf
     case shortcuts
     case notes
-    case terminal
+    case agentStatus
     case about
 
     var id: String { rawValue }
@@ -76,11 +73,11 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .general, .appearance:                                          return .core
         case .media, .liveActivities, .lockScreen, .devices:                 return .mediaAndDisplay
         case .hudAndOSD, .battery:                                           return .system
-        case .timer, .calendar, .notes:                                      return .productivity
-        case .clipboard, .screenAssistant, .colorPicker, .shelf,
+        case .timer, .notes:                                      return .productivity
+        case .clipboard, .screenAssistant, .shelf,
              .downloads, .shortcuts:                                         return .utilities
-        case .stats, .terminal:                                              return .developer
-        case .extensions:                                                    return .integrations
+        case .stats:                                              return .developer
+        case .extensions, .agentStatus:                                      return .integrations
         case .about:                                                         return .info
         }
     }
@@ -95,18 +92,16 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .devices: return String(localized: "Devices")
         case .extensions: return String(localized: "Extensions")
         case .timer: return String(localized: "Timer")
-        case .calendar: return String(localized: "Calendar")
         case .hudAndOSD: return String(localized: "Controls")
         case .battery: return String(localized: "Battery")
         case .stats: return String(localized: "Stats")
         case .clipboard: return String(localized: "Clipboard")
         case .screenAssistant: return String(localized: "Screen Assistant")
-        case .colorPicker: return String(localized: "Color Picker")
         case .downloads: return String(localized: "Downloads")
         case .shelf: return String(localized: "Shelf")
         case .shortcuts: return String(localized: "Shortcuts")
         case .notes: return String(localized: "Notes")
-        case .terminal: return String(localized: "Terminal")
+        case .agentStatus: return String(localized: "Agent Status")
         case .about: return String(localized: "About")
         }
     }
@@ -121,18 +116,16 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .devices: return "headphones"
         case .extensions: return "puzzlepiece.extension"
         case .timer: return "timer"
-        case .calendar: return "calendar"
         case .hudAndOSD: return "dial.medium.fill"
         case .battery: return "battery.100.bolt"
         case .stats: return "chart.xyaxis.line"
         case .clipboard: return "clipboard"
         case .screenAssistant: return "brain.head.profile"
-        case .colorPicker: return "eyedropper"
         case .downloads: return "square.and.arrow.down"
         case .shelf: return "books.vertical"
         case .shortcuts: return "keyboard"
         case .notes: return "note.text"
-        case .terminal: return "apple.terminal"
+        case .agentStatus: return "light.beacon.max"
         case .about: return "info.circle"
         }
     }
@@ -147,18 +140,16 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .devices: return Color(red: 0.1, green: 0.11, blue: 0.12)
         case .extensions: return Color(red: 0.557, green: 0.353, blue: 0.957)
         case .timer: return .red
-        case .calendar: return .cyan
         case .hudAndOSD: return .indigo
         case .battery: return Color(red: 0.202, green: 0.783, blue: 0.348, opacity: 1.000)
         case .stats: return .teal
         case .clipboard: return .mint
         case .screenAssistant: return .pink
-        case .colorPicker: return .accentColor
         case .downloads: return .gray
         case .shelf: return .brown
         case .shortcuts: return .orange
         case .notes: return Color(red: 0.979, green: 0.716, blue: 0.153, opacity: 1.000)
-        case .terminal: return Color(red: 0.2, green: 0.8, blue: 0.4)
+        case .agentStatus: return .yellow
         case .about: return .secondary
         }
     }
@@ -495,20 +486,18 @@ struct SettingsView: View {
             .battery,
             // Productivity
             .timer,
-            .calendar,
             .notes,
             // Utilities
             .clipboard,
             .screenAssistant,
-            .colorPicker,
             .shelf,
             .downloads,
             .shortcuts,
             // Developer
             .stats,
-            .terminal,
             // Integrations
             .extensions,
+            .agentStatus,
             // Info
             .about
         ]
@@ -723,7 +712,6 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .liveActivities, title: "Enable Camera Detection", keywords: ["camera", "privacy indicator"], highlightID: SettingsTab.liveActivities.highlightID(for: "Enable Camera Detection")),
             SettingsSearchEntry(tab: .liveActivities, title: "Enable Microphone Detection", keywords: ["microphone", "privacy"], highlightID: SettingsTab.liveActivities.highlightID(for: "Enable Microphone Detection")),
             SettingsSearchEntry(tab: .liveActivities, title: "Enable music live activity", keywords: ["music", "now playing"], highlightID: SettingsTab.liveActivities.highlightID(for: "Enable music live activity")),
-            SettingsSearchEntry(tab: .liveActivities, title: "Enable reminder live activity", keywords: ["reminder", "live activity"], highlightID: SettingsTab.liveActivities.highlightID(for: "Enable reminder live activity")),
 
             // Battery (Charge)
             SettingsSearchEntry(tab: .battery, title: "Show battery indicator", keywords: ["battery hud", "charge"], highlightID: SettingsTab.battery.highlightID(for: "Show battery indicator")),
@@ -787,23 +775,6 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .media, title: "Enable album art parallax effect", keywords: ["parallax", "parallax effect", "album art"], highlightID: SettingsTab.media.highlightID(for: "Enable album art parallax effect")),
 
             // Calendar
-            SettingsSearchEntry(tab: .calendar, title: "Show calendar", keywords: ["calendar", "events"], highlightID: SettingsTab.calendar.highlightID(for: "Show calendar")),
-            SettingsSearchEntry(tab: .calendar, title: "Enable reminder live activity", keywords: ["reminder", "live activity"], highlightID: SettingsTab.calendar.highlightID(for: "Enable reminder live activity")),
-            SettingsSearchEntry(tab: .calendar, title: "Countdown style", keywords: ["reminder countdown"], highlightID: SettingsTab.calendar.highlightID(for: "Countdown style")),
-            SettingsSearchEntry(tab: .calendar, title: "Show lock screen reminder", keywords: ["lock screen", "reminder widget"], highlightID: SettingsTab.calendar.highlightID(for: "Show lock screen reminder")),
-            SettingsSearchEntry(tab: .calendar, title: "Show next calendar event", keywords: ["calendar widget", "lock screen", "next event"], highlightID: SettingsTab.calendar.highlightID(for: "Show next calendar event")),
-            SettingsSearchEntry(tab: .calendar, title: "Show events within the next", keywords: ["calendar widget", "lookahead"], highlightID: SettingsTab.calendar.highlightID(for: "Show events within the next")),
-            SettingsSearchEntry(tab: .calendar, title: "Show events from all calendars", keywords: ["calendar widget", "selection"], highlightID: SettingsTab.calendar.highlightID(for: "Show events from all calendars")),
-            SettingsSearchEntry(tab: .calendar, title: "Show countdown", keywords: ["calendar widget", "countdown"], highlightID: SettingsTab.calendar.highlightID(for: "Show countdown")),
-            SettingsSearchEntry(tab: .calendar, title: "Show event for entire duration", keywords: ["calendar widget", "duration"], highlightID: SettingsTab.calendar.highlightID(for: "Show event for entire duration")),
-            SettingsSearchEntry(tab: .calendar, title: "Hide active event and show next upcoming event", keywords: ["calendar widget", "after start"], highlightID: SettingsTab.calendar.highlightID(for: "Hide active event and show next upcoming event")),
-            SettingsSearchEntry(tab: .calendar, title: "Show time remaining", keywords: ["calendar widget", "remaining"], highlightID: SettingsTab.calendar.highlightID(for: "Show time remaining")),
-            SettingsSearchEntry(tab: .calendar, title: "Show start time after event begins", keywords: ["calendar widget", "start time"], highlightID: SettingsTab.calendar.highlightID(for: "Show start time after event begins")),
-            SettingsSearchEntry(tab: .calendar, title: "Chip color", keywords: ["reminder chip", "color"], highlightID: SettingsTab.calendar.highlightID(for: "Chip color")),
-            SettingsSearchEntry(tab: .calendar, title: "Hide all-day events", keywords: ["calendar", "all-day"], highlightID: SettingsTab.calendar.highlightID(for: "Hide all-day events")),
-            SettingsSearchEntry(tab: .calendar, title: "Hide completed reminders", keywords: ["reminder", "completed"], highlightID: SettingsTab.calendar.highlightID(for: "Hide completed reminders")),
-            SettingsSearchEntry(tab: .calendar, title: "Show full event titles", keywords: ["calendar", "titles"], highlightID: SettingsTab.calendar.highlightID(for: "Show full event titles")),
-            SettingsSearchEntry(tab: .calendar, title: "Auto-scroll to next event", keywords: ["calendar", "scroll"], highlightID: SettingsTab.calendar.highlightID(for: "Auto-scroll to next event")),
 
             // Shelf
             SettingsSearchEntry(tab: .shelf, title: "Enable shelf", keywords: ["shelf", "dock"], highlightID: SettingsTab.shelf.highlightID(for: "Enable shelf")),
@@ -824,10 +795,11 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .appearance, title: "Enable colored spectrograms", keywords: ["spectrogram", "audio"], highlightID: SettingsTab.appearance.highlightID(for: "Enable colored spectrograms")),
             SettingsSearchEntry(tab: .appearance, title: "Enable blur effect behind album art", keywords: ["blur", "album art"], highlightID: SettingsTab.appearance.highlightID(for: "Enable blur effect behind album art")),
             SettingsSearchEntry(tab: .appearance, title: "Slider color", keywords: ["slider", "accent"], highlightID: SettingsTab.appearance.highlightID(for: "Slider color")),
-            SettingsSearchEntry(tab: .appearance, title: "Enable Dynamic mirror", keywords: ["mirror", "reflection"], highlightID: SettingsTab.appearance.highlightID(for: "Enable Dynamic mirror")),
-            SettingsSearchEntry(tab: .appearance, title: "Mirror shape", keywords: ["mirror shape", "circle", "rectangle"], highlightID: SettingsTab.appearance.highlightID(for: "Mirror shape")),
             SettingsSearchEntry(tab: .appearance, title: "Idle Animation", keywords: ["face animation", "idle", "cool face"], highlightID: SettingsTab.appearance.highlightID(for: "Idle Animation")),
             SettingsSearchEntry(tab: .appearance, title: "App icon", keywords: ["app icon", "custom icon"], highlightID: SettingsTab.appearance.highlightID(for: "App icon")),
+            SettingsSearchEntry(tab: .appearance, title: "Notch fill color", keywords: ["notch color", "background", "fill", "appearance"], highlightID: SettingsTab.appearance.highlightID(for: "Notch fill color")),
+            SettingsSearchEntry(tab: .appearance, title: "Notch skin", keywords: ["notch skin", "background", "wallpaper", "custom skin"], highlightID: SettingsTab.appearance.highlightID(for: "Notch skin")),
+            SettingsSearchEntry(tab: .appearance, title: "Skin scrim opacity", keywords: ["scrim", "overlay", "darken", "notch skin"], highlightID: SettingsTab.appearance.highlightID(for: "Skin scrim opacity")),
 
             // Lock Screen
             SettingsSearchEntry(tab: .lockScreen, title: "Preview lock screen widgets", keywords: ["preview", "lock screen", "widgets"], highlightID: SettingsTab.lockScreen.highlightID(for: "Preview lock screen widgets")),
@@ -856,10 +828,6 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .lockScreen, title: "Show AQI widget", keywords: ["air quality", "aqi"], highlightID: SettingsTab.lockScreen.highlightID(for: "Show AQI widget")),
             SettingsSearchEntry(tab: .lockScreen, title: "Air quality scale", keywords: ["aqi", "scale"], highlightID: SettingsTab.lockScreen.highlightID(for: "Air quality scale")),
             SettingsSearchEntry(tab: .lockScreen, title: "Use colored gauges", keywords: ["gauge tint", "monochrome"], highlightID: SettingsTab.lockScreen.highlightID(for: "Use colored gauges")),
-            SettingsSearchEntry(tab: .lockScreen, title: "Show lock screen reminder", keywords: ["lock screen", "reminder widget"], highlightID: SettingsTab.lockScreen.highlightID(for: "Show lock screen reminder")),
-            SettingsSearchEntry(tab: .lockScreen, title: "Chip color", keywords: ["reminder chip", "color"], highlightID: SettingsTab.lockScreen.highlightID(for: "Chip color")),
-            SettingsSearchEntry(tab: .lockScreen, title: "Reminder alignment", keywords: ["reminder", "alignment", "position"], highlightID: SettingsTab.lockScreen.highlightID(for: "Reminder alignment")),
-            SettingsSearchEntry(tab: .lockScreen, title: "Reminder vertical offset", keywords: ["reminder", "offset", "position"], highlightID: SettingsTab.lockScreen.highlightID(for: "Reminder vertical offset")),
 
             // Extensions
             SettingsSearchEntry(tab: .extensions, title: "Enable third-party extensions", keywords: ["extensions", "authorization", "third party"], highlightID: SettingsTab.extensions.highlightID(for: "Enable third-party extensions")),
@@ -908,33 +876,17 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .screenAssistant, title: "Enable Screen Assistant", keywords: ["screen assistant", "ai"], highlightID: SettingsTab.screenAssistant.highlightID(for: "Enable Screen Assistant")),
             SettingsSearchEntry(tab: .screenAssistant, title: "Display Mode", keywords: ["screen assistant", "mode"], highlightID: SettingsTab.screenAssistant.highlightID(for: "Display Mode")),
 
-            // Color Picker
-            SettingsSearchEntry(tab: .colorPicker, title: "Enable Color Picker", keywords: ["color picker", "eyedropper"], highlightID: SettingsTab.colorPicker.highlightID(for: "Enable Color Picker")),
-            SettingsSearchEntry(tab: .colorPicker, title: "Show Color Picker Icon", keywords: ["color icon", "toolbar"], highlightID: SettingsTab.colorPicker.highlightID(for: "Show Color Picker Icon")),
-            SettingsSearchEntry(tab: .colorPicker, title: "Display Mode", keywords: ["color", "list"], highlightID: SettingsTab.colorPicker.highlightID(for: "Display Mode")),
-            SettingsSearchEntry(tab: .colorPicker, title: "History Size", keywords: ["color history"], highlightID: SettingsTab.colorPicker.highlightID(for: "History Size")),
-            SettingsSearchEntry(tab: .colorPicker, title: "Show All Color Formats", keywords: ["hex", "hsl", "color formats"], highlightID: SettingsTab.colorPicker.highlightID(for: "Show All Color Formats")),
-
-            // Terminal
-            SettingsSearchEntry(tab: .terminal, title: "Enable terminal", keywords: ["terminal", "guake", "shell"], highlightID: SettingsTab.terminal.highlightID(for: "Enable terminal")),
-            SettingsSearchEntry(tab: .terminal, title: "Shell path", keywords: ["shell", "zsh", "bash", "terminal"], highlightID: SettingsTab.terminal.highlightID(for: "Shell path")),
-            SettingsSearchEntry(tab: .terminal, title: "Font size", keywords: ["terminal", "font", "text size"], highlightID: SettingsTab.terminal.highlightID(for: "Font size")),
-            SettingsSearchEntry(tab: .terminal, title: "Terminal opacity", keywords: ["terminal", "opacity", "transparency", "blur", "background"], highlightID: SettingsTab.terminal.highlightID(for: "Terminal opacity")),
-            SettingsSearchEntry(tab: .terminal, title: "Maximum height", keywords: ["terminal", "height", "size"], highlightID: SettingsTab.terminal.highlightID(for: "Maximum height")),
-            SettingsSearchEntry(tab: .terminal, title: "Background color", keywords: ["terminal", "background", "color", "theme"], highlightID: SettingsTab.terminal.highlightID(for: "Background color")),
-            SettingsSearchEntry(tab: .terminal, title: "Foreground color", keywords: ["terminal", "foreground", "text color", "theme"], highlightID: SettingsTab.terminal.highlightID(for: "Foreground color")),
-            SettingsSearchEntry(tab: .terminal, title: "Cursor color", keywords: ["terminal", "cursor", "caret", "color"], highlightID: SettingsTab.terminal.highlightID(for: "Cursor color")),
-            SettingsSearchEntry(tab: .terminal, title: "Bold as bright", keywords: ["terminal", "bold", "bright", "colors"], highlightID: SettingsTab.terminal.highlightID(for: "Bold as bright")),
-            SettingsSearchEntry(tab: .terminal, title: "Cursor style", keywords: ["terminal", "cursor", "block", "underline", "bar", "blink"], highlightID: SettingsTab.terminal.highlightID(for: "Cursor style")),
-            SettingsSearchEntry(tab: .terminal, title: "Scrollback lines", keywords: ["terminal", "scrollback", "buffer", "history"], highlightID: SettingsTab.terminal.highlightID(for: "Scrollback lines")),
-            SettingsSearchEntry(tab: .terminal, title: "Option as Meta", keywords: ["terminal", "option", "meta", "alt", "key"], highlightID: SettingsTab.terminal.highlightID(for: "Option as Meta")),
-            SettingsSearchEntry(tab: .terminal, title: "Mouse reporting", keywords: ["terminal", "mouse", "reporting", "vim", "tmux"], highlightID: SettingsTab.terminal.highlightID(for: "Mouse reporting")),
+            // Agent Status
+            SettingsSearchEntry(tab: .agentStatus, title: "Enable Cursor Agent Status", keywords: ["agent", "cursor", "status", "traffic", "light", "ai", "notch"], highlightID: SettingsTab.agentStatus.highlightID(for: "Enable Cursor Agent Status")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Editor Hooks", keywords: ["agent", "cursor", "vscode", "copilot", "codex", "hook", "install", "integration"], highlightID: SettingsTab.agentStatus.highlightID(for: "Cursor Hook")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Mobile notifications", keywords: ["mobile", "push", "ntfy", "pushover", "webhook", "iphone", "android"], highlightID: SettingsTab.agentStatus.highlightID(for: "Mobile notifications")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Send test notification", keywords: ["test", "mobile", "push", "notification"], highlightID: SettingsTab.agentStatus.highlightID(for: "Send test notification")),
         ]
     }
 
     private func isTabVisible(_ tab: SettingsTab) -> Bool {
         switch tab {
-        case .timer, .stats, .clipboard, .screenAssistant, .colorPicker, .shelf, .notes, .terminal:
+        case .timer, .stats, .clipboard, .screenAssistant, .shelf, .notes:
             return !enableMinimalisticUI
         default:
             return true
@@ -976,10 +928,6 @@ struct SettingsView: View {
             SettingsForm(tab: .timer) {
                 TimerSettings()
             }
-        case .calendar:
-            SettingsForm(tab: .calendar) {
-                CalendarSettings()
-            }
         case .hudAndOSD:
             SettingsForm(tab: .hudAndOSD) {
                 HUDAndOSDSettingsView()
@@ -1000,9 +948,9 @@ struct SettingsView: View {
             SettingsForm(tab: .screenAssistant) {
                 ScreenAssistantSettings()
             }
-        case .colorPicker:
-            SettingsForm(tab: .colorPicker) {
-                ColorPickerSettings()
+        case .agentStatus:
+            SettingsForm(tab: .agentStatus) {
+                AgentStatusSettings()
             }
         case .downloads:
             SettingsForm(tab: .downloads) {
@@ -1019,10 +967,6 @@ struct SettingsView: View {
         case .notes:
             SettingsForm(tab: .notes) {
                 NotesSettingsView()
-            }
-        case .terminal:
-            SettingsForm(tab: .terminal) {
-                TerminalSettings()
             }
         case .about:
             if let controller = updaterController {
@@ -1042,7 +986,6 @@ struct GeneralSettings: View {
     @State private var screens: [String] = NSScreen.screens.compactMap { $0.localizedName }
     @EnvironmentObject var vm: DynamicIslandViewModel
     @ObservedObject var coordinator = DynamicIslandViewCoordinator.shared
-    @Default(.mirrorShape) var mirrorShape
     @Default(.showEmojis) var showEmojis
     @Default(.gestureSensitivity) var gestureSensitivity
     @Default(.minimumHoverDuration) var minimumHoverDuration
@@ -2280,21 +2223,21 @@ private struct ExternalDisplayIntegrationsSection: View {
         switch thirdPartyDDCProvider {
         case .betterDisplay:
             if !betterDisplayManager.isDetected {
-                return "Install [BetterDisplay](https://betterdisplay.pro) to control external display brightness (and optional volume) through Atoll's HUD."
+                return "Install [BetterDisplay](https://betterdisplay.pro) to control external display brightness (and optional volume) through Kannu's HUD."
             }
             if !betterDisplayManager.isRunning {
                 return "BetterDisplay is installed but not currently running. Launch BetterDisplay to enable integration."
             }
-            return "BetterDisplay OSD events will be routed through Atoll's active HUD style. Brightness is always routed; volume is routed when external volume control listener is enabled below. Make sure BetterDisplay's OSD integration is enabled in Settings › Application › Integration."
+            return "BetterDisplay OSD events will be routed through Kannu's active HUD style. Brightness is always routed; volume is routed when external volume control listener is enabled below. Make sure BetterDisplay's OSD integration is enabled in Settings › Application › Integration."
         case .lunar:
             if !lunarManager.isDetected {
-                return "Install [Lunar](https://lunar.fyi) to control external display brightness, contrast, and optional volume through Atoll's HUD via DDC."
+                return "Install [Lunar](https://lunar.fyi) to control external display brightness, contrast, and optional volume through Kannu's HUD via DDC."
             }
             if !lunarManager.isRunning {
                 return "Lunar is installed but not currently running. Launch Lunar to enable integration."
             }
             if lunarManager.isConnected {
-                return "Connected to Lunar's DDC socket. Brightness and contrast adjustments are shown through Atoll's HUD; volume follows when external volume control listener is enabled below."
+                return "Connected to Lunar's DDC socket. Brightness and contrast adjustments are shown through Kannu's HUD; volume follows when external volume control listener is enabled below."
             }
             return "Lunar is running but the socket connection is not yet established. It will connect automatically."
         }
@@ -2404,8 +2347,8 @@ private struct ExternalDisplayIntegrationsSection: View {
 
                     Text(
                         enableExternalVolumeControlListener
-                        ? "Atoll's built-in volume key interception is disabled while external volume listening is on. Volume HUD/OSD will follow \(thirdPartyDDCProvider.displayName) payloads."
-                        : "Atoll keeps native volume key interception. External provider volume payloads are ignored while this is off."
+                        ? "Kannu's built-in volume key interception is disabled while external volume listening is on. Volume HUD/OSD will follow \(thirdPartyDDCProvider.displayName) payloads."
+                        : "Kannu keeps native volume key interception. External provider volume payloads are ignored while this is off."
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -2430,13 +2373,13 @@ private struct ExternalDisplayIntegrationsSection: View {
                     }
                     .buttonStyle(.link)
                 } else {
-                    Text("Enable to route BetterDisplay or Lunar display adjustments through Atoll's active HUD style.")
+                    Text("Enable to route BetterDisplay or Lunar display adjustments through Kannu's active HUD style.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             } footer: {
                 if enableThirdPartyDDCIntegration {
-                    Text("Atoll always listens to selected-provider brightness events, and listens to provider volume events only when external volume listener is enabled.")
+                    Text("Kannu always listens to selected-provider brightness events, and listens to provider volume events only when external volume listener is enabled.")
                         .foregroundStyle(.secondary)
                         .font(.caption)
                 }
@@ -3055,7 +2998,7 @@ struct Media: View {
                     }
                     .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
                     .settingsHighlight(id: highlightID("Keep album art visible during fullscreen artwork"))
-                    Text("Right-click the album art on the lock screen to set it as the wallpaper. Right-click again or click the background to restore the original wallpaper. If a canvas is available, Atoll can also keep the same album art + player layout on top of the live canvas.")
+                    Text("Right-click the album art on the lock screen to set it as the wallpaper. Right-click again or click the background to restore the original wallpaper. If a canvas is available, Kannu can also keep the same album art + player layout on top of the live canvas.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -3115,446 +3058,6 @@ struct Media: View {
     }
 }
 
-struct CalendarSettings: View {
-    @ObservedObject private var calendarManager = CalendarManager.shared
-    @Default(.showCalendar) var showCalendar: Bool
-    @Default(.enableReminderLiveActivity) var enableReminderLiveActivity
-    @Default(.reminderPresentationStyle) var reminderPresentationStyle
-    @Default(.reminderLeadTime) var reminderLeadTime
-    @Default(.reminderSneakPeekDuration) var reminderSneakPeekDuration
-    @Default(.enableLockScreenReminderWidget) var enableLockScreenReminderWidget
-    @Default(.lockScreenReminderChipStyle) var lockScreenReminderChipStyle
-    @Default(.hideAllDayEvents) var hideAllDayEvents
-    @Default(.hideCompletedReminders) var hideCompletedReminders
-    @Default(.showFullEventTitles) var showFullEventTitles
-    @Default(.autoScrollToNextEvent) var autoScrollToNextEvent
-    @Default(.lockScreenShowCalendarCountdown) private var lockScreenShowCalendarCountdown
-    @Default(.lockScreenShowCalendarEvent) private var lockScreenShowCalendarEvent
-    @Default(.lockScreenShowCalendarEventEntireDuration) private var lockScreenShowCalendarEventEntireDuration
-    @Default(.lockScreenShowCalendarEventAfterStartWindow) private var lockScreenShowCalendarEventAfterStartWindow
-    @Default(.lockScreenShowCalendarTimeRemaining) private var lockScreenShowCalendarTimeRemaining
-    @Default(.lockScreenShowCalendarStartTimeAfterBegins) private var lockScreenShowCalendarStartTimeAfterBegins
-    @Default(.lockScreenCalendarEventLookaheadWindow) private var lockScreenCalendarEventLookaheadWindow
-    @Default(.lockScreenCalendarSelectionMode) private var lockScreenCalendarSelectionMode
-    @Default(.lockScreenSelectedCalendarIDs) private var lockScreenSelectedCalendarIDs
-    @Default(.lockScreenShowCalendarEventAfterStartEnabled) private var lockScreenShowCalendarEventAfterStartEnabled
-    @Default(.enableThirdPartyCalendarApp) private var enableThirdPartyCalendarApp
-    @Default(.selectedCalendarApp) private var selectedCalendarApp
-    @Default(.fantasticalDefaultView) private var fantasticalDefaultView
-
-    private func highlightID(_ title: String) -> String {
-        SettingsTab.calendar.highlightID(for: title)
-    }
-
-    private enum CalendarLookaheadOption: String, CaseIterable, Identifiable {
-        case mins15 = "15m"
-        case mins30 = "30m"
-        case hour1 = "1h"
-        case hours3 = "3h"
-        case hours6 = "6h"
-        case hours12 = "12h"
-        case restOfDay = "rest_of_day"
-        case allTime = "all_time"
-
-        var id: String { rawValue }
-
-        var title: String {
-            switch self {
-            case .mins15: return "15 mins"
-            case .mins30: return "30 mins"
-            case .hour1: return "1 hour"
-            case .hours3: return "3 hours"
-            case .hours6: return "6 hours"
-            case .hours12: return "12 hours"
-            case .restOfDay: return "Rest of the day"
-            case .allTime: return "All time"
-            }
-        }
-    }
-
-    var body: some View {
-        Form {
-            if !calendarManager.hasCalendarAccess || !calendarManager.hasReminderAccess {
-                Text("Calendar or Reminder access is denied. Please enable it in System Settings.")
-                    .foregroundColor(.red)
-                    .multilineTextAlignment(.center)
-                    .padding()
-
-                HStack {
-                    Button("Request Access") {
-                        Task {
-                            await calendarManager.checkCalendarAuthorization()
-                            await calendarManager.checkReminderAuthorization()
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-
-                    Button("Open System Settings") {
-                        if let settingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars") {
-                            NSWorkspace.shared.open(settingsURL)
-                        }
-                    }
-                }
-            } else {
-                // Permissions status
-                Section(header: Text("Permissions")) {
-                    HStack {
-                        Text("Calendars")
-                        Spacer()
-                        Text(statusText(for: calendarManager.calendarAuthorizationStatus))
-                            .foregroundColor(color(for: calendarManager.calendarAuthorizationStatus))
-                    }
-                    HStack {
-                        Text("Reminders")
-                        Spacer()
-                        Text(statusText(for: calendarManager.reminderAuthorizationStatus))
-                            .foregroundColor(color(for: calendarManager.reminderAuthorizationStatus))
-                    }
-                }
-
-                Defaults.Toggle(key: .showCalendar) {
-                    Text("Show calendar")
-                }
-                .settingsHighlight(id: highlightID("Show calendar"))
-
-                Section(header: Text("Event List")) {
-                    Toggle("Hide completed reminders", isOn: $hideCompletedReminders)
-                        .settingsHighlight(id: highlightID("Hide completed reminders"))
-                    Toggle("Show full event titles", isOn: $showFullEventTitles)
-                        .settingsHighlight(id: highlightID("Show full event titles"))
-                    Toggle("Auto-scroll to next event", isOn: $autoScrollToNextEvent)
-                        .settingsHighlight(id: highlightID("Auto-scroll to next event"))
-                }
-
-                Section(header: Text("All-Day Events")) {
-                    Toggle("Hide all-day events", isOn: $hideAllDayEvents)
-                        .settingsHighlight(id: highlightID("Hide all-day events"))
-                        .disabled(!showCalendar)
-
-                    Text("Turn this off to include all-day entries in the notch calendar and reminder live activity.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Section(header: Text("Reminder Live Activity")) {
-                    Defaults.Toggle(key: .enableReminderLiveActivity) {
-                        Text("Enable reminder live activity")
-                    }
-                    .settingsHighlight(id: highlightID("Enable reminder live activity"))
-
-                    Picker("Countdown style", selection: $reminderPresentationStyle) {
-                        ForEach(ReminderPresentationStyle.allCases) { style in
-                            Text(style.displayName).tag(style)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .disabled(!enableReminderLiveActivity)
-                    .settingsHighlight(id: highlightID("Countdown style"))
-
-                    HStack {
-                        Text("Notify before")
-                        Slider(
-                            value: Binding(
-                                get: { Double(reminderLeadTime) },
-                                set: { reminderLeadTime = Int($0) }
-                            ),
-                            in: 1...60,
-                            step: 1
-                        )
-                        .disabled(!enableReminderLiveActivity)
-                        Text("\(reminderLeadTime) min")
-                            .foregroundStyle(.secondary)
-                            .frame(width: 60, alignment: .trailing)
-                    }
-
-                    HStack {
-                        Text("Sneak peek duration")
-                        Slider(
-                            value: $reminderSneakPeekDuration,
-                            in: 3...20,
-                            step: 1
-                        )
-                        .disabled(!enableReminderLiveActivity)
-                        Text("\(Int(reminderSneakPeekDuration)) s")
-                            .foregroundStyle(.secondary)
-                            .frame(width: 60, alignment: .trailing)
-                    }
-                }
-
-                Section(header: Text("Lock Screen Reminder Widget")) {
-                    Defaults.Toggle(key: .enableLockScreenReminderWidget) {
-                        Text("Show lock screen reminder")
-                    }
-                    .settingsHighlight(id: highlightID("Show lock screen reminder"))
-
-                    Picker("Chip color", selection: $lockScreenReminderChipStyle) {
-                        ForEach(LockScreenReminderChipStyle.allCases) { style in
-                            Text(style.rawValue).tag(style)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .disabled(!enableLockScreenReminderWidget || !enableReminderLiveActivity)
-                    .settingsHighlight(id: highlightID("Chip color"))
-                }
-
-                Section(
-                    header: Text("Calendar Widget"),
-                    footer: Text("Displays your next upcoming calendar event above or below the weather capsule. Calendar selection here is independent from the Dynamic Island calendar filter.")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                ) {
-                    Defaults.Toggle(key: .lockScreenShowCalendarEvent) {
-                        Text("Show next calendar event")
-                    }
-                    .settingsHighlight(id: highlightID("Show next calendar event"))
-
-                    LabeledContent("Show events within the next") {
-                        HStack {
-                            Spacer(minLength: 0)
-                            Picker("", selection: $lockScreenCalendarEventLookaheadWindow) {
-                                ForEach(CalendarLookaheadOption.allCases) { option in
-                                    Text(option.title).tag(option.rawValue)
-                                }
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.menu)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                    }
-                    .disabled(!lockScreenShowCalendarEvent)
-                    .settingsHighlight(id: highlightID("Show events within the next"))
-
-                    Toggle("Show events from all calendars", isOn: Binding(
-                        get: { lockScreenCalendarSelectionMode == "all" },
-                        set: { useAll in
-                            if useAll {
-                                lockScreenCalendarSelectionMode = "all"
-                            } else {
-                                lockScreenCalendarSelectionMode = "selected"
-                                lockScreenSelectedCalendarIDs = Set(calendarManager.eventCalendars.map { $0.id })
-                            }
-                        }
-                    ))
-                    .disabled(!lockScreenShowCalendarEvent)
-                    .settingsHighlight(id: highlightID("Show events from all calendars"))
-
-                    if lockScreenCalendarSelectionMode != "all" {
-                        HStack {
-                            Spacer()
-                            Button("Deselect All") {
-                                lockScreenSelectedCalendarIDs = []
-                            }
-                            .buttonStyle(.link)
-                        }
-                        .padding(.top, 2)
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(calendarManager.eventCalendars, id: \.id) { calendar in
-                                Toggle(isOn: Binding(
-                                    get: { lockScreenSelectedCalendarIDs.contains(calendar.id) },
-                                    set: { isOn in
-                                        if isOn {
-                                            lockScreenSelectedCalendarIDs.insert(calendar.id)
-                                        } else {
-                                            lockScreenSelectedCalendarIDs.remove(calendar.id)
-                                        }
-                                    }
-                                )) {
-                                    HStack(spacing: 8) {
-                                        Circle()
-                                            .fill(Color(calendar.color))
-                                            .frame(width: 8, height: 8)
-                                        Text(calendar.title)
-                                    }
-                                }
-                            }
-                        }
-                        .padding(.top, 4)
-                        .padding(.leading, 2)
-                        .disabled(!lockScreenShowCalendarEvent)
-                    }
-
-                    Defaults.Toggle(key: .lockScreenShowCalendarCountdown) {
-                        Text("Show countdown")
-                    }
-                    .disabled(!lockScreenShowCalendarEvent)
-                    .settingsHighlight(id: highlightID("Show countdown"))
-
-                    Defaults.Toggle(key: .lockScreenShowCalendarEventEntireDuration) {
-                        Text("Show event for entire duration")
-                    }
-                    .disabled(!lockScreenShowCalendarEvent)
-                    .settingsHighlight(id: highlightID("Show event for entire duration"))
-                    .onChange(of: Defaults[.lockScreenShowCalendarEventEntireDuration]) { _, newValue in
-                        if newValue {
-                            Defaults[.lockScreenShowCalendarEventAfterStartEnabled] = false
-                        }
-                    }
-
-                    Defaults.Toggle(key: .lockScreenShowCalendarEventAfterStartEnabled) {
-                        Text("Hide active event and show next upcoming event")
-                    }
-                    .disabled(!lockScreenShowCalendarEvent || lockScreenShowCalendarEventEntireDuration)
-                    .settingsHighlight(id: highlightID("Hide active event and show next upcoming event"))
-
-                    LabeledContent("Show event after it starts") {
-                        HStack {
-                            Spacer(minLength: 0)
-                            Picker("", selection: $lockScreenShowCalendarEventAfterStartWindow) {
-                                Text("1 min").tag("1m")
-                                Text("5 mins").tag("5m")
-                                Text("10 mins").tag("10m")
-                                Text("15 mins").tag("15m")
-                                Text("30 mins").tag("30m")
-                                Text("45 mins").tag("45m")
-                                Text("1 hour").tag("1h")
-                                Text("2 hours").tag("2h")
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.menu)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                    }
-                    .disabled(!lockScreenShowCalendarEvent || lockScreenShowCalendarEventEntireDuration || !lockScreenShowCalendarEventAfterStartEnabled)
-
-                    Text("Turn off 'Show event for entire duration' to use the post-start duration option.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    Defaults.Toggle(key: .lockScreenShowCalendarTimeRemaining) {
-                        Text("Show time remaining")
-                    }
-                    .disabled(!lockScreenShowCalendarEvent)
-                    .settingsHighlight(id: highlightID("Show time remaining"))
-
-                    Defaults.Toggle(key: .lockScreenShowCalendarStartTimeAfterBegins) {
-                        Text("Show start time after event begins")
-                    }
-                    .disabled(!lockScreenShowCalendarEvent)
-                    .settingsHighlight(id: highlightID("Show start time after event begins"))
-                }
-                
-                // MARK: - Third-party Calendar Integration
-                Section {
-                    Defaults.Toggle(key: .enableThirdPartyCalendarApp) {
-                        HStack {
-                            Image(systemName: "ellipsis.calendar")
-                                .foregroundStyle(.secondary)
-                                .frame(width: 20, height: 20)
-                            Text("Enable third-party calendar app launch")
-                        }
-                    }
-                    .settingsHighlight(id: highlightID("Enable third-party calendar app launch"))
-                    
-                    if enableThirdPartyCalendarApp {
-                        Picker("Calendar App", selection: $selectedCalendarApp) {
-                            ForEach(ThirdPartyCalendarApp.allCases) { app in
-                                HStack {
-                                    AppIconImage(
-                                        bundleIdentifiers: app.bundleIdentifiers,
-                                        symbolFallback: app.fallbackIconName,
-                                        symbolColor: app.fallbackIconColor
-                                    )
-                                    Text(app.displayName)
-                                }
-                                .tag(app)
-                            }
-                        }
-                        .settingsHighlight(id: highlightID("Calendar App"))
-                        
-                        if selectedCalendarApp == .fantastical {
-                            Picker("Default View", selection: $fantasticalDefaultView) {
-                                ForEach(FantasticalViewStyle.allCases, id: \.self) { style in
-                                    Text(style.displayName).tag(style)
-                                }
-                            }
-                            .settingsHighlight(id: highlightID("Fantastical Default View"))
-                        }
-                    }
-                } header: {
-                    Text("Third-party Calendar Integration")
-                } footer: {
-                    Text("When enabled, clicking on calendar events will open the selected third-party calendar app instead of Apple Calendar.")
-                }
-
-                Section(header: Text("Select Calendars")) {
-                    let grouped = Dictionary(grouping: calendarManager.allCalendars, by: \.accountName)
-                    let sortedAccounts = grouped.keys.sorted()
-
-                    ForEach(sortedAccounts, id: \.self) { account in
-                        let accountCalendars = grouped[account] ?? []
-                        let allAccountSelected = accountCalendars.allSatisfy { calendarManager.getCalendarSelected($0) }
-
-                        Section(header: HStack {
-                            Text(account)
-                            Spacer()
-                            Toggle("", isOn: Binding(
-                                get: { allAccountSelected },
-                                set: { isSelected in
-                                    Task {
-                                        await calendarManager.setCalendarsSelected(accountCalendars, isSelected: isSelected)
-                                    }
-                                }
-                            ))
-                            .labelsHidden()
-                            .toggleStyle(.switch)
-                            .controlSize(.mini)
-                            .disabled(!showCalendar)
-                        }) {
-                            ForEach(accountCalendars, id: \.id) { calendar in
-                                Toggle(isOn: Binding(
-                                    get: { calendarManager.getCalendarSelected(calendar) },
-                                    set: { isSelected in
-                                        Task {
-                                            await calendarManager.setCalendarSelected(calendar, isSelected: isSelected)
-                                        }
-                                    }
-                                )) {
-                                    HStack(spacing: 8) {
-                                        Circle()
-                                            .fill(Color(calendar.color))
-                                            .frame(width: 8, height: 8)
-                                        Text(calendar.title)
-                                    }
-                                }
-                                .disabled(!showCalendar)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .onAppear {
-            Task {
-                await calendarManager.checkCalendarAuthorization()
-                await calendarManager.checkReminderAuthorization()
-            }
-        }
-        .navigationTitle("Calendar")
-    }
-
-    private func statusText(for status: EKAuthorizationStatus) -> String {
-        switch status {
-        case .fullAccess, .authorized: return String(localized: "Full Access")
-        case .writeOnly: return String(localized: "Write Only")
-        case .denied: return String(localized: "Denied")
-        case .restricted: return String(localized: "Restricted")
-        case .notDetermined: return String(localized: "Not Determined")
-        @unknown default: return String(localized: "Unknown")
-        }
-    }
-
-    private func color(for status: EKAuthorizationStatus) -> Color {
-        switch status {
-        case .fullAccess, .authorized: return .green
-        case .writeOnly: return .yellow
-        case .denied, .restricted: return .red
-        case .notDetermined: return .secondary
-        @unknown default: return .secondary
-        }
-    }
-}
 
 struct About: View {
     @State private var showBuildNumber: Bool = false
@@ -3590,54 +3093,7 @@ struct About: View {
                 }
 
                 UpdaterSettingsView(updater: updaterController.updater)
-
-                HStack(spacing: 30) {
-                    Spacer(minLength: 0)
-                    Button {
-                        NSWorkspace.shared.open(sponsorPage)
-                    } label: {
-                        VStack(spacing: 5) {
-                            Image(systemName: "cup.and.saucer.fill")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(.white)
-                            Text("Donate")
-                                .foregroundStyle(.white)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    Spacer(minLength: 0)
-                    Button {
-                        NSWorkspace.shared.open(productPage)
-                    } label: {
-                        VStack(spacing: 5) {
-                            Image("Github")
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 18)
-                            Text("GitHub")
-                                .foregroundStyle(.white)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    Spacer(minLength: 0)
-                }
-                .buttonStyle(PlainButtonStyle())
-                Text("Your support funds software development learning for students in 9th–12th grade.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
             }
-            VStack(spacing: 0) {
-                Divider()
-                Text("Made with ❤️ by Ebullioscopic")
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 5)
-                    .padding(.bottom, 7)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 10)
-            }
-            .frame(maxWidth: .infinity, alignment: .center)
-            .background(.regularMaterial)
         }
         .toolbar {
             //            Button("Welcome window") {
@@ -4187,17 +3643,6 @@ struct LiveActivitiesSettings: View {
             } footer: {
                 Text("Use the Media tab to configure sneak peek, lyrics, and floating media controls.")
             }
-
-            Section {
-                Defaults.Toggle(key: .enableReminderLiveActivity) {
-                    Text("Enable reminder live activity")
-                }
-                .settingsHighlight(id: highlightID("Enable reminder live activity"))
-            } header: {
-                Text("Reminder Live Activity")
-            } footer: {
-                Text("Configure countdown style and lock screen widgets in the Calendar tab.")
-            }
         }
         .navigationTitle("Live Activities")
         .onAppear {
@@ -4208,15 +3653,17 @@ struct LiveActivitiesSettings: View {
 
 struct Appearance: View {
     @ObservedObject var coordinator = DynamicIslandViewCoordinator.shared
-    @ObservedObject var webcamManager = WebcamManager.shared
-    @Default(.mirrorShape) var mirrorShape
-    @Default(.selectedCameraID) var selectedCameraID
     @Default(.sliderColor) var sliderColor
     @Default(.useMusicVisualizer) var useMusicVisualizer
     @Default(.customVisualizers) var customVisualizers
     @Default(.selectedVisualizer) var selectedVisualizer
     @Default(.customAppIcons) private var customAppIcons
     @Default(.selectedAppIconID) private var selectedAppIconID
+    @Default(.customNotchSkins) private var customNotchSkins
+    @Default(.selectedNotchSkinID) private var selectedNotchSkinID
+    @Default(.notchSkinScrimOpacity) private var notchSkinScrimOpacity
+    @Default(.notchFillColor) private var notchFillColor
+    @ObservedObject private var notchSkinManager = NotchSkinManager.shared
     @Default(.openNotchWidth) var openNotchWidth
     @Default(.closedNotchWidth) var closedNotchWidth
     @Default(.customizePhysicalNotchWidth) var customizePhysicalNotchWidth
@@ -4236,6 +3683,8 @@ struct Appearance: View {
     @State private var isIconImporterPresented = false
     @State private var isIconDropTarget = false
     @State private var iconImportError: String?
+    @State private var isSkinImporterPresented = false
+    @State private var isSkinDropTarget = false
 
     @State private var isPresented: Bool = false
     @State private var name: String = ""
@@ -4338,6 +3787,29 @@ struct Appearance: View {
             }
 
             notchWidthControls()
+
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 10) {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(notchFillColor)
+                            .frame(width: 36, height: 24)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
+                            )
+                        Text("Current fill")
+                            .foregroundStyle(.secondary)
+                            .font(.caption)
+                        Spacer()
+                        NotchFillColorWell(color: $notchFillColor)
+                            .frame(width: 48, height: 28)
+                    }
+                }
+                .settingsHighlight(id: highlightID("Notch fill color"))
+            } header: {
+                Text("Notch appearance")
+            }
 
             Section {
                 if #available(macOS 26.0, *) {
@@ -4607,34 +4079,6 @@ struct Appearance: View {
             }
 
             Section {
-                Defaults.Toggle(key: .showMirror) {
-                    Text("Enable Dynamic mirror")
-                }
-                .disabled(!checkVideoInput())
-                .settingsHighlight(id: highlightID("Enable Dynamic mirror"))
-                Picker("Mirror shape", selection: $mirrorShape) {
-                    Text("Circle")
-                        .tag(MirrorShapeEnum.circle)
-                    Text("Square")
-                        .tag(MirrorShapeEnum.rectangle)
-                }
-                .settingsHighlight(id: highlightID("Mirror shape"))
-                
-                if webcamManager.cameraAvailable {
-                    Picker("Mirror Camera", selection: $selectedCameraID) {
-                        ForEach(webcamManager.availableCameras, id: \.uniqueID) { device in
-                            Text(device.localizedName)
-                                .tag(device.uniqueID)
-                        }
-                    }
-                    .onChange(of: selectedCameraID) { _, _ in
-                        if Defaults[.showMirror] {
-                            webcamManager.stopSession()
-                            webcamManager.startSession()
-                        }
-                    }
-                    .settingsHighlight(id: highlightID("Mirror Camera"))
-                }
                 Defaults.Toggle(key: .showNotHumanFace) {
                     Text("Idle Animation")
                 }
@@ -4647,6 +4091,88 @@ struct Appearance: View {
 
             // MARK: - Custom Idle Animations Section
             IdleAnimationsSettingsSection()
+
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    let columns = [GridItem(.adaptive(minimum: 120), spacing: 12)]
+                    LazyVGrid(columns: columns, spacing: 12) {
+                        notchSkinCard(
+                            title: "Default",
+                            image: nil,
+                            isSelected: selectedNotchSkinID == nil
+                        ) {
+                            notchSkinManager.selectSkin(nil)
+                        }
+
+                        ForEach(customNotchSkins) { skin in
+                            notchSkinCard(
+                                title: skin.name,
+                                image: NSImage(contentsOf: skin.fileURL),
+                                isSelected: selectedNotchSkinID == skin.id.uuidString
+                            ) {
+                                notchSkinManager.selectSkin(skin)
+                            }
+                            .contextMenu {
+                                Button("Remove") {
+                                    notchSkinManager.removeSkin(skin)
+                                }
+                            }
+                        }
+                    }
+                    .padding(8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(Color.secondary.opacity(isSkinDropTarget ? 0.18 : 0.1))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(Color.accentColor.opacity(isSkinDropTarget ? 0.8 : 0), lineWidth: 2)
+                    )
+                    .onDrop(of: [UTType.fileURL], isTargeted: $isSkinDropTarget) { providers in
+                        handleSkinDrop(providers)
+                    }
+
+                    HStack(spacing: 8) {
+                        Button("Upload skin") {
+                            notchSkinManager.importError = nil
+                            isSkinImporterPresented = true
+                        }
+                        .buttonStyle(.borderedProminent)
+
+                        Button("Remove selected") {
+                            if let id = selectedNotchSkinID,
+                               let skin = customNotchSkins.first(where: { $0.id.uuidString == id }) {
+                                notchSkinManager.removeSkin(skin)
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(selectedNotchSkinID == nil)
+                    }
+
+                    HStack {
+                        Text("Scrim opacity")
+                        Slider(value: $notchSkinScrimOpacity, in: 0...0.6, step: 0.05)
+                        Text("\(Int(notchSkinScrimOpacity * 100))%")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 44, alignment: .trailing)
+                    }
+                    .disabled(selectedNotchSkinID == nil)
+                    .settingsHighlight(id: highlightID("Skin scrim opacity"))
+
+                    if let importError = notchSkinManager.importError {
+                        Text(importError)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Upload a PNG, JPG, or WebP image to fill the notch background. Add a scrim if the traffic-light indicators are hard to read.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .settingsHighlight(id: highlightID("Notch skin"))
+            } header: {
+                Text("Notch skin")
+            }
 
             Section {
                 VStack(alignment: .leading, spacing: 12) {
@@ -4738,6 +4264,17 @@ struct Appearance: View {
                 iconImportError = "Icon import was canceled or failed."
             }
         }
+        .fileImporter(
+            isPresented: $isSkinImporterPresented,
+            allowedContentTypes: [.png, .jpeg, .image]
+        ) { result in
+            switch result {
+            case .success(let url):
+                notchSkinManager.importSkin(from: url)
+            case .failure:
+                notchSkinManager.importError = "Skin import was canceled or failed."
+            }
+        }
         .navigationTitle("Appearance")
     }
 
@@ -4787,6 +4324,58 @@ struct Appearance: View {
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)
+    }
+
+    private func notchSkinCard(title: String, image: NSImage?, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Group {
+                    if let image {
+                        Image(nsImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        Color.black
+                    }
+                }
+                .frame(width: 120, height: 32)
+                .clipShape(Capsule())
+                .overlay(
+                    Capsule()
+                        .strokeBorder(isSelected ? Color.accentColor : Color.white.opacity(0.2), lineWidth: isSelected ? 2 : 1)
+                )
+
+                Text(title)
+                    .font(.caption)
+                    .lineLimit(1)
+                    .foregroundStyle(isSelected ? .white : .secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule().fill(isSelected ? Color.accentColor : .clear)
+                    )
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func handleSkinDrop(_ providers: [NSItemProvider]) -> Bool {
+        let matching = providers.first { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }
+        guard let provider = matching else { return false }
+        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+            let url: URL?
+            if let directURL = item as? URL {
+                url = directURL
+            } else if let data = item as? Data {
+                url = URL(dataRepresentation: data, relativeTo: nil)
+            } else {
+                url = nil
+            }
+            guard let url else { return }
+            Task { @MainActor in notchSkinManager.importSkin(from: url) }
+        }
+        return true
     }
 
     private func handleIconDrop(_ providers: [NSItemProvider]) -> Bool {
@@ -4848,14 +4437,6 @@ struct Appearance: View {
         }
     }
 
-    func checkVideoInput() -> Bool {
-        if let _ = AVCaptureDevice.default(for: .video) {
-            return true
-        }
-
-        return false
-    }
-
     @ViewBuilder
     private func notchWidthControls() -> some View {
         Section {
@@ -4864,7 +4445,6 @@ struct Appearance: View {
             let dynamicRange = Double(recommendedMin)...900
             
             let closedRange = Double(80)...400
-            let minimalisticRange = Double(250)...600
 
             let widthBinding = Binding<Double>(
                 get: { Double(openNotchWidth) },
@@ -4971,7 +4551,6 @@ struct Appearance: View {
 }
 
 struct LockScreenSettings: View {
-    @ObservedObject private var calendarManager = CalendarManager.shared
     @ObservedObject private var previewManager = LockScreenWidgetPreviewManager.shared
     @Default(.lockScreenGlassStyle) private var lockScreenGlassStyle
     @Default(.lockScreenGlassCustomizationMode) private var lockScreenGlassCustomizationMode
@@ -4993,21 +4572,7 @@ struct LockScreenSettings: View {
     @Default(.lockScreenWeatherShowsAQI) private var lockScreenWeatherShowsAQI
     @Default(.lockScreenWeatherShowsSunrise) private var lockScreenWeatherShowsSunrise
     @Default(.lockScreenWeatherAQIScale) private var lockScreenWeatherAQIScale
-    @Default(.enableLockScreenReminderWidget) private var enableLockScreenReminderWidget
-    @Default(.lockScreenReminderChipStyle) private var lockScreenReminderChipStyle
-    @Default(.lockScreenReminderWidgetHorizontalAlignment) private var lockScreenReminderWidgetHorizontalAlignment
-    @Default(.lockScreenReminderWidgetVerticalOffset) private var lockScreenReminderWidgetVerticalOffset
     @Default(.showStandardMediaControls) private var showStandardMediaControls
-    @Default(.lockScreenShowCalendarCountdown) private var lockScreenShowCalendarCountdown
-    @Default(.lockScreenShowCalendarEvent) private var lockScreenShowCalendarEvent
-    @Default(.lockScreenShowCalendarEventEntireDuration) private var lockScreenShowCalendarEventEntireDuration
-    @Default(.lockScreenShowCalendarEventAfterStartWindow) private var lockScreenShowCalendarEventAfterStartWindow
-    @Default(.lockScreenShowCalendarTimeRemaining) private var lockScreenShowCalendarTimeRemaining
-    @Default(.lockScreenShowCalendarStartTimeAfterBegins) private var lockScreenShowCalendarStartTimeAfterBegins
-    @Default(.lockScreenCalendarEventLookaheadWindow) private var lockScreenCalendarEventLookaheadWindow
-    @Default(.lockScreenCalendarSelectionMode) private var lockScreenCalendarSelectionMode
-    @Default(.lockScreenSelectedCalendarIDs) private var lockScreenSelectedCalendarIDs
-    @Default(.lockScreenShowCalendarEventAfterStartEnabled) private var lockScreenShowCalendarEventAfterStartEnabled
     @Default(.lockScreenMusicMergedAirPlayOutput) private var lockScreenMusicMergedAirPlayOutput
     @ObservedObject private var musicManager = MusicManager.shared
 
@@ -5021,48 +4586,6 @@ struct LockScreenSettings: View {
 
     private var liquidVariantRange: ClosedRange<Double> {
         Double(LiquidGlassVariant.supportedRange.lowerBound)...Double(LiquidGlassVariant.supportedRange.upperBound)
-    }
-
-    private enum CalendarLookaheadOption: String, CaseIterable, Identifiable {
-        case mins15 = "15m"
-        case mins30 = "30m"
-        case hour1 = "1h"
-        case hours3 = "3h"
-        case hours6 = "6h"
-        case hours12 = "12h"
-        case restOfDay = "rest_of_day"
-        case allTime = "all_time"
-
-        var id: String { rawValue }
-
-        var title: String {
-            switch self {
-            case .mins15: return "15 mins"
-            case .mins30: return "30 mins"
-            case .hour1: return "1 hour"
-            case .hours3: return "3 hours"
-            case .hours6: return "6 hours"
-            case .hours12: return "12 hours"
-            case .restOfDay: return "Rest of the day"
-            case .allTime: return "All time"
-            }
-        }
-    }
-
-    private enum ReminderAlignmentOption: String, CaseIterable, Identifiable {
-        case leading
-        case center
-        case trailing
-
-        var id: String { rawValue }
-
-        var title: String {
-            switch self {
-            case .leading: return "Left"
-            case .center: return "Center"
-            case .trailing: return "Right"
-            }
-        }
     }
 
     private var musicVariantBinding: Binding<Double> {
@@ -5231,7 +4754,7 @@ struct LockScreenSettings: View {
                     }
                     .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
                     .settingsHighlight(id: highlightID("Keep album art visible during fullscreen artwork"))
-                    Text("Right-click the album art on the lock screen to set it as the wallpaper. Right-click again or click the background to restore the original wallpaper. If a canvas is available, Atoll can also keep the same album art + player layout on top of the live canvas.")
+                    Text("Right-click the album art on the lock screen to set it as the wallpaper. Right-click again or click the background to restore the original wallpaper. If a canvas is available, Kannu can also keep the same album art + player layout on top of the live canvas.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -5391,48 +4914,6 @@ struct LockScreenSettings: View {
                 Text("Enable the weather capsule and configure its layout, provider, units, and optional battery/AQI indicators.")
             }
 
-            Section {
-                Defaults.Toggle(key: .enableLockScreenReminderWidget) {
-                    Text("Show lock screen reminder")
-                }
-                .settingsHighlight(id: highlightID("Show lock screen reminder"))
-
-                Picker("Chip color", selection: $lockScreenReminderChipStyle) {
-                    ForEach(LockScreenReminderChipStyle.allCases) { style in
-                        Text(style.rawValue).tag(style)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .disabled(!enableLockScreenReminderWidget)
-                .settingsHighlight(id: highlightID("Chip color"))
-
-                Picker("Alignment", selection: $lockScreenReminderWidgetHorizontalAlignment) {
-                    ForEach(ReminderAlignmentOption.allCases) { option in
-                        Text(option.title).tag(option.rawValue)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .disabled(!enableLockScreenReminderWidget)
-                .settingsHighlight(id: highlightID("Reminder alignment"))
-
-                HStack {
-                    Text("Vertical offset")
-                    Slider(
-                        value: $lockScreenReminderWidgetVerticalOffset,
-                        in: -160...160,
-                        step: 2
-                    )
-                    .disabled(!enableLockScreenReminderWidget)
-                    Text("\(Int(lockScreenReminderWidgetVerticalOffset)) px")
-                        .foregroundStyle(.secondary)
-                        .frame(width: 70, alignment: .trailing)
-                }
-                .settingsHighlight(id: highlightID("Reminder vertical offset"))
-            } header: {
-                Text("Reminder Widget")
-            } footer: {
-                Text("Controls the lock screen reminder chip and its positioning.")
-            }
 
             if BatteryActivityManager.shared.hasBattery() {
                 Section {
@@ -5482,142 +4963,6 @@ struct LockScreenSettings: View {
                 Text("Displays the current Focus state above the weather capsule whenever Focus detection is enabled.")
             }
 
-            Section {
-                Defaults.Toggle(key: .lockScreenShowCalendarEvent) {
-                    Text("Show next calendar event")
-                }
-                .settingsHighlight(id: highlightID("Show next calendar event"))
-
-                LabeledContent("Show events within the next") {
-                    HStack {
-                        Spacer(minLength: 0)
-                        Picker("", selection: $lockScreenCalendarEventLookaheadWindow) {
-                            ForEach(CalendarLookaheadOption.allCases) { option in
-                                Text(option.title).tag(option.rawValue)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                }
-                .disabled(!lockScreenShowCalendarEvent)
-                .settingsHighlight(id: highlightID("Show events within the next"))
-
-                Toggle("Show events from all calendars", isOn: Binding(
-                    get: { lockScreenCalendarSelectionMode == "all" },
-                    set: { useAll in
-                        if useAll {
-                            lockScreenCalendarSelectionMode = "all"
-                        } else {
-                            lockScreenCalendarSelectionMode = "selected"
-                            lockScreenSelectedCalendarIDs = Set(calendarManager.eventCalendars.map { $0.id })
-                        }
-                    }
-                ))
-                .disabled(!lockScreenShowCalendarEvent)
-                .settingsHighlight(id: highlightID("Show events from all calendars"))
-
-                if lockScreenCalendarSelectionMode != "all" {
-                    HStack {
-                        Spacer()
-                        Button("Deselect All") {
-                            lockScreenSelectedCalendarIDs = []
-                        }
-                        .buttonStyle(.link)
-                    }
-                    .padding(.top, 2)
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(calendarManager.eventCalendars, id: \.id) { calendar in
-                            Toggle(isOn: Binding(
-                                get: { lockScreenSelectedCalendarIDs.contains(calendar.id) },
-                                set: { isOn in
-                                    if isOn {
-                                        lockScreenSelectedCalendarIDs.insert(calendar.id)
-                                    } else {
-                                        lockScreenSelectedCalendarIDs.remove(calendar.id)
-                                    }
-                                }
-                            )) {
-                                HStack(spacing: 8) {
-                                    Circle()
-                                        .fill(Color(calendar.color))
-                                        .frame(width: 8, height: 8)
-                                    Text(calendar.title)
-                                }
-                            }
-                        }
-                    }
-                    .padding(.top, 4)
-                    .padding(.leading, 2)
-                    .disabled(!lockScreenShowCalendarEvent)
-                }
-
-                Defaults.Toggle(key: .lockScreenShowCalendarCountdown) {
-                    Text("Show countdown")
-                }
-                .disabled(!lockScreenShowCalendarEvent)
-                .settingsHighlight(id: highlightID("Show countdown"))
-
-                Defaults.Toggle(key: .lockScreenShowCalendarEventEntireDuration) {
-                    Text("Show event for entire duration")
-                }
-                .disabled(!lockScreenShowCalendarEvent)
-                .settingsHighlight(id: highlightID("Show event for entire duration"))
-                .onChange(of: Defaults[.lockScreenShowCalendarEventEntireDuration]) { _, newValue in
-                    if newValue {
-                        Defaults[.lockScreenShowCalendarEventAfterStartEnabled] = false
-                    }
-                }
-
-                Defaults.Toggle(
-                    "Hide active event and show next upcoming event",
-                    key: .lockScreenShowCalendarEventAfterStartEnabled
-                )
-                .disabled(!lockScreenShowCalendarEvent || lockScreenShowCalendarEventEntireDuration)
-                .settingsHighlight(id: highlightID("Hide active event and show next upcoming event"))
-
-                LabeledContent("Show event after it starts") {
-                    HStack {
-                        Spacer(minLength: 0)
-                        Picker("", selection: $lockScreenShowCalendarEventAfterStartWindow) {
-                            Text("1 min").tag("1m")
-                            Text("5 mins").tag("5m")
-                            Text("10 mins").tag("10m")
-                            Text("15 mins").tag("15m")
-                            Text("30 mins").tag("30m")
-                            Text("45 mins").tag("45m")
-                            Text("1 hour").tag("1h")
-                            Text("2 hours").tag("2h")
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                }
-                .disabled(!lockScreenShowCalendarEvent || lockScreenShowCalendarEventEntireDuration || !lockScreenShowCalendarEventAfterStartEnabled)
-
-                Text("Turn off 'Show event for entire duration' to use the post-start duration option.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Defaults.Toggle(key: .lockScreenShowCalendarTimeRemaining) {
-                    Text("Show time remaining")
-                }
-                .disabled(!lockScreenShowCalendarEvent)
-                .settingsHighlight(id: highlightID("Show time remaining"))
-
-                Defaults.Toggle(key: .lockScreenShowCalendarStartTimeAfterBegins) {
-                    Text("Show start time after event begins")
-                }
-                .disabled(!lockScreenShowCalendarEvent)
-                .settingsHighlight(id: highlightID("Show start time after event begins"))
-            } header: {
-                Text("Calendar Widget")
-            } footer: {
-                Text("Displays your next upcoming calendar event above or below the weather capsule. Calendar selection here is independent from the Dynamic Island calendar filter.")
-            }
 
             LockScreenPositioningControls()
 
@@ -6268,7 +5613,6 @@ struct Shortcuts: View {
     @Default(.enableClipboardManager) var enableClipboardManager
     @Default(.enableShortcuts) var enableShortcuts
     @Default(.enableStatsFeature) var enableStatsFeature
-    @Default(.enableColorPickerFeature) var enableColorPickerFeature
 
     private func highlightID(_ title: String) -> String {
         SettingsTab.shortcuts.highlightID(for: title)
@@ -6284,7 +5628,7 @@ struct Shortcuts: View {
             } header: {
                 Text("General")
             } footer: {
-                Text("When disabled, all keyboard shortcuts will be inactive. You can still use the UI controls.")
+                Text("Keyboard shortcuts are off by default. Enable this toggle to activate global hotkeys for notch controls.")
                     .multilineTextAlignment(.trailing)
                     .foregroundStyle(.secondary)
                     .font(.caption)
@@ -6379,52 +5723,6 @@ struct Shortcuts: View {
                     Text("AI Assistant")
                 } footer: {
                     Text("Opens the AI assistant panel for file analysis and conversation. Default is Cmd+Shift+A. Only works when screen assistant feature is enabled.")
-                        .multilineTextAlignment(.trailing)
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
-
-                Section {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            KeyboardShortcuts.Recorder("Toggle Terminal Tab:", name: .toggleTerminalTab)
-                                .disabled(!enableShortcuts || !Defaults[.enableTerminalFeature])
-                            if !Defaults[.enableTerminalFeature] {
-                                Text("Terminal feature is disabled")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.top, 2)
-                            }
-                        }
-                        Spacer()
-                    }
-                } header: {
-                    Text("Terminal")
-                } footer: {
-                    Text("Opens the terminal tab in the notch. Default is Ctrl+`. Only works when terminal feature is enabled.")
-                        .multilineTextAlignment(.trailing)
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
-
-                Section {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            KeyboardShortcuts.Recorder("Color Picker Panel:", name: .colorPickerPanel)
-                                .disabled(!enableShortcuts || !enableColorPickerFeature)
-                            if !enableColorPickerFeature {
-                                Text("Color Picker feature is disabled")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.top, 2)
-                            }
-                        }
-                        Spacer()
-                    }
-                } header: {
-                    Text("Color Picker")
-                } footer: {
-                    Text("Opens the color picker panel for screen color capture. Default is Cmd+Shift+P. Only works when color picker feature is enabled.")
                         .multilineTextAlignment(.trailing)
                         .foregroundStyle(.secondary)
                         .font(.caption)
@@ -6880,34 +6178,34 @@ struct TimerSettings: View {
         let nextIndex = timerPresets.count + 1
         let defaultColor = Defaults[.accentColor]
         let newPreset = TimerPreset(name: "Preset \(nextIndex)", duration: 5 * 60, color: defaultColor)
-        _ = withAnimation(.smooth) {
+        withAnimation(.smooth) {
             timerPresets.append(newPreset)
         }
     }
 
     private func movePresetUp(_ index: Int) {
         guard index > timerPresets.startIndex else { return }
-        _ = withAnimation(.smooth) {
+        withAnimation(.smooth) {
             timerPresets.swapAt(index, index - 1)
         }
     }
 
     private func movePresetDown(_ index: Int) {
         guard index < timerPresets.index(before: timerPresets.endIndex) else { return }
-        _ = withAnimation(.smooth) {
+        withAnimation(.smooth) {
             timerPresets.swapAt(index, index + 1)
         }
     }
 
     private func removePreset(_ index: Int) {
         guard timerPresets.indices.contains(index) else { return }
-        _ = withAnimation(.smooth) {
-            timerPresets.remove(at: index)
+        withAnimation(.smooth) {
+            _ = timerPresets.remove(at: index)
         }
     }
 
     private func resetPresets() {
-        _ = withAnimation(.smooth) {
+        withAnimation(.smooth) {
             timerPresets = TimerPreset.defaultPresets
         }
     }
@@ -7202,7 +6500,7 @@ struct StatsSettings: View {
                 } header: {
                     Text("LLM Providers")
                 } footer: {
-                    Text("Choose which AI providers appear in the Usage tab.")
+                    Text("Choose which AI providers appear in the Usage tab. Quota requires each CLI to be signed in locally (Claude: ~/.claude/.credentials.json, Codex: ~/.codex/auth.json, Cursor: signed into the Cursor app). Full Disk Access is not required for usage monitoring.")
                         .multilineTextAlignment(.trailing)
                         .foregroundStyle(.secondary)
                         .font(.caption)
@@ -7762,126 +7060,69 @@ struct ScreenAssistantSettings: View {
     }
 }
 
-struct ColorPickerSettings: View {
-    @ObservedObject var colorPickerManager = ColorPickerManager.shared
-    @Default(.enableColorPickerFeature) var enableColorPickerFeature
-    @Default(.showColorFormats) var showColorFormats
-    @Default(.colorPickerDisplayMode) var colorPickerDisplayMode
-    @Default(.colorHistorySize) var colorHistorySize
-    @Default(.showColorPickerIcon) var showColorPickerIcon
 
-    private func highlightID(_ title: String) -> String {
-        SettingsTab.colorPicker.highlightID(for: title)
+struct SettingsPermissionCallout: View {
+    let title: String
+    let message: String
+    let icon: String
+    let iconColor: Color
+    let requestButtonTitle: String
+    let openSettingsButtonTitle: String
+    let requestAction: () -> Void
+    let openSettingsAction: () -> Void
+
+    init(
+        title: String = "Accessibility permission required",
+        message: String,
+        icon: String = "exclamationmark.triangle.fill",
+        iconColor: Color = .orange,
+        requestButtonTitle: String = "Request Access",
+        openSettingsButtonTitle: String = "Open Settings",
+        requestAction: @escaping () -> Void,
+        openSettingsAction: @escaping () -> Void
+    ) {
+        self.title = title
+        self.message = message
+        self.icon = icon
+        self.iconColor = iconColor
+        self.requestButtonTitle = requestButtonTitle
+        self.openSettingsButtonTitle = openSettingsButtonTitle
+        self.requestAction = requestAction
+        self.openSettingsAction = openSettingsAction
     }
 
     var body: some View {
-        Form {
-            Section {
-                Defaults.Toggle(key: .enableColorPickerFeature) {
-                    Text("Enable Color Picker")
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: icon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(iconColor)
+
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 8) {
+                Button(requestButtonTitle) {
+                    requestAction()
                 }
-                .settingsHighlight(id: highlightID("Enable Color Picker"))
-            } header: {
-                Text("Color Picker")
-            } footer: {
-                Text("Enable screen color picking functionality. Use Cmd+Shift+P to quickly access the color picker.")
+                .buttonStyle(.borderedProminent)
+
+                Button(openSettingsButtonTitle) {
+                    openSettingsAction()
+                }
+                .buttonStyle(.bordered)
             }
-
-            if enableColorPickerFeature {
-                Section {
-                    Defaults.Toggle(key: .showColorPickerIcon) {
-                        Text("Show Color Picker Icon")
-                    }
-                    .settingsHighlight(id: highlightID("Show Color Picker Icon"))
-
-                    HStack {
-                        Text("Display Mode")
-                        Spacer()
-                        Picker("", selection: $colorPickerDisplayMode) {
-                            ForEach(ColorPickerDisplayMode.allCases, id: \.self) { mode in
-                                Text(mode.displayName).tag(mode)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .frame(minWidth: 100)
-                    }
-                    .settingsHighlight(id: highlightID("Display Mode"))
-
-                    HStack {
-                        Text("History Size")
-                        Spacer()
-                        Picker("", selection: $colorHistorySize) {
-                            Text("5 colors").tag(5)
-                            Text("10 colors").tag(10)
-                            Text("15 colors").tag(15)
-                            Text("20 colors").tag(20)
-                        }
-                        .pickerStyle(.menu)
-                        .frame(minWidth: 100)
-                    }
-                    .settingsHighlight(id: highlightID("History Size"))
-
-                    Defaults.Toggle(key: .showColorFormats) {
-                        Text("Show All Color Formats")
-                    }
-                    .settingsHighlight(id: highlightID("Show All Color Formats"))
-
-                } header: {
-                    Text("Settings")
-                } footer: {
-                    switch colorPickerDisplayMode {
-                    case .popover:
-                        Text("Popover mode shows color picker as a dropdown attached to the color picker button. Panel mode shows color picker in a floating window.")
-                    case .panel:
-                        Text("Panel mode shows color picker in a floating window. Popover mode shows color picker as a dropdown attached to the color picker button.")
-                    }
-                }
-
-                Section {
-                    HStack {
-                        Text("Color History")
-                        Spacer()
-                        Text("\(colorPickerManager.colorHistory.count)")
-                            .foregroundColor(.secondary)
-                    }
-
-                    HStack {
-                        Text("Picking Status")
-                        Spacer()
-                        Text(colorPickerManager.isPickingColor ? "Active" : "Ready")
-                            .foregroundColor(colorPickerManager.isPickingColor ? .green : .secondary)
-                    }
-
-                    Button("Show Color Picker Panel") {
-                        ColorPickerPanelManager.shared.showColorPickerPanel()
-                    }
-                    .disabled(!enableColorPickerFeature)
-
-                } header: {
-                    Text("Status & Actions")
-                }
-
-                Section {
-                    Button("Clear Color History") {
-                        colorPickerManager.clearHistory()
-                    }
-                    .foregroundColor(.red)
-                    .disabled(colorPickerManager.colorHistory.isEmpty)
-
-                    Button("Start Color Picking") {
-                        colorPickerManager.startColorPicking()
-                    }
-                    .disabled(!enableColorPickerFeature || colorPickerManager.isPickingColor)
-
-                } header: {
-                    Text("Quick Actions")
-                } footer: {
-                    Text("Clear color history removes all picked colors. Start color picking begins screen color capture mode.")
-                }
-            }
+            .controlSize(.small)
         }
-        .navigationTitle("Color Picker")
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
+}
+
+#Preview {
+    HUD()
 }
 
 struct CustomOSDSettings: View {
@@ -8090,70 +7331,6 @@ struct CustomOSDSettings: View {
     }
 }
 
-struct SettingsPermissionCallout: View {
-    let title: String
-    let message: String
-    let icon: String
-    let iconColor: Color
-    let requestButtonTitle: String
-    let openSettingsButtonTitle: String
-    let requestAction: () -> Void
-    let openSettingsAction: () -> Void
-
-    init(
-        title: String = "Accessibility permission required",
-        message: String,
-        icon: String = "exclamationmark.triangle.fill",
-        iconColor: Color = .orange,
-        requestButtonTitle: String = "Request Access",
-        openSettingsButtonTitle: String = "Open Settings",
-        requestAction: @escaping () -> Void,
-        openSettingsAction: @escaping () -> Void
-    ) {
-        self.title = title
-        self.message = message
-        self.icon = icon
-        self.iconColor = iconColor
-        self.requestButtonTitle = requestButtonTitle
-        self.openSettingsButtonTitle = openSettingsButtonTitle
-        self.requestAction = requestAction
-        self.openSettingsAction = openSettingsAction
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(title, systemImage: icon)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(iconColor)
-
-            Text(message)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            HStack(spacing: 8) {
-                Button(requestButtonTitle) {
-                    requestAction()
-                }
-                .buttonStyle(.borderedProminent)
-
-                Button(openSettingsButtonTitle) {
-                    openSettingsAction()
-                }
-                .buttonStyle(.bordered)
-            }
-            .controlSize(.small)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Color.secondary.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-}
-
-#Preview {
-    HUD()
-}
-
 struct NotesSettingsView: View {
     @EnvironmentObject var vm: DynamicIslandViewModel
     @ObservedObject var coordinator = DynamicIslandViewCoordinator.shared
@@ -8241,7 +7418,7 @@ struct NotesSettingsView: View {
                 } header: {
                     Text("Apple Notes")
                 } footer: {
-                    Text("Two-way sync with the macOS Notes app. Notes created in Atoll appear in the Atoll folder in Notes, and your existing Apple Notes are imported into the notch. Grant Automation permission for Notes when prompted.")
+                    Text("Two-way sync with the macOS Notes app. Notes created in Kannu appear in the Kannu folder in Notes, and your existing Apple Notes are imported into the notch. Grant Automation permission for Notes when prompted.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -8251,288 +7428,48 @@ struct NotesSettingsView: View {
     }
 }
 
-// MARK: - Terminal Settings
+// MARK: - Quick Share Provider Icon
 
-struct TerminalSettings: View {
-    @ObservedObject var terminalManager = TerminalManager.shared
-    @Default(.enableTerminalFeature) var enableTerminalFeature
-    @Default(.terminalShellPath) var terminalShellPath
-    @Default(.terminalFontFamily) var terminalFontFamily
-    @Default(.terminalFontSize) var terminalFontSize
-    @Default(.terminalOpacity) var terminalOpacity
-    @Default(.terminalMaxHeightFraction) var terminalMaxHeightFraction
-    @Default(.terminalCursorStyle) var terminalCursorStyle
-    @Default(.terminalScrollbackLines) var terminalScrollbackLines
-    @Default(.terminalOptionAsMeta) var terminalOptionAsMeta
-    @Default(.terminalMouseReporting) var terminalMouseReporting
-    @Default(.terminalBoldAsBright) var terminalBoldAsBright
-    @Default(.terminalBackgroundColor) var terminalBackgroundColor
-    @Default(.terminalForegroundColor) var terminalForegroundColor
-    @Default(.terminalCursorColor) var terminalCursorColor
+struct NotchFillColorWell: NSViewRepresentable {
+    @Binding var color: Color
 
-    private func highlightID(_ title: String) -> String {
-        SettingsTab.terminal.highlightID(for: title)
+    func makeNSView(context: Context) -> NSColorWell {
+        let well = NSColorWell()
+        well.target = context.coordinator
+        well.action = #selector(Coordinator.colorChanged(_:))
+        well.color = nsColor(from: color)
+        return well
     }
 
-    private var formattedMaxHeight: String {
-        "\(Int(terminalMaxHeightFraction * 100))% of screen"
-    }
-
-    /// All monospaced font families available on the system.
-    private var monospacedFontFamilies: [String] {
-        NSFontManager.shared.availableFontFamilies.filter { family in
-            guard let font = NSFont(name: family, size: 12) else { return false }
-            return font.isFixedPitch
-                || font.fontDescriptor.symbolicTraits.contains(.monoSpace)
+    func updateNSView(_ well: NSColorWell, context: Context) {
+        let updated = nsColor(from: color)
+        if !well.color.isEqual(updated) {
+            well.color = updated
         }
-        .sorted()
     }
 
-    /// Display name for the font picker — shows "System Monospaced" when no custom font is set.
-    private var fontDisplayName: String {
-        terminalFontFamily.isEmpty ? "System Monospaced" : terminalFontFamily
+    func makeCoordinator() -> Coordinator {
+        Coordinator(color: $color)
     }
 
-    private var cursorStyleBinding: Binding<TerminalCursorStyleOption> {
-        Binding(
-            get: { TerminalCursorStyleOption(rawValue: terminalCursorStyle) ?? .blinkBlock },
-            set: { terminalCursorStyle = $0.rawValue }
-        )
+    private func nsColor(from color: Color) -> NSColor {
+        NSColor(color).usingColorSpace(.sRGB) ?? NSColor(color)
     }
 
-    var body: some View {
-        Form {
-            Section {
-                Defaults.Toggle(key: .enableTerminalFeature) {
-                    Text("Enable terminal")
-                }
-                .settingsHighlight(id: highlightID("Enable terminal"))
+    final class Coordinator: NSObject {
+        var color: Binding<Color>
 
-                if enableTerminalFeature {
-                    Defaults.Toggle(key: .terminalStickyMode) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Keep terminal open until clicked outside")
-                            Text("Prevents the terminal from closing when the cursor accidentally leaves the notch area.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .settingsHighlight(id: highlightID("Keep terminal open"))
-                }
-            } header: {
-                Text("General")
-            } footer: {
-                Text("Adds a Guake-style dropdown terminal tab. The terminal session persists across notch open/close cycles.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if enableTerminalFeature {
-                // MARK: Shell
-                Section {
-                    HStack {
-                        Text("Shell path")
-                        Spacer()
-                        TextField("", text: $terminalShellPath)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 200)
-                            .multilineTextAlignment(.trailing)
-                    }
-                    .settingsHighlight(id: highlightID("Shell path"))
-                } header: {
-                    Text("Shell")
-                }
-
-                // MARK: Appearance
-                Section {
-                    Picker("Font family", selection: $terminalFontFamily) {
-                        Text("System Monospaced").tag("")
-                        Divider()
-                        ForEach(monospacedFontFamilies, id: \.self) { family in
-                            Text(family)
-                                .font(.custom(family, size: 13))
-                                .tag(family)
-                        }
-                    }
-                    .onChange(of: terminalFontFamily) { _, newValue in
-                        terminalManager.applyFontFamily(newValue)
-                    }
-                    .settingsHighlight(id: highlightID("Font family"))
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Font size")
-                            Spacer()
-                            Text("\(Int(terminalFontSize)) pt")
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-                        Slider(value: $terminalFontSize, in: 8...24, step: 1)
-                            .onChange(of: terminalFontSize) { _, newValue in
-                                terminalManager.applyFontSize(newValue)
-                            }
-                    }
-                    .settingsHighlight(id: highlightID("Font size"))
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Terminal opacity")
-                            Spacer()
-                            Text("\(Int(terminalOpacity * 100))%")
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-                        Slider(value: $terminalOpacity, in: 0.3...1.0, step: 0.05)
-                            .onChange(of: terminalOpacity) { _, newValue in
-                                terminalManager.applyOpacity(newValue)
-                            }
-                    }
-                    .settingsHighlight(id: highlightID("Terminal opacity"))
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Maximum height")
-                            Spacer()
-                            Text(formattedMaxHeight)
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-                        Slider(value: $terminalMaxHeightFraction, in: 0.2...0.5, step: 0.05)
-                    }
-                    .settingsHighlight(id: highlightID("Maximum height"))
-                } header: {
-                    Text("Appearance")
-                } footer: {
-                    Text("Terminal opacity only affects the terminal backdrop; text stays fully opaque. Blur uses the system material behind the window.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                // MARK: Colors
-                Section {
-                    ColorPicker("Background", selection: $terminalBackgroundColor, supportsOpacity: false)
-                        .onChange(of: terminalBackgroundColor) { _, newValue in
-                            terminalManager.applyBackgroundColor(newValue)
-                        }
-                        .settingsHighlight(id: highlightID("Background color"))
-
-                    ColorPicker("Foreground", selection: $terminalForegroundColor, supportsOpacity: false)
-                        .onChange(of: terminalForegroundColor) { _, newValue in
-                            terminalManager.applyForegroundColor(newValue)
-                        }
-                        .settingsHighlight(id: highlightID("Foreground color"))
-
-                    ColorPicker("Cursor", selection: $terminalCursorColor, supportsOpacity: false)
-                        .onChange(of: terminalCursorColor) { _, newValue in
-                            terminalManager.applyCursorColor(newValue)
-                        }
-                        .settingsHighlight(id: highlightID("Cursor color"))
-
-                    Toggle("Bold text as bright colors", isOn: $terminalBoldAsBright)
-                        .onChange(of: terminalBoldAsBright) { _, newValue in
-                            terminalManager.applyBoldAsBright(newValue)
-                        }
-                        .settingsHighlight(id: highlightID("Bold as bright"))
-                } header: {
-                    Text("Colors")
-                } footer: {
-                    Text("When bold-as-bright is off, bold text uses a heavier font weight instead of bright ANSI colors.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                // MARK: Cursor
-                Section {
-                    Picker("Cursor style", selection: cursorStyleBinding) {
-                        ForEach(TerminalCursorStyleOption.allCases, id: \.self) { style in
-                            Text(style.displayName).tag(style)
-                        }
-                    }
-                    .onChange(of: terminalCursorStyle) { _, newValue in
-                        if let style = TerminalCursorStyleOption(rawValue: newValue) {
-                            terminalManager.applyCursorStyle(style)
-                        }
-                    }
-                    .settingsHighlight(id: highlightID("Cursor style"))
-                } header: {
-                    Text("Cursor")
-                }
-
-                // MARK: Scrollback
-                Section {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Scrollback lines")
-                            Spacer()
-                            Text("\(terminalScrollbackLines)")
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-                        Slider(
-                            value: Binding(
-                                get: { Double(terminalScrollbackLines) },
-                                set: { terminalScrollbackLines = Int($0) }
-                            ),
-                            in: 100...10000,
-                            step: 100
-                        )
-                        .onChange(of: terminalScrollbackLines) { _, newValue in
-                            terminalManager.applyScrollback(newValue)
-                        }
-                    }
-                    .settingsHighlight(id: highlightID("Scrollback lines"))
-                } header: {
-                    Text("Scrollback")
-                } footer: {
-                    Text("Number of lines kept in the scrollback buffer. Higher values use more memory.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                // MARK: Input
-                Section {
-                    Toggle("Option as Meta key", isOn: $terminalOptionAsMeta)
-                        .onChange(of: terminalOptionAsMeta) { _, newValue in
-                            terminalManager.applyOptionAsMeta(newValue)
-                        }
-                        .settingsHighlight(id: highlightID("Option as Meta"))
-
-                    Toggle("Allow mouse reporting", isOn: $terminalMouseReporting)
-                        .onChange(of: terminalMouseReporting) { _, newValue in
-                            terminalManager.applyMouseReporting(newValue)
-                        }
-                        .settingsHighlight(id: highlightID("Mouse reporting"))
-                } header: {
-                    Text("Input")
-                } footer: {
-                    Text("Option as Meta sends Esc+key instead of macOS special characters. Mouse reporting forwards mouse events to terminal applications like vim or tmux.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                // MARK: Actions
-                Section {
-                    Button("Restart Shell") {
-                        terminalManager.restartShell()
-                    }
-                    .disabled(!terminalManager.isProcessRunning)
-                } header: {
-                    Text("Actions")
-                } footer: {
-                    Text("Restarts the shell process. Any unsaved work in the terminal will be lost.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
+        init(color: Binding<Color>) {
+            self.color = color
         }
-        .navigationTitle("Terminal")
+
+        @objc func colorChanged(_ sender: NSColorWell) {
+            let picked = sender.color.usingColorSpace(.sRGB) ?? sender.color
+            color.wrappedValue = Color(nsColor: picked)
+        }
     }
 }
 
-// MARK: - Reusable App Icon View
-
-/// Fetches the real app icon from the system using bundle identifiers,
-/// falling back to an asset catalog image or an SF Symbol.
 struct AppIconImage: View {
     let bundleIdentifiers: [String]
     var assetFallback: String? = nil
@@ -8632,5 +7569,250 @@ private extension QuickShareProvider {
 
     var symbolFallbackName: String {
         id == "System Share Menu" ? "square.and.arrow.up.on.square" : "square.and.arrow.up"
+    }
+}
+
+struct AgentStatusSettings: View {
+    @ObservedObject var monitor = CursorAgentStatusMonitor.shared
+    @ObservedObject var hookInstaller = AgentHookInstaller.shared
+    @ObservedObject private var notificationBridge = AgentStatusNotificationBridge.shared
+    @Default(.enableAgentStatusFeature) var enableAgentStatusFeature
+    @Default(.agentStatusStaleMinutes) var agentStatusStaleMinutes
+    @Default(.agentStoppedCollapseMinutes) var agentStoppedCollapseMinutes
+    @Default(.agentInactiveDisplayMinutes) var agentInactiveDisplayMinutes
+    @Default(.showAgentStoppedIndicator) var showAgentStoppedIndicator
+    @Default(.enableAgentStatusMobileNotifications) var enableMobileNotifications
+    @Default(.agentStatusNotificationProvider) var notificationProvider
+    @Default(.agentStatusNtfyTopic) var ntfyTopic
+    @Default(.agentStatusNtfyServerURL) var ntfyServerURL
+    @Default(.agentStatusPushoverUserKey) var pushoverUserKey
+    @Default(.agentStatusPushoverAppToken) var pushoverAppToken
+    @Default(.agentStatusWebhookURL) var webhookURL
+    @Default(.agentStatusNotifyOnInactive) var notifyOnInactive
+    @State private var isSendingTestNotification = false
+
+    private func highlightID(_ title: String) -> String {
+        SettingsTab.agentStatus.highlightID(for: title)
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                Defaults.Toggle(key: .enableAgentStatusFeature) {
+                    Text("Enable Agent Status")
+                }
+                .settingsHighlight(id: highlightID("Enable Cursor Agent Status"))
+            } header: {
+                Text("Agent Status")
+            } footer: {
+                Text("Shows a traffic light in the notch while AI agents run in your editor: green while the agent is working, yellow when it needs your input, and red when it has stopped.")
+            }
+
+            if enableAgentStatusFeature {
+                Section {
+                    legendRow(color: .green, title: String(localized: "Active"), detail: String(localized: "The agent is thinking, planning, executing tools, or otherwise working"))
+                    legendRow(color: .yellow, title: String(localized: "Awaiting Input"), detail: String(localized: "The agent needs your approval or a response"))
+                    legendRow(color: .red, title: String(localized: "Stopped"), detail: String(localized: "The agent has finished or was aborted"))
+                    HStack {
+                        Text("Current State")
+                        Spacer()
+                        Text(stateDescription(monitor.trafficLightState))
+                            .foregroundColor(.secondary)
+                    }
+                } header: {
+                    Text("Traffic Light")
+                }
+
+                Section {
+                    Defaults.Toggle(key: .showAgentStoppedIndicator) {
+                        Text("Keep red light visible when idle")
+                    }
+                    .settingsHighlight(id: highlightID("Keep red light visible when idle"))
+
+                    HStack {
+                        Text("Hide indicator after agent stops for")
+                        Spacer()
+                        Picker("", selection: $agentStoppedCollapseMinutes) {
+                            Text("1 minute").tag(1)
+                            Text("2 minutes").tag(2)
+                            Text("5 minutes").tag(5)
+                            Text("10 minutes").tag(10)
+                            Text("15 minutes").tag(15)
+                        }
+                        .pickerStyle(.menu)
+                        .frame(minWidth: 120)
+                    }
+                    .disabled(showAgentStoppedIndicator)
+                    .opacity(showAgentStoppedIndicator ? 0.5 : 1.0)
+                    .settingsHighlight(id: highlightID("Hide red light after"))
+
+                    HStack {
+                        Text("Show dim traffic light for")
+                        Spacer()
+                        Picker("", selection: $agentInactiveDisplayMinutes) {
+                            Text("1 minute").tag(1)
+                            Text("2 minutes").tag(2)
+                            Text("5 minutes").tag(5)
+                            Text("10 minutes").tag(10)
+                        }
+                        .pickerStyle(.menu)
+                        .frame(minWidth: 120)
+                    }
+                    .disabled(showAgentStoppedIndicator)
+                    .opacity(showAgentStoppedIndicator ? 0.5 : 1.0)
+                    .settingsHighlight(id: highlightID("Dim traffic light duration"))
+
+                    HStack {
+                        Text("Consider agents inactive after")
+                        Spacer()
+                        Picker("", selection: $agentStatusStaleMinutes) {
+                            Text("10 minutes").tag(10)
+                            Text("15 minutes").tag(15)
+                            Text("30 minutes").tag(30)
+                            Text("60 minutes").tag(60)
+                        }
+                        .pickerStyle(.menu)
+                        .frame(minWidth: 120)
+                    }
+                    .settingsHighlight(id: highlightID("Consider agents inactive after"))
+                } header: {
+                    Text("Indicator")
+                } footer: {
+                    Text("After an agent stops, the red light stays visible for the chosen time, then all lights dim for the inactive duration, then the traffic light disappears entirely. While the red light is kept visible when idle, the hide and dim delays have no effect.")
+                }
+
+                Section {
+                    ForEach(AgentHookProvider.allCases) { provider in
+                        hookRow(for: provider)
+                    }
+                    .settingsHighlight(id: highlightID("Cursor Hook"))
+
+                    if let error = hookInstaller.lastError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                } header: {
+                    Text("Editor Hooks")
+                }
+
+                Section {
+                    Defaults.Toggle(key: .enableAgentStatusMobileNotifications) {
+                        Text("Enable mobile notifications")
+                    }
+                    .settingsHighlight(id: highlightID("Mobile notifications"))
+
+                    if enableMobileNotifications {
+                        Picker("Provider", selection: $notificationProvider) {
+                            ForEach(AgentStatusNotificationProvider.allCases) { provider in
+                                Text(provider.displayName).tag(provider)
+                            }
+                        }
+                        .settingsHighlight(id: highlightID("Notification provider"))
+
+                        Text(notificationProvider.description)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        switch notificationProvider {
+                        case .ntfy:
+                            TextField("Topic", text: $ntfyTopic)
+                                .textFieldStyle(.roundedBorder)
+                            TextField("Server URL", text: $ntfyServerURL)
+                                .textFieldStyle(.roundedBorder)
+                        case .pushover:
+                            SecureField("User key", text: $pushoverUserKey)
+                                .textFieldStyle(.roundedBorder)
+                            SecureField("App token", text: $pushoverAppToken)
+                                .textFieldStyle(.roundedBorder)
+                        case .webhook:
+                            TextField("Webhook URL", text: $webhookURL)
+                                .textFieldStyle(.roundedBorder)
+                        }
+
+                        Defaults.Toggle(key: .agentStatusNotifyOnInactive) {
+                            Text("Notify when inactive")
+                        }
+
+                        HStack {
+                            Button(isSendingTestNotification ? "Sending…" : "Send test notification") {
+                                isSendingTestNotification = true
+                                Task {
+                                    await notificationBridge.sendTestNotification()
+                                    isSendingTestNotification = false
+                                }
+                            }
+                            .disabled(isSendingTestNotification)
+
+                            if let lastSentAt = notificationBridge.lastSentAt {
+                                Text("Last sent \(lastSentAt.formatted(date: .omitted, time: .shortened))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .settingsHighlight(id: highlightID("Send test notification"))
+
+                        if let error = notificationBridge.lastError {
+                            Text(error)
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                    }
+                } header: {
+                    Text("Mobile Notifications")
+                } footer: {
+                    Text("Optional push alerts when agent state changes. Uses ntfy (iPhone, Apple Watch, Android), Pushover (iPhone), or a custom webhook. Public ntfy topics can be read by anyone unless you self-host with authentication. Notifications are debounced by 2 seconds to avoid spam.")
+                }
+            }
+        }
+        .onAppear {
+            hookInstaller.refresh()
+        }
+        .navigationTitle("Agent Status")
+    }
+
+    @ViewBuilder
+    private func hookRow(for provider: AgentHookProvider) -> some View {
+        let installed = hookInstaller.isInstalled(provider)
+        HStack(spacing: 10) {
+            Circle()
+                .fill(installed ? Color.green : Color.secondary.opacity(0.5))
+                .frame(width: 8, height: 8)
+            AgentProviderIconView(source: .init(hookProvider: provider), size: 18)
+            Text(provider.displayName)
+            Spacer()
+            Button(installed ? "Remove" : "Install") {
+                if installed {
+                    hookInstaller.uninstall(provider)
+                } else {
+                    hookInstaller.install(provider)
+                }
+            }
+        }
+    }
+
+    private func stateDescription(_ state: AgentTrafficLightState) -> String {
+        switch state {
+        case .thinking: return String(localized: "Thinking")
+        case .executing: return String(localized: "Executing")
+        case .awaitingInput: return String(localized: "Awaiting Input")
+        case .stopped: return String(localized: "Stopped")
+        case .inactive: return String(localized: "Inactive")
+        }
+    }
+
+    @ViewBuilder
+    private func legendRow(color: Color, title: String, detail: String) -> some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(color)
+                .frame(width: 10, height: 10)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                Text(detail)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
     }
 }

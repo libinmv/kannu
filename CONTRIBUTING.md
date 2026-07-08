@@ -1,10 +1,6 @@
-<p align="center">
-	<img src=".github/assets/atoll-logo.png" alt="Atoll logo" width="100">
-</p>
+# Contributing to Kannu (കണ്ണ്)
 
-# Contributing to Atoll
-
-Thank you for your interest in contributing to Atoll! We welcome contributions from everyone—developers, designers, testers, and documentation writers. Please read the following guidelines to help us maintain a collaborative and high-quality project.
+Thank you for your interest in contributing to Kannu! We welcome contributions from everyone—developers, designers, testers, and documentation writers. Please read the following guidelines to help us maintain a collaborative and high-quality project.
 
 ## Table of Contents
 - [How to Contribute](#how-to-contribute)
@@ -42,56 +38,44 @@ We are committed to fostering a welcoming and inclusive environment. Please read
 	- MacBook with a notch (for full feature testing)
 - **Clone the repo:**
 	```bash
-	git clone https://github.com/Ebullioscopic/Atoll.git
-	cd Atoll
+	git clone <your-fork-url>
+	cd AgentStatDynamicIsland
 	open DynamicIsland.xcodeproj
 	```
 - **Build & Run:**
 	- Select your Mac as the run destination in Xcode.
-	- Build and run (Cmd+R).
-	- Grant any requested permissions.
+	- Choose the **Kannu** scheme.
+	- Press ⌘R to build and run.
 
 ## Pull Request Process
 
-- Ensure your branch is up to date with `main` before submitting a PR.
-- Provide a clear description of your changes and the motivation behind them.
-- Reference any related issues or discussions.
-- Add screenshots or screen recordings for UI changes.
-- Ensure the code builds without errors or warnings.
-- Respond promptly to review feedback.
+1. Ensure your PR has a clear title and description.
+2. Link any related issues.
+3. Keep PRs focused—one feature or fix per PR when possible.
+4. Update documentation if your change affects user-facing behavior.
+5. Wait for review and address feedback promptly.
 
 ## Coding Guidelines
 
-- Follow Swift API Design Guidelines.
-- Use meaningful variable and function names.
-- Keep functions focused and concise.
-- Add inline documentation for public APIs and complex logic.
-- Write unit tests for new features where practical.
-- Avoid introducing unnecessary dependencies.
+- Follow existing Swift and SwiftUI conventions in the project.
+- Match surrounding code style, naming, and structure.
+- Keep changes scoped to the task at hand.
+- Prefer extending existing abstractions over duplicating logic.
 
 ## Design Contributions
 
-- Submit UI/UX improvements, mockups, or visual assets.
-- Maintain consistency with macOS Human Interface Guidelines.
-- Provide rationale for design decisions.
+UI and UX improvements are welcome. Include screenshots or screen recordings in your PR when changing visual behavior.
 
 ## Documentation
 
-- Improve user guides, API docs, and troubleshooting sections.
-- Translate documentation into other languages.
-- Clarify setup instructions and add usage examples.
+Update `ReadMe.md`, localized strings, and inline help text when you change user-visible features or settings.
 
-## Code review process
-- All pull requests require review from project maintainers before merging.
-- Automated testing must pass via continuous integration workflows.
-- Changes should not significantly decrease test coverage without justification.
-- Breaking changes require major version updates following semantic versioning.
+## Code Review process
+
+Maintainers will review PRs for correctness, style, and scope. Be responsive to feedback and iterate as needed.
 
 ## Community & Support
 
-- Join our [Discord community](https://discord.gg/zvjB4tJBkt) for discussion, support, and collaboration.
-- Be respectful and constructive in all interactions.
+Open an issue for bugs, feature requests, or questions. Be respectful and provide reproduction steps for bug reports.
 
----
-
-Thank you for helping make Atoll better!
+Thank you for helping make Kannu better!

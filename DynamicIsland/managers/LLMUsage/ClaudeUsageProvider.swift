@@ -11,15 +11,29 @@ struct ClaudeUsageProvider: UsageProvider {
     }
 
     func fetchSnapshot(now: Date) async throws -> UsageSnapshot {
-        guard FileManager.default.fileExists(atPath: root.path) else {
-            throw UsageError.notFound("No ~/.claude/projects — Claude Code not detected")
+        var snapshot = UsageSnapshot()
+        snapshot.lastUpdated = now
+
+        if FileManager.default.fileExists(atPath: root.path) {
+            let files = jsonlFiles(under: root)
+            if !files.isEmpty {
+                snapshot = JSONLUsageParser.aggregate(files: files, now: now)
+            } else {
+                snapshot.logsUnavailable = true
+            }
+        } else {
+            snapshot.logsUnavailable = true
         }
-        let files = jsonlFiles(under: root)
-        guard !files.isEmpty else { throw UsageError.notFound("No Claude usage logs found") }
-        var snapshot = JSONLUsageParser.aggregate(files: files, now: now)
+
         let quota = await quotaClient.fetchLimits()
         snapshot.sessionLimit = quota.session
         snapshot.weekLimit = quota.week
+        snapshot.quotaError = quota.errorMessage
+
+        if snapshot.logsUnavailable && !quota.hasLimits {
+            throw UsageError.notConfigured("Sign in to Claude Code locally (~/.claude/.credentials.json) to show quota.")
+        }
+
         return snapshot
     }
 

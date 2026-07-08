@@ -13,12 +13,13 @@ struct CursorUsageProvider: UsageProvider {
     func fetchSnapshot(now: Date) async throws -> UsageSnapshot {
         let quota = await quotaClient.fetchLimits()
         guard let cookie = CursorTokenStore.sessionCookie() else {
-            guard quota.session != nil || quota.week != nil else {
-                throw UsageError.notConfigured("Cursor not signed in")
+            guard quota.hasLimits else {
+                throw UsageError.notConfigured(quota.errorMessage ?? "Cursor not signed in")
             }
             var snapshot = UsageSnapshot()
             snapshot.sessionLimit = quota.session
             snapshot.weekLimit = quota.week
+            snapshot.quotaError = quota.errorMessage
             snapshot.lastUpdated = now
             return snapshot
         }
@@ -28,11 +29,21 @@ struct CursorUsageProvider: UsageProvider {
         request.setValue("WorkosCursorSessionToken=\(cookie.cookieToken)", forHTTPHeaderField: "Cookie")
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw UsageError.notConfigured("Cursor usage request failed")
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            if quota.hasLimits {
+                var snapshot = UsageSnapshot()
+                snapshot.sessionLimit = quota.session
+                snapshot.weekLimit = quota.week
+                snapshot.quotaError = "Usage API HTTP \(code); showing billing quota only."
+                snapshot.lastUpdated = now
+                return snapshot
+            }
+            throw UsageError.notConfigured("Cursor usage request failed (HTTP \(code))")
         }
         var snapshot = try decode(data, now: now)
         snapshot.sessionLimit = snapshot.sessionLimit ?? quota.session
         snapshot.weekLimit = snapshot.weekLimit ?? quota.week
+        snapshot.quotaError = quota.errorMessage
         return snapshot
     }
 
@@ -49,7 +60,6 @@ struct CursorUsageProvider: UsageProvider {
             let tokens = entry["numTokens"] as? Int ?? 0
             let requests = entry["numRequests"] as? Int ?? 0
             guard tokens > 0 || requests > 0 else { continue }
-            // Cursor API provides only total tokens (no input/output split), treat as input tokens
             let cost = ModelPricing.cost(model: model, inputTokens: tokens, outputTokens: 0)
             var modelTotals = UsageTotals(inputTokens: tokens)
             if let cost {
@@ -67,8 +77,6 @@ struct CursorUsageProvider: UsageProvider {
         }
         snapshot.models = models.sorted { $0.model < $1.model }
         snapshot.week = week
-        // Cursor API provides no per-day breakdown, only cumulative totals;
-        // mirror week data to today since that's the only granularity available
         snapshot.today = week
         return snapshot
     }

@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -274,7 +274,7 @@ final class FullScreenArtworkWindowManager: ObservableObject {
     }()
     private let backupPlistURL: URL = {
         FileManager.default.temporaryDirectory
-            .appendingPathComponent("atoll_wallpaper_backup.plist")
+            .appendingPathComponent("kannu_wallpaper_backup.plist")
     }()
     private let aerialManifestURL: URL = {
         FileManager.default.homeDirectoryForCurrentUser
@@ -291,15 +291,15 @@ final class FullScreenArtworkWindowManager: ObservableObject {
     private let customLiveWallpaperAssetID = "6D6834A4-2F0F-479A-B053-7D4DC5CB8EB7"
     private let liveWallpaperManifestBackupURL: URL = {
         FileManager.default.temporaryDirectory
-            .appendingPathComponent("atoll_aerial_manifest_backup.json")
+            .appendingPathComponent("kannu_aerial_manifest_backup.json")
     }()
     private let liveWallpaperVideoBackupURL: URL = {
         FileManager.default.temporaryDirectory
-            .appendingPathComponent("atoll_aerial_video_backup.mov")
+            .appendingPathComponent("kannu_aerial_video_backup.mov")
     }()
     private let liveWallpaperThumbnailBackupURL: URL = {
         FileManager.default.temporaryDirectory
-            .appendingPathComponent("atoll_aerial_thumbnail_backup.png")
+            .appendingPathComponent("kannu_aerial_thumbnail_backup.png")
     }()
     private var artworkFileURL: URL?
     private var cachedArtworkPNG: URL?
@@ -519,7 +519,9 @@ final class FullScreenArtworkWindowManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.resumeWallpaperAgentIfNeeded()
+            Task { @MainActor in
+                self?.resumeWallpaperAgentIfNeeded()
+            }
         }
     }
 
@@ -634,7 +636,7 @@ final class FullScreenArtworkWindowManager: ObservableObject {
 
     private func observePanelFrameChanges() {
         panelFrameChangeObserver = NotificationCenter.default.addObserver(
-            forName: .atollLockScreenPanelFrameDidChange,
+            forName: .kannuLockScreenPanelFrameDidChange,
             object: nil,
             queue: .main
         ) { [weak self] _ in
@@ -780,7 +782,7 @@ final class FullScreenArtworkWindowManager: ObservableObject {
     private func artworkCacheFileURL(for fingerprint: String) -> URL {
         let normalizedFingerprint = normalizedFingerprintComponent(fingerprint)
         return FileManager.default.temporaryDirectory
-            .appendingPathComponent("atoll_artwork_wallpaper_\(normalizedFingerprint).png")
+            .appendingPathComponent("kannu_artwork_wallpaper_\(normalizedFingerprint).png")
     }
 
     private func blurredArtworkCacheFileURL(for fingerprint: String, pixelSize: CGSize) -> URL {
@@ -788,7 +790,7 @@ final class FullScreenArtworkWindowManager: ObservableObject {
         let width = Int(pixelSize.width.rounded())
         let height = Int(pixelSize.height.rounded())
         return FileManager.default.temporaryDirectory
-            .appendingPathComponent("atoll_artwork_wallpaper_blurred_\(normalizedFingerprint)_\(width)x\(height).png")
+            .appendingPathComponent("kannu_artwork_wallpaper_blurred_\(normalizedFingerprint)_\(width)x\(height).png")
     }
 
     private func normalizedFingerprintComponent(_ fingerprint: String) -> String {
@@ -951,7 +953,7 @@ final class FullScreenArtworkWindowManager: ObservableObject {
             let prepared = await Self.prepareCustomLiveWallpaperAsset(
                 from: videoURL,
                 assetID: assetID,
-                displayName: displayName.isEmpty ? "Atoll Canvas" : displayName,
+                displayName: displayName.isEmpty ? "Kannu Canvas" : displayName,
                 manifestURL: manifestURL,
                 videosDirectoryURL: videosDirectoryURL,
                 thumbnailsDirectoryURL: thumbnailsDirectoryURL,
@@ -1097,8 +1099,9 @@ final class FullScreenArtworkWindowManager: ObservableObject {
 
     private nonisolated static func export(_ exportSession: AVAssetExportSession) async -> Bool {
         await withCheckedContinuation { continuation in
-            exportSession.exportAsynchronously {
-                continuation.resume(returning: exportSession.status == .completed)
+            nonisolated(unsafe) let session = exportSession
+            session.exportAsynchronously {
+                continuation.resume(returning: session.status == .completed)
             }
         }
     }
@@ -1106,7 +1109,19 @@ final class FullScreenArtworkWindowManager: ObservableObject {
     private nonisolated static func validateVideo(at url: URL) -> Bool {
         guard FileManager.default.fileExists(atPath: url.path) else { return false }
         let asset = AVURLAsset(url: url)
-        return !asset.tracks(withMediaType: .video).isEmpty
+        let semaphore = DispatchSemaphore(value: 0)
+        var hasVideo = false
+        Task {
+            do {
+                let tracks = try await asset.loadTracks(withMediaType: .video)
+                hasVideo = !tracks.isEmpty
+            } catch {
+                hasVideo = false
+            }
+            semaphore.signal()
+        }
+        semaphore.wait()
+        return hasVideo
     }
 
     private nonisolated static func updateAerialManifest(

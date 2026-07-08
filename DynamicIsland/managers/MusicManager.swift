@@ -1,9 +1,9 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * Originally from boring.notch project
- * Modified and adapted for Atoll (DynamicIsland)
+ * Modified and adapted for Kannu (കണ്ണ്)
  * See NOTICE for details.
  *
  * This program is free software: you can redistribute it and/or modify
@@ -28,11 +28,12 @@ import SwiftUI
 
 // MARK: - Lyric Data Structures
 struct LyricLine: Identifiable, Codable {
-    let id = UUID()
+    let id: UUID
     let timestamp: TimeInterval
     let text: String
 
     init(timestamp: TimeInterval, text: String) {
+        self.id = UUID()
         self.timestamp = timestamp
         self.text = text
     }
@@ -1698,7 +1699,7 @@ class MusicManager: ObservableObject {
             currentLyrics = "Loading lyrics..."
 
             Task {
-                await fetchLyrics()
+                fetchLyrics()
 
                 // If fetch completed but no lyrics were found, show a friendly message.
                 await MainActor.run {

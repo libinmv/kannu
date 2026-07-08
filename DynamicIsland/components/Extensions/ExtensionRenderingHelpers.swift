@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -313,7 +313,7 @@ struct ExtensionLottieView: View {
 
 private final class ExtensionLottieCache {
     static let shared = ExtensionLottieCache()
-    private let queue = DispatchQueue(label: "com.atoll.extension-lottie-cache")
+    private let queue = DispatchQueue(label: "com.kannu.extension-lottie-cache")
     private var cache: [String: URL] = [:]
 
     func url(for data: Data) -> URL? {
@@ -379,7 +379,7 @@ struct ExtensionProgressIndicatorView: View {
                     .animation(.smooth(duration: 0.25), value: progress)
             }
             .frame(width: resolvedDiameter, height: resolvedDiameter)
-        case let .bar(width, height, cornerRadius, color):
+        case let .bar(width, height, _, color):
             let barColor = color?.resolvedColor(fallback: accent) ?? accent
             Capsule()
                 .fill(Color.white.opacity(0.18))

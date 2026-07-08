@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 actor ClaudeCredentialStore {
     static let shared = ClaudeCredentialStore()
@@ -9,6 +10,7 @@ actor ClaudeCredentialStore {
 }
 
 struct ClaudeQuotaClient {
+    private static let log = os.Logger(subsystem: "com.kannu.app", category: "ClaudeQuota")
     let session: URLSession
     init(session: URLSession = URLSession(configuration: .ephemeral)) { self.session = session }
 
@@ -57,9 +59,15 @@ struct ClaudeQuotaClient {
         let sevenDay: Window?
     }
 
-    func fetchLimits() async -> (session: UsageLimit?, week: UsageLimit?) {
-        guard let creds = await currentCredentials() else { return (nil, nil) }
-        guard let token = await validAccessToken(creds) else { return (nil, nil) }
+    func fetchLimits() async -> QuotaFetchResult {
+        guard let creds = await currentCredentials() else {
+            Self.log.notice("no Claude credentials in ~/.claude/.credentials.json or Keychain")
+            return QuotaFetchResult(errorMessage: "Claude Code not signed in")
+        }
+        guard let token = await validAccessToken(creds) else {
+            Self.log.error("could not obtain valid Claude access token")
+            return QuotaFetchResult(errorMessage: "Claude token refresh failed")
+        }
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -68,15 +76,23 @@ struct ClaudeQuotaClient {
         request.setValue("claude-code/2.1.69", forHTTPHeaderField: "User-Agent")
         do {
             let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return (nil, nil) }
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+                Self.log.error("oauth/usage HTTP \(code)")
+                return QuotaFetchResult(errorMessage: "Claude quota API HTTP \(code)")
+            }
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
             let decoded = try decoder.decode(UsageResponse.self, from: data)
             let sessionLimit = decoded.fiveHour.map { UsageLimit(used: $0.utilization, limit: 100, resetsAt: $0.resetsAt.date) }
             let weekLimit = decoded.sevenDay.map { UsageLimit(used: $0.utilization, limit: 100, resetsAt: $0.resetsAt.date) }
-            return (sessionLimit, weekLimit)
+            if sessionLimit == nil && weekLimit == nil {
+                return QuotaFetchResult(errorMessage: "Claude quota response missing usage windows")
+            }
+            return QuotaFetchResult(session: sessionLimit, week: weekLimit)
         } catch {
-            return (nil, nil)
+            Self.log.error("oauth/usage failed: \(error.localizedDescription, privacy: .public)")
+            return QuotaFetchResult(errorMessage: error.localizedDescription)
         }
     }
 
@@ -90,12 +106,17 @@ struct ClaudeQuotaClient {
     // File first never prompts; Keychain only as fallback.
     private static func loadCredentialsFromSource() -> CredentialFile.OAuth? {
         let path = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/.credentials.json")
-        if let data = try? Data(contentsOf: path),
-           let parsed = try? JSONDecoder().decode(CredentialFile.self, from: data) {
-            return parsed.claudeAiOauth
+        if let data = try? Data(contentsOf: path) {
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            if let parsed = try? decoder.decode(CredentialFile.self, from: data) {
+                return parsed.claudeAiOauth
+            }
         }
-        guard let json = KeychainReader.genericPassword(service: "Claude Code-credentials"),
-              let parsed = try? JSONDecoder().decode(CredentialFile.self, from: Data(json.utf8)) else { return nil }
+        guard let json = KeychainReader.genericPassword(service: "Claude Code-credentials") else { return nil }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        guard let parsed = try? decoder.decode(CredentialFile.self, from: Data(json.utf8)) else { return nil }
         return parsed.claudeAiOauth
     }
 

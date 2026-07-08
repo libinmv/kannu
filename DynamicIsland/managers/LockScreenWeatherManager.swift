@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -708,7 +708,6 @@ private actor LockScreenWeatherProvider {
         let longitude = String(format: "%.4f", location.coordinate.longitude)
 
         let unit = Defaults[.lockScreenWeatherTemperatureUnit]
-        let usesMetric = unit.usesMetricSystem
         var weatherComponents = URLComponents(string: "https://api.open-meteo.com/v1/forecast")
         var weatherQueryItems: [URLQueryItem] = [
             URLQueryItem(name: "latitude", value: latitude),
@@ -1102,14 +1101,14 @@ private final class LockScreenWeatherLocationProvider: NSObject, CLLocationManag
     }
 
     func prepareAuthorization() {
-        let status = CLLocationManager.authorizationStatus()
+        let status = manager.authorizationStatus
         if status == .notDetermined {
             manager.requestWhenInUseAuthorization()
         }
     }
 
     func currentLocation() async -> CLLocation? {
-        let status = CLLocationManager.authorizationStatus()
+        let status = manager.authorizationStatus
         switch status {
         case .authorizedAlways, .authorizedWhenInUse:
             if let lastLocation, abs(lastLocation.timestamp.timeIntervalSinceNow) < 1800 {

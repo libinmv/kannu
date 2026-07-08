@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -52,23 +52,11 @@ struct DynamicIslandExtrasMenu : View {
     }
     
     var github: some View {
-        DynamicIslandLargeButtons(
-            action: {
-                NSWorkspace.shared.open(productPage)
-            },
-            icon: Image(.github),
-            title: "Checkout"
-        )
+        EmptyView()
     }
     
     var donate: some View {
-        DynamicIslandLargeButtons(
-            action: {
-                NSWorkspace.shared.open(sponsorPage)
-            },
-            icon: Image(systemName: "heart.fill"),
-            title: "Love Us"
-        )
+        EmptyView()
     }
     
     var settings: some View {

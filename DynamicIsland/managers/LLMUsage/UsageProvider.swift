@@ -49,6 +49,16 @@ struct UsageSnapshot: Equatable {
     var weekLimit: UsageLimit? = nil // 7d window quota
     var models: [ModelUsage] = []
     var lastUpdated: Date = .distantPast
+    var quotaError: String? = nil
+    var logsUnavailable: Bool = false
+}
+
+struct QuotaFetchResult: Equatable {
+    var session: UsageLimit?
+    var week: UsageLimit?
+    var errorMessage: String?
+
+    var hasLimits: Bool { session != nil || week != nil }
 }
 
 enum UsageResult {

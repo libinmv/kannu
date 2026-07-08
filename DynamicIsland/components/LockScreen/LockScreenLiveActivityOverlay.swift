@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -61,7 +61,7 @@ struct LockScreenLiveActivityOverlay: View {
 				.frame(width: indicatorSize, height: notchSize.height)
 
 			Rectangle()
-				.fill(.black)
+				.fill(.clear)
 				.frame(width: notchSize.width, height: notchSize.height)
 
 			Color.clear

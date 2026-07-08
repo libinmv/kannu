@@ -1,6 +1,6 @@
 /*
- * Atoll (DynamicIsland)
- * Copyright (C) 2024-2026 Atoll Contributors
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -67,7 +67,7 @@ class LockScreenPanelManager {
         }
 
         NotificationCenter.default.post(
-            name: .atollLockScreenPanelFrameDidChange,
+            name: .kannuLockScreenPanelFrameDidChange,
             object: self,
             userInfo: userInfo
         )
@@ -378,5 +378,5 @@ class LockScreenPanelManager {
 }
 
 extension Notification.Name {
-    static let atollLockScreenPanelFrameDidChange = Notification.Name("atollLockScreenPanelFrameDidChange")
+    static let kannuLockScreenPanelFrameDidChange = Notification.Name("kannuLockScreenPanelFrameDidChange")
 }
