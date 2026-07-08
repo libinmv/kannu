@@ -119,10 +119,13 @@ final class CursorAgentStatusMonitor: ObservableObject {
         let collapseMinutes = Defaults[.agentStoppedCollapseMinutes]
         let inactiveMinutes = Defaults[.agentInactiveDisplayMinutes]
 
-        let hookSessions = parseHookSessions(
-            staleMinutes: staleMinutes,
-            collapseMinutes: collapseMinutes,
-            inactiveMinutes: inactiveMinutes
+        let hookSessions = enrichHookSessionsWithTranscripts(
+            parseHookSessions(
+                staleMinutes: staleMinutes,
+                collapseMinutes: collapseMinutes,
+                inactiveMinutes: inactiveMinutes
+            ),
+            staleMinutes: staleMinutes
         )
         sessions = hookSessions.sorted { $0.updatedAt > $1.updatedAt }
         hadHookFilesThisCycle = hookSessions.contains { _ in true } || hadRecentHookFiles(staleMinutes: staleMinutes)
@@ -187,6 +190,56 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 return nowMs - tsMs <= staleMs
             }
             return true
+        }
+    }
+
+    /// Hook files often report `executing` while built-in WebSearch waits for approval
+    /// (preToolUse may not fire in Auto mode). Transcript state wins for those sessions.
+    private func enrichHookSessionsWithTranscripts(
+        _ sessions: [AgentSessionStatus],
+        staleMinutes: Int
+    ) -> [AgentSessionStatus] {
+        let pendingBySession = CursorTranscriptParser.pendingApprovalBySessionID(maxAgeMinutes: staleMinutes)
+        let completedTurnBySession = CursorTranscriptParser.completedTurnBySessionID(maxAgeMinutes: staleMinutes)
+
+        return sessions.map { session in
+            guard session.provider.lowercased() == "cursor" else { return session }
+
+            let rawState = session.rawState.lowercased()
+            if rawState == "stopped" || rawState == "stop" || session.displayState == .stopped {
+                return session
+            }
+
+            if completedTurnBySession[session.conversationID] == true,
+               session.displayState == .executing || session.displayState == .thinking {
+                return AgentSessionStatus(
+                    id: session.id,
+                    provider: session.provider,
+                    conversationID: session.conversationID,
+                    chatName: session.chatName,
+                    rawState: "stopped",
+                    displayState: .stopped,
+                    updatedAt: session.updatedAt,
+                    isVisible: true
+                )
+            }
+
+            guard pendingBySession[session.conversationID] == true,
+                  session.displayState != .awaitingInput,
+                  rawState != "awaiting_input" else {
+                return session
+            }
+
+            return AgentSessionStatus(
+                id: session.id,
+                provider: session.provider,
+                conversationID: session.conversationID,
+                chatName: session.chatName,
+                rawState: "awaiting_input",
+                displayState: .awaitingInput,
+                updatedAt: session.updatedAt,
+                isVisible: true
+            )
         }
     }
 
@@ -278,6 +331,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     composerStatus: nil,
                     isDone: analysis.isDone,
                     hasActiveToolUse: analysis.hasActiveToolUse,
+                    hasPendingToolApproval: analysis.hasPendingToolApproval,
                     transcriptMtimeMs: analysis.mtimeMs
                 )
             )
@@ -293,6 +347,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 composerStatus: meta.status,
                 isDone: snapshot.isDone,
                 hasActiveToolUse: snapshot.hasActiveToolUse,
+                hasPendingToolApproval: snapshot.hasPendingToolApproval,
                 transcriptMtimeMs: max(snapshot.transcriptMtimeMs, meta.checkpointMs)
             )
         }

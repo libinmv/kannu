@@ -37,6 +37,7 @@ final class AgentHookInstaller: ObservableObject {
     @Published private(set) var lastError: String?
 
     static let scriptName = "kannu-agent-status.sh"
+    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=4"
 
     private static var home: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -64,6 +65,7 @@ final class AgentHookInstaller: ObservableObject {
         migrateLegacyCursorInstallIfNeeded()
         migrateLegacyHookScriptsIfNeeded()
         migrateIncorrectAwaitingInputHooksIfNeeded()
+        migrateHookScriptVersionIfNeeded()
         refresh()
     }
 
@@ -129,6 +131,7 @@ final class AgentHookInstaller: ObservableObject {
         ("afterAgentThought", "thinking"),
         ("preToolUse", "executing"),
         ("postToolUse", "executing"),
+        ("beforeMCPExecution", "executing"),
         ("stop", "stopped")
     ]
 
@@ -148,6 +151,7 @@ final class AgentHookInstaller: ObservableObject {
         let script = """
         #!/bin/bash
         # Installed by Kannu: reports AI agent status for the notch traffic light.
+        # \(scriptVersionMarker)
         # Usage: kannu-agent-status.sh <state> <provider>  (hook JSON arrives on stdin)
 
         STATE="${1:-thinking}"
@@ -156,6 +160,50 @@ final class AgentHookInstaller: ObservableObject {
         mkdir -p "$STATUS_DIR"
 
         INPUT=$(cat)
+
+        resolve_state() {
+          KANNU_STATE="$1" INPUT="$INPUT" python3 <<'PY'
+        import json, os
+
+        state = os.environ.get("KANNU_STATE", "thinking")
+        raw = os.environ.get("INPUT", "")
+        try:
+            data = json.loads(raw) if raw.strip() else {}
+        except json.JSONDecodeError:
+            print(state)
+            raise SystemExit
+
+        tool = (data.get("tool_name") or data.get("toolName") or data.get("name") or "").strip()
+        if not tool and isinstance(data.get("tool"), str):
+            tool = data["tool"].strip()
+        if not tool and isinstance(data.get("tool_input"), dict):
+            tool = str(data["tool_input"].get("tool_name") or data["tool_input"].get("name") or "").strip()
+        if not tool and isinstance(data.get("tool_input"), str):
+            try:
+                nested = json.loads(data["tool_input"])
+                if isinstance(nested, dict):
+                    tool = str(nested.get("tool_name") or nested.get("name") or "").strip()
+            except json.JSONDecodeError:
+                pass
+
+        def requires_approval(name: str) -> bool:
+            lower = name.lower()
+            compact = lower.replace("_", "").replace("-", "")
+            if lower in {"websearch", "webfetch", "web_search", "web_fetch", "search"}:
+                return True
+            return compact in {"websearch", "webfetch", "search"}
+
+        if state == "executing" and requires_approval(tool):
+            state = "awaiting_input"
+
+        print(state)
+        PY
+        }
+
+        if command -v python3 >/dev/null 2>&1; then
+          STATE="$(resolve_state "$STATE")"
+        fi
+
         extract() {
           printf '%s' "$INPUT" | sed -n "s/.*\\"$1\\"[[:space:]]*:[[:space:]]*\\"\\([^\\"]*\\)\\".*/\\1/p" | head -n 1
         }
@@ -223,7 +271,8 @@ final class AgentHookInstaller: ObservableObject {
         for (event, value) in hooks {
             guard var entries = value as? [[String: Any]] else { continue }
             entries.removeAll { entry in
-                (entry["command"] as? String)?.contains(scriptName) == true
+                let command = entry["command"] as? String ?? ""
+                return command.contains(scriptName) || command.contains("atoll-agent-status")
             }
             if entries.isEmpty {
                 hooks.removeValue(forKey: event)
@@ -396,6 +445,20 @@ final class AgentHookInstaller: ObservableObject {
 
         guard hasStaleAwaitingHooks else { return }
         install(.cursor)
+    }
+
+    /// Reinstalls hooks when the shared status script gains new approval-detection logic.
+    private func migrateHookScriptVersionIfNeeded() {
+        let scriptURLs = [Self.cursorScriptURL, Self.vscodeScriptURL, Self.codexScriptURL]
+        let needsRefresh = scriptURLs.contains { url in
+            guard FileManager.default.fileExists(atPath: url.path),
+                  let content = try? String(contentsOf: url, encoding: .utf8) else { return false }
+            return !content.contains(Self.scriptVersionMarker)
+        }
+        guard needsRefresh else { return }
+        for provider in AgentHookProvider.allCases where Self.checkInstalled(provider) {
+            install(provider)
+        }
     }
 
     /// Copies status JSON from older `~/.atoll/agent-status` into `~/.kannu/agent-status`.

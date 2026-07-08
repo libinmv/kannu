@@ -87,6 +87,11 @@ class SettingsWindowController: NSWindowController {
         // Ensure window exists
         _ = window
 
+        // NSColorWell leaves the shared panel attached; dismiss any stale picker.
+        NSColorPanel.shared.orderOut(nil)
+        NSColorPanel.shared.setTarget(nil)
+        NSColorPanel.shared.setAction(nil)
+
         // Reassert regular window semantics in case any prior state mutated this window.
         window?.level = .normal
         window?.collectionBehavior = [.managed, .participatesInCycle]
@@ -134,6 +139,9 @@ class SettingsWindowController: NSWindowController {
 
 extension SettingsWindowController: NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
+        NSColorPanel.shared.orderOut(nil)
+        NSColorPanel.shared.setTarget(nil)
+        NSColorPanel.shared.setAction(nil)
         relinquishFocus()
     }
     

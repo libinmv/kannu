@@ -95,6 +95,7 @@ struct ContentView: View {
     @Default(.fullBatteryHUDStyle) var fullBatteryHUDStyle
     @Default(.notchSkinScrimOpacity) private var notchSkinScrimOpacity
     @Default(.notchFillColor) private var notchFillColor
+    @State private var notchFillColorToken = UUID()
     @Default(.enableAgentStatusFeature) private var enableAgentStatusFeature
     @Default(.selectedIdleAnimation) private var selectedIdleAnimation
     
@@ -627,6 +628,7 @@ struct ContentView: View {
                             NotchShimmerView(cornerRadius: closedNotchShimmerCornerRadius)
                         }
                     }
+                    .id(notchFillColorToken)
                 }
             }
             .clipShape(resolvedClipShape)
@@ -847,6 +849,12 @@ struct ContentView: View {
                 // Deterministic teardown for borderless panels (`.onDisappear` is
                 // unreliable); the window-cleanup path calls this before closing.
                 vm.onViewTeardown = { performViewTeardown() }
+            }
+            .onChange(of: notchFillColor) { _, _ in
+                notchFillColorToken = UUID()
+            }
+            .onChange(of: notchSkinScrimOpacity) { _, _ in
+                notchFillColorToken = UUID()
             }
             .onChange(of: vm.notchState) { _, state in
                 if state == .open {

@@ -8,6 +8,8 @@
 
 This project is licensed under GPL v3. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for upstream attribution.
 
+Kannu is a fork of [Atoll](https://github.com/Ebullioscopic/Atoll), which itself builds on the broader macOS notch lineage including [Boring.Notch](https://github.com/TheBoredTeam/boring.notch).
+
 ## Highlights
 
 - **Agent status traffic light** — yellow (thinking), green (executing), red (stopped), fed by editor hooks and transcript polling.
@@ -16,7 +18,7 @@ This project is licensed under GPL v3. See [LICENSE](LICENSE) and [NOTICE](NOTIC
 - Media controls, live activities, lock screen widgets, stats, timers, clipboard, and shelf.
 - **Keyboard shortcuts off by default** — enable globally in Settings → Shortcuts when you want hotkeys.
 
-Calendar, terminal, and color picker features from the upstream notch lineage are removed in this fork.
+Calendar, terminal, and color picker features from the Atoll/Boring.Notch lineage are removed in this fork.
 
 ## Requirements
 
@@ -92,4 +94,4 @@ GPL v3 — see [LICENSE](LICENSE).
 
 ## Acknowledgments
 
-Kannu builds on [Boring.Notch](https://github.com/TheBoredTeam/boring.notch) and other open-source macOS notch projects listed in upstream documentation.
+Kannu is a fork of [Atoll](https://github.com/Ebullioscopic/Atoll) and inherits its architecture, notch interaction patterns, and many features from that project. Atoll and Kannu both trace back to [Boring.Notch](https://github.com/TheBoredTeam/boring.notch) and other open-source macOS notch projects listed in upstream documentation.

@@ -12,12 +12,7 @@ struct NotchAgentStatusView: View {
     }
 
     private var primarySession: AgentSessionStatus? {
-        visibleSessions.max { lhs, rhs in
-            if lhs.displayState != rhs.displayState {
-                return lhs.displayState < rhs.displayState
-            }
-            return lhs.updatedAt < rhs.updatedAt
-        }
+        visibleSessions.max { $0.updatedAt < $1.updatedAt }
     }
 
     var body: some View {

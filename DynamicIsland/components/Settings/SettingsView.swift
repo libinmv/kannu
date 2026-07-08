@@ -3802,11 +3802,16 @@ struct Appearance: View {
                             .foregroundStyle(.secondary)
                             .font(.caption)
                         Spacer()
-                        NotchFillColorWell(color: $notchFillColor)
+                        ColorPicker("", selection: $notchFillColor, supportsOpacity: false)
+                            .labelsHidden()
                             .frame(width: 48, height: 28)
+                            .help("Change the notch fill color")
                     }
                 }
                 .settingsHighlight(id: highlightID("Notch fill color"))
+                Text("Fill color is used when no custom notch skin is selected.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             } header: {
                 Text("Notch appearance")
             }
@@ -7429,46 +7434,6 @@ struct NotesSettingsView: View {
 }
 
 // MARK: - Quick Share Provider Icon
-
-struct NotchFillColorWell: NSViewRepresentable {
-    @Binding var color: Color
-
-    func makeNSView(context: Context) -> NSColorWell {
-        let well = NSColorWell()
-        well.target = context.coordinator
-        well.action = #selector(Coordinator.colorChanged(_:))
-        well.color = nsColor(from: color)
-        return well
-    }
-
-    func updateNSView(_ well: NSColorWell, context: Context) {
-        let updated = nsColor(from: color)
-        if !well.color.isEqual(updated) {
-            well.color = updated
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(color: $color)
-    }
-
-    private func nsColor(from color: Color) -> NSColor {
-        NSColor(color).usingColorSpace(.sRGB) ?? NSColor(color)
-    }
-
-    final class Coordinator: NSObject {
-        var color: Binding<Color>
-
-        init(color: Binding<Color>) {
-            self.color = color
-        }
-
-        @objc func colorChanged(_ sender: NSColorWell) {
-            let picked = sender.color.usingColorSpace(.sRGB) ?? sender.color
-            color.wrappedValue = Color(nsColor: picked)
-        }
-    }
-}
 
 struct AppIconImage: View {
     let bundleIdentifiers: [String]

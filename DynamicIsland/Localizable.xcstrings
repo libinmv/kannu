@@ -12491,6 +12491,9 @@
         }
       }
     },
+    "Change the notch fill color" : {
+
+    },
     "Charging" : {
       "comment" : "Charging fallback label when no estimate is available",
       "localizations" : {
@@ -27990,6 +27993,9 @@
           }
         }
       }
+    },
+    "Fill color is used when no custom notch skin is selected." : {
+
     },
     "Fill Notch" : {
       "localizations" : {

@@ -30,8 +30,8 @@ enum AgentTrafficLightState: Equatable, Comparable {
     private var sortPriority: Int {
         switch self {
         case .executing: return 5
-        case .awaitingInput: return 4
-        case .thinking: return 3
+        case .thinking: return 4
+        case .awaitingInput: return 3
         case .stopped: return 2
         case .inactive: return 1
         }
@@ -92,6 +92,7 @@ struct AgentSessionSnapshot: Equatable {
     let composerStatus: String?
     let isDone: Bool
     let hasActiveToolUse: Bool
+    let hasPendingToolApproval: Bool
     let transcriptMtimeMs: Int64
 }
 
@@ -139,6 +140,10 @@ enum AgentTrafficLightMapper {
 
         let liveStatus = (session.composerStatus ?? "").lowercased()
         if isAwaitingUserInputStatus(liveStatus) {
+            return (.awaitingInput, true)
+        }
+
+        if session.hasPendingToolApproval {
             return (.awaitingInput, true)
         }
 
@@ -192,6 +197,9 @@ enum AgentTrafficLightMapper {
             return (.inactive, false)
         case "thinking" where ageMs <= activeStaleMs:
             return (.thinking, true)
+        case "stopped", "stop", "completed", "aborted", "error":
+            if ageMs <= collapseMs + inactiveMs { return (.stopped, true) }
+            return (.inactive, false)
         default:
             break
         }
@@ -205,7 +213,16 @@ enum AgentTrafficLightMapper {
         return (.inactive, false)
     }
 
+    /// The traffic light reflects the most recently updated session, not a mix of stale sessions.
+    static func resolveDisplayState(from sessions: [AgentSessionStatus]) -> AgentTrafficLightState {
+        let visible = sessions.filter(\.isVisible)
+        guard let primary = visible.max(by: { $0.updatedAt < $1.updatedAt }) else {
+            return .inactive
+        }
+        return primary.displayState
+    }
+
     static func aggregate(_ sessions: [AgentSessionStatus]) -> AgentTrafficLightState {
-        sessions.filter(\.isVisible).map(\.displayState).max() ?? .inactive
+        resolveDisplayState(from: sessions)
     }
 }

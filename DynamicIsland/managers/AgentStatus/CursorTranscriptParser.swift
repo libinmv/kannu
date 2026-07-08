@@ -53,7 +53,7 @@ enum CursorTranscriptParser {
         return base
     }
 
-    static func analyze(path: URL) -> (events: [TranscriptEvent], mtimeMs: Int64, isDone: Bool, hasActiveToolUse: Bool) {
+    static func analyze(path: URL) -> (events: [TranscriptEvent], mtimeMs: Int64, isDone: Bool, hasActiveToolUse: Bool, hasPendingToolApproval: Bool) {
         let mtimeMs: Int64 = {
             guard let date = (try? path.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate else {
                 return 0
@@ -64,8 +64,11 @@ enum CursorTranscriptParser {
         let lines = readTailLines(at: path)
         let events = lines.compactMap(parseEvent)
         let isDone = detectDone(events: events)
-        let hasActiveToolUse = lastToolUseName(events: events) != nil && !isDone
-        return (events, mtimeMs, isDone, hasActiveToolUse)
+        let turnCompleted = isTurnCompletedAtTail(events: events)
+        let hasPendingToolApproval = hasPendingApprovalGatedTool(events: events) && !isDone && !turnCompleted
+        let pendingTool = lastToolUseName(events: events)
+        let hasActiveToolUse = pendingTool != nil && !hasPendingToolApproval && !isDone
+        return (events, mtimeMs, isDone, hasActiveToolUse, hasPendingToolApproval)
     }
 
     private static func readTailLines(at url: URL) -> [String] {
@@ -154,5 +157,58 @@ enum CursorTranscriptParser {
             return event.toolUses.last
         }
         return nil
+    }
+
+    /// True only while the transcript tail is an unanswered approval-gated proposal
+    /// (e.g. assistant `WebSearch` with no user reply or newer assistant work after it).
+    private static func hasPendingApprovalGatedTool(events: [TranscriptEvent]) -> Bool {
+        guard let last = events.last else { return false }
+
+        // User replied, turn finished, or agent advanced — approval window is over.
+        if last.kind == "user" || last.kind == "turn_ended" {
+            return false
+        }
+
+        guard last.kind == "assistant", !last.toolUses.isEmpty else {
+            return false
+        }
+
+        // Cursor pauses for approval when the latest proposal is exclusively approval-gated tools.
+        return last.toolUses.allSatisfy(AgentApprovalGatedTools.requiresUserApproval)
+    }
+
+    /// True when the agent finished its turn (`turn_ended`) and has not started a new one.
+    private static func isTurnCompletedAtTail(events: [TranscriptEvent]) -> Bool {
+        guard let last = events.last else { return false }
+        if last.kind == "turn_ended" { return true }
+
+        // `turn_ended` followed by a user message with no assistant reply yet means the
+        // previous turn is over and hook `executing` is stale.
+        guard last.kind == "user" else { return false }
+        for event in events.dropLast().reversed() {
+            if event.kind == "turn_ended" { return true }
+            if event.kind == "assistant" { return false }
+        }
+        return false
+    }
+
+    static func completedTurnBySessionID(maxAgeMinutes: Int, now: Date = Date()) -> [String: Bool] {
+        var results: [String: Bool] = [:]
+        for path in listRecentTranscriptPaths(maxAgeMinutes: maxAgeMinutes, now: now) {
+            let sessionID = sessionID(from: path)
+            let lines = readTailLines(at: path)
+            let events = lines.compactMap(parseEvent)
+            results[sessionID] = isTurnCompletedAtTail(events: events)
+        }
+        return results
+    }
+
+    static func pendingApprovalBySessionID(maxAgeMinutes: Int, now: Date = Date()) -> [String: Bool] {
+        var results: [String: Bool] = [:]
+        for path in listRecentTranscriptPaths(maxAgeMinutes: maxAgeMinutes, now: now) {
+            let sessionID = sessionID(from: path)
+            results[sessionID] = analyze(path: path).hasPendingToolApproval
+        }
+        return results
     }
 }
