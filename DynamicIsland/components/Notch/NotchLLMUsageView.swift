@@ -59,7 +59,7 @@ struct NotchLLMUsageView: View {
             case .loading:
                 ProgressView().controlSize(.small)
             case .failure(let reason):
-                Text(reason).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Text(reason).font(.caption).foregroundStyle(.secondary).lineLimit(4)
             case .success(let snap):
                 success(snap)
             }
@@ -81,7 +81,7 @@ struct NotchLLMUsageView: View {
                     window("Session", snap.session)
                 }
                 if let quotaError = snap.quotaError {
-                    Text(quotaError).font(.caption2).foregroundStyle(.orange).lineLimit(3)
+                    Text(quotaError).font(.caption2).foregroundStyle(.orange).lineLimit(4)
                 } else {
                     Text("quota unavailable").font(.caption2).foregroundStyle(.secondary.opacity(0.7))
                 }
@@ -97,7 +97,7 @@ struct NotchLLMUsageView: View {
                     }
                 }
                 if let quotaError = snap.quotaError {
-                    Text(quotaError).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                    Text(quotaError).font(.caption2).foregroundStyle(.secondary).lineLimit(4)
                 }
             }
         }

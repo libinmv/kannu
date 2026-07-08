@@ -1296,7 +1296,7 @@ extension Defaults.Keys {
     static let agentStatusNotifyOnInactive = Key<Bool>("agentStatusNotifyOnInactive", default: false)
 
     // MARK: Screen Assistant Feature
-    static let enableScreenAssistant = Key<Bool>("enableScreenAssistant", default: true)
+    static let enableScreenAssistant = Key<Bool>("enableScreenAssistant", default: false)
     static let screenAssistantDisplayMode = Key<ScreenAssistantDisplayMode>("screenAssistantDisplayMode", default: .panel)
     static let geminiApiKey = Key<String>("geminiApiKey", default: "")
     static let openaiApiKey = Key<String>("openaiApiKey", default: "")

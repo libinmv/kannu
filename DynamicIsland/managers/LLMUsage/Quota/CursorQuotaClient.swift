@@ -6,44 +6,86 @@ struct CursorQuotaClient {
     let session: URLSession
     init(session: URLSession = URLSession(configuration: .ephemeral)) { self.session = session }
 
-    private struct PlanUsage: Decodable {
-        let totalPercentUsed: Double
-    }
-
-    private struct UsageResponse: Decodable {
-        let planUsage: PlanUsage?
-        let billingCycleEnd: Double?
-    }
-
     func fetchLimits() async -> QuotaFetchResult {
-        guard let token = CursorTokenStore.accessToken() else {
+        guard CursorTokenStore.accessToken() != nil else {
             Self.log.notice("no Cursor access token in Keychain or state.vscdb")
             return QuotaFetchResult(errorMessage: "Cursor not signed in")
         }
-        var request = URLRequest(url: URL(string: "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage")!)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = Data("{}".utf8)
+
+        if let connect = await fetchConnectLimits() {
+            return connect
+        }
+        if let summary = await fetchUsageSummaryLimits() {
+            return summary
+        }
+        return QuotaFetchResult(errorMessage: "Cursor quota unavailable")
+    }
+
+    private func fetchConnectLimits() async -> QuotaFetchResult? {
         do {
-            let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                let code = (response as? HTTPURLResponse)?.statusCode ?? -1
-                Self.log.error("GetCurrentPeriodUsage HTTP \(code)")
-                return QuotaFetchResult(errorMessage: "Cursor quota API HTTP \(code)")
+            let (data, http) = try await CursorAPIHelpers.connectRequest(
+                path: "/aiserver.v1.DashboardService/GetCurrentPeriodUsage",
+                session: session
+            )
+            guard (200..<300).contains(http.statusCode) else {
+                Self.log.error("GetCurrentPeriodUsage HTTP \(http.statusCode)")
+                return nil
             }
-            let decoder = JSONDecoder()
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
-            let decoded = try decoder.decode(UsageResponse.self, from: data)
-            guard let percent = decoded.planUsage?.totalPercentUsed else {
-                Self.log.error("GetCurrentPeriodUsage missing planUsage (\(data.count) bytes)")
-                return QuotaFetchResult(errorMessage: "Cursor quota response missing usage data")
+            guard let root = CursorAPIHelpers.parseJSONObject(data) else {
+                Self.log.error("GetCurrentPeriodUsage invalid JSON (\(data.count) bytes)")
+                return nil
             }
-            let resets = decoded.billingCycleEnd.map { Date(timeIntervalSince1970: $0 / 1000) }
+            guard let planUsage = root["planUsage"] as? [String: Any],
+                  let percent = CursorAPIHelpers.parsePercent(from: planUsage) else {
+                Self.log.error("GetCurrentPeriodUsage missing usable planUsage")
+                return nil
+            }
+            let resets = CursorAPIHelpers.parseTimestamp(root["billingCycleEnd"])
             return QuotaFetchResult(week: UsageLimit(used: percent, limit: 100, resetsAt: resets))
         } catch {
             Self.log.error("GetCurrentPeriodUsage failed: \(error.localizedDescription, privacy: .public)")
-            return QuotaFetchResult(errorMessage: error.localizedDescription)
+            return nil
+        }
+    }
+
+    private func fetchUsageSummaryLimits() async -> QuotaFetchResult? {
+        guard let url = URL(string: "https://cursor.com/api/usage-summary") else { return nil }
+        do {
+            let (data, http) = try await CursorAPIHelpers.restRequest(url: url, session: session)
+            guard (200..<300).contains(http.statusCode) else {
+                Self.log.error("usage-summary HTTP \(http.statusCode)")
+                return nil
+            }
+            guard let root = CursorAPIHelpers.parseJSONObject(data) else {
+                Self.log.error("usage-summary invalid JSON")
+                return nil
+            }
+
+            let individual = root["individualUsage"] as? [String: Any]
+            let plan = individual?["plan"] as? [String: Any]
+            if let plan, let percent = CursorAPIHelpers.parsePercent(from: plan) {
+                let resets = CursorAPIHelpers.parseTimestamp(root["billingCycleEnd"])
+                return QuotaFetchResult(week: UsageLimit(used: percent, limit: 100, resetsAt: resets))
+            }
+
+            if let overall = individual?["overall"] as? [String: Any],
+               let percent = CursorAPIHelpers.parsePercent(from: overall) {
+                let resets = CursorAPIHelpers.parseTimestamp(root["billingCycleEnd"])
+                return QuotaFetchResult(week: UsageLimit(used: percent, limit: 100, resetsAt: resets))
+            }
+
+            if let team = root["teamUsage"] as? [String: Any],
+               let pooled = team["pooled"] as? [String: Any],
+               let percent = CursorAPIHelpers.parsePercent(from: pooled) {
+                let resets = CursorAPIHelpers.parseTimestamp(root["billingCycleEnd"])
+                return QuotaFetchResult(week: UsageLimit(used: percent, limit: 100, resetsAt: resets))
+            }
+
+            Self.log.error("usage-summary missing usable quota fields")
+            return nil
+        } catch {
+            Self.log.error("usage-summary failed: \(error.localizedDescription, privacy: .public)")
+            return nil
         }
     }
 }

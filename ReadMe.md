@@ -1,7 +1,7 @@
 # കണ്ണ് (Kannu)
 
 <p align="center">
-  <img src=".github/assets/kannu-logo.png" alt="Kannu logo" width="160">
+  <img src=".github/assets/eyes.jpeg" alt="Kannu logo" width="160">
 </p>
 
 **Kannu** is a macOS notch utility focused on **AI agent status** in the MacBook notch. It shows a traffic-light indicator while Cursor, VS Code Copilot, or Codex agents run, with optional custom notch backgrounds and mobile push notifications.
