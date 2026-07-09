@@ -21,6 +21,7 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
   - Fixed stuck traffic-light pulse: `repeatForever` animations started via `withAnimation` were never cancelled when a dot deactivated, so a dimmed green dot kept pulsating next to the lit yellow; switched to a value-driven `.animation` so the pulse stops the moment a dot dims.
   - Fixed yellow for real (hook v15, verified working): measured hook timing showed `preToolUse` fires when the approval card is SHOWN (not after approve), so gated tools (WebSearch/WebFetch/AskQuestion) now write `awaiting_input` on `preToolUse`/`beforeMCPExecution` and flip back on `postToolUse`/`postToolUseFailure`; added `postToolUseFailure` to installed Cursor hooks.
   - Monitor now treats the hook file as sole authority for yellow: removed transcript-based promotion/demotion of `awaiting_input` and the 1s active transcript polling timer (hook watcher reacts instantly, less CPU/memory).
+  - README: added user-facing Install section with Gatekeeper bypass steps (right-click Open / Open Anyway / `xattr` command) for the unsigned DMG, and corrected traffic-light color legend (yellow = awaiting input, green = thinking/executing).
 
 ### 2026-07-09 - Calendar removal and runtime permissions docs
 - **Developer label:** Calendar removal and runtime permissions docs

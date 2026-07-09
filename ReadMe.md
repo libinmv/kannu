@@ -12,7 +12,7 @@ Kannu is a fork of [Atoll](https://github.com/Ebullioscopic/Atoll), which itself
 
 ## Highlights
 
-- **Agent status traffic light** — yellow (thinking), green (executing), red (stopped), fed by editor hooks and transcript polling.
+- **Agent status traffic light** — green (thinking/executing), yellow (awaiting your input, e.g. approval cards), red (stopped), fed by editor hooks and transcript polling.
 - **Custom notch skins** — upload a background image clipped to the notch shape, with optional dark scrim for readability.
 - **Mobile notifications (optional)** — push agent state changes to iPhone, Apple Watch, or Android via ntfy, Pushover, or a custom webhook.
 - Media controls, live activities, lock screen widgets, stats, timers, clipboard, and shelf.
@@ -43,6 +43,29 @@ Kannu requests permissions only when you use the related feature. The app is not
 - **Developer Tools** — optional, used for advanced Focus detection mode.
 
 For detailed prompts and one-click setup actions, open **Settings** in Kannu. Contributor docs are in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Install (Pre-built DMG)
+
+1. Download the latest `Kannu.dmg` from the [Releases page](https://github.com/Ebullioscopic/Atoll/releases).
+2. Open the DMG and drag **Kannu** into the **Applications** folder.
+3. Launch Kannu from Applications.
+
+### "Kannu can't be opened" (Gatekeeper)
+
+Release builds are ad-hoc signed and not notarized by Apple, so macOS shows a
+warning on first launch. This is expected for free open-source apps — you can
+bypass it once and macOS remembers your choice:
+
+- **Right-click (or Control-click) `Kannu.app` in Applications and choose "Open"**, then click **Open** in the dialog. On macOS 15 (Sequoia) and later, the option may only appear the *second* time you right-click → Open.
+- If there is no Open button: go to **System Settings → Privacy & Security**, scroll down to the message about Kannu being blocked, and click **Open Anyway**.
+- Terminal alternative — remove the quarantine flag directly:
+
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/Kannu.app
+  ```
+
+If you prefer, you can always build from source instead — Gatekeeper does not
+warn for apps you build yourself.
 
 ## Build from Source
 
