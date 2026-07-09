@@ -13,11 +13,19 @@ final class CursorAgentStatusMonitor: ObservableObject {
     @Published private(set) var sessions: [AgentSessionStatus] = []
 
     private var eventStream: FSEventStreamRef?
+    private var statusDirectorySource: DispatchSourceFileSystemObject?
+    private var statusDirectoryFD: Int32 = -1
     private var rescanTask: Task<Void, Never>?
+    private var quickRescanTask: Task<Void, Never>?
     private var pollTimer: Timer?
     private var isRunning = false
     private var watchedPaths: [String] = []
     private var hadHookFilesThisCycle = false
+    private var executionStartByConversationID: [String: Date] = [:]
+    private var cachedTranscriptAnalysisBySession: [String: TranscriptAnalysis] = [:]
+    private var cachedTranscriptAnalysisAt: Date?
+    private var lastPublishedTrafficLightState: AgentTrafficLightState?
+    private var lastPublishedShouldShowTrafficLight: Bool?
 
     private init() {}
 
@@ -26,7 +34,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
         isRunning = true
         installWatchers()
         scheduleRescan(delay: 0)
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+        // Slow background poll; hook directory watcher handles near-real-time updates.
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.scheduleRescan(delay: 0)
             }
@@ -39,6 +48,16 @@ final class CursorAgentStatusMonitor: ObservableObject {
         rescanTask = nil
         pollTimer?.invalidate()
         pollTimer = nil
+        if let statusDirectorySource {
+            statusDirectorySource.cancel()
+            self.statusDirectorySource = nil
+        }
+        if statusDirectoryFD >= 0 {
+            close(statusDirectoryFD)
+            statusDirectoryFD = -1
+        }
+        quickRescanTask?.cancel()
+        quickRescanTask = nil
         if let eventStream {
             FSEventStreamStop(eventStream)
             FSEventStreamInvalidate(eventStream)
@@ -48,20 +67,26 @@ final class CursorAgentStatusMonitor: ObservableObject {
         trafficLightState = .inactive
         shouldShowTrafficLight = false
         sessions = []
+        executionStartByConversationID.removeAll()
+        cachedTranscriptAnalysisBySession.removeAll()
+        cachedTranscriptAnalysisAt = nil
+        lastPublishedTrafficLightState = nil
+        lastPublishedShouldShowTrafficLight = nil
+        CursorTranscriptParser.invalidatePathCache()
     }
 
     private func installWatchers() {
-        let home = FileManager.default.homeDirectoryForCurrentUser
         try? FileManager.default.createDirectory(
             at: AgentHookInstaller.statusDirectory,
             withIntermediateDirectories: true
         )
+        // Only watch hook status + transcript roots. Avoid Cursor's huge Application Support trees.
         watchedPaths = [
             CursorTranscriptParser.projectsDirectory.path,
-            AgentHookInstaller.statusDirectory.path,
-            home.appendingPathComponent("Library/Application Support/Cursor/User/globalStorage").path,
-            home.appendingPathComponent("Library/Application Support/Cursor/User/workspaceStorage").path
+            AgentHookInstaller.statusDirectory.path
         ]
+
+        installStatusDirectoryWatcher()
 
         var context = FSEventStreamContext(
             version: 0,
@@ -81,7 +106,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
             guard let info else { return }
             let monitor = Unmanaged<CursorAgentStatusMonitor>.fromOpaque(info).takeUnretainedValue()
             Task { @MainActor in
-                monitor.scheduleRescan(delay: 1.0)
+                CursorTranscriptParser.invalidatePathCache()
+                monitor.scheduleRescan(delay: 0.35)
             }
         }
 
@@ -91,13 +117,52 @@ final class CursorAgentStatusMonitor: ObservableObject {
             &context,
             watchedPaths as CFArray,
             FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-            1.0,
+            0.5,
             flags
         ) else { return }
 
         eventStream = stream
         FSEventStreamSetDispatchQueue(stream, DispatchQueue.main)
         FSEventStreamStart(stream)
+    }
+
+    /// Immediate refresh when hook status JSON files change (sub-100ms).
+    private func installStatusDirectoryWatcher() {
+        let directory = AgentHookInstaller.statusDirectory
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let fd = open(directory.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        statusDirectoryFD = fd
+
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .delete, .rename, .attrib, .link],
+            queue: .main
+        )
+        source.setEventHandler { [weak self] in
+            Task { @MainActor in
+                self?.scheduleQuickRescan()
+            }
+        }
+        source.setCancelHandler { [weak self] in
+            if let fd = self?.statusDirectoryFD, fd >= 0 {
+                close(fd)
+                self?.statusDirectoryFD = -1
+            }
+        }
+        source.resume()
+        statusDirectorySource = source
+    }
+
+    private func scheduleQuickRescan() {
+        guard isRunning else { return }
+        quickRescanTask?.cancel()
+        quickRescanTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            guard !Task.isCancelled else { return }
+            await self?.rescan(hooksOnly: true)
+        }
     }
 
     private func scheduleRescan(delay: TimeInterval) {
@@ -108,71 +173,194 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             }
             guard !Task.isCancelled else { return }
-            await self?.rescan()
+            await self?.rescan(hooksOnly: false)
         }
     }
 
-    private func rescan() async {
+    private func rescan(hooksOnly: Bool = false) async {
         guard isRunning else { return }
+        let now = Date()
+        let previousStateByConversationID = latestDisplayStateByConversationID(from: sessions)
 
         let staleMinutes = Defaults[.agentStatusStaleMinutes]
         let collapseMinutes = Defaults[.agentStoppedCollapseMinutes]
         let inactiveMinutes = Defaults[.agentInactiveDisplayMinutes]
 
-        let hookSessions = enrichHookSessionsWithTranscripts(
-            parseHookSessions(
+        let hookSessions = parseHookSessions(
+            staleMinutes: staleMinutes,
+            collapseMinutes: collapseMinutes,
+            inactiveMinutes: inactiveMinutes,
+            now: now
+        )
+
+        let transcriptAnalysis: [String: TranscriptAnalysis]
+        let transcriptSessions: [AgentSessionStatus]
+        if hooksOnly, !sessions.isEmpty {
+            // Hook events carry the awaiting_input signal directly (preToolUse fires when
+            // the approval card is shown), so hook-triggered rescans reuse cached transcript
+            // context instead of re-reading transcripts.
+            transcriptAnalysis = cachedTranscriptAnalysis(maxAgeMinutes: staleMinutes, now: now, forceRefresh: false)
+            let hookConversationIDs = Set(hookSessions.map(\.conversationID))
+            let retainedTranscriptSessions = sessions.filter { !hookConversationIDs.contains($0.conversationID) }
+            transcriptSessions = retainedTranscriptSessions
+        } else if isCursorRunning() {
+            transcriptAnalysis = cachedTranscriptAnalysis(maxAgeMinutes: staleMinutes, now: now, forceRefresh: true)
+            transcriptSessions = buildTranscriptSessions(
+                analysisBySession: transcriptAnalysis,
                 staleMinutes: staleMinutes,
                 collapseMinutes: collapseMinutes,
                 inactiveMinutes: inactiveMinutes
+            )
+        } else {
+            transcriptAnalysis = [:]
+            cachedTranscriptAnalysisBySession = [:]
+            cachedTranscriptAnalysisAt = now
+            transcriptSessions = []
+        }
+
+        let mergedSessions = collapseSubagentSessions(
+            applyExecutionRunState(
+                to: enrichHookSessionsWithTranscripts(
+                    mergeSessions(hookSessions: hookSessions, transcriptSessions: transcriptSessions),
+                    analysisBySession: transcriptAnalysis
+                ),
+                previousStateByConversationID: previousStateByConversationID,
+                now: now
             ),
             staleMinutes: staleMinutes
         )
-        sessions = hookSessions.sorted { $0.updatedAt > $1.updatedAt }
-        hadHookFilesThisCycle = hookSessions.contains { _ in true } || hadRecentHookFiles(staleMinutes: staleMinutes)
 
-        let visibleSessions = hookSessions.filter(\.isVisible)
-        if !visibleSessions.isEmpty {
-            applyDisplay(from: visibleSessions)
-            return
+        let sortedSessions = mergedSessions.sorted { $0.updatedAt > $1.updatedAt }
+        if sessions != sortedSessions {
+            sessions = sortedSessions
         }
+        hadHookFilesThisCycle = !hookSessions.isEmpty || hadRecentHookFiles(staleMinutes: staleMinutes)
 
-        if hookSessions.isEmpty == false {
-            shouldShowTrafficLight = false
-            trafficLightState = .inactive
-            return
-        }
-
-        guard !hadHookFilesThisCycle, isCursorRunning() else {
-            shouldShowTrafficLight = false
-            trafficLightState = .inactive
-            sessions = []
-            return
-        }
-
-        let transcriptSessions = buildTranscriptSessions(
-            staleMinutes: staleMinutes,
-            collapseMinutes: collapseMinutes,
-            inactiveMinutes: inactiveMinutes
-        )
-        sessions = transcriptSessions.sorted { $0.updatedAt > $1.updatedAt }
-        let visibleTranscript = transcriptSessions.filter(\.isVisible)
-        if visibleTranscript.isEmpty {
-            shouldShowTrafficLight = false
-            trafficLightState = .inactive
+        let visibleSessions = mergedSessions.filter(\.isVisible)
+        if visibleSessions.isEmpty {
+            publishTrafficLight(state: .inactive, shouldShow: false)
         } else {
-            applyDisplay(from: visibleTranscript)
+            applyDisplay(from: visibleSessions)
         }
+    }
+
+    private func cachedTranscriptAnalysis(
+        maxAgeMinutes: Int,
+        now: Date,
+        forceRefresh: Bool
+    ) -> [String: TranscriptAnalysis] {
+        if !forceRefresh,
+           let cachedTranscriptAnalysisAt,
+           now.timeIntervalSince(cachedTranscriptAnalysisAt) < 1.5 {
+            return cachedTranscriptAnalysisBySession
+        }
+        let fresh = CursorTranscriptParser.analyzeRecentSessions(maxAgeMinutes: maxAgeMinutes, now: now)
+        cachedTranscriptAnalysisBySession = fresh
+        cachedTranscriptAnalysisAt = now
+        return fresh
+    }
+
+    private func publishTrafficLight(state: AgentTrafficLightState, shouldShow: Bool) {
+        if lastPublishedTrafficLightState != state {
+            trafficLightState = state
+            lastPublishedTrafficLightState = state
+        }
+        if lastPublishedShouldShowTrafficLight != shouldShow {
+            shouldShowTrafficLight = shouldShow
+            lastPublishedShouldShowTrafficLight = shouldShow
+        }
+    }
+
+    private func mergeSessions(
+        hookSessions: [AgentSessionStatus],
+        transcriptSessions: [AgentSessionStatus]
+    ) -> [AgentSessionStatus] {
+        var mergedByConversationID: [String: AgentSessionStatus] = [:]
+
+        for session in hookSessions + transcriptSessions {
+            guard let existing = mergedByConversationID[session.conversationID] else {
+                mergedByConversationID[session.conversationID] = session
+                continue
+            }
+            mergedByConversationID[session.conversationID] = preferredMergedSession(existing, session)
+        }
+
+        return Array(mergedByConversationID.values)
+    }
+
+    /// Prefer the more urgent traffic-light state; break ties with the newer timestamp.
+    private func preferredMergedSession(_ existing: AgentSessionStatus, _ incoming: AgentSessionStatus) -> AgentSessionStatus {
+        if existing.displayState != incoming.displayState {
+            if existing.displayState > incoming.displayState { return existing }
+            if incoming.displayState > existing.displayState { return incoming }
+        }
+        return incoming.updatedAt >= existing.updatedAt ? incoming : existing
+    }
+
+    /// Roll Task/subagent activity into the parent chat so they don't appear as extra sessions.
+    private func collapseSubagentSessions(_ sessions: [AgentSessionStatus], staleMinutes: Int) -> [AgentSessionStatus] {
+        let subagentParents = CursorTranscriptParser.subagentToParentSessionMap(maxAgeMinutes: staleMinutes)
+        guard !subagentParents.isEmpty else { return sessions }
+
+        var rolledUp: [String: AgentSessionStatus] = [:]
+
+        for session in sessions {
+            let parentID = subagentParents[session.conversationID]
+            let targetID = parentID ?? session.conversationID
+
+            let candidate: AgentSessionStatus
+            if let parentID {
+                candidate = AgentSessionStatus(
+                    id: "cursor-\(parentID)",
+                    provider: session.provider,
+                    conversationID: parentID,
+                    chatName: session.chatName,
+                    projectName: session.projectName,
+                    rawState: session.rawState,
+                    displayState: session.displayState,
+                    updatedAt: session.updatedAt,
+                    isVisible: session.isVisible,
+                    executionStartedAt: session.executionStartedAt
+                )
+            } else {
+                candidate = session
+            }
+
+            if let existing = rolledUp[targetID] {
+                let merged = preferredMergedSession(existing, candidate)
+                rolledUp[targetID] = AgentSessionStatus(
+                    id: existing.id.hasPrefix("cursor-") ? existing.id : candidate.id,
+                    provider: merged.provider,
+                    conversationID: targetID,
+                    chatName: normalizedChatName(existing.chatName) ?? normalizedChatName(candidate.chatName),
+                    projectName: normalizedProjectName(existing.projectName) ?? normalizedProjectName(candidate.projectName),
+                    rawState: merged.rawState,
+                    displayState: merged.displayState,
+                    updatedAt: max(existing.updatedAt, candidate.updatedAt),
+                    isVisible: existing.isVisible || candidate.isVisible,
+                    executionStartedAt: merged.executionStartedAt ?? existing.executionStartedAt ?? candidate.executionStartedAt
+                )
+            } else {
+                rolledUp[targetID] = candidate
+            }
+        }
+
+        return Array(rolledUp.values)
     }
 
     private func applyDisplay(from visible: [AgentSessionStatus]) {
         var state = AgentTrafficLightMapper.aggregate(visible)
-        if state == .inactive && Defaults[.showAgentStoppedIndicator] == false {
-            // inactive dim state is visible
-        } else if state == .inactive && Defaults[.showAgentStoppedIndicator] {
-            state = .stopped
+
+        if state == .inactive {
+            if Defaults[.showAgentStoppedIndicator] {
+                state = .stopped
+            } else {
+                publishTrafficLight(state: .inactive, shouldShow: false)
+                return
+            }
         }
-        trafficLightState = state
-        shouldShowTrafficLight = true
+
+        publishTrafficLight(state: state, shouldShow: true)
     }
 
     private func hadRecentHookFiles(staleMinutes: Int) -> Bool {
@@ -193,14 +381,15 @@ final class CursorAgentStatusMonitor: ObservableObject {
         }
     }
 
-    /// Hook files often report `executing` while built-in WebSearch waits for approval
-    /// (preToolUse may not fire in Auto mode). Transcript state wins for those sessions.
+    /// Layer transcript-derived context on top of hook states. The hook file is the source
+    /// of truth for awaiting_input: measured Cursor timing shows `preToolUse` fires when the
+    /// approval card is shown and `postToolUse` after the decision, so the hook alone brackets
+    /// the yellow window correctly. Transcript signals must never override hook yellow.
     private func enrichHookSessionsWithTranscripts(
         _ sessions: [AgentSessionStatus],
-        staleMinutes: Int
+        analysisBySession: [String: TranscriptAnalysis]
     ) -> [AgentSessionStatus] {
-        let pendingBySession = CursorTranscriptParser.pendingApprovalBySessionID(maxAgeMinutes: staleMinutes)
-        let completedTurnBySession = CursorTranscriptParser.completedTurnBySessionID(maxAgeMinutes: staleMinutes)
+        let now = Date()
 
         return sessions.map { session in
             guard session.provider.lowercased() == "cursor" else { return session }
@@ -210,36 +399,50 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 return session
             }
 
-            if completedTurnBySession[session.conversationID] == true,
-               session.displayState == .executing || session.displayState == .thinking {
+            // Hook yellow wins outright; transcripts lag the live card.
+            if rawState == "awaiting_input" || session.displayState == .awaitingInput {
+                return session
+            }
+
+            let analysis = analysisBySession[session.conversationID]
+
+            if analysis?.isUserPromptAwaitingResponse == true {
                 return AgentSessionStatus(
                     id: session.id,
                     provider: session.provider,
                     conversationID: session.conversationID,
                     chatName: session.chatName,
-                    rawState: "stopped",
-                    displayState: .stopped,
+                    projectName: session.projectName,
+                    rawState: "thinking",
+                    displayState: .thinking,
                     updatedAt: session.updatedAt,
-                    isVisible: true
+                    isVisible: true,
+                    executionStartedAt: session.executionStartedAt
                 )
             }
 
-            guard pendingBySession[session.conversationID] == true,
-                  session.displayState != .awaitingInput,
-                  rawState != "awaiting_input" else {
-                return session
+            // Transcript `turn_ended` lags behind live hooks. Never demote a fresh
+            // thinking/executing hook file to stopped or green never appears.
+            let hookIsLiveActive = ["thinking", "executing", "awaiting_input"].contains(rawState)
+                && now.timeIntervalSince(session.updatedAt) < 90
+            if analysis?.isTurnEndedAtTail == true,
+               (session.displayState == .executing || session.displayState == .thinking),
+               !hookIsLiveActive {
+                return AgentSessionStatus(
+                    id: session.id,
+                    provider: session.provider,
+                    conversationID: session.conversationID,
+                    chatName: session.chatName,
+                    projectName: session.projectName,
+                    rawState: "stopped",
+                    displayState: .stopped,
+                    updatedAt: session.updatedAt,
+                    isVisible: true,
+                    executionStartedAt: session.executionStartedAt
+                )
             }
 
-            return AgentSessionStatus(
-                id: session.id,
-                provider: session.provider,
-                conversationID: session.conversationID,
-                chatName: session.chatName,
-                rawState: "awaiting_input",
-                displayState: .awaitingInput,
-                updatedAt: session.updatedAt,
-                isVisible: true
-            )
+            return session
         }
     }
 
@@ -284,6 +487,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
             let chatName = normalizedChatName(
                 json["name"] as? String ?? json["title"] as? String ?? json["conversation_title"] as? String
             )
+            let projectName = normalizedProjectName(
+                json["project"] as? String ?? json["project_name"] as? String ?? json["workspace_name"] as? String
+            )
             let ageMs = nowMs - tsMs
             let resolved = AgentTrafficLightMapper.resolveHookState(
                 rawState: state,
@@ -298,18 +504,22 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     provider: provider,
                     conversationID: conversationID,
                     chatName: chatName,
+                    projectName: projectName,
                     rawState: state,
                     displayState: resolved.state,
                     updatedAt: Date(timeIntervalSince1970: TimeInterval(tsMs) / 1000),
-                    isVisible: resolved.visible
+                    isVisible: resolved.visible,
+                    executionStartedAt: nil
                 )
             )
         }
 
-        return enrichChatNames(fromComposerStore: results)
+        let enriched = enrichChatNames(fromComposerStore: results)
+        return enrichProjectNamesFromTranscripts(enriched, maxAgeMinutes: staleMinutes)
     }
 
     private func buildTranscriptSessions(
+        analysisBySession: [String: TranscriptAnalysis],
         staleMinutes: Int,
         collapseMinutes: Int,
         inactiveMinutes: Int
@@ -318,12 +528,19 @@ final class CursorAgentStatusMonitor: ObservableObject {
         guard !paths.isEmpty else { return [] }
 
         var ids = Set<String>()
+        var projectNamesBySessionID: [String: String] = [:]
         var snapshots: [AgentSessionSnapshot] = []
 
         for path in paths {
             let sessionID = CursorTranscriptParser.sessionID(from: path)
             ids.insert(sessionID)
-            let analysis = CursorTranscriptParser.analyze(path: path)
+            let projectName = CursorTranscriptParser.displayProjectName(
+                fromSlug: CursorTranscriptParser.projectSlug(from: path)
+            )
+            if let projectName {
+                projectNamesBySessionID[sessionID] = projectName
+            }
+            let analysis = analysisBySession[sessionID] ?? CursorTranscriptParser.analyze(path: path)
             snapshots.append(
                 AgentSessionSnapshot(
                     sessionID: sessionID,
@@ -332,12 +549,14 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     isDone: analysis.isDone,
                     hasActiveToolUse: analysis.hasActiveToolUse,
                     hasPendingToolApproval: analysis.hasPendingToolApproval,
+                    isUserPromptAwaitingResponse: analysis.isUserPromptAwaitingResponse,
                     transcriptMtimeMs: analysis.mtimeMs
                 )
             )
         }
 
-        let composerMeta = CursorComposerStore.loadComposerMeta(forIDs: ids)
+        // Prefer lightweight composer headers; skip scanning every workspace DB each cycle.
+        let composerMeta = CursorComposerStore.loadComposerMeta(forIDs: ids, includeWorkspaceDatabases: false)
         snapshots = snapshots.map { snapshot in
             guard let meta = composerMeta[snapshot.sessionID] else { return snapshot }
             let lastActivity = max(snapshot.lastActivityMs, meta.updatedMs, meta.checkpointMs)
@@ -348,6 +567,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 isDone: snapshot.isDone,
                 hasActiveToolUse: snapshot.hasActiveToolUse,
                 hasPendingToolApproval: snapshot.hasPendingToolApproval,
+                isUserPromptAwaitingResponse: snapshot.isUserPromptAwaitingResponse,
                 transcriptMtimeMs: max(snapshot.transcriptMtimeMs, meta.checkpointMs)
             )
         }
@@ -364,15 +584,22 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 provider: "cursor",
                 conversationID: snapshot.sessionID,
                 chatName: normalizedChatName(composerMeta[snapshot.sessionID]?.name),
+                projectName: normalizedProjectName(projectNamesBySessionID[snapshot.sessionID]),
                 rawState: snapshot.composerStatus ?? "transcript",
                 displayState: mapped.state,
                 updatedAt: Date(timeIntervalSince1970: TimeInterval(snapshot.lastActivityMs) / 1000),
-                isVisible: mapped.visible
+                isVisible: mapped.visible,
+                executionStartedAt: nil
             )
         }
     }
 
     private func normalizedChatName(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func normalizedProjectName(_ value: String?) -> String? {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
     }
@@ -385,7 +612,10 @@ final class CursorAgentStatusMonitor: ObservableObject {
         )
         guard !unresolvedCursorIDs.isEmpty else { return sessions }
 
-        let composerMeta = CursorComposerStore.loadComposerMeta(forIDs: unresolvedCursorIDs)
+        let composerMeta = CursorComposerStore.loadComposerMeta(
+            forIDs: unresolvedCursorIDs,
+            includeWorkspaceDatabases: false
+        )
         return sessions.map { session in
             guard session.provider.lowercased() == "cursor",
                   normalizedChatName(session.chatName) == nil,
@@ -397,12 +627,119 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 provider: session.provider,
                 conversationID: session.conversationID,
                 chatName: name,
+                projectName: session.projectName,
                 rawState: session.rawState,
                 displayState: session.displayState,
                 updatedAt: session.updatedAt,
-                isVisible: session.isVisible
+                isVisible: session.isVisible,
+                executionStartedAt: session.executionStartedAt
             )
         }
+    }
+
+    private func enrichProjectNamesFromTranscripts(
+        _ sessions: [AgentSessionStatus],
+        maxAgeMinutes: Int
+    ) -> [AgentSessionStatus] {
+        let unresolvedCursorIDs = Set(
+            sessions
+                .filter { $0.provider.lowercased() == "cursor" && normalizedProjectName($0.projectName) == nil }
+                .map(\.conversationID)
+        )
+        guard !unresolvedCursorIDs.isEmpty else { return sessions }
+
+        let projectBySessionID = projectNamesFromTranscriptPaths(maxAgeMinutes: maxAgeMinutes)
+        return sessions.map { session in
+            guard session.provider.lowercased() == "cursor",
+                  normalizedProjectName(session.projectName) == nil,
+                  let projectName = projectBySessionID[session.conversationID] else {
+                return session
+            }
+            return AgentSessionStatus(
+                id: session.id,
+                provider: session.provider,
+                conversationID: session.conversationID,
+                chatName: session.chatName,
+                projectName: projectName,
+                rawState: session.rawState,
+                displayState: session.displayState,
+                updatedAt: session.updatedAt,
+                isVisible: session.isVisible,
+                executionStartedAt: session.executionStartedAt
+            )
+        }
+    }
+
+    private func latestDisplayStateByConversationID(
+        from sessions: [AgentSessionStatus]
+    ) -> [String: AgentTrafficLightState] {
+        var result: [String: AgentTrafficLightState] = [:]
+        let sorted = sessions.sorted { $0.updatedAt > $1.updatedAt }
+        for session in sorted {
+            if result[session.conversationID] == nil {
+                result[session.conversationID] = session.displayState
+            }
+        }
+        return result
+    }
+
+    private func applyExecutionRunState(
+        to sessions: [AgentSessionStatus],
+        previousStateByConversationID: [String: AgentTrafficLightState],
+        now: Date
+    ) -> [AgentSessionStatus] {
+        let activeConversationIDs = Set(sessions.map(\.conversationID))
+        executionStartByConversationID = executionStartByConversationID.filter {
+            activeConversationIDs.contains($0.key)
+        }
+
+        return sessions.map { session in
+            let start: Date?
+            if session.displayState == .executing {
+                let previousState = previousStateByConversationID[session.conversationID]
+                if previousState == .executing {
+                    let existing = executionStartByConversationID[session.conversationID]
+                    let fallback = session.updatedAt
+                    let resolvedStart = existing ?? fallback
+                    executionStartByConversationID[session.conversationID] = resolvedStart
+                    start = resolvedStart
+                } else {
+                    executionStartByConversationID[session.conversationID] = now
+                    start = now
+                }
+            } else {
+                executionStartByConversationID.removeValue(forKey: session.conversationID)
+                start = nil
+            }
+
+            let executionStartForSession = (session.displayState == .executing) ? start : nil
+
+            return AgentSessionStatus(
+                id: session.id,
+                provider: session.provider,
+                conversationID: session.conversationID,
+                chatName: session.chatName,
+                projectName: session.projectName,
+                rawState: session.rawState,
+                displayState: session.displayState,
+                updatedAt: session.updatedAt,
+                isVisible: session.isVisible,
+                executionStartedAt: executionStartForSession
+            )
+        }
+    }
+
+    private func projectNamesFromTranscriptPaths(maxAgeMinutes: Int) -> [String: String] {
+        var projectBySessionID: [String: String] = [:]
+        let paths = CursorTranscriptParser.listRecentTranscriptPaths(maxAgeMinutes: maxAgeMinutes)
+        for path in paths {
+            let sessionID = CursorTranscriptParser.sessionID(from: path)
+            guard let projectName = CursorTranscriptParser.displayProjectName(
+                fromSlug: CursorTranscriptParser.projectSlug(from: path)
+            ) else { continue }
+            projectBySessionID[sessionID] = projectName
+        }
+        return projectBySessionID
     }
 
     private func isCursorRunning() -> Bool {

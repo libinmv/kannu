@@ -29,10 +29,10 @@ enum AgentTrafficLightState: Equatable, Comparable {
 
     private var sortPriority: Int {
         switch self {
+        case .awaitingInput: return 6
         case .executing: return 5
         case .thinking: return 4
-        case .awaitingInput: return 3
-        case .stopped: return 2
+        case .stopped: return 3
         case .inactive: return 1
         }
     }
@@ -41,15 +41,15 @@ enum AgentTrafficLightState: Equatable, Comparable {
         lhs.sortPriority < rhs.sortPriority
     }
 
-    /// Green light: any active agent work (thinking, executing, planning, etc.).
+    /// Green light: agent is actively working. Mutually exclusive with yellow/red.
     var showsGreenTrafficLight: Bool {
         switch self {
         case .executing, .thinking: return true
-        default: return false
+        case .awaitingInput, .stopped, .inactive: return false
         }
     }
 
-    /// Yellow light: waiting on the user.
+    /// Yellow light: waiting on the user (approval / question). Exclusive — never with green.
     var showsYellowTrafficLight: Bool {
         self == .awaitingInput
     }
@@ -65,10 +65,12 @@ struct AgentSessionStatus: Identifiable, Equatable {
     let provider: String
     let conversationID: String
     let chatName: String?
+    let projectName: String?
     let rawState: String
     let displayState: AgentTrafficLightState
     let updatedAt: Date
     let isVisible: Bool
+    let executionStartedAt: Date?
 
     var providerLabel: String {
         switch provider.lowercased() {
@@ -84,6 +86,11 @@ struct AgentSessionStatus: Identifiable, Equatable {
         if !trimmed.isEmpty { return trimmed }
         return String(localized: "Untitled chat")
     }
+
+    var displayProjectName: String? {
+        let trimmed = projectName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
 }
 
 struct AgentSessionSnapshot: Equatable {
@@ -93,13 +100,15 @@ struct AgentSessionSnapshot: Equatable {
     let isDone: Bool
     let hasActiveToolUse: Bool
     let hasPendingToolApproval: Bool
+    let isUserPromptAwaitingResponse: Bool
     let transcriptMtimeMs: Int64
 }
 
 enum AgentTrafficLightMapper {
     private static let runningStaleSeconds: TimeInterval = 360
     private static let abortedIdleSeconds: TimeInterval = 90
-    private static let awaitingInputStaleMs: Int64 = 90_000
+    /// Keep yellow visible for the full approval-card window (users often pause).
+    private static let awaitingInputStaleMs: Int64 = 300_000
 
     private static func isAwaitingUserInputStatus(_ status: String) -> Bool {
         switch status.lowercased() {
@@ -152,6 +161,10 @@ enum AgentTrafficLightMapper {
         let abortedIdle = liveStatus == "aborted"
             && checkpointMs > 0
             && nowSec - TimeInterval(checkpointMs) / 1000 > abortedIdleSeconds
+
+        if session.isUserPromptAwaitingResponse {
+            return (.thinking, true)
+        }
 
         if session.isDone && !isGenerating {
             return lifecycleAfterStop()
@@ -213,13 +226,24 @@ enum AgentTrafficLightMapper {
         return (.inactive, false)
     }
 
-    /// The traffic light reflects the most recently updated session, not a mix of stale sessions.
+    /// Highest-priority active session drives the traffic light across all projects.
     static func resolveDisplayState(from sessions: [AgentSessionStatus]) -> AgentTrafficLightState {
-        let visible = sessions.filter(\.isVisible)
-        guard let primary = visible.max(by: { $0.updatedAt < $1.updatedAt }) else {
-            return .inactive
-        }
-        return primary.displayState
+        let visible = sessions.filter { $0.isVisible && !isSimulationSession($0) }
+        return visible.map(\.displayState).max() ?? .inactive
+    }
+
+    static func primarySession(from sessions: [AgentSessionStatus]) -> AgentSessionStatus? {
+        let visible = sessions.filter { $0.isVisible && !isSimulationSession($0) }
+        guard !visible.isEmpty else { return nil }
+        let topState = visible.map(\.displayState).max() ?? .inactive
+        return visible
+            .filter { $0.displayState == topState }
+            .max(by: { $0.updatedAt < $1.updatedAt })
+    }
+
+    private static func isSimulationSession(_ session: AgentSessionStatus) -> Bool {
+        session.conversationID.lowercased().contains("kannu-test")
+            || session.id.lowercased().contains("kannu-test")
     }
 
     static func aggregate(_ sessions: [AgentSessionStatus]) -> AgentTrafficLightState {

@@ -128,7 +128,7 @@ class AppleMusicController: MediaControllerProtocol {
         try? await Task.sleep(for: .milliseconds(150))
         await updatePlaybackInfo()
     }
-    
+
     func isActive() -> Bool {
         let runningApps = NSWorkspace.shared.runningApplications
         return runningApps.contains { $0.bundleIdentifier == "com.apple.Music" }

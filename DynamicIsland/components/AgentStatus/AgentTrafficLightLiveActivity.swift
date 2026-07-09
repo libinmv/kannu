@@ -76,20 +76,19 @@ private struct ConditionalPulseModifier: ViewModifier {
         content
             .scaleEffect(isPulsing ? 1.15 : 1.0)
             .opacity(isPulsing ? 0.75 : 1.0)
-            .onAppear {
-                guard isEnabled else { return }
-                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                    isPulsing = true
-                }
-            }
+            // Using .animation(value:) instead of withAnimation so that flipping
+            // isPulsing back to false replaces the repeatForever animation and
+            // actually stops the pulse (withAnimation-started repeatForever
+            // animations are not cancelled by a plain state write).
+            .animation(
+                isPulsing
+                    ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true)
+                    : .easeOut(duration: 0.15),
+                value: isPulsing
+            )
+            .onAppear { isPulsing = isEnabled }
             .onChange(of: isEnabled) { _, enabled in
-                if enabled {
-                    withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                        isPulsing = true
-                    }
-                } else {
-                    isPulsing = false
-                }
+                isPulsing = enabled
             }
     }
 }

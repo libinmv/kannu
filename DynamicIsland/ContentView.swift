@@ -95,7 +95,6 @@ struct ContentView: View {
     @Default(.fullBatteryHUDStyle) var fullBatteryHUDStyle
     @Default(.notchSkinScrimOpacity) private var notchSkinScrimOpacity
     @Default(.notchFillColor) private var notchFillColor
-    @State private var notchFillColorToken = UUID()
     @Default(.enableAgentStatusFeature) private var enableAgentStatusFeature
     @Default(.selectedIdleAnimation) private var selectedIdleAnimation
     
@@ -465,7 +464,12 @@ struct ContentView: View {
             return true
         }
 
-        return !isClosedNotchEmptyState
+        if !isClosedNotchEmptyState {
+            return true
+        }
+
+        // Keep fill/skin visible in idle empty state so appearance changes remain previewable.
+        return true
     }
 
     private var isClosedNotchEmptyState: Bool {
@@ -618,17 +622,16 @@ struct ContentView: View {
                             Image(nsImage: skin)
                                 .resizable()
                                 .scaledToFill()
+                            if notchSkinScrimOpacity > 0 {
+                                Color.black.opacity(notchSkinScrimOpacity)
+                            }
                         } else {
                             notchFillColor
-                        }
-                        if notchSkinScrimOpacity > 0 {
-                            Color.black.opacity(notchSkinScrimOpacity)
                         }
                         if shouldShowFullNotchShimmer {
                             NotchShimmerView(cornerRadius: closedNotchShimmerCornerRadius)
                         }
                     }
-                    .id(notchFillColorToken)
                 }
             }
             .clipShape(resolvedClipShape)
@@ -644,6 +647,7 @@ struct ContentView: View {
             .padding(.horizontal, isIslandMode ? dynamicIslandShadowInset : 0)
             .padding(.bottom, isIslandMode ? dynamicIslandShadowInset : 0)
             .padding(.top, pillTopOffset)
+            .environment(\.notchForeground, notchFillColor.contrastingForeground)
             .accessibilityIdentifier("KannuNotch")
     }
 
@@ -850,12 +854,6 @@ struct ContentView: View {
                 // unreliable); the window-cleanup path calls this before closing.
                 vm.onViewTeardown = { performViewTeardown() }
             }
-            .onChange(of: notchFillColor) { _, _ in
-                notchFillColorToken = UUID()
-            }
-            .onChange(of: notchSkinScrimOpacity) { _, _ in
-                notchFillColorToken = UUID()
-            }
             .onChange(of: vm.notchState) { _, state in
                 if state == .open {
                     suppressMusicControlWindowUpdates()
@@ -1048,11 +1046,8 @@ struct ContentView: View {
                       } else if vm.notchState == .closed && capsLockManager.isCapsLockActive && Defaults[.enableCapsLockIndicator] && !vm.hideOnClosed && !lockScreenManager.isLocked {
                           InlineHUD(type: .constant(.capsLock), value: .constant(1.0), icon: .constant(""), hoverAnimation: $isHovering, gestureProgress: $gestureProgress)
                               .transition(AnyTransition.move(edge: .trailing).combined(with: .opacity))
-                      } else if canShowMusicDuringExpansion && musicPairingEligible {
-                          MusicLiveActivity(secondary: musicSecondary)
-                              .id("closed-music-live-activity")
-                              .transition(closedLiveActivitySwapTransition)
                       } else if !isCurrentScreenExpansionVisible && vm.notchState == .closed && enableAgentStatusFeature && agentStatusMonitor.shouldShowTrafficLight && !vm.hideOnClosed {
+                          // Agent traffic light wins over music so green/yellow are visible while agents run.
                           AgentTrafficLightLiveActivity(
                               isHovering: isHovering,
                               gestureProgress: gestureProgress,
@@ -1061,6 +1056,10 @@ struct ContentView: View {
                               }
                           )
                               .transition(.blurReplace.animation(.interactiveSpring(dampingFraction: 1.2)))
+                      } else if canShowMusicDuringExpansion && musicPairingEligible {
+                          MusicLiveActivity(secondary: musicSecondary)
+                              .id("closed-music-live-activity")
+                              .transition(closedLiveActivitySwapTransition)
                       } else if (!isCurrentScreenExpansionVisible || currentScreenExpansionType == .timer) && vm.notchState == .closed && timerManager.isTimerActive && coordinator.timerLiveActivityEnabled && !vm.hideOnClosed {
                           TimerLiveActivity()
                       } else if (!isCurrentScreenExpansionVisible || currentScreenExpansionType == .recording) && vm.notchState == .closed && (recordingManager.isRecording || !recordingManager.isRecorderIdle) && Defaults[.enableScreenRecordingDetection] && !vm.hideOnClosed && !musicPairingEligible {
@@ -1542,7 +1541,7 @@ struct ContentView: View {
                 case .shelf:
                     Image(systemName: "tray.and.arrow.down.fill")
                         .font(.system(size: badgeSize * 0.50, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(notchFillColor.contrastingForeground)
                 }
             }
             .frame(width: badgeSize, height: badgeSize)
@@ -1597,7 +1596,7 @@ struct ContentView: View {
             // File count badge: bold white number, like a minimal pill
             Text("\(count)")
                 .font(.system(.callout, design: .rounded, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(notchFillColor.contrastingForeground)
                 .contentTransition(.numericText(countsDown: false))
                 .animation(.smooth(duration: 0.3), value: count)
                 .frame(alignment: .center)
@@ -1644,7 +1643,7 @@ struct ContentView: View {
 
                             Image(systemName: musicManager.isPlaying ? "pause.fill" : "play.fill")
                                 .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(.white.opacity(isHoveringClosedMusicWaveformControl ? 0.98 : 0.0))
+                                .foregroundStyle(notchFillColor.contrastingForeground.opacity(isHoveringClosedMusicWaveformControl ? 0.98 : 0.0))
                                 .contentTransition(.symbolEffect(.replace))
                         }
                         .padding(.horizontal, 14)
@@ -2741,6 +2740,7 @@ private enum MusicSecondaryLiveActivity: Equatable {
 }
 
 private struct MusicTimerSupplementView: View {
+    @Environment(\.notchForeground) private var notchForeground
     @ObservedObject var timerManager: TimerManager
     let accentColor: Color
     let showsCountdown: Bool
@@ -2801,7 +2801,7 @@ private struct MusicTimerSupplementView: View {
         VStack(alignment: .trailing, spacing: showsBarProgress ? 4 : 0) {
             Text(countdownText)
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                .foregroundColor(timerManager.isOvertime ? .red : .white)
+                .foregroundColor(timerManager.isOvertime ? .red : notchForeground)
                 .contentTransition(.numericText())
                 .animation(.smooth(duration: 0.25), value: timerManager.remainingTime)
                 .frame(width: countdownFrameWidth, alignment: .trailing)
@@ -2836,7 +2836,7 @@ private struct MusicTimerSupplementView: View {
     private var timerNameView: some View {
         Text(timerManager.timerName)
             .font(.system(size: 12, weight: .medium))
-            .foregroundColor(.white)
+            .foregroundColor(notchForeground)
             .lineLimit(1)
             .frame(width: timerNameFrameWidth, alignment: .trailing)
     }

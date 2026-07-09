@@ -40,120 +40,146 @@ struct MinimalisticMusicPlayerView: View {
     @State private var hudLastDragged: Date = .distantPast
     @Default(.enableLyrics) private var enableLyrics
     @Default(.timerPresets) private var timerPresets
+    private let lyricsButtonReservedWidth: CGFloat = 34
     private let seekInterval: TimeInterval = 10
     private let skipMagnitude: CGFloat = 8
 
     var body: some View {
-        if !musicManager.hasActiveSession {
-            // Inactive Now Playing placeholder
-            VStack(spacing: 0) {
-                Spacer(minLength: 0)
+        Group {
+            if !musicManager.hasActiveSession {
+                // Inactive Now Playing placeholder
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
 
-                VStack(spacing: 8) {
-                    Image(systemName: "music.note")
-                        .font(.system(size: 24, weight: .light))
-                        .foregroundColor(.gray.opacity(0.65))
-                    Text("Now Playing")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.55))
-                    Text("Nothing playing")
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundColor(.gray.opacity(0.65))
+                    VStack(spacing: 8) {
+                        Image(systemName: "music.note")
+                            .font(.system(size: 24, weight: .light))
+                            .foregroundColor(.gray.opacity(0.65))
+                        Text("Now Playing")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.55))
+                        Text("Nothing playing")
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundColor(.gray.opacity(0.65))
+                    }
+
+                    Spacer(minLength: 0)
+
+                    timerCountdownSection
                 }
+                .padding(.horizontal, shouldUseDynamicIslandMode(for: vm.screen) ? -4 : 12)
+                .padding(.vertical, shouldUseDynamicIslandMode(for: vm.screen) ? 14 : 0)
+                .frame(maxWidth: .infinity)
+                .frame(height: calculateDynamicHeight())
+                .animation(.smooth(duration: 0.3), value: dynamicHeightSignature)
+            } else {
+                VStack(spacing: 0) {
+                    if showMinimalisticBatteryIndicator || shouldUseDynamicIslandMode(for: vm.screen) {
+                        // ── Battery ON / DI mode: original flat layout (unchanged) ──
+                        GeometryReader { headerGeo in
+                            let albumArtWidth: CGFloat = 50
+                            let spacing: CGFloat = 10
+                            // The right-side time label in the progress bar below is 42pt wide,
+                            // trailing-aligned, so its center sits 21pt from the right edge.
+                            // We use the same 42pt block for the visualizer so the candles
+                            // are perfectly centred above the "-00:00" text.
+                            let vizBlockWidth: CGFloat = useMusicVisualizer ? 42 : 0
+                            let visualizerBarWidth: CGFloat = useMusicVisualizer ? 24 : 0
+                            // Leave an extra 8pt gap between the title text and the visualizer.
+                            let textWidth = max(
+                                0,
+                                headerGeo.size.width
+                                    - albumArtWidth
+                                    - spacing
+                                    - lyricsButtonReservedWidth
+                                    - (useMusicVisualizer ? (vizBlockWidth + spacing) : 0)
+                            )
+                            HStack(alignment: .center, spacing: spacing) {
+                                MinimalisticAlbumArtView(vm: vm, albumArtNamespace: albumArtNamespace)
+                                    .frame(width: albumArtWidth, height: albumArtWidth)
 
-                Spacer(minLength: 0)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    if !musicManager.songTitle.isEmpty {
+                                        MusicTitleMarqueeView(
+                                            text: musicManager.songTitle,
+                                            isExplicit: musicManager.isCurrentTrackExplicit,
+                                            font: .system(size: 12, weight: .semibold),
+                                            nsFont: .subheadline,
+                                            textColor: .white,
+                                            frameWidth: textWidth,
+                                            badgeHeight: 13
+                                        )
+                                    }
 
-                timerCountdownSection
-            }
-            .padding(.horizontal, shouldUseDynamicIslandMode(for: vm.screen) ? -4 : 12)
-            .padding(.vertical, shouldUseDynamicIslandMode(for: vm.screen) ? 14 : 0)
-            .frame(maxWidth: .infinity)
-            .frame(height: calculateDynamicHeight())
-            .animation(.smooth(duration: 0.3), value: dynamicHeightSignature)
-        } else {
-            VStack(spacing: 0) {
-                if showMinimalisticBatteryIndicator || shouldUseDynamicIslandMode(for: vm.screen) {
-                    // ── Battery ON / DI mode: original flat layout (unchanged) ──
-                    GeometryReader { headerGeo in
-                        let albumArtWidth: CGFloat = 50
-                        let spacing: CGFloat = 10
-                        // The right-side time label in the progress bar below is 42pt wide,
-                        // trailing-aligned, so its center sits 21pt from the right edge.
-                        // We use the same 42pt block for the visualizer so the candles
-                        // are perfectly centred above the "-00:00" text.
-                        let vizBlockWidth: CGFloat = useMusicVisualizer ? 42 : 0
-                        let visualizerBarWidth: CGFloat = useMusicVisualizer ? 24 : 0
-                        // Leave an extra 8pt gap between the title text and the visualizer.
-                        let textWidth = max(0, headerGeo.size.width - albumArtWidth - spacing - (useMusicVisualizer ? (vizBlockWidth + spacing) : 0))
-                        HStack(alignment: .center, spacing: spacing) {
-                            MinimalisticAlbumArtView(vm: vm, albumArtNamespace: albumArtNamespace)
-                                .frame(width: albumArtWidth, height: albumArtWidth)
+                                    Text(musicManager.artistName)
+                                        .font(.system(size: 10, weight: .regular))
+                                        .foregroundColor(Defaults[.playerColorTinting] ? Color(nsColor: musicManager.avgColor).ensureMinimumBrightness(factor: 0.6) : .gray)
+                                        .lineLimit(1)
 
-                            VStack(alignment: .leading, spacing: 1) {
-                                if !musicManager.songTitle.isEmpty {
-                                    MusicTitleMarqueeView(
-                                        text: musicManager.songTitle,
-                                        isExplicit: musicManager.isCurrentTrackExplicit,
-                                        font: .system(size: 12, weight: .semibold),
-                                        nsFont: .subheadline,
-                                        textColor: .white,
-                                        frameWidth: textWidth,
-                                        badgeHeight: 13
-                                    )
                                 }
+                                .frame(width: textWidth, alignment: .leading)
 
-                                Text(musicManager.artistName)
-                                    .font(.system(size: 10, weight: .regular))
-                                    .foregroundColor(Defaults[.playerColorTinting] ? Color(nsColor: musicManager.avgColor).ensureMinimumBrightness(factor: 0.6) : .gray)
-                                    .lineLimit(1)
-
-                            }
-                            .frame(width: textWidth, alignment: .leading)
-
-                            if useMusicVisualizer {
-                                // 48-pt block matches the trailing time-label width so the
-                                // candle centre lines up with the centre of "-00:00".
-                                ZStack {
-                                    visualizer
-                                        .frame(width: visualizerBarWidth)
+                                if useMusicVisualizer {
+                                    // 48-pt block matches the trailing time-label width so the
+                                    // candle centre lines up with the centre of "-00:00".
+                                    ZStack {
+                                        visualizer
+                                            .frame(width: visualizerBarWidth)
+                                    }
+                                    .frame(width: vizBlockWidth)
                                 }
-                                .frame(width: vizBlockWidth)
                             }
                         }
+                        .frame(height: 50)
+                    } else {
+                        // ── Battery OFF (notch mode): U-shaped notch-hugging layout ──
+                        notchHuggingHeader
                     }
-                    .frame(height: 50)
-                } else {
-                    // ── Battery OFF (notch mode): U-shaped notch-hugging layout ──
-                    notchHuggingHeader
-                }
 
-                // Compact progress bar
-                progressBar
-                    .padding(.top, batteryOffNotchMode ? 4 : 6)
-                
-                // Compact playback controls
-                if shouldShowControlHUDRow {
-                    controlHUDRow
-                        .padding(.top, 4)
-                } else {
-                    playbackControls
-                        .padding(.top, 4)
-                }
+                    // Compact progress bar
+                    progressBar
+                        .padding(.top, batteryOffNotchMode ? 4 : 6)
+                    
+                    // Compact playback controls
+                    if shouldShowControlHUDRow {
+                        controlHUDRow
+                            .padding(.top, 4)
+                    } else {
+                        playbackControls
+                            .padding(.top, 4)
+                    }
 
-                if enableLyrics {
-                    lyricsView
-                        .padding(.top, 10)
-                }
+                    if enableLyrics {
+                        lyricsView
+                            .padding(.top, 10)
+                    }
 
-                timerCountdownSection
+                    timerCountdownSection
+                }
+                .padding(.horizontal, shouldUseDynamicIslandMode(for: vm.screen) ? -4 : 12)
+                .padding(.top, shouldUseDynamicIslandMode(for: vm.screen) ? 14 : (batteryOffNotchMode ? 10 : 6))
+                .padding(.bottom, shouldUseDynamicIslandMode(for: vm.screen) ? 14 : (batteryOffNotchMode ? 10 : 6))
+                .frame(maxWidth: .infinity)
+                .frame(height: calculateDynamicHeight(), alignment: .top)
+                .animation(.smooth(duration: 0.3), value: dynamicHeightSignature)
             }
-            .padding(.horizontal, shouldUseDynamicIslandMode(for: vm.screen) ? -4 : 12)
-            .padding(.top, shouldUseDynamicIslandMode(for: vm.screen) ? 14 : (batteryOffNotchMode ? 10 : 6))
-            .padding(.bottom, shouldUseDynamicIslandMode(for: vm.screen) ? 14 : (batteryOffNotchMode ? 10 : 6))
-            .frame(maxWidth: .infinity)
-            .frame(height: calculateDynamicHeight(), alignment: .top)
-            .animation(.smooth(duration: 0.3), value: dynamicHeightSignature)
         }
+        .overlay(alignment: .topTrailing) {
+            cornerLyricsButton
+                .padding(.top, 2)
+                .padding(.trailing, 2)
+        }
+    }
+
+    private var cornerLyricsButton: some View {
+        HoverButton(
+            icon: enableLyrics ? "quote.bubble.fill" : "quote.bubble",
+            iconColor: enableLyrics ? brandAccentColor : .white,
+            scale: .medium
+        ) {
+            enableLyrics.toggle()
+        }
+        .contentShape(Circle())
     }
 
     // MARK: - TypingLyricView
@@ -341,7 +367,14 @@ struct MinimalisticMusicPlayerView: View {
                     if !musicManager.songTitle.isEmpty {
                         // In the U-shaped layout the visualizer sits in a 48-pt wide zone
                         // (matching the time text) and has a 12-pt right spacer inside it.
-                        let textAreaWidth = max(0, totalWidth - albumArtSize - 10 - (useMusicVisualizer ? (visualizerWidth + 12 + 10) : 0))
+                        let textAreaWidth = max(
+                            0,
+                            totalWidth
+                                - albumArtSize
+                                - 10
+                                - lyricsButtonReservedWidth
+                                - (useMusicVisualizer ? (visualizerWidth + 12 + 10) : 0)
+                        )
                         MusicTitleMarqueeView(
                             text: musicManager.songTitle,
                             isExplicit: musicManager.isCurrentTrackExplicit,
@@ -702,7 +735,10 @@ struct MinimalisticMusicPlayerView: View {
 
     private var displayedSlots: [MusicControlButton] {
         if showCustomControls {
-            let normalized = slotConfig.normalized(allowingMediaOutput: showMediaOutputControl, isAppleMusicActive: isAppleMusicActive)
+            let normalized = slotConfig.normalized(
+                allowingMediaOutput: showMediaOutputControl,
+                isAppleMusicActive: isAppleMusicActive
+            )
             return normalized.contains(where: { $0 != .none }) ? normalized : MusicControlButton.defaultLayout
         }
 
@@ -964,7 +1000,7 @@ struct MinimalisticAlbumArtView: View {
             .clipShape(RoundedRectangle(cornerRadius: albumArtCornerRadius))
             .scaleEffect(x: 1.04, y: 1.05)
             .rotationEffect(.degrees(92))
-            .blur(radius: 14)
+            .blur(radius: 12)
             .opacity(
                 usesLiveCanvasArtwork
                     ? (musicManager.isPlaying ? 0.35 : 0.12)
@@ -972,7 +1008,7 @@ struct MinimalisticAlbumArtView: View {
             )
             .shadow(
                 color: Color(nsColor: musicManager.avgColor).opacity(usesLiveCanvasArtwork ? 0.14 : 0.08),
-                radius: usesLiveCanvasArtwork ? 6 : 4,
+                radius: usesLiveCanvasArtwork ? 5 : 3,
                 x: 0,
                 y: 0
             )

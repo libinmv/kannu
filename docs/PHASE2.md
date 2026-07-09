@@ -1,6 +1,6 @@
 # Phase 2 — Windows and Linux Architecture
 
-Kannu Dynamic Island (macOS) cannot be ported incrementally: the upstream app depends on AppKit, `NSScreen.safeAreaInsets`, private SkyLight APIs, EventKit, and other macOS-only frameworks. Phase 2 introduces **platform-specific UI shells** that share a **common agent-status core**.
+Kannu Dynamic Island (macOS) cannot be ported incrementally: the upstream app depends on AppKit, `NSScreen.safeAreaInsets`, private SkyLight APIs, and other macOS-only frameworks. Phase 2 introduces **platform-specific UI shells** that share a **common agent-status core**.
 
 ## Goals (v1)
 

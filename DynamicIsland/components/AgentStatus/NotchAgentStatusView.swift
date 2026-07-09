@@ -1,18 +1,45 @@
+import Foundation
 import SwiftUI
 
 struct NotchAgentStatusView: View {
+    @EnvironmentObject private var vm: DynamicIslandViewModel
     @ObservedObject private var monitor = CursorAgentStatusMonitor.shared
+    @State private var isSuppressingScrollGesture = false
+    private let scrollSuppressionToken = UUID()
+
+    private var dedupedSessions: [AgentSessionStatus] {
+        deduplicateLatestSessions(monitor.sessions)
+    }
 
     private var visibleSessions: [AgentSessionStatus] {
-        monitor.sessions.filter(\.isVisible)
+        dedupedSessions.filter(\.isVisible)
     }
 
     private var allSessions: [AgentSessionStatus] {
-        monitor.sessions.sorted { $0.updatedAt > $1.updatedAt }
+        visibleSessions.sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    private var recentChats: [AgentSessionStatus] {
+        guard let primaryID = primarySession?.id else { return allSessions }
+        return allSessions.filter { $0.id != primaryID }
     }
 
     private var primarySession: AgentSessionStatus? {
-        visibleSessions.max { $0.updatedAt < $1.updatedAt }
+        AgentTrafficLightMapper.primarySession(from: visibleSessions)
+    }
+
+    private func deduplicateLatestSessions(_ sessions: [AgentSessionStatus]) -> [AgentSessionStatus] {
+        var latestByConversationID: [String: AgentSessionStatus] = [:]
+        for session in sessions {
+            guard let existing = latestByConversationID[session.conversationID] else {
+                latestByConversationID[session.conversationID] = session
+                continue
+            }
+            if session.updatedAt > existing.updatedAt {
+                latestByConversationID[session.conversationID] = session
+            }
+        }
+        return Array(latestByConversationID.values)
     }
 
     var body: some View {
@@ -28,21 +55,27 @@ struct NotchAgentStatusView: View {
                         .padding(.vertical, 24)
                 }
 
-                if allSessions.count > 1 {
-                    Text("All sessions")
+                if !recentChats.isEmpty {
+                    Text("Recent chats")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
-                    ForEach(allSessions) { session in
-                        sessionRow(session, isPrimary: session.id == primarySession?.id)
+                    ForEach(recentChats) { session in
+                        sessionRow(session)
                     }
-                } else if allSessions.count == 1, primarySession == nil {
+                } else if !allSessions.isEmpty, primarySession == nil {
                     ForEach(allSessions) { session in
-                        sessionRow(session, isPrimary: false)
+                        sessionRow(session)
                     }
                 }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+        }
+        .onHover { hovering in
+            updateScrollGestureSuppression(for: hovering)
+        }
+        .onDisappear {
+            updateScrollGestureSuppression(for: false)
         }
     }
 
@@ -51,20 +84,23 @@ struct NotchAgentStatusView: View {
         HStack(spacing: 12) {
             AgentProviderIconView(source: .init(rawProvider: session.provider), size: 28)
             VStack(alignment: .leading, spacing: 4) {
-                Text(session.providerLabel)
-                    .font(.headline)
-                Text(session.displayState.displayName)
-                    .font(.subheadline)
-                    .foregroundStyle(stateColor(session.displayState))
+                AgentChatNameLabel(
+                    text: session.providerLabel,
+                    secondarySuffix: session.displayProjectName,
+                    maxStaticLength: 18,
+                    font: .headline,
+                    nsFont: .headline,
+                    textColor: .primary,
+                    secondaryTextColor: .secondary,
+                    marqueeWidth: 220
+                )
+                statusText(for: session, font: .subheadline)
                 AgentChatNameLabel(
                     text: session.displayChatName,
                     font: .caption2,
                     textColor: .secondary,
                     marqueeWidth: 180
                 )
-                Text(session.updatedAt, style: .relative)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
             stateBadge(session.displayState, large: true)
@@ -74,38 +110,60 @@ struct NotchAgentStatusView: View {
     }
 
     @ViewBuilder
-    private func sessionRow(_ session: AgentSessionStatus, isPrimary: Bool) -> some View {
+    private func sessionRow(_ session: AgentSessionStatus) -> some View {
         HStack(spacing: 10) {
             AgentProviderIconView(source: .init(rawProvider: session.provider), size: 20)
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    Text(session.providerLabel)
-                        .font(.caption.weight(.semibold))
-                    if isPrimary {
-                        Text("Latest")
-                            .font(.caption2)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(.white.opacity(0.12), in: Capsule())
-                    }
+                    AgentChatNameLabel(
+                        text: session.providerLabel,
+                        secondarySuffix: session.displayProjectName,
+                        maxStaticLength: 16,
+                        font: .caption.weight(.semibold),
+                        nsFont: .caption1,
+                        textColor: .primary,
+                        secondaryTextColor: .secondary,
+                        marqueeWidth: 160
+                    )
                 }
-                Text(session.displayState.displayName)
-                    .font(.caption2)
-                    .foregroundStyle(session.isVisible ? stateColor(session.displayState) : .secondary)
+                statusText(for: session, font: .caption2)
                 AgentChatNameLabel(
                     text: session.displayChatName,
                     marqueeWidth: 140
                 )
-                Text(session.updatedAt, style: .relative)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
             stateBadge(session.displayState, large: false)
         }
         .padding(10)
-        .opacity(session.isVisible ? 1 : 0.55)
         .background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    @ViewBuilder
+    private func statusText(for session: AgentSessionStatus, font: Font) -> some View {
+        if session.displayState == .executing {
+            let startedAt = session.executionStartedAt ?? session.updatedAt
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                (
+                    Text(session.displayState.displayName).foregroundStyle(stateColor(session.displayState))
+                    + Text(" " + formattedElapsed(since: startedAt, now: context.date))
+                        .foregroundStyle(.secondary)
+                )
+                .font(font)
+                .monospacedDigit()
+            }
+        } else {
+            Text(session.displayState.displayName)
+                .font(font)
+                .foregroundStyle(stateColor(session.displayState))
+        }
+    }
+
+    private func formattedElapsed(since start: Date, now: Date) -> String {
+        let elapsed = max(0, Int(now.timeIntervalSince(start)))
+        let minutes = elapsed / 60
+        let seconds = elapsed % 60
+        return String(format: "%02d:%02d", minutes, seconds)
     }
 
     @ViewBuilder
@@ -120,6 +178,7 @@ struct NotchAgentStatusView: View {
                 .fill(Color.yellow.opacity(state.showsYellowTrafficLight ? 1 : 0.25))
                 .frame(width: large ? 8 : 6, height: large ? 8 : 6)
             Circle()
+                // Green is already exclusive of yellow/red via AgentTrafficLightState.
                 .fill(Color.green.opacity(state.showsGreenTrafficLight ? 1 : 0.25))
                 .frame(width: large ? 8 : 6, height: large ? 8 : 6)
         }
@@ -133,5 +192,11 @@ struct NotchAgentStatusView: View {
         case .stopped: return .red
         case .inactive: return .secondary
         }
+    }
+
+    private func updateScrollGestureSuppression(for hovering: Bool) {
+        guard hovering != isSuppressingScrollGesture else { return }
+        isSuppressingScrollGesture = hovering
+        vm.setScrollGestureSuppression(hovering, token: scrollSuppressionToken)
     }
 }

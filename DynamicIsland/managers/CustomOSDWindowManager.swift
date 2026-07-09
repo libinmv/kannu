@@ -64,6 +64,15 @@ final class CustomOSDWindowManager {
     func initialize() {
         isInitialized = true
     }
+
+    func forceHideAll() {
+        hideWorkItem?.cancel()
+        hideWorkItem = nil
+
+        for window in allWindows {
+            hideWindowSynchronously(window)
+        }
+    }
     
     // MARK: - Private Implementation
     
@@ -177,6 +186,10 @@ final class CustomOSDWindowManager {
         }
     }
     
+    private var allWindows: [OSDWindow] {
+        Array(volumeWindows.values) + Array(brightnessWindows.values) + Array(backlightWindows.values)
+    }
+
     private func hideAllWindowsExcept(type: SneakContentType) {
         if type != .volume {
             for window in volumeWindows.values where window.nsWindow.alphaValue > 0.01 {
@@ -220,6 +233,11 @@ final class CustomOSDWindowManager {
     }
     
     private func hideWindow(for type: SneakContentType) {
+        guard Defaults[.enableCustomOSD] else {
+            forceHideAll()
+            return
+        }
+
         let windows: [OSDWindow]
         
         switch type {
@@ -248,22 +266,17 @@ final class CustomOSDWindowManager {
         }
         }
     }
+
+    private func hideWindowSynchronously(_ window: OSDWindow) {
+        window.nsWindow.animator().alphaValue = 0
+        window.nsWindow.alphaValue = 0
+        window.nsWindow.orderOut(nil)
+    }
     
     // MARK: - Cleanup
     
     func tearDown() {
-        hideWorkItem?.cancel()
-        hideWorkItem = nil
-        
-        for window in volumeWindows.values {
-            window.nsWindow.orderOut(nil)
-        }
-        for window in brightnessWindows.values {
-            window.nsWindow.orderOut(nil)
-        }
-        for window in backlightWindows.values {
-            window.nsWindow.orderOut(nil)
-        }
+        forceHideAll()
         
         volumeWindows.removeAll()
         brightnessWindows.removeAll()

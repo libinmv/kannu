@@ -11,7 +11,6 @@ import Defaults
 import KeyboardShortcuts
 import LaunchAtLogin
 import LottieUI
-import Sparkle
 import SwiftUI
 import SwiftUIIntrospect
 import UniformTypeIdentifiers
@@ -288,12 +287,6 @@ struct SettingsView: View {
     @State private var searchText: String = ""
     @StateObject private var highlightCoordinator = SettingsHighlightCoordinator()
     @Default(.enableMinimalisticUI) var enableMinimalisticUI
-
-    let updaterController: SPUStandardUpdaterController?
-
-    init(updaterController: SPUStandardUpdaterController? = nil) {
-        self.updaterController = updaterController
-    }
 
     var body: some View {
         NavigationSplitView {
@@ -774,8 +767,6 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .media, title: "Enable album art parallax", keywords: ["parallax", "lock screen", "album art"], highlightID: SettingsTab.media.highlightID(for: "Enable album art parallax")),
             SettingsSearchEntry(tab: .media, title: "Enable album art parallax effect", keywords: ["parallax", "parallax effect", "album art"], highlightID: SettingsTab.media.highlightID(for: "Enable album art parallax effect")),
 
-            // Calendar
-
             // Shelf
             SettingsSearchEntry(tab: .shelf, title: "Enable shelf", keywords: ["shelf", "dock"], highlightID: SettingsTab.shelf.highlightID(for: "Enable shelf")),
             SettingsSearchEntry(tab: .shelf, title: "Open shelf tab by default if items added", keywords: ["auto open", "shelf tab"], highlightID: SettingsTab.shelf.highlightID(for: "Open shelf tab by default if items added")),
@@ -804,7 +795,6 @@ struct SettingsView: View {
             // Lock Screen
             SettingsSearchEntry(tab: .lockScreen, title: "Preview lock screen widgets", keywords: ["preview", "lock screen", "widgets"], highlightID: SettingsTab.lockScreen.highlightID(for: "Preview lock screen widgets")),
             SettingsSearchEntry(tab: .lockScreen, title: "Enable lock screen live activity", keywords: ["lock screen", "live activity"], highlightID: SettingsTab.lockScreen.highlightID(for: "Enable lock screen live activity")),
-            SettingsSearchEntry(tab: .lockScreen, title: "Play lock/unlock sounds", keywords: ["chime", "sound"], highlightID: SettingsTab.lockScreen.highlightID(for: "Play lock/unlock sounds")),
             SettingsSearchEntry(tab: .lockScreen, title: "Material", keywords: ["glass", "frosted", "liquid"], highlightID: SettingsTab.lockScreen.highlightID(for: "Material")),
             SettingsSearchEntry(tab: .lockScreen, title: "Show lock screen media panel", keywords: ["media panel", "lock screen media"], highlightID: SettingsTab.lockScreen.highlightID(for: "Show lock screen media panel")),
             SettingsSearchEntry(tab: .lockScreen, title: "Show media app icon", keywords: ["app icon", "media"], highlightID: SettingsTab.lockScreen.highlightID(for: "Show media app icon")),
@@ -969,14 +959,8 @@ struct SettingsView: View {
                 NotesSettingsView()
             }
         case .about:
-            if let controller = updaterController {
-                SettingsForm(tab: .about) {
-                    About(updaterController: controller)
-                }
-            } else {
-                SettingsForm(tab: .about) {
-                    About(updaterController: SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil))
-                }
+            SettingsForm(tab: .about) {
+                About()
             }
         }
     }
@@ -3061,8 +3045,7 @@ struct Media: View {
 
 struct About: View {
     @State private var showBuildNumber: Bool = false
-    let updaterController: SPUStandardUpdaterController
-    @Environment(\.openWindow) var openWindow
+
     var body: some View {
         VStack {
             Form {
@@ -3091,16 +3074,7 @@ struct About: View {
                 } header: {
                     Text("Version info")
                 }
-
-                UpdaterSettingsView(updater: updaterController.updater)
             }
-        }
-        .toolbar {
-            //            Button("Welcome window") {
-            //                openWindow(id: "onboarding")
-            //            }
-            //            .controlSize(.extraLarge)
-            CheckForUpdatesView(updater: updaterController.updater)
         }
         .navigationTitle("About")
     }
@@ -3654,9 +3628,6 @@ struct LiveActivitiesSettings: View {
 struct Appearance: View {
     @ObservedObject var coordinator = DynamicIslandViewCoordinator.shared
     @Default(.sliderColor) var sliderColor
-    @Default(.useMusicVisualizer) var useMusicVisualizer
-    @Default(.customVisualizers) var customVisualizers
-    @Default(.selectedVisualizer) var selectedVisualizer
     @Default(.customAppIcons) private var customAppIcons
     @Default(.selectedAppIconID) private var selectedAppIconID
     @Default(.customNotchSkins) private var customNotchSkins
@@ -3678,18 +3649,12 @@ struct Appearance: View {
     @Default(.enableLockScreenMediaWidget) private var enableLockScreenMediaWidget
     @Default(.enableLockScreenTimerWidget) private var enableLockScreenTimerWidget
     @Default(.externalDisplayStyle) private var externalDisplayStyle
-    @State private var selectedListVisualizer: CustomVisualizer? = nil
 
     @State private var isIconImporterPresented = false
     @State private var isIconDropTarget = false
     @State private var iconImportError: String?
     @State private var isSkinImporterPresented = false
     @State private var isSkinDropTarget = false
-
-    @State private var isPresented: Bool = false
-    @State private var name: String = ""
-    @State private var url: String = ""
-    @State private var speed: CGFloat = 1.0
 
     /// Whether the main screen has a physical notch.
     private var mainScreenHasPhysicalNotch: Bool {
@@ -3790,23 +3755,7 @@ struct Appearance: View {
 
             Section {
                 VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 10) {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(notchFillColor)
-                            .frame(width: 36, height: 24)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
-                            )
-                        Text("Current fill")
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
-                        Spacer()
-                        ColorPicker("", selection: $notchFillColor, supportsOpacity: false)
-                            .labelsHidden()
-                            .frame(width: 48, height: 28)
-                            .help("Change the notch fill color")
-                    }
+                    NotchFillColorPickerRow(color: $notchFillColor)
                 }
                 .settingsHighlight(id: highlightID("Notch fill color"))
                 Text("Fill color is used when no custom notch skin is selected.")
@@ -3913,174 +3862,6 @@ struct Appearance: View {
                 .settingsHighlight(id: highlightID("Slider color"))
             } header: {
                 Text("Media")
-            }
-
-            Section {
-                Toggle(
-                    "Use music visualizer spectrogram",
-                    isOn: $useMusicVisualizer.animation()
-                )
-                .disabled(true)
-                if !useMusicVisualizer {
-                    if customVisualizers.count > 0 {
-                        Picker(
-                            "Selected animation",
-                            selection: $selectedVisualizer
-                        ) {
-                            ForEach(
-                                customVisualizers,
-                                id: \.self
-                            ) { visualizer in
-                                Text(visualizer.name)
-                                    .tag(visualizer)
-                            }
-                        }
-                    } else {
-                        HStack {
-                            Text("Selected animation")
-                            Spacer()
-                            Text("No custom animation available")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            } header: {
-                HStack {
-                    Text("Custom music live activity animation")
-                    customBadge(text: "Coming soon")
-                }
-            }
-
-            Section {
-                List {
-                    ForEach(customVisualizers, id: \.self) { visualizer in
-                        HStack {
-                            LottieView(state: LUStateData(type: .loadedFrom(visualizer.url), speed: visualizer.speed, loopMode: .loop))
-                                .frame(width: 30, height: 30, alignment: .center)
-                            Text(visualizer.name)
-                            Spacer(minLength: 0)
-                            if selectedVisualizer == visualizer {
-                                Text("selected")
-                                    .font(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.trailing, 8)
-                            }
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                        .padding(.vertical, 2)
-                        .background(
-                            selectedListVisualizer != nil ? selectedListVisualizer == visualizer ? Color.accentColor : Color.clear : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 5)
-                        )
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            if selectedListVisualizer == visualizer {
-                                selectedListVisualizer = nil
-                                return
-                            }
-                            selectedListVisualizer = visualizer
-                        }
-                    }
-                }
-                .safeAreaPadding(
-                    EdgeInsets(top: 5, leading: 0, bottom: 5, trailing: 0)
-                )
-                .frame(minHeight: 120)
-                .actionBar {
-                    HStack(spacing: 5) {
-                        Button {
-                            name = ""
-                            url = ""
-                            speed = 1.0
-                            isPresented.toggle()
-                        } label: {
-                            Image(systemName: "plus")
-                                .foregroundStyle(.secondary)
-                                .contentShape(Rectangle())
-                        }
-                        Divider()
-                        Button {
-                            if selectedListVisualizer != nil {
-                                let visualizer = selectedListVisualizer!
-                                selectedListVisualizer = nil
-                                customVisualizers.remove(at: customVisualizers.firstIndex(of: visualizer)!)
-                                if visualizer == selectedVisualizer && customVisualizers.count > 0 {
-                                    selectedVisualizer = customVisualizers[0]
-                                }
-                            }
-                        } label: {
-                            Image(systemName: "minus")
-                                .foregroundStyle(.secondary)
-                                .contentShape(Rectangle())
-                        }
-                    }
-                }
-                .controlSize(.small)
-                .buttonStyle(PlainButtonStyle())
-                .overlay {
-                    if customVisualizers.isEmpty {
-                        Text("No custom visualizer")
-                            .foregroundStyle(Color(.secondaryLabelColor))
-                            .padding(.bottom, 22)
-                    }
-                }
-                .sheet(isPresented: $isPresented) {
-                    VStack(alignment: .leading) {
-                        Text("Add new visualizer")
-                            .font(.largeTitle.bold())
-                            .padding(.vertical)
-                        TextField("Name", text: $name)
-                        TextField("Lottie JSON URL", text: $url)
-                        HStack {
-                            Text("Speed")
-                            Spacer(minLength: 80)
-                            Text("\(speed, specifier: "%.1f")s")
-                                .multilineTextAlignment(.trailing)
-                                .foregroundStyle(.secondary)
-                            Slider(value: $speed, in: 0...2, step: 0.1)
-                        }
-                        .padding(.vertical)
-                        HStack {
-                            Button {
-                                isPresented.toggle()
-                            } label: {
-                                Text("Cancel")
-                                    .frame(maxWidth: .infinity, alignment: .center)
-                            }
-
-                            Button {
-                                let visualizer: CustomVisualizer = .init(
-                                    UUID: UUID(),
-                                    name: name,
-                                    url: URL(string: url)!,
-                                    speed: speed
-                                )
-
-                                if !customVisualizers.contains(visualizer) {
-                                    customVisualizers.append(visualizer)
-                                }
-
-                                isPresented.toggle()
-                            } label: {
-                                Text("Add")
-                                    .frame(maxWidth: .infinity, alignment: .center)
-                            }
-                            .buttonStyle(BorderedProminentButtonStyle())
-                        }
-                    }
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .controlSize(.extraLarge)
-                    .padding()
-                }
-            } header: {
-                HStack(spacing: 0) {
-                    Text("Custom vizualizers (Lottie)")
-                    if !Defaults[.customVisualizers].isEmpty {
-                        Text(" – \(Defaults[.customVisualizers].count)")
-                            .foregroundStyle(.secondary)
-                    }
-                }
             }
 
             Section {
@@ -4627,14 +4408,10 @@ struct LockScreenSettings: View {
                     Text("Enable lock screen live activity")
                 }
                 .settingsHighlight(id: highlightID("Enable lock screen live activity"))
-                Defaults.Toggle(key: .enableLockSounds) {
-                    Text("Play lock/unlock sounds")
-                }
-                .settingsHighlight(id: highlightID("Play lock/unlock sounds"))
             } header: {
                 Text("Live Activity & Feedback")
             } footer: {
-                Text("Controls whether Dynamic Island mirrors lock/unlock events with its own live activity and audible chimes.")
+                Text("Controls whether Kannu mirrors lock/unlock events with its own live activity.")
             }
 
             Section {
@@ -6046,7 +5823,7 @@ struct TimerSettings: View {
             .settingsHighlight(id: highlightID("Timer tint"))
 
             if colorMode == .solid {
-                ColorPicker("Solid colour", selection: $solidColor, supportsOpacity: false)
+                SettingsColorPickerRow(title: "Solid colour", selection: $solidColor)
                     .settingsHighlight(id: highlightID("Solid colour"))
             }
 
@@ -6365,7 +6142,7 @@ private struct TimerPresetEditorRow: View {
                 TimerPresetComponentControl(title: String(localized: "Seconds"), value: secondsBinding, range: 0...59)
             }
 
-            ColorPicker("Accent colour", selection: colorBinding, supportsOpacity: false)
+            SettingsColorPickerRow(title: "Accent colour", selection: colorBinding)
                 .frame(maxWidth: 240, alignment: .leading)
 
             HStack(spacing: 12) {
@@ -7331,6 +7108,12 @@ struct CustomOSDSettings: View {
         .onChange(of: accessibilityPermission.isAuthorized) { _, granted in
             if !granted {
                 enableCustomOSD = false
+                CustomOSDWindowManager.shared.forceHideAll()
+            }
+        }
+        .onChange(of: enableCustomOSD) { _, enabled in
+            if !enabled {
+                CustomOSDWindowManager.shared.forceHideAll()
             }
         }
     }
@@ -7434,6 +7217,223 @@ struct NotesSettingsView: View {
 }
 
 // MARK: - Quick Share Provider Icon
+
+private struct SettingsColorPickerRow: View {
+    let title: String
+    @Binding var selection: Color
+    var supportsOpacity: Bool = false
+
+    @State private var isPresented = false
+
+    var body: some View {
+        HStack {
+            Text(title)
+            Spacer()
+            colorSwatchButton
+        }
+    }
+
+    private var colorSwatchButton: some View {
+        Button {
+            isPresented.toggle()
+        } label: {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(selection)
+                .frame(width: 32, height: 20)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $isPresented, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+            SettingsColorPickerPopover(
+                title: title,
+                selection: $selection,
+                supportsOpacity: supportsOpacity
+            )
+        }
+    }
+}
+
+private struct NotchFillColorPickerRow: View {
+    @Binding var color: Color
+    @State private var isApplyingPanelColor = false
+    @State private var isPanelSessionActive = false
+    @State private var skipNextPanelSyncFromBinding = false
+    @State private var panelCloseObserver: NSObjectProtocol?
+    @State private var panelColorObserver: NSObjectProtocol?
+    @State private var didInstallObservers = false
+    @State private var shouldRepositionOnNextOpen = true
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("Notch fill color")
+
+            Spacer()
+
+            Button {
+                openColorPanel()
+            } label: {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(color)
+                    .frame(width: 48, height: 28)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.2), lineWidth: 0.5)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .help("Click to edit notch fill color")
+        }
+        .onDisappear {
+            removeObservers()
+        }
+        .onChange(of: color) { _, newValue in
+            syncPanelColorIfNeeded(with: newValue)
+        }
+    }
+
+    private func openColorPanel() {
+        installObserversIfNeeded()
+
+        let panel = NSColorPanel.shared
+        isPanelSessionActive = false
+        panel.color = Self.nsColor(from: color)
+        panel.showsAlpha = false
+        panel.isContinuous = true
+
+        if shouldRepositionOnNextOpen || !panel.isVisible {
+            placePanel(onSameDisplayAs: SettingsWindowController.shared.window ?? NSApp.keyWindow)
+        }
+
+        NSApp.setActivationPolicy(.regular)
+        DispatchQueue.main.async {
+            NSApp.activate(ignoringOtherApps: true)
+            SettingsWindowController.shared.window?.makeKeyAndOrderFront(nil)
+            NSApp.orderFrontColorPanel(nil)
+            panel.orderFrontRegardless()
+            panel.makeKeyAndOrderFront(nil)
+            isPanelSessionActive = true
+        }
+
+        shouldRepositionOnNextOpen = false
+    }
+
+    private func installObserversIfNeeded() {
+        guard !didInstallObservers else { return }
+        didInstallObservers = true
+
+        let panel = NSColorPanel.shared
+        panelCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: panel,
+            queue: .main
+        ) { _ in
+            shouldRepositionOnNextOpen = true
+            isPanelSessionActive = false
+            skipNextPanelSyncFromBinding = false
+        }
+
+        panelColorObserver = NotificationCenter.default.addObserver(
+            forName: NSColorPanel.colorDidChangeNotification,
+            object: panel,
+            queue: .main
+        ) { notification in
+            guard isPanelSessionActive, !isApplyingPanelColor else { return }
+            let panel = notification.object as? NSColorPanel ?? NSColorPanel.shared
+            let picked = panel.color.usingColorSpace(.sRGB) ?? panel.color
+            isApplyingPanelColor = true
+            skipNextPanelSyncFromBinding = true
+            color = Color(nsColor: picked)
+            isApplyingPanelColor = false
+        }
+    }
+
+    private func syncPanelColorIfNeeded(with color: Color) {
+        let panel = NSColorPanel.shared
+        guard isPanelSessionActive, panel.isVisible else { return }
+        if skipNextPanelSyncFromBinding {
+            skipNextPanelSyncFromBinding = false
+            return
+        }
+        guard !isApplyingPanelColor else { return }
+        let resolved = Self.nsColor(from: color)
+        if !Self.areColorsEquivalent(panel.color, resolved) {
+            panel.color = resolved
+        }
+    }
+
+    private func removeObservers() {
+        if let panelCloseObserver {
+            NotificationCenter.default.removeObserver(panelCloseObserver)
+            self.panelCloseObserver = nil
+        }
+        if let panelColorObserver {
+            NotificationCenter.default.removeObserver(panelColorObserver)
+            self.panelColorObserver = nil
+        }
+        didInstallObservers = false
+        isPanelSessionActive = false
+        skipNextPanelSyncFromBinding = false
+    }
+
+    private func placePanel(onSameDisplayAs window: NSWindow?) {
+        let panel = NSColorPanel.shared
+
+        let settingsWindow = window
+            ?? SettingsWindowController.shared.window
+            ?? NSApp.windows.first(where: { $0.identifier?.rawValue == "DynamicIslandSettingsWindow" })
+
+        guard let settingsWindow else { return }
+
+        let targetScreen = settingsWindow.screen
+            ?? NSScreen.screens.first(where: { $0.frame.intersects(settingsWindow.frame) })
+            ?? NSScreen.main
+
+        guard let targetScreen else { return }
+
+        let anchorFrame = settingsWindow.frame
+        var panelFrame = panel.frame
+        panelFrame.origin = NSPoint(
+            x: anchorFrame.midX - panelFrame.width / 2,
+            y: anchorFrame.midY - panelFrame.height / 2
+        )
+
+        let visible = targetScreen.visibleFrame
+        panelFrame.origin.x = min(max(panelFrame.origin.x, visible.minX + 8), visible.maxX - panelFrame.width - 8)
+        panelFrame.origin.y = min(max(panelFrame.origin.y, visible.minY + 8), visible.maxY - panelFrame.height - 8)
+        panel.setFrame(panelFrame, display: true)
+    }
+
+    private static func nsColor(from color: Color) -> NSColor {
+        NSColor(color).usingColorSpace(.sRGB) ?? NSColor(color)
+    }
+
+    private static func areColorsEquivalent(_ lhs: NSColor, _ rhs: NSColor, tolerance: CGFloat = 0.001) -> Bool {
+        let left = lhs.usingColorSpace(.sRGB) ?? lhs
+        let right = rhs.usingColorSpace(.sRGB) ?? rhs
+
+        return abs(left.redComponent - right.redComponent) <= tolerance
+            && abs(left.greenComponent - right.greenComponent) <= tolerance
+            && abs(left.blueComponent - right.blueComponent) <= tolerance
+            && abs(left.alphaComponent - right.alphaComponent) <= tolerance
+    }
+}
+
+private struct SettingsColorPickerPopover: View {
+    let title: String
+    @Binding var selection: Color
+    var supportsOpacity: Bool
+
+    var body: some View {
+        ColorPicker(title, selection: $selection, supportsOpacity: supportsOpacity)
+            .labelsHidden()
+            .padding(16)
+            .frame(width: 260, height: 280)
+    }
+}
 
 struct AppIconImage: View {
     let bundleIdentifiers: [String]
@@ -7586,6 +7586,8 @@ struct AgentStatusSettings: View {
                     }
                 } header: {
                     Text("Traffic Light")
+                } footer: {
+                    Text("Yellow during approval cards needs the Cursor hook installed below. Transcript-only detection can lag until Cursor writes the tool call.")
                 }
 
                 Section {

@@ -22,12 +22,10 @@
 
 import AppKit
 import SwiftUI
-import Sparkle
 
 class SettingsWindowController: NSWindowController {
     static let shared = SettingsWindowController()
-    private var updaterController: SPUStandardUpdaterController?
-    
+
     private init() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 700, height: 600),
@@ -44,13 +42,7 @@ class SettingsWindowController: NSWindowController {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-    
-    func setUpdaterController(_ controller: SPUStandardUpdaterController) {
-        self.updaterController = controller
-        // Recreate the content view with the proper updater controller
-        setupWindow()
-    }
-    
+
     private func setupWindow() {
         guard let window = window else { return }
         
@@ -73,7 +65,7 @@ class SettingsWindowController: NSWindowController {
         window.identifier = NSUserInterfaceItemIdentifier("DynamicIslandSettingsWindow")
         
         // Create the SwiftUI content
-        let settingsView = SettingsView(updaterController: updaterController)
+        let settingsView = SettingsView()
         let hostingView = NSHostingView(rootView: settingsView)
         window.contentView = hostingView
         
@@ -86,6 +78,9 @@ class SettingsWindowController: NSWindowController {
     func showWindow() {
         // Ensure window exists
         _ = window
+
+        // Utility windows (like NSColorPanel) are unreliable while accessory policy is active.
+        NSApp.setActivationPolicy(.regular)
 
         // NSColorWell leaves the shared panel attached; dismiss any stale picker.
         NSColorPanel.shared.orderOut(nil)
@@ -107,15 +102,38 @@ class SettingsWindowController: NSWindowController {
         // Show the window with proper ordering
         window?.orderFrontRegardless()
         window?.makeKeyAndOrderFront(nil)
-        window?.center()
+        centerWindowOnActiveScreen()
         
         // Activate the app and ensure window gets focus
         NSApp.activate(ignoringOtherApps: true)
         
         // Force window to front after activation
         DispatchQueue.main.async { [weak self] in
+            guard !NSColorPanel.shared.isVisible else { return }
             self?.window?.makeKeyAndOrderFront(nil)
         }
+    }
+    
+    private func centerWindowOnActiveScreen() {
+        guard let window else { return }
+
+        let mouseLocation = NSEvent.mouseLocation
+        let targetScreen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) })
+            ?? window.screen
+            ?? NSScreen.main
+            ?? NSScreen.screens.first
+
+        guard let targetScreen else {
+            window.center()
+            return
+        }
+
+        var frame = window.frame
+        frame.origin = NSPoint(
+            x: targetScreen.visibleFrame.midX - frame.width / 2,
+            y: targetScreen.visibleFrame.midY - frame.height / 2
+        )
+        window.setFrame(frame, display: true)
     }
     
     override func close() {

@@ -34,5 +34,31 @@ extension Color {
     static var effectiveAccentBackground: Color {
         Defaults[.accentColor].opacity(0.25)
     }
+
+    var perceivedBrightness: CGFloat {
+        let nsColor = NSColor(self)
+        guard let rgbColor = nsColor.usingColorSpace(.sRGB) else {
+            return 0
+        }
+
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        rgbColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        return (0.2126 * red) + (0.7152 * green) + (0.0722 * blue)
+    }
+
+    var isPerceivedLight: Bool {
+        perceivedBrightness >= 0.64
+    }
+
+    var contrastingForeground: Color {
+        isPerceivedLight ? .black : .white
+    }
+
+    var contrastingForegroundSecondary: Color {
+        contrastingForeground.opacity(0.7)
+    }
 }
 #endif

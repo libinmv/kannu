@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
+  exit 0
+fi
+
+staged_files="$(git diff --cached --name-only --diff-filter=ACMR)"
+if [[ -z "${staged_files}" ]]; then
+  exit 0
+fi
+
+has_source_change=false
+while IFS= read -r file; do
+  [[ -z "${file}" ]] && continue
+  if [[ "${file}" =~ ^DynamicIsland/ ]] \
+    || [[ "${file}" =~ ^scripts/ ]] \
+    || [[ "${file}" =~ \.xcodeproj/ ]] \
+    || [[ "${file}" == "CONTRIBUTING.md" ]] \
+    || [[ "${file}" == "ReadMe.md" ]] \
+    || [[ "${file}" == "README.md" ]] \
+    || [[ "${file}" =~ ^\.cursor/rules/ ]]; then
+    has_source_change=true
+    break
+  fi
+done <<< "${staged_files}"
+
+if [[ "${has_source_change}" != "true" ]]; then
+  exit 0
+fi
+
+if ! grep -qx 'CHANGELOG.md' <<< "${staged_files}"; then
+  cat <<'EOF'
+ERROR: Missing staged CHANGELOG update.
+
+When source files change, stage CHANGELOG.md with a new entry under [Unreleased]:
+
+### YYYY-MM-DD - <developer-feature-label>
+- **Developer label:** <label>
+- **Agent label:** <label>
+- **Changes:**
+  - <one concrete change>
+EOF
+  exit 1
+fi
+
+changelog_content="$(git show :CHANGELOG.md 2>/dev/null || true)"
+if [[ -z "${changelog_content}" ]]; then
+  echo "ERROR: Could not read staged CHANGELOG.md."
+  exit 1
+fi
+
+unreleased_section="$(printf '%s\n' "${changelog_content}" | awk '
+  /^## \[Unreleased\]/ { in_section=1; next }
+  /^## \[/ { if (in_section) exit }
+  in_section { print }
+')"
+
+if [[ -z "${unreleased_section//[[:space:]]/}" ]]; then
+  echo "ERROR: CHANGELOG.md must include a populated ## [Unreleased] section."
+  exit 1
+fi
+
+latest_entry="$(printf '%s\n' "${unreleased_section}" | awk '
+  /^### / {
+    if (found) exit
+    found=1
+  }
+  found { print }
+')"
+
+if [[ -z "${latest_entry//[[:space:]]/}" ]]; then
+  echo "ERROR: Add a latest entry heading under ## [Unreleased] (### YYYY-MM-DD - ...)."
+  exit 1
+fi
+
+if ! grep -q '^- \*\*Developer label:\*\*' <<< "${latest_entry}"; then
+  echo "ERROR: Latest changelog entry is missing '- **Developer label:**'."
+  exit 1
+fi
+
+if ! grep -q '^- \*\*Agent label:\*\*' <<< "${latest_entry}"; then
+  echo "ERROR: Latest changelog entry is missing '- **Agent label:**'."
+  exit 1
+fi
+
+if ! grep -q '^- \*\*Changes:\*\*' <<< "${latest_entry}"; then
+  echo "ERROR: Latest changelog entry is missing '- **Changes:**'."
+  exit 1
+fi
+
+has_change_bullet="$(printf '%s\n' "${latest_entry}" | awk '
+  BEGIN { in_changes=0; has_bullet=0 }
+  /^- \*\*Changes:\*\*/ { in_changes=1; next }
+  /^- \*\*/ { if (in_changes) in_changes=0 }
+  /^### / { if (in_changes) in_changes=0 }
+  {
+    if (in_changes && $0 ~ /^  - /) {
+      has_bullet=1
+      exit
+    }
+  }
+  END {
+    if (has_bullet) print "true"
+    else print "false"
+  }
+')"
+
+if [[ "${has_change_bullet}" != "true" ]]; then
+  echo "ERROR: Latest changelog entry must include at least one indented bullet under Changes."
+  exit 1
+fi
+
+exit 0

@@ -160,17 +160,34 @@ struct DynamicIslandArtworkSourceView: View {
 struct MusicPlayerView: View {
     @EnvironmentObject var vm: DynamicIslandViewModel
     @ObservedObject private var musicManager = MusicManager.shared
+    @Default(.enableLyrics) private var enableLyrics
     let albumArtNamespace: Namespace.ID
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            AlbumArtView(vm: vm, albumArtNamespace: albumArtNamespace)
-            MusicControlsView()
-                .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .top, spacing: 12) {
+                AlbumArtView(vm: vm, albumArtNamespace: albumArtNamespace)
+                MusicControlsView()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            cornerLyricsButton
+                .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .opacity(musicManager.hasActiveSession ? 1 : 0.72)
         .animation(.smooth(duration: 0.25), value: musicManager.hasActiveSession)
+    }
+
+    private var cornerLyricsButton: some View {
+        HoverButton(
+            icon: enableLyrics ? "quote.bubble.fill" : "quote.bubble",
+            iconColor: enableLyrics ? musicManager.brandAccentColor : .white,
+            scale: .medium
+        ) {
+            enableLyrics.toggle()
+        }
+        .contentShape(Circle())
     }
 }
 
@@ -215,7 +232,7 @@ struct AlbumArtView: View {
             .clipped()
             .scaleEffect(x: 1.3, y: 1.4)
             .rotationEffect(.degrees(92))
-            .blur(radius: 40)
+            .blur(radius: 34)
             .opacity(
                 usesLiveCanvasArtwork
                     ? (musicManager.isPlaying ? 0.62 : 0.18)
@@ -223,7 +240,7 @@ struct AlbumArtView: View {
             )
             .shadow(
                 color: Color(nsColor: musicManager.avgColor).opacity(usesLiveCanvasArtwork ? 0.24 : 0.16),
-                radius: usesLiveCanvasArtwork ? 22 : 14,
+                radius: usesLiveCanvasArtwork ? 18 : 12,
                 x: 0,
                 y: 0
             )
@@ -572,7 +589,10 @@ struct MusicControlsView: View {
 
     private var displayedSlots: [MusicControlButton] {
         if showCustomControls {
-            let normalized = slotConfig.normalized(allowingMediaOutput: showMediaOutputControl, isAppleMusicActive: isAppleMusicActive)
+            let normalized = slotConfig.normalized(
+                allowingMediaOutput: showMediaOutputControl,
+                isAppleMusicActive: isAppleMusicActive
+            )
             return normalized.contains(where: { $0 != .none }) ? normalized : MusicControlButton.defaultLayout
         }
 

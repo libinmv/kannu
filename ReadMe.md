@@ -12,7 +12,7 @@ Kannu is a fork of [Atoll](https://github.com/Ebullioscopic/Atoll), which itself
 
 ## Highlights
 
-- **Agent status traffic light** — yellow (thinking), green (executing), red (stopped), fed by editor hooks and transcript polling.
+- **Agent status traffic light** — green (thinking/executing), yellow (awaiting your input, e.g. approval cards), red (stopped), fed by editor hooks and transcript polling.
 - **Custom notch skins** — upload a background image clipped to the notch shape, with optional dark scrim for readability.
 - **Mobile notifications (optional)** — push agent state changes to iPhone, Apple Watch, or Android via ntfy, Pushover, or a custom webhook.
 - Media controls, live activities, lock screen widgets, stats, timers, clipboard, and shelf.
@@ -27,6 +27,46 @@ Calendar, terminal, and color picker features from the Atoll/Boring.Notch lineag
 - Xcode 15+ to build from source.
 - Permissions as needed: Accessibility, Screen Recording, Music.
 
+## Runtime Permissions (by Feature)
+
+Kannu requests permissions only when you use the related feature. The app is not sandboxed, so most permissions are standard macOS privacy prompts (TCC) shown at runtime.
+
+- **Accessibility** — required for hardware key interception and custom HUD/OSD replacement.
+- **Screen Recording** — required for Screen Assistant screenshot capture. Screen-recording detection is separate and does not require this prompt.
+- **Music (MusicKit)** — required for Apple Music animated artwork features.
+- **Automation (Apple Events)** — required for Spotify/Apple Music controls and Apple Notes sync when those integrations are used.
+- **Full Disk Access** — required only for custom Focus metadata and optional global Shelf behavior.
+- **Files & Folders (Documents/Downloads)** — used by Shelf when Full Disk Access is not granted.
+- **Bluetooth** — used for Bluetooth audio battery indicators.
+- **Location (When In Use)** — used for lock screen weather.
+- **Audio Capture** — used for real-time waveform/audio-activity features.
+- **Developer Tools** — optional, used for advanced Focus detection mode.
+
+For detailed prompts and one-click setup actions, open **Settings** in Kannu. Contributor docs are in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Install (Pre-built DMG)
+
+1. Download the latest `Kannu.dmg` from the [Releases page](https://github.com/Ebullioscopic/Atoll/releases).
+2. Open the DMG and drag **Kannu** into the **Applications** folder.
+3. Launch Kannu from Applications.
+
+### "Kannu can't be opened" (Gatekeeper)
+
+Release builds are ad-hoc signed and not notarized by Apple, so macOS shows a
+warning on first launch. This is expected for free open-source apps — you can
+bypass it once and macOS remembers your choice:
+
+- **Right-click (or Control-click) `Kannu.app` in Applications and choose "Open"**, then click **Open** in the dialog. On macOS 15 (Sequoia) and later, the option may only appear the *second* time you right-click → Open.
+- If there is no Open button: go to **System Settings → Privacy & Security**, scroll down to the message about Kannu being blocked, and click **Open Anyway**.
+- Terminal alternative — remove the quarantine flag directly:
+
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/Kannu.app
+  ```
+
+If you prefer, you can always build from source instead — Gatekeeper does not
+warn for apps you build yourself.
+
 ## Build from Source
 
 1. Open `DynamicIsland.xcodeproj` in Xcode.
@@ -35,34 +75,30 @@ Calendar, terminal, and color picker features from the Atoll/Boring.Notch lineag
 
 Application support data is stored under `~/Library/Application Support/Kannu/`. Agent status hooks write to `~/.kannu/agent-status/`.
 
-## Create a DMG
+## Releases (GitHub)
 
-From the repo root, build a Release app and package it:
+Pre-built DMGs are published via [GitHub Releases](https://github.com/Ebullioscopic/Atoll/releases) when a version tag is pushed.
 
-```bash
-xcodebuild build \
-  -project DynamicIsland.xcodeproj \
-  -scheme DynamicIsland \
-  -configuration Release \
-  -destination "platform=macOS" \
-  -derivedDataPath build \
-  CODE_SIGN_IDENTITY="-" \
-  CODE_SIGNING_REQUIRED=NO \
-  build
-
-chmod +x scripts/create-dmg.sh
-./scripts/create-dmg.sh
-```
-
-This writes `build/Kannu.dmg` with `Kannu.app` and an Applications shortcut.
-
-## Publish on GitHub
+### Publish a new release
 
 1. Commit and push your changes (including `.github/assets/` branding files).
-2. Tag a release, for example `git tag v2.2.0 && git push origin v2.2.0`.
-3. The [Release workflow](.github/workflows/release.yml) builds the DMG and attaches it to the GitHub Release for that tag.
+2. Create and push a version tag, for example:
+   ```bash
+   git tag v2.2.0
+   git push origin v2.2.0
+   ```
+3. The [Release workflow](.github/workflows/release.yml) runs automatically:
+   - Builds `Kannu.app` (Release configuration)
+   - Packages `Kannu.dmg` via `scripts/create-dmg.sh`
+   - Attaches the DMG to the GitHub Release for that tag
 
-For wider distribution outside GitHub, sign the app with a Developer ID certificate before creating the DMG so macOS Gatekeeper accepts it. The CI workflow produces an unsigned ad-hoc build suitable for testing and source builds.
+You can also trigger the workflow manually from the **Actions** tab (**Release** → **Run workflow**).
+
+### Notes
+
+- CI builds are unsigned (ad-hoc). macOS may require right-click → Open on first launch.
+- For wider distribution, sign with a Developer ID certificate before tagging.
+- Future distribution options (Homebrew, etc.) are planned for phase 2 — see [docs/PHASE2.md](docs/PHASE2.md).
 
 ## Quick Start
 

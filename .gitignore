@@ -29,12 +29,17 @@ Carthage/Build/
 
 # Derived data
 DerivedData/
+.build-local/
 
-# Build output
+# Build output (local Release builds and DMG packaging)
 build/
+builds/
 *.app
 *.dSYM
 *.dmg
+*.xcresult
+BuildResults.xcresult
+/appdmg.json
 
 # Temporary files
 *.swp
@@ -139,6 +144,7 @@ PrivateWorks
 
 *.py
 *.sh
+!scripts/*.sh
 comparison_report.json
 *.txt
 ANIMATION_DEBUG_GUIDE.md
@@ -155,6 +161,5 @@ MoveToSky.xcodeproj
 mew-notch/
 
 /References/
-/builds/
 /appdmg.json
 COMPREHENSIVE_DOCUMENTATION.md

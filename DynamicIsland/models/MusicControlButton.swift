@@ -133,7 +133,10 @@ enum MusicControlButton: String, CaseIterable, Identifiable, Codable, Defaults.S
 }
 
 extension Array where Element == MusicControlButton {
-    func normalized(allowingMediaOutput: Bool, isAppleMusicActive: Bool = true) -> [MusicControlButton] {
+    func normalized(
+        allowingMediaOutput: Bool,
+        isAppleMusicActive: Bool = true
+    ) -> [MusicControlButton] {
         var sanitized = map { button -> MusicControlButton in
             if button == .mediaOutput && !allowingMediaOutput { return .none }
             if button.isAppleMusicExclusive && !isAppleMusicActive { return .none }

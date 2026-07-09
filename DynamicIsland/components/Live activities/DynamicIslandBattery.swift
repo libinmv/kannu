@@ -21,6 +21,7 @@ import Defaults
 
 /// A view that displays the battery status with an icon and charging indicator.
 struct BatteryView: View {
+    @Environment(\.notchForeground) private var notchForeground
     @Default(.showPowerStatusIcons) var showPowerStatusIcons
     var levelBattery: Float
     var isPluggedIn: Bool
@@ -67,7 +68,7 @@ struct BatteryView: View {
                 .resizable()
                 .fontWeight(.thin)
                 .aspectRatio(contentMode: .fit)
-                .foregroundColor(.white.opacity(0.5))
+                .foregroundColor(notchForeground.opacity(0.5))
                 .frame(
                     width: batteryWidth + 1
                 )
@@ -109,7 +110,7 @@ struct BatteryView: View {
                     Image(iconStatus)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .foregroundColor(.white)
+                        .foregroundColor(notchForeground)
                         .frame(
                             width: 17,
                             height: 17
@@ -123,6 +124,7 @@ struct BatteryView: View {
 
 /// Pill battery for the minimalist notch, matching the charging HUD style.
 struct MinimalisticBatteryView: View {
+    @Environment(\.notchForeground) private var notchForeground
     @Default(.showPowerStatusIcons) var showPowerStatusIcons
     var levelBattery: Float
     var isPluggedIn: Bool
@@ -198,7 +200,7 @@ struct MinimalisticBatteryView: View {
                 } else if let statusSymbol {
                     Image(systemName: statusSymbol)
                         .font(.system(size: bodyHeight * 0.6, weight: .heavy))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(notchForeground)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 }
             }
@@ -300,6 +302,7 @@ struct BatteryMenuView: View {
 
 /// A view that displays the battery status and allows interaction to show detailed information.
 struct DynamicIslandBatteryView: View {
+    @Environment(\.notchForeground) private var notchForeground
     
     @Default(.showBatteryPercentage) var showBatteryPercentage
     @State var batteryWidth: CGFloat = 26
@@ -327,7 +330,7 @@ struct DynamicIslandBatteryView: View {
                     
                     Text("\(Int32(levelBattery))%")
                         .font(.callout)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(notchForeground)
                         .lineLimit(1)
                 }
                 .fixedSize(horizontal: true, vertical: false)
@@ -432,6 +435,7 @@ private extension BatteryTemporaryHUDKind {
 }
 
 private struct BatteryCompactStatusRow: View {
+    @Environment(\.notchForeground) private var notchForeground
     let title: String
     let batteryLevel: Int
     let tint: Color
@@ -440,7 +444,7 @@ private struct BatteryCompactStatusRow: View {
         HStack {
             Text(verbatim: title)
                 .font(.system(size: 14))
-                .foregroundColor(.white.opacity(0.8))
+                .foregroundColor(notchForeground.opacity(0.8))
 
             Spacer()
 
@@ -476,6 +480,7 @@ private struct BatteryCompactStatusRow: View {
 }
 
 struct BatteryTemporaryActivityView: View {
+    @Environment(\.notchForeground) private var notchForeground
     let kind: BatteryTemporaryHUDKind
     let batteryLevel: Int
     let isLowPowerMode: Bool
@@ -596,7 +601,7 @@ struct BatteryTemporaryActivityView: View {
         HStack(spacing: 5) {
             Text(verbatim: kind == .lowBattery ? "Battery Low" : "Full Battery")
                 .font(.system(size: kind == .lowBattery ? 13 : 13, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.82))
+                .foregroundStyle(notchForeground.opacity(0.82))
                 .lineLimit(1)
 
             Text("\(batteryLevel)%")

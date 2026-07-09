@@ -181,6 +181,7 @@ private func logExtensionDiagnostics(_ message: String) {
 }
 
 struct ExtensionNotchExperienceTabView: View {
+    @Environment(\.notchForeground) private var notchForeground
     let payload: ExtensionNotchExperiencePayload
 
     @Default(.enableExtensionNotchInteractiveWebViews) private var interactiveWebViewsEnabled
@@ -215,7 +216,7 @@ struct ExtensionNotchExperienceTabView: View {
                         if let footnote = tabConfiguration.footnote {
                             Text(footnote)
                                 .font(.system(size: 11, weight: .regular))
-                                .foregroundStyle(Color.white.opacity(0.65))
+                                .foregroundStyle(notchForeground.opacity(0.65))
                                 .lineLimit(2)
                         }
                     }
@@ -225,7 +226,7 @@ struct ExtensionNotchExperienceTabView: View {
             } else {
                 Text("Extension tab unavailable")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(notchForeground.opacity(0.6))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
         }
@@ -248,7 +249,7 @@ struct ExtensionNotchExperienceTabView: View {
                 } else {
                     Image(systemName: configuration.iconSymbolName ?? "puzzlepiece.extension")
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(notchForeground)
                         .frame(width: 36, height: 36)
                         .background(accentColor.opacity(0.2))
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -257,7 +258,7 @@ struct ExtensionNotchExperienceTabView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(configuration.title)
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(notchForeground)
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
@@ -323,6 +324,7 @@ struct ExtensionNotchSectionView: View {
 }
 
 struct ExtensionNotchSectionHeader: View {
+    @Environment(\.notchForeground) private var notchForeground
     let section: AtollNotchContentSection
 
     var body: some View {
@@ -330,18 +332,19 @@ struct ExtensionNotchSectionHeader: View {
             if let title = section.title {
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(notchForeground)
             }
             if let subtitle = section.subtitle {
                 Text(subtitle)
                     .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(Color.white.opacity(0.7))
+                    .foregroundStyle(notchForeground.opacity(0.7))
             }
         }
     }
 }
 
 struct ExtensionMinimalisticExperienceView: View {
+    @Environment(\.notchForeground) private var notchForeground
     let payload: ExtensionNotchExperiencePayload
     let albumArtNamespace: Namespace.ID
 
@@ -360,12 +363,12 @@ struct ExtensionMinimalisticExperienceView: View {
                         if let headline = configuration.headline {
                             Text(headline)
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(notchForeground)
                         }
                         if let subtitle = configuration.subtitle {
                             Text(subtitle)
                                 .font(.system(size: 12, weight: .regular))
-                                .foregroundStyle(Color.white.opacity(0.75))
+                                .foregroundStyle(notchForeground.opacity(0.75))
                         }
                         ForEach(Array(configuration.sections.enumerated()), id: \.offset) { index, section in
                             ExtensionNotchSectionView(

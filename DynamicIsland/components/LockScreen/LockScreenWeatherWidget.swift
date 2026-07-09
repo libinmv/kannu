@@ -28,7 +28,6 @@ struct LockScreenWeatherWidget: View {
 	@Default(.enableDoNotDisturbDetection) private var focusDetectionEnabled
 	@Default(.showDoNotDisturbIndicator) private var focusIndicatorEnabled
 	@Default(.enableLockScreenFocusWidget) private var lockScreenFocusWidgetEnabled
-	@Default(.lockScreenWeatherWidgetRowOrder) private var lockScreenWeatherWidgetRowOrder
 
 	@State private var currentTime = Date()
 	@State private var widgetWidthRemeasureToken: Int = 0
@@ -45,8 +44,8 @@ struct LockScreenWeatherWidget: View {
 	}()
 
 	// MARK: - Refresh
-	/// Refreshes every 15 seconds (general refresh), and optionally also ticks exactly on minute boundaries
-	/// *only when the screen is locked* and the calendar widget is enabled.
+	/// Refreshes every 15 seconds (general refresh), and optionally also ticks exactly on minute boundaries.
+	/// Minute-aligned ticks are only used while the screen is locked.
 	private final class LockAwareTicker: ObservableObject {
 		@Published var now: Date = Date()
 
@@ -185,35 +184,18 @@ struct LockScreenWeatherWidget: View {
 
 	@StateObject private var minuteTicker = LockAwareTicker()
 
-	private var shouldShowCalendarRow: Bool { false }
-
-	private var shouldShowFocusInCalendarSlot: Bool {
-		shouldShowFocusWidget && !shouldShowCalendarRow
-	}
-
-	private var shouldCombineFocusAndCalendar: Bool { false }
-
 	private enum RowKind {
 		case weather
 		case focus
-		case calendar
 	}
 
 	private var orderedRowKinds: [RowKind] {
-		switch lockScreenWeatherWidgetRowOrder {
-		case "weather_focus_calendar", "focus_weather_calendar":
-			return [.weather, .focus, .calendar]
-		case "focus_calendar_weather":
-			return [.focus, .calendar, .weather]
-		default:
-			return [.weather, .calendar, .focus]
-		}
+		[.weather, .focus]
 	}
 
 	private var enabledRowKinds: [RowKind] {
 		var enabled: Set<RowKind> = [.weather]
 		if shouldShowFocusWidget { enabled.insert(.focus) }
-		if shouldShowFocusInCalendarSlot { enabled.insert(.calendar); enabled.remove(.focus) }
 		return orderedRowKinds.filter { enabled.contains($0) }
 	}
 
@@ -227,8 +209,6 @@ struct LockScreenWeatherWidget: View {
 			return true
 		case .focus:
 			return shouldShowFocusWidget
-		case .calendar:
-			return false
 		}
 	}
 
@@ -255,9 +235,7 @@ struct LockScreenWeatherWidget: View {
 	private var stackAlignment: VerticalAlignment { isInline ? .firstTextBaseline : .top }
 	private var stackSpacing: CGFloat { isInline ? 14 : 22 }
 	private var mainRowAlignment: Alignment {
-		if isInline {
-			return shouldCombineFocusAndCalendar ? .center : .leading
-		}
+		if isInline { return .leading }
 		return .center
 	}
 	private var secondaryRowAlignment: Alignment { .center }
@@ -310,41 +288,12 @@ struct LockScreenWeatherWidget: View {
 		switch kind {
 		case .weather:
 			mainWidgetRow
-		case .calendar:
-			if shouldShowFocusInCalendarSlot {
-				focusRowInCalendarSlot
-			} else {
-				EmptyView()
-			}
 		case .focus:
-			if shouldCombineFocusAndCalendar {
-				EmptyView()
-			} else {
-				focusWidget
-					.opacity(shouldShowFocusWidget ? 1 : 0)
-					.accessibilityHidden(!shouldShowFocusWidget)
-					.allowsHitTesting(false)
-			}
+			focusWidget
+				.opacity(shouldShowFocusWidget ? 1 : 0)
+				.accessibilityHidden(!shouldShowFocusWidget)
+				.allowsHitTesting(false)
 		}
-	}
-
-	private var focusRowInCalendarSlot: some View {
-		HStack(alignment: .center, spacing: 8) {
-			focusIcon
-				.font(.system(size: 20, weight: .semibold))
-				.frame(width: 26, height: 26)
-
-			Text(focusDisplayName)
-				.font(inlinePrimaryFont)
-				.lineLimit(1)
-				.minimumScaleFactor(0.85)
-				.allowsTightening(true)
-		}
-		.frame(maxWidth: .infinity, alignment: secondaryRowAlignment)
-		.padding(.horizontal, 2)
-		.opacity(shouldShowFocusWidget ? 1 : 0)
-		.accessibilityLabel("Focus active: \(focusDisplayName)")
-		.allowsHitTesting(false)
 	}
 
 	private var mainWidgetRow: some View {

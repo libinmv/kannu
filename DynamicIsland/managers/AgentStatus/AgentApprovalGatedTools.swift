@@ -7,6 +7,10 @@ enum AgentApprovalGatedTools {
         "webfetch",
         "web_search",
         "web_fetch",
+        "askquestion",
+        "ask_question",
+        "userquestion",
+        "permissionrequest",
     ]
 
     static func requiresUserApproval(_ toolName: String) -> Bool {
@@ -17,10 +21,12 @@ enum AgentApprovalGatedTools {
         if exactMatches.contains(lower) { return true }
 
         let compact = lower.replacingOccurrences(of: "_", with: "").replacingOccurrences(of: "-", with: "")
-        if compact == "websearch" || compact == "webfetch" { return true }
+        if compact == "websearch" || compact == "webfetch" || compact == "search" || compact == "askquestion" {
+            return true
+        }
 
         // Cursor occasionally labels search approval flows with generic Search tool names.
-        if lower == "search" || compact == "search" { return true }
+        if lower == "search" { return true }
 
         return false
     }
