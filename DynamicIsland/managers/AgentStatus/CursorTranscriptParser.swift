@@ -53,6 +53,37 @@ enum CursorTranscriptParser {
         return base
     }
 
+    static func projectSlug(from url: URL) -> String? {
+        let marker = "/.cursor/projects/"
+        let path = url.path
+        guard let start = path.range(of: marker)?.upperBound else { return nil }
+        let tail = path[start...]
+        guard let end = tail.range(of: "/agent-transcripts/")?.lowerBound else { return nil }
+        let slug = String(tail[..<end])
+        return slug.isEmpty ? nil : slug
+    }
+
+    static func displayProjectName(fromSlug slug: String?) -> String? {
+        guard let slug else { return nil }
+        let trimmed = slug.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if trimmed.hasPrefix("var-") { return nil }
+        if trimmed.allSatisfy(\.isNumber) { return nil }
+
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let homePrefix = home.replacingOccurrences(of: "/", with: "-")
+        if trimmed.hasPrefix(homePrefix + "-") {
+            let suffix = String(trimmed.dropFirst(homePrefix.count + 1))
+            let parts = suffix.split(separator: "-", omittingEmptySubsequences: true)
+            if let last = parts.last {
+                return String(last)
+            }
+        }
+
+        return trimmed
+    }
+
     static func analyze(path: URL) -> (events: [TranscriptEvent], mtimeMs: Int64, isDone: Bool, hasActiveToolUse: Bool, hasPendingToolApproval: Bool) {
         let mtimeMs: Int64 = {
             guard let date = (try? path.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate else {

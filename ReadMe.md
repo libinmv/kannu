@@ -35,26 +35,38 @@ Calendar, terminal, and color picker features from the Atoll/Boring.Notch lineag
 
 Application support data is stored under `~/Library/Application Support/Kannu/`. Agent status hooks write to `~/.kannu/agent-status/`.
 
-## Create a DMG
+## Run Locally (No DMG)
 
-From the repo root, build a Release app and package it:
+From the repo root, build and launch the app directly:
 
 ```bash
-xcodebuild build \
-  -project DynamicIsland.xcodeproj \
-  -scheme DynamicIsland \
-  -configuration Release \
-  -destination "platform=macOS" \
-  -derivedDataPath build \
-  CODE_SIGN_IDENTITY="-" \
-  CODE_SIGNING_REQUIRED=NO \
-  build
-
-chmod +x scripts/create-dmg.sh
-./scripts/create-dmg.sh
+chmod +x scripts/build-launch-app.sh
+./scripts/build-launch-app.sh
 ```
 
-This writes `build/Kannu.dmg` with `Kannu.app` and an Applications shortcut.
+Useful flags:
+
+- `./scripts/build-launch-app.sh --skip-build` — launch an existing Release app build
+- `./scripts/build-launch-app.sh --no-open` — build only (do not launch)
+
+## Create a DMG
+
+From the repo root, build and package in one step:
+
+```bash
+chmod +x scripts/build-dmg.sh
+./scripts/build-dmg.sh
+```
+
+This writes `build/Kannu.dmg` with `Kannu.app` and an Applications shortcut. All build output lives under `build/` and is gitignored.
+
+Useful flags:
+
+- `./scripts/build-dmg.sh --skip-build` — repackage an existing Release build
+- `./scripts/build-dmg.sh --open` — open the DMG in Finder when done (default behavior)
+- `./scripts/build-dmg.sh --no-open` — skip opening the DMG (for CI/headless usage)
+
+To package only (after a manual Xcode Release build), use `./scripts/create-dmg.sh`.
 
 ## Publish on GitHub
 

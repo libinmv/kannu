@@ -87,6 +87,9 @@ class SettingsWindowController: NSWindowController {
         // Ensure window exists
         _ = window
 
+        // Utility windows (like NSColorPanel) are unreliable while accessory policy is active.
+        NSApp.setActivationPolicy(.regular)
+
         // NSColorWell leaves the shared panel attached; dismiss any stale picker.
         NSColorPanel.shared.orderOut(nil)
         NSColorPanel.shared.setTarget(nil)
@@ -107,15 +110,38 @@ class SettingsWindowController: NSWindowController {
         // Show the window with proper ordering
         window?.orderFrontRegardless()
         window?.makeKeyAndOrderFront(nil)
-        window?.center()
+        centerWindowOnActiveScreen()
         
         // Activate the app and ensure window gets focus
         NSApp.activate(ignoringOtherApps: true)
         
         // Force window to front after activation
         DispatchQueue.main.async { [weak self] in
+            guard !NSColorPanel.shared.isVisible else { return }
             self?.window?.makeKeyAndOrderFront(nil)
         }
+    }
+    
+    private func centerWindowOnActiveScreen() {
+        guard let window else { return }
+
+        let mouseLocation = NSEvent.mouseLocation
+        let targetScreen = NSScreen.screens.first(where: { NSMouseInRect(mouseLocation, $0.frame, false) })
+            ?? window.screen
+            ?? NSScreen.main
+            ?? NSScreen.screens.first
+
+        guard let targetScreen else {
+            window.center()
+            return
+        }
+
+        var frame = window.frame
+        frame.origin = NSPoint(
+            x: targetScreen.visibleFrame.midX - frame.width / 2,
+            y: targetScreen.visibleFrame.midY - frame.height / 2
+        )
+        window.setFrame(frame, display: true)
     }
     
     override func close() {

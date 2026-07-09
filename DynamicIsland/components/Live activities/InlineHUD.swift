@@ -95,6 +95,7 @@ struct AirPodsListeningModeSymbol: View {
 
 struct InlineHUD: View {
     @EnvironmentObject var vm: DynamicIslandViewModel
+    @Environment(\.notchForeground) private var notchForeground
     @Binding var type: SneakContentType
     @Binding var value: CGFloat
     @Binding var icon: String
@@ -297,7 +298,7 @@ struct InlineHUD: View {
                             EmptyView()
                     }
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(notchForeground)
                 .symbolVariant(.fill)
                 
                 // Use marquee text for device names to handle long names
@@ -309,7 +310,7 @@ struct InlineHUD: View {
                             $displayName,
                             font: .system(size: 13, weight: .medium),
                             nsFont: .body,
-                            textColor: .white,
+                            textColor: notchForeground,
                             minDuration: 0.2,
                             frameWidth: infoWidth
                         )
@@ -321,7 +322,7 @@ struct InlineHUD: View {
                         .lineLimit(1)
                         .allowsTightening(true)
                         .contentTransition(.numericText())
-                        .foregroundStyle(.white)
+                        .foregroundStyle(notchForeground)
                 }
             }
             .frame(width: infoWidth, height: vm.notchSize.height - (hoverAnimation ? 0 : 12), alignment: .leading)
@@ -368,7 +369,7 @@ struct InlineHUD: View {
                             if listeningMode == .off || listeningMode == .transparency {
                                 Text(listeningMode.displayName)
                                     .font(.caption.weight(.medium))
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(notchForeground)
                                     .lineLimit(1)
                                     .allowsTightening(true)
                                     .frame(
@@ -380,7 +381,7 @@ struct InlineHUD: View {
                                     .constant(listeningMode.displayName),
                                     font: .caption.weight(.medium),
                                     nsFont: .caption1,
-                                    textColor: .white,
+                                    textColor: notchForeground,
                                     minDuration: 0.6,
                                     frameWidth: min(max(trailingWidth - 44, 64), listeningModeTextWidth)
                                 )
@@ -416,7 +417,7 @@ struct InlineHUD: View {
                                 Text("\(Int(value * 100))%")
                                     .font(.caption)
                                     .fontWeight(.medium)
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(notchForeground)
                                     .lineLimit(1)
                             }
                         }
@@ -471,6 +472,7 @@ struct InlineHUD: View {
     }
     
     private struct CircularBatteryIndicator: View {
+        @Environment(\.notchForeground) private var notchForeground
         let value: CGFloat
         let useColorCoding: Bool
         let smoothGradient: Bool
@@ -483,13 +485,13 @@ struct InlineHUD: View {
             if useColorCoding {
                 return ColorCodedProgressBar.paletteColor(for: clampedValue, mode: .battery, smoothGradient: smoothGradient)
             }
-            return .white
+            return notchForeground
         }
 
         var body: some View {
             ZStack {
                 Circle()
-                    .stroke(Color.white.opacity(0.18), lineWidth: 2)
+                    .stroke(notchForeground.opacity(0.18), lineWidth: 2)
 
                 Circle()
                     .trim(from: 0, to: max(clampedValue, 0.015))
@@ -502,6 +504,7 @@ struct InlineHUD: View {
     }
 
     private struct LinearBatteryIndicator: View {
+        @Environment(\.notchForeground) private var notchForeground
         let value: CGFloat
         let useColorCoding: Bool
         let smoothGradient: Bool
@@ -517,13 +520,13 @@ struct InlineHUD: View {
             if useColorCoding {
                 return ColorCodedProgressBar.paletteColor(for: clampedValue, mode: .battery, smoothGradient: smoothGradient)
             }
-            return .white
+            return notchForeground
         }
 
         var body: some View {
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(Color.white.opacity(0.18))
+                    .fill(notchForeground.opacity(0.18))
                     .frame(width: trackWidth, height: trackHeight)
 
                 Capsule()

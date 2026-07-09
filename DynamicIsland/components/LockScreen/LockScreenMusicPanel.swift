@@ -344,7 +344,10 @@ struct LockScreenMusicPanel: View {
             }
             .frame(maxWidth: .infinity, minHeight: 30, maxHeight: 30, alignment: .leading)
 
-            visualizer(height: 16)
+            HStack(alignment: .center, spacing: 8) {
+                visualizer(height: 16)
+                headerLyricsToggleButton
+            }
         }
         .frame(height: 60)
     }
@@ -380,8 +383,27 @@ struct LockScreenMusicPanel: View {
             }
             .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
 
-            visualizer(height: 20)
+            HStack(alignment: .center, spacing: 8) {
+                visualizer(height: 20)
+                headerLyricsToggleButton
+            }
         }
+    }
+
+    private var headerLyricsToggleButton: some View {
+        PanelControlButton(
+            icon: enableLyrics ? "quote.bubble.fill" : "quote.bubble",
+            frameSize: isExpanded ? 34 : 28,
+            iconSize: isExpanded ? 15 : 13,
+            iconColor: enableLyrics ? brandAccentColor : .white.opacity(0.8),
+            backgroundOpacity: enableLyrics ? 0.22 : 0.0,
+            interaction: .none,
+            symbolEffect: .replace
+        ) {
+            registerInteraction()
+            enableLyrics.toggle()
+        }
+        .accessibilityLabel("Toggle lyrics")
     }
 
     private func albumArtButton(size: CGFloat, cornerRadius: CGFloat) -> some View {
@@ -643,7 +665,10 @@ struct LockScreenMusicPanel: View {
             return fallbackSlots
         }
 
-        let normalized = slotConfig.normalized(allowingMediaOutput: showMediaOutputControl, isAppleMusicActive: isAppleMusicActive)
+        let normalized = slotConfig.normalized(
+            allowingMediaOutput: showMediaOutputControl,
+            isAppleMusicActive: isAppleMusicActive
+        )
         return normalized.contains(where: { $0 != .none }) ? normalized : MusicControlButton.defaultLayout
     }
 

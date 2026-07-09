@@ -65,10 +65,12 @@ struct AgentSessionStatus: Identifiable, Equatable {
     let provider: String
     let conversationID: String
     let chatName: String?
+    let projectName: String?
     let rawState: String
     let displayState: AgentTrafficLightState
     let updatedAt: Date
     let isVisible: Bool
+    let executionStartedAt: Date?
 
     var providerLabel: String {
         switch provider.lowercased() {
@@ -83,6 +85,11 @@ struct AgentSessionStatus: Identifiable, Equatable {
         let trimmed = chatName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !trimmed.isEmpty { return trimmed }
         return String(localized: "Untitled chat")
+    }
+
+    var displayProjectName: String? {
+        let trimmed = projectName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 

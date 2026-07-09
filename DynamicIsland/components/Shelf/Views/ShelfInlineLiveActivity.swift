@@ -25,6 +25,7 @@ import SwiftUI
 ///   [tray icon] ─── [ notch ] ─── [bold green count]
 struct ShelfInlineLiveActivity: View {
     @EnvironmentObject var vm: DynamicIslandViewModel
+    @Environment(\.notchForeground) private var notchForeground
     @ObservedObject private var shelfState = ShelfStateViewModel.shared
 
     private let sideWidth: CGFloat = 24
@@ -35,7 +36,7 @@ struct ShelfInlineLiveActivity: View {
             // LEFT of notch — tray icon (white, same style as the screenshot)
             Image(systemName: "tray.fill")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.white)
+                .foregroundStyle(notchForeground)
                 .frame(width: sideWidth, alignment: .leading)
 
             // Physical notch / pill space
@@ -46,7 +47,7 @@ struct ShelfInlineLiveActivity: View {
             // RIGHT of notch — file count in white
             Text("\(shelfState.items.count)")
                 .font(.system(.callout, design: .rounded, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(notchForeground)
                 .contentTransition(.numericText(countsDown: false))
                 .animation(.smooth(duration: 0.3), value: shelfState.items.count)
                 .frame(width: sideWidth, alignment: .trailing)
