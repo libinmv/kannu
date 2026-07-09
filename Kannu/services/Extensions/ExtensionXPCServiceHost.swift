@@ -122,6 +122,24 @@ final class ExtensionXPCServiceHost: NSObject {
         }
     }
 
+    func hasActiveConnection(bundleIdentifier: String) -> Bool {
+        var staleIdentifiers: [ObjectIdentifier] = []
+        var hasMatch = false
+
+        for (identifier, context) in clientContexts {
+            guard context.connection != nil else {
+                staleIdentifiers.append(identifier)
+                continue
+            }
+            if context.bundleIdentifier == bundleIdentifier {
+                hasMatch = true
+            }
+        }
+
+        staleIdentifiers.forEach { clientContexts.removeValue(forKey: $0) }
+        return hasMatch
+    }
+
     private func resolveBundleIdentifier(for connection: NSXPCConnection) -> String? {
         let processIdentifier = connection.processIdentifier
         guard processIdentifier != 0 else { return nil }

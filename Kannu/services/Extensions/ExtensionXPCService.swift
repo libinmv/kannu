@@ -55,9 +55,8 @@ final class ExtensionXPCService: NSObject, @preconcurrency AtollXPCServiceProtoc
             let entry = self.authorizationManager.ensureEntryExists(bundleIdentifier: self.bundleIdentifier, appName: self.resolvedApplicationName())
 
             if entry.status == .pending {
-                self.authorizationManager.authorize(bundleIdentifier: self.bundleIdentifier, appName: self.resolvedApplicationName())
-                self.host?.notifyAuthorizationChange(bundleIdentifier: self.bundleIdentifier, isAuthorized: true)
-                reply(true, nil)
+                // Keep pending clients blocked until the user explicitly authorizes in Settings.
+                reply(false, ExtensionValidationError.unauthorized.asNSError)
                 return
             }
 

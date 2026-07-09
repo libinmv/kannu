@@ -205,7 +205,7 @@ final class ExtensionRPCService {
             return errorResponse(from: error, id: id)
         } catch {
             logDiagnostics("RPC: Decode error for presentLiveActivity: \(error)")
-            logDiagnostics("RPC: Raw payload: \(String(data: descriptorData, encoding: .utf8) ?? "<binary>")")
+            logDiagnostics("RPC: Rejected descriptor payload for presentLiveActivity (bytes: \(descriptorData.count))")
             return errorResponse(code: RPCErrorCode.internalError, message: error.localizedDescription, id: id)
         }
     }
@@ -271,7 +271,7 @@ final class ExtensionRPCService {
             return errorResponse(from: error, id: id)
         } catch {
             logDiagnostics("RPC: Decode error for presentWidget: \(error)")
-            logDiagnostics("RPC: Raw payload: \(String(data: descriptorData, encoding: .utf8) ?? "<binary>")")
+            logDiagnostics("RPC: Rejected descriptor payload for presentLockScreenWidget (bytes: \(descriptorData.count))")
             return errorResponse(code: RPCErrorCode.internalError, message: error.localizedDescription, id: id)
         }
     }
@@ -337,7 +337,7 @@ final class ExtensionRPCService {
             return errorResponse(from: error, id: id)
         } catch {
             logDiagnostics("RPC: Decode error for presentNotchExperience: \(error)")
-            logDiagnostics("RPC: Raw payload: \(String(data: descriptorData, encoding: .utf8) ?? "<binary>")")
+            logDiagnostics("RPC: Rejected descriptor payload for presentNotchExperience (bytes: \(descriptorData.count))")
             return errorResponse(code: RPCErrorCode.internalError, message: error.localizedDescription, id: id)
         }
     }
@@ -579,19 +579,9 @@ final class ExtensionRPCService {
         var newItems: [ShelfItem] = []
         var newItemIDs: [RPCValue] = []
 
-        // Handle file paths
-        if let pathsValue = params?["paths"],
-           case .array(let pathArray) = pathsValue {
-            for pathValue in pathArray {
-                guard let path = pathValue.stringValue else { continue }
-                let url = URL(fileURLWithPath: path)
-                guard FileManager.default.fileExists(atPath: path) else { continue }
-                if let bookmark = try? Bookmark(url: url) {
-                    let item = ShelfItem(kind: .file(bookmark: bookmark.data))
-                    newItems.append(item)
-                    newItemIDs.append(.string(item.id.uuidString))
-                }
-            }
+        // Security hardening: direct filesystem path ingestion is unsupported.
+        if params?["paths"] != nil {
+            return errorResponse(code: RPCErrorCode.invalidParams, message: "Direct paths ingestion is not supported; use files (base64) or text", id: id)
         }
 
         // Handle base64-encoded file data

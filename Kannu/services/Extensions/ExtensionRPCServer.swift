@@ -29,6 +29,7 @@ final class ExtensionRPCServer {
 
     private var listener: NWListener?
     private var connections: [UUID: RPCClientConnection] = [:]
+    private var activeConnectionByBundleIdentifier: [String: UUID] = [:]
     private var shelfSubscribers: Set<String> = [] // bundleIdentifiers subscribed to shelf events
     private let port: UInt16 = 9020
     private let queue = DispatchQueue(label: "com.kannu.app.rpc.server", qos: .userInitiated)
@@ -80,6 +81,7 @@ final class ExtensionRPCServer {
             conn.connection.cancel()
         }
         connections.removeAll()
+        activeConnectionByBundleIdentifier.removeAll()
         shelfSubscribers.removeAll()
         logDiagnostics("RPC server stopped")
     }
@@ -202,7 +204,7 @@ final class ExtensionRPCServer {
     private func handleConnectionState(connID: UUID, state: NWConnection.State) {
         switch state {
         case .failed, .cancelled:
-            connections.removeValue(forKey: connID)
+            removeConnection(connID: connID)
             logDiagnostics("RPC client disconnected (id: \(connID.uuidString.prefix(8)))")
         default:
             break
@@ -219,7 +221,7 @@ final class ExtensionRPCServer {
             if let error {
                 Task { @MainActor in
                     self.logDiagnostics("RPC receive error for \(connID.uuidString.prefix(8)): \(error.localizedDescription)")
-                    self.connections.removeValue(forKey: connID)
+                    self.removeConnection(connID: connID)
                 }
                 return
             }
@@ -250,16 +252,29 @@ final class ExtensionRPCServer {
             return
         }
 
-        // Bind a single bundle identifier to this connection during initial auth handshake.
-        if request.method == "atoll.requestAuthorization",
-           clientConn.bundleIdentifier == nil,
-           let params = request.params,
-           let bi = params["bundleIdentifier"]?.stringValue {
+        // Bind a single, attested bundle identifier during the initial authorization handshake.
+        if request.method == "atoll.requestAuthorization" {
+            guard clientConn.bundleIdentifier == nil else {
+                let errorResponse = RPCErrorResponse(
+                    error: RPCErrorObject(code: RPCErrorCode.invalidRequest, message: "Connection is already bound to an identity"),
+                    id: request.id
+                )
+                sendResponse(errorResponse, to: connID)
+                return
+            }
+
+            guard let params = request.params,
+                  let bi = params["bundleIdentifier"]?.stringValue else {
+                let errorResponse = RPCErrorResponse(
+                    error: RPCErrorObject(code: RPCErrorCode.invalidParams, message: "Missing bundleIdentifier"),
+                    id: request.id
+                )
+                sendResponse(errorResponse, to: connID)
+                return
+            }
+
             let sanitized = bi.trimmingCharacters(in: .whitespacesAndNewlines)
-            if Self.isValidBundleIdentifier(sanitized) {
-                clientConn.bundleIdentifier = sanitized
-                connections[connID] = clientConn
-            } else {
+            guard Self.isValidBundleIdentifier(sanitized) else {
                 let errorResponse = RPCErrorResponse(
                     error: RPCErrorObject(code: RPCErrorCode.invalidParams, message: "Invalid bundleIdentifier"),
                     id: request.id
@@ -267,6 +282,29 @@ final class ExtensionRPCServer {
                 sendResponse(errorResponse, to: connID)
                 return
             }
+
+            // Require a currently attested XPC session for the same extension identity.
+            guard ExtensionXPCServiceHost.shared.hasActiveConnection(bundleIdentifier: sanitized) else {
+                let errorResponse = RPCErrorResponse(
+                    error: RPCErrorObject(code: RPCErrorCode.unauthorized, message: "Unverified extension identity; establish XPC session first"),
+                    id: request.id
+                )
+                sendResponse(errorResponse, to: connID)
+                return
+            }
+
+            if let existingConnID = activeConnectionByBundleIdentifier[sanitized], existingConnID != connID {
+                let errorResponse = RPCErrorResponse(
+                    error: RPCErrorObject(code: RPCErrorCode.unauthorized, message: "An active RPC session already exists for this bundleIdentifier"),
+                    id: request.id
+                )
+                sendResponse(errorResponse, to: connID)
+                return
+            }
+
+            clientConn.bundleIdentifier = sanitized
+            connections[connID] = clientConn
+            activeConnectionByBundleIdentifier[sanitized] = connID
         }
 
         let service = ExtensionRPCService(
@@ -320,6 +358,15 @@ final class ExtensionRPCServer {
                 completion: .contentProcessed { _ in }
             )
         }
+    }
+
+    private func removeConnection(connID: UUID) {
+        if let boundIdentifier = connections[connID]?.bundleIdentifier,
+           activeConnectionByBundleIdentifier[boundIdentifier] == connID {
+            activeConnectionByBundleIdentifier.removeValue(forKey: boundIdentifier)
+            shelfSubscribers.remove(boundIdentifier)
+        }
+        connections.removeValue(forKey: connID)
     }
 
     private func logDiagnostics(_ message: String) {
