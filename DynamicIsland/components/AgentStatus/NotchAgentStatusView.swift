@@ -25,7 +25,7 @@ struct NotchAgentStatusView: View {
     }
 
     private var primarySession: AgentSessionStatus? {
-        visibleSessions.max { $0.updatedAt < $1.updatedAt }
+        AgentTrafficLightMapper.primarySession(from: visibleSessions)
     }
 
     private func deduplicateLatestSessions(_ sessions: [AgentSessionStatus]) -> [AgentSessionStatus] {
@@ -178,6 +178,7 @@ struct NotchAgentStatusView: View {
                 .fill(Color.yellow.opacity(state.showsYellowTrafficLight ? 1 : 0.25))
                 .frame(width: large ? 8 : 6, height: large ? 8 : 6)
             Circle()
+                // Green is already exclusive of yellow/red via AgentTrafficLightState.
                 .fill(Color.green.opacity(state.showsGreenTrafficLight ? 1 : 0.25))
                 .frame(width: large ? 8 : 6, height: large ? 8 : 6)
         }

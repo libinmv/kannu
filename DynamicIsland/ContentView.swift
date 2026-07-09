@@ -95,7 +95,6 @@ struct ContentView: View {
     @Default(.fullBatteryHUDStyle) var fullBatteryHUDStyle
     @Default(.notchSkinScrimOpacity) private var notchSkinScrimOpacity
     @Default(.notchFillColor) private var notchFillColor
-    @State private var notchFillColorToken = UUID()
     @Default(.enableAgentStatusFeature) private var enableAgentStatusFeature
     @Default(.selectedIdleAnimation) private var selectedIdleAnimation
     
@@ -465,7 +464,12 @@ struct ContentView: View {
             return true
         }
 
-        return !isClosedNotchEmptyState
+        if !isClosedNotchEmptyState {
+            return true
+        }
+
+        // Keep fill/skin visible in idle empty state so appearance changes remain previewable.
+        return true
     }
 
     private var isClosedNotchEmptyState: Bool {
@@ -618,17 +622,16 @@ struct ContentView: View {
                             Image(nsImage: skin)
                                 .resizable()
                                 .scaledToFill()
+                            if notchSkinScrimOpacity > 0 {
+                                Color.black.opacity(notchSkinScrimOpacity)
+                            }
                         } else {
                             notchFillColor
-                        }
-                        if notchSkinScrimOpacity > 0 {
-                            Color.black.opacity(notchSkinScrimOpacity)
                         }
                         if shouldShowFullNotchShimmer {
                             NotchShimmerView(cornerRadius: closedNotchShimmerCornerRadius)
                         }
                     }
-                    .id(notchFillColorToken)
                 }
             }
             .clipShape(resolvedClipShape)
@@ -851,12 +854,6 @@ struct ContentView: View {
                 // unreliable); the window-cleanup path calls this before closing.
                 vm.onViewTeardown = { performViewTeardown() }
             }
-            .onChange(of: notchFillColor) { _, _ in
-                notchFillColorToken = UUID()
-            }
-            .onChange(of: notchSkinScrimOpacity) { _, _ in
-                notchFillColorToken = UUID()
-            }
             .onChange(of: vm.notchState) { _, state in
                 if state == .open {
                     suppressMusicControlWindowUpdates()
@@ -1049,11 +1046,8 @@ struct ContentView: View {
                       } else if vm.notchState == .closed && capsLockManager.isCapsLockActive && Defaults[.enableCapsLockIndicator] && !vm.hideOnClosed && !lockScreenManager.isLocked {
                           InlineHUD(type: .constant(.capsLock), value: .constant(1.0), icon: .constant(""), hoverAnimation: $isHovering, gestureProgress: $gestureProgress)
                               .transition(AnyTransition.move(edge: .trailing).combined(with: .opacity))
-                      } else if canShowMusicDuringExpansion && musicPairingEligible {
-                          MusicLiveActivity(secondary: musicSecondary)
-                              .id("closed-music-live-activity")
-                              .transition(closedLiveActivitySwapTransition)
                       } else if !isCurrentScreenExpansionVisible && vm.notchState == .closed && enableAgentStatusFeature && agentStatusMonitor.shouldShowTrafficLight && !vm.hideOnClosed {
+                          // Agent traffic light wins over music so green/yellow are visible while agents run.
                           AgentTrafficLightLiveActivity(
                               isHovering: isHovering,
                               gestureProgress: gestureProgress,
@@ -1062,6 +1056,10 @@ struct ContentView: View {
                               }
                           )
                               .transition(.blurReplace.animation(.interactiveSpring(dampingFraction: 1.2)))
+                      } else if canShowMusicDuringExpansion && musicPairingEligible {
+                          MusicLiveActivity(secondary: musicSecondary)
+                              .id("closed-music-live-activity")
+                              .transition(closedLiveActivitySwapTransition)
                       } else if (!isCurrentScreenExpansionVisible || currentScreenExpansionType == .timer) && vm.notchState == .closed && timerManager.isTimerActive && coordinator.timerLiveActivityEnabled && !vm.hideOnClosed {
                           TimerLiveActivity()
                       } else if (!isCurrentScreenExpansionVisible || currentScreenExpansionType == .recording) && vm.notchState == .closed && (recordingManager.isRecording || !recordingManager.isRecorderIdle) && Defaults[.enableScreenRecordingDetection] && !vm.hideOnClosed && !musicPairingEligible {

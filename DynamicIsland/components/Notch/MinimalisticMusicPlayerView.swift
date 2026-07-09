@@ -40,6 +40,7 @@ struct MinimalisticMusicPlayerView: View {
     @State private var hudLastDragged: Date = .distantPast
     @Default(.enableLyrics) private var enableLyrics
     @Default(.timerPresets) private var timerPresets
+    private let lyricsButtonReservedWidth: CGFloat = 34
     private let seekInterval: TimeInterval = 10
     private let skipMagnitude: CGFloat = 8
 
@@ -85,7 +86,14 @@ struct MinimalisticMusicPlayerView: View {
                             let vizBlockWidth: CGFloat = useMusicVisualizer ? 42 : 0
                             let visualizerBarWidth: CGFloat = useMusicVisualizer ? 24 : 0
                             // Leave an extra 8pt gap between the title text and the visualizer.
-                            let textWidth = max(0, headerGeo.size.width - albumArtWidth - spacing - (useMusicVisualizer ? (vizBlockWidth + spacing) : 0))
+                            let textWidth = max(
+                                0,
+                                headerGeo.size.width
+                                    - albumArtWidth
+                                    - spacing
+                                    - lyricsButtonReservedWidth
+                                    - (useMusicVisualizer ? (vizBlockWidth + spacing) : 0)
+                            )
                             HStack(alignment: .center, spacing: spacing) {
                                 MinimalisticAlbumArtView(vm: vm, albumArtNamespace: albumArtNamespace)
                                     .frame(width: albumArtWidth, height: albumArtWidth)
@@ -157,11 +165,9 @@ struct MinimalisticMusicPlayerView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            VStack(alignment: .trailing, spacing: 6) {
-                cornerLyricsButton
-            }
-            .padding(.top, 2)
-            .padding(.trailing, 2)
+            cornerLyricsButton
+                .padding(.top, 2)
+                .padding(.trailing, 2)
         }
     }
 
@@ -361,7 +367,14 @@ struct MinimalisticMusicPlayerView: View {
                     if !musicManager.songTitle.isEmpty {
                         // In the U-shaped layout the visualizer sits in a 48-pt wide zone
                         // (matching the time text) and has a 12-pt right spacer inside it.
-                        let textAreaWidth = max(0, totalWidth - albumArtSize - 10 - (useMusicVisualizer ? (visualizerWidth + 12 + 10) : 0))
+                        let textAreaWidth = max(
+                            0,
+                            totalWidth
+                                - albumArtSize
+                                - 10
+                                - lyricsButtonReservedWidth
+                                - (useMusicVisualizer ? (visualizerWidth + 12 + 10) : 0)
+                        )
                         MusicTitleMarqueeView(
                             text: musicManager.songTitle,
                             isExplicit: musicManager.isCurrentTrackExplicit,

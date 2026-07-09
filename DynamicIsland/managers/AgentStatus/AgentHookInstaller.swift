@@ -37,7 +37,7 @@ final class AgentHookInstaller: ObservableObject {
     @Published private(set) var lastError: String?
 
     static let scriptName = "kannu-agent-status.sh"
-    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=4"
+    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=15"
 
     private static var home: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -66,6 +66,7 @@ final class AgentHookInstaller: ObservableObject {
         migrateLegacyHookScriptsIfNeeded()
         migrateIncorrectAwaitingInputHooksIfNeeded()
         migrateHookScriptVersionIfNeeded()
+        migrateCursorHookEventArgumentIfNeeded()
         refresh()
     }
 
@@ -126,11 +127,17 @@ final class AgentHookInstaller: ObservableObject {
     // MARK: - Event mappings
 
     /// Cursor hook events (lowerCamelCase) mapped to traffic-light states.
+    /// Measured timing (Cursor 2026-07, events.log): `preToolUse` fires the moment the
+    /// approval card appears (BEFORE the user approves); `postToolUse` fires only after
+    /// approval + execution. So yellow = preToolUse of a gated tool, cleared by postToolUse.
+    /// `afterAgentThought` is intentionally omitted — it overwrites awaiting_input with
+    /// thinking (green) while approval cards are still open.
     private static let cursorEvents: [(event: String, state: String)] = [
         ("beforeSubmitPrompt", "thinking"),
-        ("afterAgentThought", "thinking"),
+        ("afterAgentResponse", "executing"),
         ("preToolUse", "executing"),
         ("postToolUse", "executing"),
+        ("postToolUseFailure", "executing"),
         ("beforeMCPExecution", "executing"),
         ("stop", "stopped")
     ]
@@ -148,104 +155,144 @@ final class AgentHookInstaller: ObservableObject {
     // MARK: - Shared script
 
     private static func writeScript(to url: URL) throws {
+        // Tiny bash wrapper + Python writer. Avoid sed JSON extraction — Swift escaping
+        // previously corrupted the installed hook and broke all Cursor tool calls.
         let script = """
         #!/bin/bash
         # Installed by Kannu: reports AI agent status for the notch traffic light.
         # \(scriptVersionMarker)
-        # Usage: kannu-agent-status.sh <state> <provider>  (hook JSON arrives on stdin)
+        # Usage: kannu-agent-status.sh <state> <provider> [hook_event]  (hook JSON arrives on stdin)
 
-        STATE="${1:-thinking}"
-        PROVIDER="${2:-unknown}"
-        STATUS_DIR="$HOME/.kannu/agent-status"
-        mkdir -p "$STATUS_DIR"
+        export KANNU_STATE="${1:-thinking}"
+        export KANNU_PROVIDER="${2:-unknown}"
+        export KANNU_HOOK_EVENT="${3:-unknown}"
+        export KANNU_STATUS_DIR="$HOME/.kannu/agent-status"
+        mkdir -p "$KANNU_STATUS_DIR"
+        export KANNU_INPUT="$(cat)"
 
-        INPUT=$(cat)
+        if ! command -v python3 >/dev/null 2>&1; then
+          TS=$(($(date +%s) * 1000))
+          printf '{"state":"%s","ts":%s,"provider":"%s"}' "$KANNU_STATE" "$TS" "$KANNU_PROVIDER" > "$KANNU_STATUS_DIR/$KANNU_PROVIDER-default.json"
+          echo '{"permission":"allow","continue":true}'
+          exit 0
+        fi
 
-        resolve_state() {
-          KANNU_STATE="$1" INPUT="$INPUT" python3 <<'PY'
-        import json, os
+        python3 <<'PY'
+        import json, os, re, time
+        from pathlib import Path
 
         state = os.environ.get("KANNU_STATE", "thinking")
-        raw = os.environ.get("INPUT", "")
+        provider = os.environ.get("KANNU_PROVIDER", "unknown")
+        hook_event = os.environ.get("KANNU_HOOK_EVENT", "unknown")
+        status_dir = Path(os.environ.get("KANNU_STATUS_DIR", "")).expanduser()
+        raw = os.environ.get("KANNU_INPUT", "")
+        status_dir.mkdir(parents=True, exist_ok=True)
+
         try:
             data = json.loads(raw) if raw.strip() else {}
         except json.JSONDecodeError:
-            print(state)
-            raise SystemExit
+            data = {}
 
-        tool = (data.get("tool_name") or data.get("toolName") or data.get("name") or "").strip()
-        if not tool and isinstance(data.get("tool"), str):
-            tool = data["tool"].strip()
-        if not tool and isinstance(data.get("tool_input"), dict):
-            tool = str(data["tool_input"].get("tool_name") or data["tool_input"].get("name") or "").strip()
-        if not tool and isinstance(data.get("tool_input"), str):
-            try:
-                nested = json.loads(data["tool_input"])
-                if isinstance(nested, dict):
-                    tool = str(nested.get("tool_name") or nested.get("name") or "").strip()
-            except json.JSONDecodeError:
-                pass
+        def pick_str(*values):
+            for value in values:
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+            return ""
 
         def requires_approval(name: str) -> bool:
-            lower = name.lower()
-            compact = lower.replace("_", "").replace("-", "")
-            if lower in {"websearch", "webfetch", "web_search", "web_fetch", "search"}:
-                return True
-            return compact in {"websearch", "webfetch", "search"}
+            lower = (name or "").lower()
+            compact = lower.replace("_", "").replace("-", "").replace(" ", "")
+            return compact in {
+                "websearch", "webfetch", "search", "askquestion", "userquestion",
+            } or lower in {"web_search", "web_fetch", "ask_question"}
 
-        if state == "executing" and requires_approval(tool):
-            state = "awaiting_input"
+        tool = pick_str(
+            data.get("tool_name"),
+            data.get("toolName"),
+            data.get("name"),
+            data.get("tool") if isinstance(data.get("tool"), str) else None,
+        )
+        nested_tool = data.get("tool") if isinstance(data.get("tool"), dict) else None
+        if nested_tool:
+            tool = tool or pick_str(nested_tool.get("name"), nested_tool.get("tool_name"))
 
-        print(state)
+        tool_input = data.get("tool_input")
+        if tool_input is None:
+            tool_input = data.get("input") or data.get("arguments")
+            if tool_input is None and nested_tool:
+                tool_input = nested_tool.get("input") or nested_tool.get("arguments")
+        if not tool and isinstance(tool_input, dict):
+            tool = pick_str(tool_input.get("tool_name"), tool_input.get("name"))
+            if any(key in tool_input for key in ("search_term", "searchTerm", "query")):
+                tool = tool or "WebSearch"
+            elif any(key in tool_input for key in ("url", "uri")):
+                tool = tool or "WebFetch"
+            elif "questions" in tool_input:
+                tool = tool or "AskQuestion"
+
+        # Measured timing (Cursor 2026-07): preToolUse fires when the approval card is
+        # SHOWN (before the user decides); postToolUse/postToolUseFailure fire after the
+        # decision + execution. So a gated tool's preToolUse == "card open" == yellow,
+        # and the matching post event flips back to green.
+        if hook_event in {"preToolUse", "beforeMCPExecution"}:
+            state = "awaiting_input" if requires_approval(tool) else "executing"
+        elif hook_event in {"postToolUse", "postToolUseFailure"}:
+            state = "executing"
+        elif hook_event == "stop":
+            state = "stopped"
+
+        conversation_id = pick_str(
+            data.get("conversation_id"),
+            data.get("conversationId"),
+            data.get("session_id"),
+            data.get("sessionId"),
+            data.get("thread_id"),
+        )
+        conversation_id = re.sub(r"[^A-Za-z0-9_-]", "", conversation_id) or "default"
+        status_file = status_dir / f"{provider}-{conversation_id}.json"
+
+        existing_state = ""
+        existing = {}
+        if status_file.exists():
+            try:
+                existing = json.loads(status_file.read_text())
+                existing_state = str(existing.get("state", ""))
+            except Exception:
+                existing = {}
+
+        # Sticky yellow: while a card is open, unrelated lifecycle events (thinking,
+        # afterAgentResponse) must not repaint green. Only the tool's own post event,
+        # another preToolUse, or stop may change the state.
+        if existing_state == "awaiting_input" and hook_event not in {
+            "preToolUse", "beforeMCPExecution", "postToolUse", "postToolUseFailure", "stop",
+        }:
+            existing["state"] = "awaiting_input"
+            existing["ts"] = int(time.time() * 1000)
+            existing["provider"] = provider
+            status_file.write_text(json.dumps(existing, separators=(",", ":")))
+            print('{"permission":"allow","continue":true}')
+            raise SystemExit(0)
+
+        name = pick_str(data.get("name"), data.get("title"), data.get("conversation_title"))
+        roots = data.get("workspace_roots")
+        project = ""
+        if isinstance(roots, list) and roots:
+            root = str(roots[0]).replace("file://", "").rstrip("/")
+            if root:
+                project = Path(root).name
+
+        payload = {
+            "state": state,
+            "ts": int(time.time() * 1000),
+            "provider": provider,
+        }
+        if name:
+            payload["name"] = name
+        if project:
+            payload["project"] = project
+        status_file.write_text(json.dumps(payload, separators=(",", ":")))
+        print('{"permission":"allow","continue":true}')
         PY
-        }
-
-        if command -v python3 >/dev/null 2>&1; then
-          STATE="$(resolve_state "$STATE")"
-        fi
-
-        extract() {
-          printf '%s' "$INPUT" | sed -n "s/.*\\"$1\\"[[:space:]]*:[[:space:]]*\\"\\([^\\"]*\\)\\".*/\\1/p" | head -n 1
-        }
-        extract_workspace_root() {
-          printf '%s' "$INPUT" | sed -n 's/.*"workspace_roots"[[:space:]]*:[[:space:]]*\\[[[:space:]]*"\\([^"]*\\)".*/\\1/p' | head -n 1
-        }
-        ID=$(extract conversation_id)
-        [ -z "$ID" ] && ID=$(extract conversationId)
-        [ -z "$ID" ] && ID=$(extract session_id)
-        [ -z "$ID" ] && ID=$(extract sessionId)
-        [ -z "$ID" ] && ID=$(extract thread_id)
-        ID=$(printf '%s' "$ID" | tr -cd 'A-Za-z0-9_-')
-        [ -z "$ID" ] && ID="default"
-
-        NAME=$(extract name)
-        [ -z "$NAME" ] && NAME=$(extract title)
-        [ -z "$NAME" ] && NAME=$(extract conversation_title)
-        NAME=$(printf '%s' "$NAME" | tr -d '\\n\\r')
-        NAME=$(printf '%s' "$NAME" | sed 's/"/\\\\"/g')
-
-        WORKSPACE_ROOT=$(extract_workspace_root)
-        WORKSPACE_ROOT=$(printf '%s' "$WORKSPACE_ROOT" | sed 's#^file://##')
-        PROJECT=""
-        if [ -n "$WORKSPACE_ROOT" ]; then
-          PROJECT=$(basename "$WORKSPACE_ROOT")
-        fi
-        PROJECT=$(printf '%s' "$PROJECT" | tr -d '\\n\\r')
-        PROJECT=$(printf '%s' "$PROJECT" | sed 's/"/\\\\"/g')
-
-        TS=$(($(date +%s) * 1000))
-        if [ -n "$NAME" ] && [ -n "$PROJECT" ]; then
-          printf '{"state":"%s","ts":%s,"provider":"%s","name":"%s","project":"%s"}' "$STATE" "$TS" "$PROVIDER" "$NAME" "$PROJECT" > "$STATUS_DIR/$PROVIDER-$ID.json"
-        elif [ -n "$NAME" ]; then
-          printf '{"state":"%s","ts":%s,"provider":"%s","name":"%s"}' "$STATE" "$TS" "$PROVIDER" "$NAME" > "$STATUS_DIR/$PROVIDER-$ID.json"
-        elif [ -n "$PROJECT" ]; then
-          printf '{"state":"%s","ts":%s,"provider":"%s","project":"%s"}' "$STATE" "$TS" "$PROVIDER" "$PROJECT" > "$STATUS_DIR/$PROVIDER-$ID.json"
-        else
-          printf '{"state":"%s","ts":%s,"provider":"%s"}' "$STATE" "$TS" "$PROVIDER" > "$STATUS_DIR/$PROVIDER-$ID.json"
-        fi
-
-        # Never block the agent: always allow gating events.
-        echo '{"permission":"allow","continue":true}'
         exit 0
         """
 
@@ -275,7 +322,7 @@ final class AgentHookInstaller: ObservableObject {
 
         for (event, state) in cursorEvents {
             var entries = hooks[event] as? [[String: Any]] ?? []
-            entries.append(["command": "hooks/\(scriptName) \(state) cursor"])
+            entries.append(["command": "hooks/\(scriptName) \(state) cursor \(event)"])
             hooks[event] = entries
         }
 
@@ -475,6 +522,25 @@ final class AgentHookInstaller: ObservableObject {
         for provider in AgentHookProvider.allCases where Self.checkInstalled(provider) {
             install(provider)
         }
+    }
+
+    /// Upgrades Cursor hook commands that omit the hook event argument (v6 sticky awaiting_input).
+    private func migrateCursorHookEventArgumentIfNeeded() {
+        guard Self.checkInstalled(.cursor),
+              let config = Self.readJSON(at: Self.cursorHooksConfigURL),
+              let hooks = config["hooks"] as? [String: Any] else { return }
+
+        let needsEventArg = hooks.contains { _, value in
+            guard let entries = value as? [[String: Any]] else { return false }
+            return entries.contains { entry in
+                let command = entry["command"] as? String ?? ""
+                guard command.contains(Self.scriptName) else { return false }
+                return command.split(separator: " ").count < 4
+            }
+        }
+
+        guard needsEventArg else { return }
+        install(.cursor)
     }
 
     /// Copies status JSON from older `~/.atoll/agent-status` into `~/.kannu/agent-status`.

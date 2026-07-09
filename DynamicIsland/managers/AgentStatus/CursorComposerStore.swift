@@ -22,33 +22,48 @@ enum CursorComposerStore {
             .appendingPathComponent("Library/Application Support/Cursor/User/workspaceStorage", isDirectory: true)
     }()
 
-    static func loadComposerMeta(forIDs ids: Set<String>) -> [String: ComposerMeta] {
+    private static let headersCacheTTL: TimeInterval = 3.0
+    private static var cachedHeaders: [String: ComposerMeta] = [:]
+    private static var cachedHeadersAt: Date?
+
+    static func loadComposerMeta(
+        forIDs ids: Set<String>,
+        includeWorkspaceDatabases: Bool = false
+    ) -> [String: ComposerMeta] {
         guard !ids.isEmpty else { return [:] }
 
-        var merged: [String: ComposerMeta] = loadComposerHeaders(from: globalDBPath)
+        var merged = loadComposerHeadersCached()
 
-        for meta in loadFromDatabase(path: globalDBPath) {
-            if ids.contains(meta.composerID) {
+        if includeWorkspaceDatabases {
+            for meta in loadFromDatabase(path: globalDBPath) where ids.contains(meta.composerID) {
                 mergeMeta(&merged, meta)
             }
-        }
 
-        guard let workspaceDirs = try? FileManager.default.contentsOfDirectory(
-            at: workspaceStorageRoot,
-            includingPropertiesForKeys: nil
-        ) else {
-            return filter(merged, ids: ids)
-        }
-
-        for dir in workspaceDirs where dir.hasDirectoryPath {
-            let dbPath = dir.appendingPathComponent("state.vscdb").path
-            for meta in loadFromDatabase(path: dbPath) {
-                guard ids.contains(meta.composerID) else { continue }
-                mergeMeta(&merged, meta)
+            if let workspaceDirs = try? FileManager.default.contentsOfDirectory(
+                at: workspaceStorageRoot,
+                includingPropertiesForKeys: nil
+            ) {
+                for dir in workspaceDirs where dir.hasDirectoryPath {
+                    let dbPath = dir.appendingPathComponent("state.vscdb").path
+                    for meta in loadFromDatabase(path: dbPath) where ids.contains(meta.composerID) {
+                        mergeMeta(&merged, meta)
+                    }
+                }
             }
         }
 
         return filter(merged, ids: ids)
+    }
+
+    private static func loadComposerHeadersCached() -> [String: ComposerMeta] {
+        let now = Date()
+        if let cachedHeadersAt, now.timeIntervalSince(cachedHeadersAt) < headersCacheTTL {
+            return cachedHeaders
+        }
+        let fresh = loadComposerHeaders(from: globalDBPath)
+        cachedHeaders = fresh
+        cachedHeadersAt = now
+        return fresh
     }
 
     private static func filter(_ merged: [String: ComposerMeta], ids: Set<String>) -> [String: ComposerMeta] {
@@ -119,7 +134,13 @@ enum CursorComposerStore {
         defer { sqlite3_close(db) }
 
         var results: [ComposerMeta] = []
-        let sql = "SELECT key, value FROM ItemTable WHERE key LIKE '%composer%'"
+        // Narrow key filter — avoid loading every composer-related blob.
+        let sql = """
+        SELECT key, value FROM ItemTable
+        WHERE key = 'composer.composerHeaders'
+           OR key LIKE 'composerData:%'
+        LIMIT 200
+        """
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return [] }
         defer { sqlite3_finalize(stmt) }

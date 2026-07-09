@@ -52,46 +52,30 @@ For detailed prompts and one-click setup actions, open **Settings** in Kannu. Co
 
 Application support data is stored under `~/Library/Application Support/Kannu/`. Agent status hooks write to `~/.kannu/agent-status/`.
 
-## Run Locally (No DMG)
+## Releases (GitHub)
 
-From the repo root, build and launch the app directly:
+Pre-built DMGs are published via [GitHub Releases](https://github.com/Ebullioscopic/Atoll/releases) when a version tag is pushed.
 
-```bash
-chmod +x scripts/build-launch-app.sh
-./scripts/build-launch-app.sh
-```
-
-Useful flags:
-
-- `./scripts/build-launch-app.sh --skip-build` — launch an existing Release app build
-- `./scripts/build-launch-app.sh --no-open` — build only (do not launch)
-
-## Create a DMG
-
-From the repo root, build and package in one step:
-
-```bash
-chmod +x scripts/build-dmg.sh
-./scripts/build-dmg.sh
-```
-
-This writes `build/Kannu.dmg` with `Kannu.app` and an Applications shortcut. All build output lives under `build/` and is gitignored.
-
-Useful flags:
-
-- `./scripts/build-dmg.sh --skip-build` — repackage an existing Release build
-- `./scripts/build-dmg.sh --open` — open the DMG in Finder when done (default behavior)
-- `./scripts/build-dmg.sh --no-open` — skip opening the DMG (for CI/headless usage)
-
-To package only (after a manual Xcode Release build), use `./scripts/create-dmg.sh`.
-
-## Publish on GitHub
+### Publish a new release
 
 1. Commit and push your changes (including `.github/assets/` branding files).
-2. Tag a release, for example `git tag v2.2.0 && git push origin v2.2.0`.
-3. The [Release workflow](.github/workflows/release.yml) builds the DMG and attaches it to the GitHub Release for that tag.
+2. Create and push a version tag, for example:
+   ```bash
+   git tag v2.2.0
+   git push origin v2.2.0
+   ```
+3. The [Release workflow](.github/workflows/release.yml) runs automatically:
+   - Builds `Kannu.app` (Release configuration)
+   - Packages `Kannu.dmg` via `scripts/create-dmg.sh`
+   - Attaches the DMG to the GitHub Release for that tag
 
-For wider distribution outside GitHub, sign the app with a Developer ID certificate before creating the DMG so macOS Gatekeeper accepts it. The CI workflow produces an unsigned ad-hoc build suitable for testing and source builds.
+You can also trigger the workflow manually from the **Actions** tab (**Release** → **Run workflow**).
+
+### Notes
+
+- CI builds are unsigned (ad-hoc). macOS may require right-click → Open on first launch.
+- For wider distribution, sign with a Developer ID certificate before tagging.
+- Future distribution options (Homebrew, etc.) are planned for phase 2 — see [docs/PHASE2.md](docs/PHASE2.md).
 
 ## Quick Start
 

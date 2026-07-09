@@ -7,8 +7,33 @@ struct TranscriptEvent {
     let tsMs: Int64?
 }
 
+struct TranscriptAnalysis: Equatable {
+    let mtimeMs: Int64
+    let isDone: Bool
+    let hasActiveToolUse: Bool
+    let hasPendingToolApproval: Bool
+    let isUserPromptAwaitingResponse: Bool
+    let isTurnEndedAtTail: Bool
+}
+
 enum CursorTranscriptParser {
-    private static let tailByteLimit = 200_000
+    /// Keep tails small — only the last few events matter for traffic-light state.
+    private static let tailByteLimit = 48_000
+    /// Cap how many recent transcripts we parse per cycle.
+    private static let maxTranscriptsPerScan = 24
+    private static let pathListCacheTTL: TimeInterval = 2.0
+
+    private static let isoFractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let isoBasic = ISO8601DateFormatter()
+
+    private static var cachedPaths: [URL] = []
+    private static var cachedPathsAt: Date?
+    private static var cachedPathsMaxAgeMinutes: Int = 0
 
     static var projectsDirectory: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -16,17 +41,33 @@ enum CursorTranscriptParser {
     }
 
     static func listRecentTranscriptPaths(maxAgeMinutes: Int, now: Date = Date()) -> [URL] {
+        if let cachedPathsAt,
+           cachedPathsMaxAgeMinutes == maxAgeMinutes,
+           now.timeIntervalSince(cachedPathsAt) < pathListCacheTTL {
+            return cachedPaths
+        }
+
         let root = projectsDirectory
-        guard FileManager.default.fileExists(atPath: root.path) else { return [] }
+        guard FileManager.default.fileExists(atPath: root.path) else {
+            cachedPaths = []
+            cachedPathsAt = now
+            cachedPathsMaxAgeMinutes = maxAgeMinutes
+            return []
+        }
 
         let cutoff = now.addingTimeInterval(-TimeInterval(maxAgeMinutes * 60))
-        var results: [URL] = []
+        var results: [(url: URL, mtime: Date)] = []
 
         guard let enumerator = FileManager.default.enumerator(
             at: root,
             includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
             options: [.skipsHiddenFiles]
-        ) else { return [] }
+        ) else {
+            cachedPaths = []
+            cachedPathsAt = now
+            cachedPathsMaxAgeMinutes = maxAgeMinutes
+            return []
+        }
 
         for case let url as URL in enumerator {
             guard url.pathExtension == "jsonl" else { continue }
@@ -39,10 +80,24 @@ enum CursorTranscriptParser {
                   let mtime = values.contentModificationDate,
                   mtime >= cutoff else { continue }
 
-            results.append(url)
+            results.append((url, mtime))
         }
 
-        return results
+        results.sort { $0.mtime > $1.mtime }
+        if results.count > maxTranscriptsPerScan {
+            results = Array(results.prefix(maxTranscriptsPerScan))
+        }
+
+        let paths = results.map(\.url)
+        cachedPaths = paths
+        cachedPathsAt = now
+        cachedPathsMaxAgeMinutes = maxAgeMinutes
+        return paths
+    }
+
+    static func invalidatePathCache() {
+        cachedPaths = []
+        cachedPathsAt = nil
     }
 
     static func sessionID(from url: URL) -> String {
@@ -51,6 +106,31 @@ enum CursorTranscriptParser {
             return String(base.dropFirst("agent-".count))
         }
         return base
+    }
+
+    /// Cursor Task/subagent transcripts live under `.../agent-transcripts/<parent>/subagents/<id>.jsonl`.
+    static func isSubagentTranscript(_ url: URL) -> Bool {
+        url.path.contains("/subagents/")
+    }
+
+    static func parentSessionID(fromSubagentPath url: URL) -> String? {
+        guard isSubagentTranscript(url) else { return nil }
+        let path = url.path
+        guard let subagentsRange = path.range(of: "/subagents/") else { return nil }
+        let beforeSubagents = path[..<subagentsRange.lowerBound]
+        guard let transcriptsRange = beforeSubagents.range(of: "/agent-transcripts/") else { return nil }
+        let parent = String(beforeSubagents[transcriptsRange.upperBound...])
+        return parent.isEmpty ? nil : parent
+    }
+
+    /// Maps subagent conversation IDs to the parent chat that launched them.
+    static func subagentToParentSessionMap(maxAgeMinutes: Int, now: Date = Date()) -> [String: String] {
+        var map: [String: String] = [:]
+        for path in listRecentTranscriptPaths(maxAgeMinutes: maxAgeMinutes, now: now) {
+            guard let parentID = parentSessionID(fromSubagentPath: path) else { continue }
+            map[sessionID(from: path)] = parentID
+        }
+        return map
     }
 
     static func projectSlug(from url: URL) -> String? {
@@ -84,7 +164,7 @@ enum CursorTranscriptParser {
         return trimmed
     }
 
-    static func analyze(path: URL) -> (events: [TranscriptEvent], mtimeMs: Int64, isDone: Bool, hasActiveToolUse: Bool, hasPendingToolApproval: Bool) {
+    static func analyze(path: URL) -> TranscriptAnalysis {
         let mtimeMs: Int64 = {
             guard let date = (try? path.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate else {
                 return 0
@@ -92,14 +172,30 @@ enum CursorTranscriptParser {
             return Int64(date.timeIntervalSince1970 * 1000)
         }()
 
-        let lines = readTailLines(at: path)
-        let events = lines.compactMap(parseEvent)
+        let events = readTailLines(at: path).compactMap(parseEvent)
         let isDone = detectDone(events: events)
-        let turnCompleted = isTurnCompletedAtTail(events: events)
+        let turnCompleted = isTurnEndedAtTail(events: events)
+        let isUserPromptAwaitingResponse = isUserPromptAwaitingResponse(events: events)
         let hasPendingToolApproval = hasPendingApprovalGatedTool(events: events) && !isDone && !turnCompleted
         let pendingTool = lastToolUseName(events: events)
-        let hasActiveToolUse = pendingTool != nil && !hasPendingToolApproval && !isDone
-        return (events, mtimeMs, isDone, hasActiveToolUse, hasPendingToolApproval)
+        let hasActiveToolUse = pendingTool != nil && !hasPendingToolApproval && !isDone && !isUserPromptAwaitingResponse
+        return TranscriptAnalysis(
+            mtimeMs: mtimeMs,
+            isDone: isDone,
+            hasActiveToolUse: hasActiveToolUse,
+            hasPendingToolApproval: hasPendingToolApproval,
+            isUserPromptAwaitingResponse: isUserPromptAwaitingResponse,
+            isTurnEndedAtTail: turnCompleted
+        )
+    }
+
+    /// One filesystem walk + one tail parse per transcript for all enrichment flags.
+    static func analyzeRecentSessions(maxAgeMinutes: Int, now: Date = Date()) -> [String: TranscriptAnalysis] {
+        var results: [String: TranscriptAnalysis] = [:]
+        for path in listRecentTranscriptPaths(maxAgeMinutes: maxAgeMinutes, now: now) {
+            results[sessionID(from: path)] = analyze(path: path)
+        }
+        return results
     }
 
     private static func readTailLines(at url: URL) -> [String] {
@@ -160,9 +256,7 @@ enum CursorTranscriptParser {
 
         var tsMs: Int64?
         if let timestamp = json["timestamp"] as? String {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let date = formatter.date(from: timestamp) ?? ISO8601DateFormatter().date(from: timestamp) {
+            if let date = isoFractional.date(from: timestamp) ?? isoBasic.date(from: timestamp) {
                 tsMs = Int64(date.timeIntervalSince1970 * 1000)
             }
         }
@@ -190,56 +284,57 @@ enum CursorTranscriptParser {
         return nil
     }
 
-    /// True only while the transcript tail is an unanswered approval-gated proposal
-    /// (e.g. assistant `WebSearch` with no user reply or newer assistant work after it).
+    /// True while the latest tool-bearing assistant message is still an approval-gated proposal.
+    ///
+    /// Important timing: for WebSearch, Cursor writes the tool to the transcript while the
+    /// approval card is open, then runs `preToolUse` only after the user approves. So yellow
+    /// must come from this transcript signal — not from `preToolUse`.
+    ///
+    /// After approval, later non-gated tools (Shell/Read) become the latest tool message and
+    /// this returns false (green again).
     private static func hasPendingApprovalGatedTool(events: [TranscriptEvent]) -> Bool {
-        guard let last = events.last else { return false }
+        guard !events.isEmpty else { return false }
 
-        // User replied, turn finished, or agent advanced — approval window is over.
-        if last.kind == "user" || last.kind == "turn_ended" {
-            return false
+        var index = events.count - 1
+        while index >= 0 {
+            let kind = events[index].kind
+            if kind == "turn_ended" || kind == "user" {
+                index -= 1
+                continue
+            }
+            if kind == "assistant" {
+                if events[index].toolUses.isEmpty {
+                    index -= 1
+                    continue
+                }
+                return events[index].toolUses.contains { AgentApprovalGatedTools.requiresUserApproval($0) }
+            }
+            break
         }
-
-        guard last.kind == "assistant", !last.toolUses.isEmpty else {
-            return false
-        }
-
-        // Cursor pauses for approval when the latest proposal is exclusively approval-gated tools.
-        return last.toolUses.allSatisfy(AgentApprovalGatedTools.requiresUserApproval)
+        return false
     }
 
-    /// True when the agent finished its turn (`turn_ended`) and has not started a new one.
-    private static func isTurnCompletedAtTail(events: [TranscriptEvent]) -> Bool {
-        guard let last = events.last else { return false }
-        if last.kind == "turn_ended" { return true }
+    /// Analyze a single known session transcript without walking the whole projects tree.
+    static func analyzeSession(conversationID: String, maxAgeMinutes: Int, now: Date = Date()) -> TranscriptAnalysis? {
+        let paths = listRecentTranscriptPaths(maxAgeMinutes: maxAgeMinutes, now: now)
+        guard let path = paths.first(where: { sessionID(from: $0) == conversationID }) else {
+            return nil
+        }
+        return analyze(path: path)
+    }
 
-        // `turn_ended` followed by a user message with no assistant reply yet means the
-        // previous turn is over and hook `executing` is stale.
-        guard last.kind == "user" else { return false }
+    /// True when the agent finished its turn and is idle (`turn_ended` is the latest event).
+    private static func isTurnEndedAtTail(events: [TranscriptEvent]) -> Bool {
+        events.last?.kind == "turn_ended"
+    }
+
+    /// True when the user sent a new prompt after `turn_ended` and the agent has not replied yet.
+    private static func isUserPromptAwaitingResponse(events: [TranscriptEvent]) -> Bool {
+        guard events.last?.kind == "user" else { return false }
         for event in events.dropLast().reversed() {
             if event.kind == "turn_ended" { return true }
             if event.kind == "assistant" { return false }
         }
         return false
-    }
-
-    static func completedTurnBySessionID(maxAgeMinutes: Int, now: Date = Date()) -> [String: Bool] {
-        var results: [String: Bool] = [:]
-        for path in listRecentTranscriptPaths(maxAgeMinutes: maxAgeMinutes, now: now) {
-            let sessionID = sessionID(from: path)
-            let lines = readTailLines(at: path)
-            let events = lines.compactMap(parseEvent)
-            results[sessionID] = isTurnCompletedAtTail(events: events)
-        }
-        return results
-    }
-
-    static func pendingApprovalBySessionID(maxAgeMinutes: Int, now: Date = Date()) -> [String: Bool] {
-        var results: [String: Bool] = [:]
-        for path in listRecentTranscriptPaths(maxAgeMinutes: maxAgeMinutes, now: now) {
-            let sessionID = sessionID(from: path)
-            results[sessionID] = analyze(path: path).hasPendingToolApproval
-        }
-        return results
     }
 }

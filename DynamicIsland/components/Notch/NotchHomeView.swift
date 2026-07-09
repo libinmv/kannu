@@ -164,18 +164,15 @@ struct MusicPlayerView: View {
     let albumArtNamespace: Namespace.ID
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        HStack(alignment: .top, spacing: 8) {
             HStack(alignment: .top, spacing: 12) {
                 AlbumArtView(vm: vm, albumArtNamespace: albumArtNamespace)
                 MusicControlsView()
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            VStack(alignment: .trailing, spacing: 6) {
-                cornerLyricsButton
-            }
-            .padding(.top, 2)
-            .padding(.trailing, 2)
+            cornerLyricsButton
+                .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .opacity(musicManager.hasActiveSession ? 1 : 0.72)
