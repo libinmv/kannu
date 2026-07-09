@@ -348,59 +348,6 @@ struct ExtensionRateLimitRecord: Codable, Defaults.Serializable, Hashable, Ident
     }
 }
 
-enum CalendarSelectionState: Codable, Defaults.Serializable {
-    case all
-    case selected(Set<String>)
-}
-
-enum FantasticalViewStyle: String, CaseIterable, Codable, Defaults.Serializable {
-    case mini = "mini"
-    case calendar = "calendar"
-    
-    var displayName: String {
-        switch self {
-        case .mini: return "Mini View"
-        case .calendar: return "Full Calendar"
-        }
-    }
-}
-
-enum ThirdPartyCalendarApp: String, CaseIterable, Codable, Defaults.Serializable, Identifiable {
-    case fantastical = "fantastical"
-    case notionCalendar = "notionCalendar"
-    
-    var id: String { rawValue }
-    
-    var displayName: String {
-        switch self {
-        case .fantastical: return "Fantastical"
-        case .notionCalendar: return "Notion Calendar"
-        }
-    }
-    
-    /// Bundle identifiers to try when looking up the app icon (first match wins).
-    var bundleIdentifiers: [String] {
-        switch self {
-        case .fantastical: return ["com.flexibits.fantastical2.mac", "com.flexibits.fantastical"]
-        case .notionCalendar: return ["com.cron.electron"]
-        }
-    }
-    
-    var fallbackIconName: String {
-        switch self {
-        case .fantastical: return "calendar.badge.clock"
-        case .notionCalendar: return "calendar.badge.plus"
-        }
-    }
-    
-    var fallbackIconColor: Color {
-        switch self {
-        case .fantastical: return .red
-        case .notionCalendar: return .blue
-        }
-    }
-}
-
 enum ClipboardDisplayMode: String, CaseIterable, Codable, Defaults.Serializable {
     case popover = "popover"     // Traditional popover attached to button
     case panel = "panel"         // Floating panel near notch
@@ -1001,7 +948,6 @@ extension Defaults.Keys {
     static let selectedIdleAnimation = Key<CustomIdleAnimation?>("selectedIdleAnimation", default: nil)
     static let animationTransformOverrides = Key<[String: AnimationTransformConfig]>("animationTransformOverrides", default: [:])
     static let tileShowLabels = Key<Bool>("tileShowLabels", default: false)
-    static let showCalendar = Key<Bool>("showCalendar", default: false)
     static let hideCompletedReminders = Key<Bool>("hideCompletedReminders", default: true)
     static let hideAllDayEvents = Key<Bool>("hideAllDayEvents", default: false)
     static let sliderColor = Key<SliderColorEnum>(
@@ -1108,23 +1054,6 @@ extension Defaults.Keys {
     static let lockScreenReminderChipStyle = Key<LockScreenReminderChipStyle>("lockScreenReminderChipStyle", default: .eventColor)
     static let lockScreenReminderWidgetHorizontalAlignment = Key<String>("lockScreenReminderWidgetHorizontalAlignment", default: "center")
     static let lockScreenReminderWidgetVerticalOffset = Key<Double>("lockScreenReminderWidgetVerticalOffset", default: 0)
-    static let lockScreenShowCalendarEvent = Key<Bool>("lockScreenShowCalendarEvent", default: false)
-    static let lockScreenCalendarEventLookaheadWindow = Key<String>("lockScreenCalendarEventLookaheadWindow", default: "3h")
-    static let lockScreenCalendarSelectionMode = Key<String>("lockScreenCalendarSelectionMode", default: "all")
-    static let lockScreenSelectedCalendarIDs = Key<Set<String>>("lockScreenSelectedCalendarIDs", default: [])
-    static let lockScreenShowCalendarCountdown = Key<Bool>("lockScreenShowCalendarCountdown", default: true)
-    static let lockScreenShowCalendarEventEntireDuration = Key<Bool>("lockScreenShowCalendarEventEntireDuration", default: true)
-    static let lockScreenShowCalendarEventAfterStartEnabled = Key<Bool>("lockScreenShowCalendarEventAfterStartEnabled", default: false)
-    static let lockScreenShowCalendarEventAfterStartWindow = Key<String>("lockScreenShowCalendarEventAfterStartWindow", default: "5m")
-    static let lockScreenShowCalendarTimeRemaining = Key<Bool>("lockScreenShowCalendarTimeRemaining", default: true)
-    static let lockScreenShowCalendarStartTimeAfterBegins = Key<Bool>("lockScreenShowCalendarStartTimeAfterBegins", default: true)
-    static let lockScreenWeatherWidgetRowOrder = Key<String>("lockScreenWeatherWidgetRowOrder", default: "weather_calendar_focus")
-    
-    // MARK: Third-party Calendar Integration
-    static let enableThirdPartyCalendarApp = Key<Bool>("enableThirdPartyCalendarApp", default: false)
-    static let selectedCalendarApp = Key<ThirdPartyCalendarApp>("selectedCalendarApp", default: .fantastical)
-    static let fantasticalDefaultView = Key<FantasticalViewStyle>("fantasticalDefaultView", default: .mini)
-    
         // MARK: Battery
     static let showPowerStatusNotifications = Key<Bool>("showPowerStatusNotifications", default: true)
     static let showBatteryIndicator = Key<Bool>("showBatteryIndicator", default: BatteryActivityManager.shared.hasBattery())
@@ -1178,11 +1107,6 @@ extension Defaults.Keys {
         static let copyOnDrag = Key<Bool>("copyOnDrag", default: false)
         static let autoRemoveShelfItems = Key<Bool>("autoRemoveShelfItems", default: false)
         static let expandedDragDetection = Key<Bool>("expandedDragDetection", default: true)
-    
-        // MARK: Calendar
-    static let calendarSelectionState = Key<CalendarSelectionState>("calendarSelectionState", default: .all)
-        static let showFullEventTitles = Key<Bool>("showFullEventTitles", default: false)
-        static let autoScrollToNextEvent = Key<Bool>("autoScrollToNextEvent", default: true)
     
         // MARK: Fullscreen Media Detection
     static let alwaysHideInFullscreen = Key<Bool>("alwaysHideInFullscreen", default: false)
@@ -1527,14 +1451,11 @@ extension Defaults.Keys {
         Defaults[.enableLunarIntegration] = isIntegrationEnabled && selectedProvider == .lunar
     }
 
-    /// Kannu removed calendar/reminder/mirror features; keep persisted legacy prefs from re-enabling them.
+    /// Kannu removed mirror/reminder features; keep persisted legacy prefs from re-enabling them.
     static func enforceRemovedFeatureDefaults() {
-        Defaults[.showCalendar] = false
         Defaults[.showMirror] = false
         Defaults[.enableReminderLiveActivity] = false
         Defaults[.enableLockScreenReminderWidget] = false
-        Defaults[.lockScreenShowCalendarEvent] = false
-        Defaults[.enableThirdPartyCalendarApp] = false
     }
 
     private static func normalizeMusicAuxControls() {

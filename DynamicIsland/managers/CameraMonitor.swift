@@ -42,6 +42,9 @@ private func cameraPropertyListener(
 
 @MainActor
 class CameraMonitor: ObservableObject {
+    /// Privacy indicator only: this monitor checks camera activity state and does not
+    /// start camera capture, request `.video` access, or read camera frames.
+    /// Detection is based on CMIO "running somewhere" plus AVFoundation in-use checks.
     // MARK: - Published Properties
     @Published var isCameraActive: Bool = false
     @Published var activeApp: String? = nil

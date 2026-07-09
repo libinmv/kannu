@@ -4,6 +4,17 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-07-09 - Calendar removal and runtime permissions docs
+- **Developer label:** Calendar removal and runtime permissions docs
+- **Agent label:** Calendar cleanup, branding, and permissions documentation
+- **Changes:**
+  - Removed remaining calendar types, defaults, lock-screen row ordering, and stale localization strings.
+  - Simplified lock-screen weather widget to weather and focus rows only.
+  - Updated Full Disk Access prompt copy from Dynamic Island to Kannu branding.
+  - Documented camera monitor as privacy-indicator-only (no capture or frame access).
+  - Added README runtime-permissions section mapping features to macOS TCC prompts.
+  - Updated contributor docs to target `development` for pull requests.
+
 ### 2026-07-09 - Feature label and changelog workflow (mundackan)
 - **Developer label:** Feature label and changelog workflow
 - **Agent label:** Feature changelog rule and commit enforcement

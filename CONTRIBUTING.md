@@ -25,7 +25,7 @@ Thank you for your interest in contributing to Kannu! We welcome contributions f
 3. **Make your changes** following the guidelines below.
 4. **Test your changes** to ensure they work as expected and do not break existing functionality.
 5. **Commit** with clear, descriptive messages after completing the [Commit Checklist](#commit-checklist).
-6. **Push** to your fork and submit a **pull request** (PR) to the `main` branch.
+6. **Push** to your fork and submit a **pull request** (PR) to the `development` branch.
 7. **Participate in code review** and address any feedback.
 
 ## Code of Conduct
@@ -61,7 +61,7 @@ This enables the repo-managed `pre-commit` hook from `.githooks/`.
 
 ## Pull Request Process
 
-1. Ensure your PR has a clear title and description.
+1. Ensure your PR has a clear title and description, and target `development` unless a maintainer asks for a different base branch.
 2. Link any related issues.
 3. Keep PRs focused—one feature or fix per PR when possible.
 4. Update documentation if your change affects user-facing behavior.

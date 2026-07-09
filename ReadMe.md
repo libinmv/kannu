@@ -27,6 +27,23 @@ Calendar, terminal, and color picker features from the Atoll/Boring.Notch lineag
 - Xcode 15+ to build from source.
 - Permissions as needed: Accessibility, Screen Recording, Music.
 
+## Runtime Permissions (by Feature)
+
+Kannu requests permissions only when you use the related feature. The app is not sandboxed, so most permissions are standard macOS privacy prompts (TCC) shown at runtime.
+
+- **Accessibility** — required for hardware key interception and custom HUD/OSD replacement.
+- **Screen Recording** — required for Screen Assistant screenshot capture. Screen-recording detection is separate and does not require this prompt.
+- **Music (MusicKit)** — required for Apple Music animated artwork features.
+- **Automation (Apple Events)** — required for Spotify/Apple Music controls and Apple Notes sync when those integrations are used.
+- **Full Disk Access** — required only for custom Focus metadata and optional global Shelf behavior.
+- **Files & Folders (Documents/Downloads)** — used by Shelf when Full Disk Access is not granted.
+- **Bluetooth** — used for Bluetooth audio battery indicators.
+- **Location (When In Use)** — used for lock screen weather.
+- **Audio Capture** — used for real-time waveform/audio-activity features.
+- **Developer Tools** — optional, used for advanced Focus detection mode.
+
+For detailed prompts and one-click setup actions, open **Settings** in Kannu. Contributor docs are in [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Build from Source
 
 1. Open `DynamicIsland.xcodeproj` in Xcode.
