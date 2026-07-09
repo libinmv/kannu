@@ -286,12 +286,9 @@ enum CursorTranscriptParser {
 
     /// True while the latest tool-bearing assistant message is still an approval-gated proposal.
     ///
-    /// Important timing: for WebSearch, Cursor writes the tool to the transcript while the
-    /// approval card is open, then runs `preToolUse` only after the user approves. So yellow
-    /// must come from this transcript signal — not from `preToolUse`.
-    ///
-    /// After approval, later non-gated tools (Shell/Read) become the latest tool message and
-    /// this returns false (green again).
+    /// Used only for sessions without hook coverage: with hooks installed, `preToolUse`
+    /// fires when the approval card is shown and drives yellow directly (measured 2026-07).
+    /// Transcript flushing lags the live card, so this is a best-effort fallback.
     private static func hasPendingApprovalGatedTool(events: [TranscriptEvent]) -> Bool {
         guard !events.isEmpty else { return false }
 

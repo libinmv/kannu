@@ -1046,8 +1046,14 @@ struct ContentView: View {
                       } else if vm.notchState == .closed && capsLockManager.isCapsLockActive && Defaults[.enableCapsLockIndicator] && !vm.hideOnClosed && !lockScreenManager.isLocked {
                           InlineHUD(type: .constant(.capsLock), value: .constant(1.0), icon: .constant(""), hoverAnimation: $isHovering, gestureProgress: $gestureProgress)
                               .transition(AnyTransition.move(edge: .trailing).combined(with: .opacity))
+                      } else if canShowMusicDuringExpansion && musicPairingEligible {
+                          // While music plays, MusicLiveActivity embeds the traffic light in its
+                          // center (agent hover → agent status; wings keep media art/spectrum).
+                          MusicLiveActivity(secondary: musicSecondary)
+                              .id("closed-music-live-activity")
+                              .transition(closedLiveActivitySwapTransition)
                       } else if !isCurrentScreenExpansionVisible && vm.notchState == .closed && enableAgentStatusFeature && agentStatusMonitor.shouldShowTrafficLight && !vm.hideOnClosed {
-                          // Agent traffic light wins over music so green/yellow are visible while agents run.
+                          // No music playing: standalone traffic light.
                           AgentTrafficLightLiveActivity(
                               isHovering: isHovering,
                               gestureProgress: gestureProgress,
@@ -1056,10 +1062,6 @@ struct ContentView: View {
                               }
                           )
                               .transition(.blurReplace.animation(.interactiveSpring(dampingFraction: 1.2)))
-                      } else if canShowMusicDuringExpansion && musicPairingEligible {
-                          MusicLiveActivity(secondary: musicSecondary)
-                              .id("closed-music-live-activity")
-                              .transition(closedLiveActivitySwapTransition)
                       } else if (!isCurrentScreenExpansionVisible || currentScreenExpansionType == .timer) && vm.notchState == .closed && timerManager.isTimerActive && coordinator.timerLiveActivityEnabled && !vm.hideOnClosed {
                           TimerLiveActivity()
                       } else if (!isCurrentScreenExpansionVisible || currentScreenExpansionType == .recording) && vm.notchState == .closed && (recordingManager.isRecording || !recordingManager.isRecorderIdle) && Defaults[.enableScreenRecordingDetection] && !vm.hideOnClosed && !musicPairingEligible {
@@ -1289,7 +1291,10 @@ struct ContentView: View {
             notchHeight: notchContentHeight
         )
         let effectiveCenterWidth = inlineSneakPeekActive ? 380 : centerBaseWidth
-        let notchWidth = wingBaseWidth + effectiveCenterWidth + rightWingWidth
+        // In pill mode the capsule's rounded ends clip flush content (album art / spectrum),
+        // so give the wings breathing room from the curved edges.
+        let wingEdgeInset: CGFloat = isDynamicIslandMode ? 6 : 0
+        let notchWidth = wingBaseWidth + effectiveCenterWidth + rightWingWidth + wingEdgeInset * 2
         let badgeBaseSize = max(13, notchContentHeight * 0.36)
         let badgeDisplaySize = badgeDisplaySize(for: secondary, baseSize: badgeBaseSize)
         let badgeOffset = badgeOverlayOffset(for: secondary, badgeSize: badgeDisplaySize)
@@ -1313,6 +1318,7 @@ struct ContentView: View {
                     .contentTransition(.symbolEffect(.replace))
             }
             .frame(width: wingBaseWidth, height: notchContentHeight)
+            .padding(.leading, wingEdgeInset)
             .contentShape(Rectangle())
             .onHover { hovering in
                 handleRegionHoverOpen(hovering, focus: .home)
@@ -1340,6 +1346,7 @@ struct ContentView: View {
 
             musicRightWing(for: secondary, notchHeight: notchContentHeight, trailingWidth: rightWingWidth)
                 .frame(width: rightWingWidth, height: notchContentHeight, alignment: .center)
+                .padding(.trailing, wingEdgeInset)
                 .contentShape(Rectangle())
                 .onHover { hovering in
                     guard shouldShowClosedMusicWaveformPlayPauseOverlay(for: secondary) else {

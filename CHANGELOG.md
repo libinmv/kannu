@@ -22,6 +22,8 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
   - Fixed yellow for real (hook v15, verified working): measured hook timing showed `preToolUse` fires when the approval card is SHOWN (not after approve), so gated tools (WebSearch/WebFetch/AskQuestion) now write `awaiting_input` on `preToolUse`/`beforeMCPExecution` and flip back on `postToolUse`/`postToolUseFailure`; added `postToolUseFailure` to installed Cursor hooks.
   - Monitor now treats the hook file as sole authority for yellow: removed transcript-based promotion/demotion of `awaiting_input` and the 1s active transcript polling timer (hook watcher reacts instantly, less CPU/memory).
   - README: added user-facing Install section with Gatekeeper bypass steps (right-click Open / Open Anyway / `xattr` command) for the unsigned DMG, and corrected traffic-light color legend (yellow = awaiting input, green = thinking/executing).
+  - Restored music + agent combined live activity: music activity again renders while agents run (album art left, spectrum right, traffic light center); hovering the wings opens media, hovering the traffic light opens agent status. Standalone traffic light only shows when no music is playing.
+  - Fixed album art clipping in Dynamic Island pill mode: the capsule's rounded ends cropped the flush-mounted thumbnail (and spectrum); wings now get a 6pt edge inset in pill mode only (physical notch layout unchanged).
 
 ### 2026-07-09 - Calendar removal and runtime permissions docs
 - **Developer label:** Calendar removal and runtime permissions docs
