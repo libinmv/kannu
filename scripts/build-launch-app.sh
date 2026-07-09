@@ -2,12 +2,12 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROJECT="$ROOT_DIR/DynamicIsland.xcodeproj"
-SCHEME="DynamicIsland"
+PROJECT="$ROOT_DIR/Kannu.xcodeproj"
+SCHEME="Kannu"
 CONFIGURATION="Release"
 DERIVED_DATA="$ROOT_DIR/build"
 APP_PATH="$DERIVED_DATA/Build/Products/Release/Kannu.app"
-ENTITLEMENTS_SRC="$ROOT_DIR/DynamicIsland/DynamicIsland.entitlements"
+ENTITLEMENTS_SRC="$ROOT_DIR/Kannu/Kannu.entitlements"
 
 SKIP_BUILD=false
 OPEN_APP=true
@@ -85,6 +85,16 @@ prepare_entitlements() {
       : # already absent
     else
       echo "error: plutil failed to modify entitlements: $plutil_out" >&2
+      exit 1
+    fi
+  fi
+
+  # Ad-hoc local builds should not disable library validation.
+  if ! plutil_out=$(plutil -remove com.apple.security.cs.disable-library-validation "$TEMP_ENTITLEMENTS" 2>&1); then
+    if printf '%s' "$plutil_out" | grep -q "No value to remove"; then
+      : # already absent
+    else
+      echo "error: plutil failed to remove disable-library-validation: $plutil_out" >&2
       exit 1
     fi
   fi

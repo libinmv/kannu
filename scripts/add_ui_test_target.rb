@@ -1,30 +1,30 @@
 require 'xcodeproj'
 
-project_path = './DynamicIsland.xcodeproj'
+project_path = './Kannu.xcodeproj'
 project = Xcodeproj::Project.open(project_path)
 
-if project.targets.any? { |t| t.name == 'DynamicIslandUITests' }
-  puts "Target DynamicIslandUITests already exists."
+if project.targets.any? { |t| t.name == 'KannuUITests' }
+  puts "Target KannuUITests already exists."
   exit 0
 end
 
-app_target = project.targets.find { |t| t.name == 'DynamicIsland' }
+app_target = project.targets.find { |t| t.name == 'Kannu' }
 
-ui_test_target = project.new_target(:ui_test_bundle, 'DynamicIslandUITests', :osx)
+ui_test_target = project.new_target(:ui_test_bundle, 'KannuUITests', :osx)
 
-test_group = project.main_group.find_subpath(File.join('DynamicIslandUITests'), true)
+test_group = project.main_group.find_subpath(File.join('KannuUITests'), true)
 test_group.set_source_tree('<group>')
-test_group.set_path('DynamicIslandUITests')
+test_group.set_path('KannuUITests')
 
-file_ref = test_group.new_reference('DynamicIslandUITests.swift')
+file_ref = test_group.new_reference('KannuUITests.swift')
 info_plist_ref = test_group.new_reference('Info.plist')
 
 ui_test_target.add_file_references([file_ref])
 
 ui_test_target.build_configurations.each do |config|
-  config.build_settings['TEST_TARGET_NAME'] = 'DynamicIsland'
-  config.build_settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'com.kannu.DynamicIslandUITests'
-  config.build_settings['INFOPLIST_FILE'] = 'DynamicIslandUITests/Info.plist'
+  config.build_settings['TEST_TARGET_NAME'] = 'Kannu'
+  config.build_settings['PRODUCT_BUNDLE_IDENTIFIER'] = 'com.kannu.KannuUITests'
+  config.build_settings['INFOPLIST_FILE'] = 'KannuUITests/Info.plist'
   config.build_settings['SWIFT_VERSION'] = '5.0'
   config.build_settings['MACOSX_DEPLOYMENT_TARGET'] = '14.0'
   # Important for UI testing bundle to link XCTest correctly
@@ -33,4 +33,4 @@ ui_test_target.build_configurations.each do |config|
 end
 
 project.save
-puts "Successfully added DynamicIslandUITests target to the project."
+puts "Successfully added KannuUITests target to the project."

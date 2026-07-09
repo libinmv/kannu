@@ -55,7 +55,7 @@ jobs:
           sudo DevToolsSecurity -enable
 
           # Strip mach-services entitlement (amfid kills ad-hoc app); ignore only "key absent".
-          if ! plutil_out=$(plutil -remove com.apple.security.mach-services DynamicIsland/DynamicIsland.entitlements 2>&1); then
+          if ! plutil_out=$(plutil -remove com.apple.security.mach-services Kannu/Kannu.entitlements 2>&1); then
             if printf '%s' "$plutil_out" | grep -q "No value to remove"; then
               echo "mach-services entitlement already absent, continuing."
             else
@@ -65,8 +65,8 @@ jobs:
           fi
 
           xcodebuild build \
-            -project DynamicIsland.xcodeproj \
-            -scheme DynamicIsland \
+            -project Kannu.xcodeproj \
+            -scheme Kannu \
             -destination "platform=macOS" \
             -resultBundlePath BuildResults.xcresult \
             CODE_SIGN_IDENTITY="-" \

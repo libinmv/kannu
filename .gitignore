@@ -81,7 +81,6 @@ xcuserdata/
 # SwiftPM
 #
 .build/
-Package.resolved
 
 # CocoaPods
 #

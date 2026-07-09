@@ -70,7 +70,7 @@ warn for apps you build yourself.
 
 ## Build from Source
 
-1. Open `DynamicIsland.xcodeproj` in Xcode.
+1. Open `Kannu.xcodeproj` in Xcode.
 2. Select the **Kannu** scheme and your Mac as the run destination.
 3. Build and run (⌘R).
 

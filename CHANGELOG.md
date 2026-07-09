@@ -37,6 +37,16 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
   - Restored music + agent combined live activity: music activity again renders while agents run (album art left, spectrum right, traffic light center); hovering the wings opens media, hovering the traffic light opens agent status. Standalone traffic light only shows when no music is playing.
   - Fixed album art clipping in Dynamic Island pill mode: the capsule's rounded ends cropped the flush-mounted thumbnail (and spectrum); wings now get a 6pt edge inset in pill mode only (physical notch layout unchanged).
 
+### 2026-07-09 - Rename DynamicIsland internals to Kannu
+- **Developer label:** Rename DynamicIsland internals to Kannu
+- **Agent label:** Scaffolding rename DynamicIsland -> Kannu
+- **Changes:**
+  - Renamed project scaffolding from `DynamicIsland` to `Kannu` across source folders, Xcode project/scheme, and UI test target naming.
+  - Updated core scaffolding symbols (for example `KannuViewModel`, `KannuViewCoordinator`, `KannuApp`) while keeping Dynamic Island display-mode identifiers intact.
+  - Repointed build scripts, CI workflows, and contributor docs to `Kannu.xcodeproj` and scheme `Kannu`.
+  - Updated app-referencing copy to Kannu in onboarding/privacy and screenshot-hiding settings, while preserving Dynamic Island mode wording.
+
+
 ### 2026-07-09 - Calendar removal and runtime permissions docs
 - **Developer label:** Calendar removal and runtime permissions docs
 - **Agent label:** Calendar cleanup, branding, and permissions documentation

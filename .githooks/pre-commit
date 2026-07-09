@@ -13,7 +13,7 @@ fi
 has_source_change=false
 while IFS= read -r file; do
   [[ -z "${file}" ]] && continue
-  if [[ "${file}" =~ ^DynamicIsland/ ]] \
+  if [[ "${file}" =~ ^Kannu/ ]] \
     || [[ "${file}" =~ ^scripts/ ]] \
     || [[ "${file}" =~ \.xcodeproj/ ]] \
     || [[ "${file}" == "CONTRIBUTING.md" ]] \
