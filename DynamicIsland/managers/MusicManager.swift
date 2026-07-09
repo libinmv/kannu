@@ -1194,7 +1194,7 @@ class MusicManager: ObservableObject {
             await activeController?.toggleRepeat()
         }
     }
-    
+
     func togglePlay() {
         guard let controller = activeController else { return }
         let targetState = !isPlaying

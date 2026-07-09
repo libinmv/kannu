@@ -304,6 +304,10 @@ class SystemHUDManager {
         // because isSystemOperationInProgress is already true).
         changesObserver?.stopObserving()
         changesObserver = nil
+
+        if !Defaults[.enableCustomOSD] {
+            CustomOSDWindowManager.shared.tearDown()
+        }
         
         changesObserver = SystemChangesObserver(coordinator: coordinator)
 
@@ -328,6 +332,7 @@ class SystemHUDManager {
         isSystemOperationInProgress = true
         changesObserver?.stopObserving()
         changesObserver = nil
+        CustomOSDWindowManager.shared.tearDown()
         
         // Re-enable system HUD when we stop observing
         SystemOSDManager.enableSystemHUD()

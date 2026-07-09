@@ -16,3 +16,16 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import SwiftUI
+
+private struct NotchForegroundKey: EnvironmentKey {
+    static let defaultValue: Color = .white
+}
+
+extension EnvironmentValues {
+    var notchForeground: Color {
+        get { self[NotchForegroundKey.self] }
+        set { self[NotchForegroundKey.self] = newValue }
+    }
+}
+

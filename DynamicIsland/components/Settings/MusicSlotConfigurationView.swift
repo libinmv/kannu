@@ -117,13 +117,16 @@ struct MusicSlotConfigurationView: View {
                 .foregroundStyle(.secondary)
 
             ScrollView(.horizontal, showsIndicators: true) {
-                HStack(spacing: 12) {
+                LazyHStack(spacing: 12) {
                     ForEach(pickerOptions, id: \.self) { control in
                         paletteItem(for: control)
                     }
                 }
                 .padding(.vertical, 4)
+                .padding(.horizontal, 2)
             }
+            .frame(height: 84)
+            .clipped()
         }
     }
 
@@ -220,9 +223,6 @@ private struct ScrollHintIndicator: View {
                 .onDrag {
                     NSItemProvider(object: NSString(string: "control:\(control.rawValue)"))
                 }
-                .onTapGesture {
-                    place(control)
-                }
 
             Text(control.label)
                 .font(.caption2)
@@ -231,6 +231,10 @@ private struct ScrollHintIndicator: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
                 .multilineTextAlignment(.center)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            place(control)
         }
         .opacity(disabled ? 0.4 : 1)
         .disabled(disabled)
@@ -245,7 +249,10 @@ private struct ScrollHintIndicator: View {
     }
 
     private func slotValue(at index: Int) -> MusicControlButton {
-        let normalized = musicControlSlots.normalized(allowingMediaOutput: showMediaOutputControl, isAppleMusicActive: isAppleMusicActive)
+        let normalized = musicControlSlots.normalized(
+            allowingMediaOutput: showMediaOutputControl,
+            isAppleMusicActive: isAppleMusicActive
+        )
         guard normalized.indices.contains(index) else { return .none }
         return normalized[index]
     }

@@ -29,6 +29,7 @@ typealias PlatformFont = UIFont
 
 struct TimerLiveActivity: View {
     @EnvironmentObject var vm: DynamicIslandViewModel
+    @Environment(\.notchForeground) private var notchForeground
     @ObservedObject var timerManager = TimerManager.shared
     @ObservedObject var lockScreenManager = LockScreenManager.shared
     @State private var isHovering: Bool = false
@@ -413,7 +414,7 @@ struct TimerLiveActivity: View {
                                 .constant(timerManager.timerName),
                                 font: .system(size: 12, weight: .medium),
                                 nsFont: .callout,
-                                textColor: .white,
+                                textColor: notchForeground,
                                 minDuration: 0.25,
                                 frameWidth: resolvedTextWidth
                             )
@@ -421,7 +422,7 @@ struct TimerLiveActivity: View {
                             Text(timerManager.timerName)
                                 .font(.system(size: 12, weight: .medium))
                                 .lineLimit(1)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(notchForeground)
                                 .transition(.opacity.combined(with: .move(edge: .top)))
                                 .frame(width: resolvedTextWidth, alignment: .leading)
                         }
@@ -465,7 +466,7 @@ struct TimerLiveActivity: View {
         return VStack(spacing: 4) {
             Text(timerManager.formattedRemainingTime())
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                .foregroundColor(timerManager.isOvertime ? .red : .white)
+                .foregroundColor(timerManager.isOvertime ? .red : notchForeground)
                 .contentTransition(.numericText())
                 .animation(.smooth(duration: 0.25), value: timerManager.remainingTime)
                 .frame(maxWidth: .infinity, alignment: .trailing)

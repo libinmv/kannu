@@ -1,0 +1,17 @@
+---
+description: Require developer/agent feature labels and per-commit CHANGELOG entries
+alwaysApply: true
+---
+
+# Feature Label And Changelog Rule
+
+- Before implementation starts, ask the developer to provide a plain-language feature label.
+- When summarizing completed work, always state the agent feature label as well.
+- If the developer label and agent label differ, keep both labels in the changelog entry.
+- Before any commit, append one new entry under `## [Unreleased]` in `CHANGELOG.md`.
+- Each changelog entry must include:
+  - `Developer label`
+  - `Agent label`
+  - `Changes` list with at least one concrete bullet
+- Keep change bullets specific and reviewable (what changed and where).
+- Prefer commit subjects that align with the developer feature label.

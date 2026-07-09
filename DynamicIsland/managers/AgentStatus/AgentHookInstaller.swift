@@ -207,6 +207,9 @@ final class AgentHookInstaller: ObservableObject {
         extract() {
           printf '%s' "$INPUT" | sed -n "s/.*\\"$1\\"[[:space:]]*:[[:space:]]*\\"\\([^\\"]*\\)\\".*/\\1/p" | head -n 1
         }
+        extract_workspace_root() {
+          printf '%s' "$INPUT" | sed -n 's/.*"workspace_roots"[[:space:]]*:[[:space:]]*\\[[[:space:]]*"\\([^"]*\\)".*/\\1/p' | head -n 1
+        }
         ID=$(extract conversation_id)
         [ -z "$ID" ] && ID=$(extract conversationId)
         [ -z "$ID" ] && ID=$(extract session_id)
@@ -221,9 +224,22 @@ final class AgentHookInstaller: ObservableObject {
         NAME=$(printf '%s' "$NAME" | tr -d '\\n\\r')
         NAME=$(printf '%s' "$NAME" | sed 's/"/\\\\"/g')
 
+        WORKSPACE_ROOT=$(extract_workspace_root)
+        WORKSPACE_ROOT=$(printf '%s' "$WORKSPACE_ROOT" | sed 's#^file://##')
+        PROJECT=""
+        if [ -n "$WORKSPACE_ROOT" ]; then
+          PROJECT=$(basename "$WORKSPACE_ROOT")
+        fi
+        PROJECT=$(printf '%s' "$PROJECT" | tr -d '\\n\\r')
+        PROJECT=$(printf '%s' "$PROJECT" | sed 's/"/\\\\"/g')
+
         TS=$(($(date +%s) * 1000))
-        if [ -n "$NAME" ]; then
+        if [ -n "$NAME" ] && [ -n "$PROJECT" ]; then
+          printf '{"state":"%s","ts":%s,"provider":"%s","name":"%s","project":"%s"}' "$STATE" "$TS" "$PROVIDER" "$NAME" "$PROJECT" > "$STATUS_DIR/$PROVIDER-$ID.json"
+        elif [ -n "$NAME" ]; then
           printf '{"state":"%s","ts":%s,"provider":"%s","name":"%s"}' "$STATE" "$TS" "$PROVIDER" "$NAME" > "$STATUS_DIR/$PROVIDER-$ID.json"
+        elif [ -n "$PROJECT" ]; then
+          printf '{"state":"%s","ts":%s,"provider":"%s","project":"%s"}' "$STATE" "$TS" "$PROVIDER" "$PROJECT" > "$STATUS_DIR/$PROVIDER-$ID.json"
         else
           printf '{"state":"%s","ts":%s,"provider":"%s"}' "$STATE" "$TS" "$PROVIDER" > "$STATUS_DIR/$PROVIDER-$ID.json"
         fi

@@ -25,6 +25,7 @@ import Defaults
 
 struct SystemEventIndicatorModifier: View {
     @EnvironmentObject var vm: DynamicIslandViewModel
+    @Environment(\.notchForeground) private var notchForeground
     @Binding var eventType: SneakContentType
     @Binding var value: CGFloat {
         didSet {
@@ -59,29 +60,29 @@ struct SystemEventIndicatorModifier: View {
                     Image(systemName: "sun.max.fill")
                         .contentTransition(.symbolEffect)
                         .frame(width: 20, height: 15)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(notchForeground)
                 case .backlight:
                     Image(systemName: BacklightSymbol(value))
                         .contentTransition(.symbolEffect)
                         .frame(width: 20, height: 15)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(notchForeground)
                 case .mic:
                     Image(systemName: "mic")
                         .symbolVariant(value > 0 ? .none : .slash)
                         .contentTransition(.interpolate)
                         .frame(width: 20, height: 15)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(notchForeground)
                 case .bluetoothAudio:
                     if value < 0, let mode = AirPodsListeningMode.fromHUDSymbol(icon) {
                         AirPodsListeningModeSymbol(mode: mode)
                             .contentTransition(.interpolate)
                             .frame(width: 20, height: 15)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(notchForeground)
                     } else if !icon.isEmpty {
                         Image(systemName: icon)
                             .contentTransition(.interpolate)
                             .frame(width: 20, height: 15)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(notchForeground)
                     }
                 default:
                     EmptyView()
@@ -104,7 +105,7 @@ struct SystemEventIndicatorModifier: View {
                     Text(mode.displayName)
                         .font(.caption)
                         .fontWeight(.medium)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(notchForeground)
                         .lineLimit(1)
                         .allowsTightening(true)
                 } else {
@@ -176,6 +177,7 @@ struct VolumeProgressSection: View {
 }
 
 struct PercentageLabel: View {
+    @Environment(\.notchForeground) private var notchForeground
     let value: CGFloat
     let isVisible: Bool
     @Default(.progressBarStyle) private var progressBarStyle
@@ -187,7 +189,7 @@ struct PercentageLabel: View {
                     .font(.caption)
                     .fontWeight(.semibold)
                     .monospacedDigit()
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(notchForeground.opacity(0.9))
                     .contentTransition(.numericText())
                     .frame(width: 28, alignment: .trailing)
             }
@@ -222,6 +224,7 @@ private extension ProgressColorMode {
 
 struct DraggableProgressBar: View {
     @EnvironmentObject var vm: DynamicIslandViewModel
+    @Environment(\.notchForeground) private var notchForeground
     @Binding var value: CGFloat
     var colorMode: ProgressColorMode? = nil
     
@@ -285,7 +288,7 @@ struct DraggableProgressBar: View {
             if useAccentColor {
                 return accentColor.ensureMinimumBrightness(factor: 0.7)
             }
-            return .white
+            return notchForeground
         }()
 
         return Group {
@@ -301,7 +304,7 @@ struct DraggableProgressBar: View {
                         .fill(LinearGradient(
                             colors: useAccentColor
                                 ? [accentColor, accentColor.ensureMinimumBrightness(factor: 0.2)]
-                                : [.white, .white.opacity(0.2)],
+                                : [notchForeground, notchForeground.opacity(0.2)],
                             startPoint: .trailing,
                             endPoint: .leading
                         ))
@@ -309,7 +312,7 @@ struct DraggableProgressBar: View {
                         .shadow(color: shadowColor, radius: useShadow ? 8 : 0, x: 3)
                 case .hierarchical:
                     Capsule()
-                        .fill(useAccentColor ? accentColor : .white)
+                        .fill(useAccentColor ? accentColor : notchForeground)
                         .frame(width: clampedWidth)
                         .shadow(color: shadowColor, radius: useShadow ? 8 : 0, x: 3)
                 case .segmented:
@@ -332,6 +335,7 @@ struct DraggableProgressBar: View {
 }
 
 struct SegmentedProgressContent: View {
+    @Environment(\.notchForeground) private var notchForeground
     let value: CGFloat
     let geometry: GeometryProxy
     
@@ -376,9 +380,9 @@ struct SegmentedProgressContent: View {
             if Defaults[.systemEventIndicatorUseAccent] {
                 return Defaults[.accentColor]
             }
-            return .white
+            return notchForeground
         } else {
-            return .white.opacity(0.15)
+            return notchForeground.opacity(0.15)
         }
     }
     
@@ -387,11 +391,11 @@ struct SegmentedProgressContent: View {
             if let glowIndex = glowIndex, index == glowIndex {
                 return Defaults[.systemEventIndicatorUseAccent]
                     ? Defaults[.accentColor].ensureMinimumBrightness(factor: 0.8)
-                    : .white
+                    : notchForeground
             } else {
                 return Defaults[.systemEventIndicatorUseAccent]
                     ? Defaults[.accentColor].ensureMinimumBrightness(factor: 0.7)
-                    : .white
+                    : notchForeground
             }
         }
         return .clear

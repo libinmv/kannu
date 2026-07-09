@@ -3790,23 +3790,7 @@ struct Appearance: View {
 
             Section {
                 VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 10) {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(notchFillColor)
-                            .frame(width: 36, height: 24)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
-                            )
-                        Text("Current fill")
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
-                        Spacer()
-                        ColorPicker("", selection: $notchFillColor, supportsOpacity: false)
-                            .labelsHidden()
-                            .frame(width: 48, height: 28)
-                            .help("Change the notch fill color")
-                    }
+                    NotchFillColorPickerRow(color: $notchFillColor)
                 }
                 .settingsHighlight(id: highlightID("Notch fill color"))
                 Text("Fill color is used when no custom notch skin is selected.")
@@ -6046,7 +6030,7 @@ struct TimerSettings: View {
             .settingsHighlight(id: highlightID("Timer tint"))
 
             if colorMode == .solid {
-                ColorPicker("Solid colour", selection: $solidColor, supportsOpacity: false)
+                SettingsColorPickerRow(title: "Solid colour", selection: $solidColor)
                     .settingsHighlight(id: highlightID("Solid colour"))
             }
 
@@ -6365,7 +6349,7 @@ private struct TimerPresetEditorRow: View {
                 TimerPresetComponentControl(title: String(localized: "Seconds"), value: secondsBinding, range: 0...59)
             }
 
-            ColorPicker("Accent colour", selection: colorBinding, supportsOpacity: false)
+            SettingsColorPickerRow(title: "Accent colour", selection: colorBinding)
                 .frame(maxWidth: 240, alignment: .leading)
 
             HStack(spacing: 12) {
@@ -7331,6 +7315,12 @@ struct CustomOSDSettings: View {
         .onChange(of: accessibilityPermission.isAuthorized) { _, granted in
             if !granted {
                 enableCustomOSD = false
+                CustomOSDWindowManager.shared.forceHideAll()
+            }
+        }
+        .onChange(of: enableCustomOSD) { _, enabled in
+            if !enabled {
+                CustomOSDWindowManager.shared.forceHideAll()
             }
         }
     }
@@ -7434,6 +7424,223 @@ struct NotesSettingsView: View {
 }
 
 // MARK: - Quick Share Provider Icon
+
+private struct SettingsColorPickerRow: View {
+    let title: String
+    @Binding var selection: Color
+    var supportsOpacity: Bool = false
+
+    @State private var isPresented = false
+
+    var body: some View {
+        HStack {
+            Text(title)
+            Spacer()
+            colorSwatchButton
+        }
+    }
+
+    private var colorSwatchButton: some View {
+        Button {
+            isPresented.toggle()
+        } label: {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(selection)
+                .frame(width: 32, height: 20)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $isPresented, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+            SettingsColorPickerPopover(
+                title: title,
+                selection: $selection,
+                supportsOpacity: supportsOpacity
+            )
+        }
+    }
+}
+
+private struct NotchFillColorPickerRow: View {
+    @Binding var color: Color
+    @State private var isApplyingPanelColor = false
+    @State private var isPanelSessionActive = false
+    @State private var skipNextPanelSyncFromBinding = false
+    @State private var panelCloseObserver: NSObjectProtocol?
+    @State private var panelColorObserver: NSObjectProtocol?
+    @State private var didInstallObservers = false
+    @State private var shouldRepositionOnNextOpen = true
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("Notch fill color")
+
+            Spacer()
+
+            Button {
+                openColorPanel()
+            } label: {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(color)
+                    .frame(width: 48, height: 28)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.2), lineWidth: 0.5)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .help("Click to edit notch fill color")
+        }
+        .onDisappear {
+            removeObservers()
+        }
+        .onChange(of: color) { _, newValue in
+            syncPanelColorIfNeeded(with: newValue)
+        }
+    }
+
+    private func openColorPanel() {
+        installObserversIfNeeded()
+
+        let panel = NSColorPanel.shared
+        isPanelSessionActive = false
+        panel.color = Self.nsColor(from: color)
+        panel.showsAlpha = false
+        panel.isContinuous = true
+
+        if shouldRepositionOnNextOpen || !panel.isVisible {
+            placePanel(onSameDisplayAs: SettingsWindowController.shared.window ?? NSApp.keyWindow)
+        }
+
+        NSApp.setActivationPolicy(.regular)
+        DispatchQueue.main.async {
+            NSApp.activate(ignoringOtherApps: true)
+            SettingsWindowController.shared.window?.makeKeyAndOrderFront(nil)
+            NSApp.orderFrontColorPanel(nil)
+            panel.orderFrontRegardless()
+            panel.makeKeyAndOrderFront(nil)
+            isPanelSessionActive = true
+        }
+
+        shouldRepositionOnNextOpen = false
+    }
+
+    private func installObserversIfNeeded() {
+        guard !didInstallObservers else { return }
+        didInstallObservers = true
+
+        let panel = NSColorPanel.shared
+        panelCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: panel,
+            queue: .main
+        ) { _ in
+            shouldRepositionOnNextOpen = true
+            isPanelSessionActive = false
+            skipNextPanelSyncFromBinding = false
+        }
+
+        panelColorObserver = NotificationCenter.default.addObserver(
+            forName: NSColorPanel.colorDidChangeNotification,
+            object: panel,
+            queue: .main
+        ) { notification in
+            guard isPanelSessionActive, !isApplyingPanelColor else { return }
+            let panel = notification.object as? NSColorPanel ?? NSColorPanel.shared
+            let picked = panel.color.usingColorSpace(.sRGB) ?? panel.color
+            isApplyingPanelColor = true
+            skipNextPanelSyncFromBinding = true
+            color = Color(nsColor: picked)
+            isApplyingPanelColor = false
+        }
+    }
+
+    private func syncPanelColorIfNeeded(with color: Color) {
+        let panel = NSColorPanel.shared
+        guard isPanelSessionActive, panel.isVisible else { return }
+        if skipNextPanelSyncFromBinding {
+            skipNextPanelSyncFromBinding = false
+            return
+        }
+        guard !isApplyingPanelColor else { return }
+        let resolved = Self.nsColor(from: color)
+        if !Self.areColorsEquivalent(panel.color, resolved) {
+            panel.color = resolved
+        }
+    }
+
+    private func removeObservers() {
+        if let panelCloseObserver {
+            NotificationCenter.default.removeObserver(panelCloseObserver)
+            self.panelCloseObserver = nil
+        }
+        if let panelColorObserver {
+            NotificationCenter.default.removeObserver(panelColorObserver)
+            self.panelColorObserver = nil
+        }
+        didInstallObservers = false
+        isPanelSessionActive = false
+        skipNextPanelSyncFromBinding = false
+    }
+
+    private func placePanel(onSameDisplayAs window: NSWindow?) {
+        let panel = NSColorPanel.shared
+
+        let settingsWindow = window
+            ?? SettingsWindowController.shared.window
+            ?? NSApp.windows.first(where: { $0.identifier?.rawValue == "DynamicIslandSettingsWindow" })
+
+        guard let settingsWindow else { return }
+
+        let targetScreen = settingsWindow.screen
+            ?? NSScreen.screens.first(where: { $0.frame.intersects(settingsWindow.frame) })
+            ?? NSScreen.main
+
+        guard let targetScreen else { return }
+
+        let anchorFrame = settingsWindow.frame
+        var panelFrame = panel.frame
+        panelFrame.origin = NSPoint(
+            x: anchorFrame.midX - panelFrame.width / 2,
+            y: anchorFrame.midY - panelFrame.height / 2
+        )
+
+        let visible = targetScreen.visibleFrame
+        panelFrame.origin.x = min(max(panelFrame.origin.x, visible.minX + 8), visible.maxX - panelFrame.width - 8)
+        panelFrame.origin.y = min(max(panelFrame.origin.y, visible.minY + 8), visible.maxY - panelFrame.height - 8)
+        panel.setFrame(panelFrame, display: true)
+    }
+
+    private static func nsColor(from color: Color) -> NSColor {
+        NSColor(color).usingColorSpace(.sRGB) ?? NSColor(color)
+    }
+
+    private static func areColorsEquivalent(_ lhs: NSColor, _ rhs: NSColor, tolerance: CGFloat = 0.001) -> Bool {
+        let left = lhs.usingColorSpace(.sRGB) ?? lhs
+        let right = rhs.usingColorSpace(.sRGB) ?? rhs
+
+        return abs(left.redComponent - right.redComponent) <= tolerance
+            && abs(left.greenComponent - right.greenComponent) <= tolerance
+            && abs(left.blueComponent - right.blueComponent) <= tolerance
+            && abs(left.alphaComponent - right.alphaComponent) <= tolerance
+    }
+}
+
+private struct SettingsColorPickerPopover: View {
+    let title: String
+    @Binding var selection: Color
+    var supportsOpacity: Bool
+
+    var body: some View {
+        ColorPicker(title, selection: $selection, supportsOpacity: supportsOpacity)
+            .labelsHidden()
+            .padding(16)
+            .frame(width: 260, height: 280)
+    }
+}
 
 struct AppIconImage: View {
     let bundleIdentifiers: [String]

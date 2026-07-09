@@ -23,6 +23,7 @@ import Defaults
 
 struct MinimalisticMusicView: View {
     @EnvironmentObject var vm: DynamicIslandViewModel
+    @Environment(\.notchForeground) private var notchForeground
     @ObservedObject var musicManager = MusicManager.shared
     @Default(.enableLyrics) var enableLyrics
     @State private var isHovering: Bool = false
@@ -133,12 +134,12 @@ private extension MinimalisticMusicView {
             if !line.isEmpty {
                 Image(systemName: "music.note")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundColor(notchForeground.opacity(0.7))
                     .symbolRenderingMode(.monochrome)
 
                 Text(line)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.88))
+                    .foregroundColor(notchForeground.opacity(0.88))
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity, alignment: .center)
