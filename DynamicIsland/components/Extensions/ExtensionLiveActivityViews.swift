@@ -53,7 +53,7 @@ struct ExtensionLiveActivityStandaloneView: View {
             .frame(width: layout.leadingWidth, height: contentHeight)
 
             Rectangle()
-                .fill(Color.black)
+                .fill(.clear)
                 .frame(width: layout.centerWidth, height: contentHeight)
                 .overlay(EmptyView())
 
