@@ -46,7 +46,7 @@ For detailed prompts and one-click setup actions, open **Settings** in Kannu. Co
 
 ## Install (Pre-built DMG)
 
-1. Download the latest `Kannu.dmg` from the [Releases page](https://github.com/Ebullioscopic/Atoll/releases).
+1. Download the latest `Kannu.dmg` from the [Releases page](https://github.com/libinmv/kannu/releases).
 2. Open the DMG and drag **Kannu** into the **Applications** folder.
 3. Launch Kannu from Applications.
 
@@ -77,7 +77,7 @@ Application support data is stored under `~/Library/Application Support/Kannu/`.
 
 ## Releases (GitHub)
 
-Pre-built DMGs are published via [GitHub Releases](https://github.com/Ebullioscopic/Atoll/releases) when a version tag is pushed.
+Pre-built DMGs are published via [GitHub Releases](https://github.com/libinmv/kannu/releases) when a version tag is pushed.
 
 ### Publish a new release
 
