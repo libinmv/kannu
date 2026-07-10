@@ -4,6 +4,13 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-07-10 - Update onboarding branding to Kannu
+- **Developer label:** Update onboarding branding to Kannu
+- **Agent label:** Replace welcome screen Atoll icon and remove Ebullioscopic footer
+- **Changes:**
+  - Replaced `Kannu/Assets.xcassets/logo2.imageset` source image from `Atoll_1024.png` to `KannuIcon-1024.png` and updated its `Contents.json` mapping.
+  - Removed the bottom `Image("ebullioscopic")` branding overlay from `Kannu/components/Onboarding/WelcomeView.swift` so first-launch onboarding no longer shows Ebullioscopic branding.
+
 ### 2026-07-09 - Round-2 Extension IPC Hardening
 - **Developer label:** Round-2 Extension IPC Hardening
 - **Agent label:** Round-2 extension IPC hardening
