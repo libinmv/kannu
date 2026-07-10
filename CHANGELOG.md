@@ -4,6 +4,13 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-07-10 - Upgrade GitHub Actions to Node.js 24
+- **Developer label:** Upgrade GitHub Actions to Node.js 24
+- **Agent label:** Node 24 CI Actions upgrade
+- **Changes:**
+  - Bumped `actions/checkout` from v5 to v6 in `.github/workflows/ci.yml`, `.github/workflows/release.yml`, and `.github/workflows/update-pricing.yml`.
+  - Bumped `actions/upload-artifact` from v5 to v7 in `.github/workflows/ci.yml` and `.github/workflows/release.yml` to eliminate Node.js 20 deprecation warnings on GitHub-hosted runners.
+
 ### 2026-07-10 - Atoll/Ebullioscopic Cleanup — Scope and Implementation Plan
 - **Developer label:** Atoll/Ebullioscopic Cleanup — Scope and Implementation Plan
 - **Agent label:** Implement user-facing Ebullioscopic cleanup scope
