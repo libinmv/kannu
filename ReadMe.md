@@ -1,8 +1,6 @@
 # കണ്ണ് (Kannu)
 
-<p align="center">
-  <img src=".github/assets/eyes.jpeg" alt="Kannu logo" width="160">
-</p>
+
 
 **Kannu** is a macOS notch utility focused on **AI agent status** in the MacBook notch. It shows a traffic-light indicator while Cursor, VS Code Copilot, or Codex agents run, with optional custom notch backgrounds and mobile push notifications.
 
@@ -27,6 +25,8 @@ Calendar, terminal, and color picker features from the Atoll/Boring.Notch lineag
 - Xcode 15+ to build from source.
 - Permissions as needed: Accessibility, Screen Recording, Music.
 
+
+
 ## Runtime Permissions (by Feature)
 
 Kannu requests permissions only when you use the related feature. The app is not sandboxed, so most permissions are standard macOS privacy prompts (TCC) shown at runtime.
@@ -50,16 +50,17 @@ For detailed prompts and one-click setup actions, open **Settings** in Kannu. Co
 2. Open the DMG and drag **Kannu** into the **Applications** folder.
 3. Launch Kannu from Applications.
 
+
+
 ### "Kannu can't be opened" (Gatekeeper)
 
 Release builds are ad-hoc signed and not notarized by Apple, so macOS shows a
 warning on first launch. This is expected for free open-source apps — you can
 bypass it once and macOS remembers your choice:
 
-- **Right-click (or Control-click) `Kannu.app` in Applications and choose "Open"**, then click **Open** in the dialog. On macOS 15 (Sequoia) and later, the option may only appear the *second* time you right-click → Open.
+- **Right-click (or Control-click)** `Kannu.app` **in Applications and choose "Open"**, then click **Open** in the dialog. On macOS 15 (Sequoia) and later, the option may only appear the *second* time you right-click → Open.
 - If there is no Open button: go to **System Settings → Privacy & Security**, scroll down to the message about Kannu being blocked, and click **Open Anyway**.
 - Terminal alternative — remove the quarantine flag directly:
-
   ```bash
   xattr -dr com.apple.quarantine /Applications/Kannu.app
   ```
@@ -75,31 +76,6 @@ warn for apps you build yourself.
 
 Application support data is stored under `~/Library/Application Support/Kannu/`. Agent status hooks write to `~/.kannu/agent-status/`.
 
-## Releases (GitHub)
-
-Pre-built DMGs are published via [GitHub Releases](https://github.com/libinmv/kannu/releases) when a version tag is pushed.
-
-### Publish a new release
-
-1. Commit and push your changes (including `.github/assets/` branding files).
-2. Create and push a version tag, for example:
-   ```bash
-   git tag v2.2.0
-   git push origin v2.2.0
-   ```
-3. The [Release workflow](.github/workflows/release.yml) runs automatically:
-   - Builds `Kannu.app` (Release configuration)
-   - Packages `Kannu.dmg` via `scripts/create-dmg.sh`
-   - Attaches the DMG to the GitHub Release for that tag
-
-You can also trigger the workflow manually from the **Actions** tab (**Release** → **Run workflow**).
-
-### Notes
-
-- CI builds are unsigned (ad-hoc). macOS may require right-click → Open on first launch.
-- For wider distribution, sign with a Developer ID certificate before tagging.
-- Future distribution options (Homebrew, etc.) are planned for phase 2 — see [docs/PHASE2.md](docs/PHASE2.md).
-
 ## Quick Start
 
 1. Launch Kannu and complete onboarding.
@@ -107,13 +83,15 @@ You can also trigger the workflow manually from the **Actions** tab (**Release**
 3. Run an AI agent in Cursor — the notch shows the traffic-light status when collapsed.
 4. Optionally upload a notch skin under **Settings → Appearance → Notch skin**.
 
+
+
 ## Mobile Notifications Setup
 
 1. Open **Settings → Agent Status → Mobile Notifications**.
 2. Enable mobile notifications and choose a provider:
-   - **ntfy** — create a topic at [ntfy.sh](https://ntfy.sh) or self-host. Install the ntfy app on iPhone or Android and subscribe to your topic.
-   - **Pushover** — use your user key and app token from [pushover.net](https://pushover.net).
-   - **Webhook** — POST JSON `{ "state": "thinking", "title": "...", "body": "...", "timestamp": "..." }` to your URL.
+  - **ntfy** — create a topic at [ntfy.sh](https://ntfy.sh) or self-host. Install the ntfy app on iPhone or Android and subscribe to your topic.
+  - **Pushover** — use your user key and app token from [pushover.net](https://pushover.net).
+  - **Webhook** — POST JSON `{ "state": "thinking", "title": "...", "body": "...", "timestamp": "..." }` to your URL.
 3. Tap **Send test notification** to verify delivery.
 
 Notifications are debounced (~2 seconds) and skip the inactive state unless you opt in. Apple Watch mirrors iPhone alerts when mirroring is enabled in Watch settings.
