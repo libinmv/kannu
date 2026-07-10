@@ -81,9 +81,9 @@ Suggested stack: **Rust** (notify + tokio + tungstenite) or **Go** (fsnotify + g
 
 Reference implementations in the macOS tree:
 
-- `DynamicIsland/components/Notch/DynamicIslandPillShape.swift` — pill geometry
-- `DynamicIsland/enums/generic.swift` — `ExternalDisplayStyle.dynamicIsland`
-- `DynamicIsland/components/AgentStatus/AgentTrafficLightLiveActivity.swift` — traffic-light UI spec
+- `Kannu/components/Notch/DynamicIslandPillShape.swift` — pill geometry
+- `Kannu/enums/generic.swift` — `ExternalDisplayStyle.dynamicIsland`
+- `Kannu/components/AgentStatus/AgentTrafficLightLiveActivity.swift` — traffic-light UI spec
 
 ### Shell responsibilities
 

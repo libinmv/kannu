@@ -4,38 +4,58 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
-### 2026-07-10 - Enable feature defaults on by default
-- **Developer label:** Enable feature defaults on by default
-- **Agent label:** Enable LLM usage default-on for new installs
+### 2026-07-10 - Atoll/Ebullioscopic Cleanup — Scope and Implementation Plan
+- **Developer label:** Atoll/Ebullioscopic Cleanup — Scope and Implementation Plan
+- **Agent label:** Implement user-facing Ebullioscopic cleanup scope
 - **Changes:**
-  - Set `enableLLMUsageFeature` default to `true` in `Constants.swift` so the LLM Usage tab is enabled for new installs; music, shelf/file share, timer, and agent status were already default-on.
+  - Updated `Kannu/components/Onboarding/WelcomeView.swift` to open privacy policy at `https://kannu.app/legal/privacy-policy/`.
+  - Updated `Kannu/managers/LLMUsage/ModelPricingManager.swift` remote pricing source to `https://raw.githubusercontent.com/libinmv/kannu/main/Kannu/managers/LLMUsage/pricing.json`.
+  - Removed empty asset directory `Kannu/Assets.xcassets/ebullioscopic.imageset`.
+  - Removed stale root-level `Localizable.xcstrings`; retained active localization catalog at `Kannu/Localizable.xcstrings`.
 
-### 2026-07-10 - Fix black center band in inactive traffic-light area
-- **Developer label:** Fix black center band in inactive traffic-light area
-- **Agent label:** Fix black center band in inactive traffic-light area
+### 2026-07-10 - Extension RPC dual namespace migration (Phase 1)
+- **Developer label:** Atoll/Ebullioscopic Cleanup Plan (Two Tracks)
+- **Agent label:** Track 2 extension RPC dual namespace support
 - **Changes:**
-  - Changed extension standalone live activity center slot from hard-coded `Color.black` to `.clear` in `ExtensionLiveActivityViews.swift` so the closed-notch middle shows the configured notch fill color or skin when agent status is inactive or disabled.
+  - Added `Kannu/services/Extensions/ExtensionRPCNamespace.swift` to canonicalize `atoll.*` and `kannu.*` RPC method names and track namespace usage counters.
+  - Updated `ExtensionRPCService.swift` to route both namespaces to existing handlers without breaking legacy extension clients.
+  - Updated `ExtensionRPCServer.swift` to accept `kannu.requestAuthorization` for identity binding and dual-emit `atoll.*`/`kannu.*` notifications during migration.
+  - Extended `docs/ATOLL_TO_KANNU_MIGRATION_PLAN.md` with Phase 1 implementation status and client migration examples.
 
-### 2026-07-09 - Agent status memory optimization
-- **Developer label:** Agent status memory optimization
-- **Agent label:** Agent status memory and scan-path optimization
+### 2026-07-10 - Atoll/Ebullioscopic Cleanup Plan (Two Tracks)
+- **Developer label:** Atoll/Ebullioscopic Cleanup Plan (Two Tracks)
+- **Agent label:** Track 1 branding cleanup and Track 2 migration plan
 - **Changes:**
-  - Removed 300ms active-agent full rescans; rely on hook directory watcher plus a 5s background poll.
-  - Shrunk transcript tail reads (200KB → 48KB), capped recent transcripts per cycle, and cached path listings.
-  - Consolidated pending/turn/prompt transcript enrichment into one analysis pass per rescan.
-  - Narrowed FSEvents to `~/.kannu/agent-status` and `~/.cursor/projects` (dropped Cursor Application Support watches).
-  - Limited composer metadata to cached headers instead of scanning every workspace `state.vscdb` each cycle.
-  - Avoid republishing traffic-light `@Published` state when values are unchanged.
-  - Fixed yellow during WebSearch/AskQuestion: treat trailing transcript `user` after a gated tool as still pending, refresh those sessions on hook-only rescans, and broaden hook v11 tool-name detection.
-  - Rewrote awaiting-input (hook v13): yellow only on `preToolUse`/`beforeMCPExecution` for gated tools; sticky until `postToolUse`/`stop`; never demote yellow to thinking/green in transcript enrichment; exclusive yellow vs green UI.
-  - Replaced sed-based hook field extraction with a Python status writer so Settings → Install cannot ship a broken shell script.
-  - Fixed yellow timing (hook v14): WebSearch approval happens before `preToolUse`, so yellow is driven by transcript pending / `afterAgentResponse`; WebSearch `preToolUse` clears to green (tool running).
-  - Fixed stuck traffic-light pulse: `repeatForever` animations started via `withAnimation` were never cancelled when a dot deactivated, so a dimmed green dot kept pulsating next to the lit yellow; switched to a value-driven `.animation` so the pulse stops the moment a dot dims.
-  - Fixed yellow for real (hook v15, verified working): measured hook timing showed `preToolUse` fires when the approval card is SHOWN (not after approve), so gated tools (WebSearch/WebFetch/AskQuestion) now write `awaiting_input` on `preToolUse`/`beforeMCPExecution` and flip back on `postToolUse`/`postToolUseFailure`; added `postToolUseFailure` to installed Cursor hooks.
-  - Monitor now treats the hook file as sole authority for yellow: removed transcript-based promotion/demotion of `awaiting_input` and the 1s active transcript polling timer (hook watcher reacts instantly, less CPU/memory).
-  - README: added user-facing Install section with Gatekeeper bypass steps (right-click Open / Open Anyway / `xattr` command) for the unsigned DMG, and corrected traffic-light color legend (yellow = awaiting input, green = thinking/executing).
-  - Restored music + agent combined live activity: music activity again renders while agents run (album art left, spectrum right, traffic light center); hovering the wings opens media, hovering the traffic light opens agent status. Standalone traffic light only shows when no music is playing.
-  - Fixed album art clipping in Dynamic Island pill mode: the capsule's rounded ends cropped the flush-mounted thumbnail (and spectrum); wings now get a 6pt edge inset in pill mode only (physical notch layout unchanged).
+  - Removed stale Ebullioscopic onboarding leftovers by deleting the unused `ebullioscopic.imageset` and stale `Made with ❤️ by Ebullioscopic` localization key.
+  - Rebranded `logo.imageset` from `Atoll.png` to `KannuIcon-1024.png` and updated asset metadata to keep the `logo` image key stable.
+  - Updated internal sharing notification namespace to `com.kannu.sharingDidFinish` and added TODO markers for migrating privacy-policy/pricing URLs to Kannu-owned hosting.
+  - Added a separate phased migration strategy document for non-breaking `atoll.*` to `kannu.*` extension API transition.
+
+### 2026-07-10 - Update onboarding branding to Kannu
+- **Developer label:** Update onboarding branding to Kannu
+- **Agent label:** Replace welcome screen Atoll icon and remove Ebullioscopic footer
+- **Changes:**
+  - Replaced `Kannu/Assets.xcassets/logo2.imageset` source image from `Atoll_1024.png` to `KannuIcon-1024.png` and updated its `Contents.json` mapping.
+  - Removed the bottom `Image("ebullioscopic")` branding overlay from `Kannu/components/Onboarding/WelcomeView.swift` so first-launch onboarding no longer shows Ebullioscopic branding.
+
+### 2026-07-09 - Round-2 Extension IPC Hardening
+- **Developer label:** Round-2 Extension IPC Hardening
+- **Agent label:** Round-2 extension IPC hardening
+- **Changes:**
+  - Updated `Kannu/services/Extensions/ExtensionXPCService.swift` so pending extensions are no longer auto-authorized on XPC requestAuthorization.
+  - Hardened `Kannu/services/Extensions/ExtensionRPCServer.swift` with XPC-backed identity attestation and one active RPC session per bundle identifier.
+  - Added `hasActiveConnection(bundleIdentifier:)` in `Kannu/services/Extensions/ExtensionXPCServiceHost.swift` for RPC identity verification.
+  - Removed direct `paths` ingestion in `Kannu/services/Extensions/ExtensionRPCService.swift`; file adds now require `files` (base64) or `text` payloads.
+  - Changed extension diagnostics default to off in `Kannu/models/Constants.swift` and replaced raw descriptor payload logging with size-only diagnostics in RPC handlers.
+
+### 2026-07-09 - Rename DynamicIsland internals to Kannu
+- **Developer label:** Rename DynamicIsland internals to Kannu
+- **Agent label:** Scaffolding rename DynamicIsland -> Kannu
+- **Changes:**
+  - Renamed project scaffolding from `DynamicIsland` to `Kannu` across source folders, Xcode project/scheme, and UI test target naming.
+  - Updated core scaffolding symbols (for example `KannuViewModel`, `KannuViewCoordinator`, `KannuApp`) while keeping Dynamic Island display-mode identifiers intact.
+  - Repointed build scripts, CI workflows, and contributor docs to `Kannu.xcodeproj` and scheme `Kannu`.
+  - Updated app-referencing copy to Kannu in onboarding/privacy and screenshot-hiding settings, while preserving Dynamic Island mode wording.
 
 ### 2026-07-09 - Calendar removal and runtime permissions docs
 - **Developer label:** Calendar removal and runtime permissions docs

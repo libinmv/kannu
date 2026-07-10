@@ -58,8 +58,8 @@ jobs:
           echo "}" >> pricing_new.json
           
           # Move to the final location
-          mkdir -p DynamicIsland/managers/LLMUsage
-          mv pricing_new.json DynamicIsland/managers/LLMUsage/pricing.json
+          mkdir -p Kannu/managers/LLMUsage
+          mv pricing_new.json Kannu/managers/LLMUsage/pricing.json
           
           # Cleanup
           rm all_models.json
@@ -68,7 +68,7 @@ jobs:
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add DynamicIsland/managers/LLMUsage/pricing.json
+          git add Kannu/managers/LLMUsage/pricing.json
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else

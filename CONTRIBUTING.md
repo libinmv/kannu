@@ -42,7 +42,7 @@ We are committed to fostering a welcoming and inclusive environment. Please read
 	```bash
 	git clone <your-fork-url>
 	cd AgentStatDynamicIsland
-	open DynamicIsland.xcodeproj
+	open Kannu.xcodeproj
 	```
 - **Build & Run:**
 	- Select your Mac as the run destination in Xcode.
