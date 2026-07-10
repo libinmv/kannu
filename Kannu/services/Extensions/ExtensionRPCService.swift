@@ -57,9 +57,19 @@ final class ExtensionRPCService {
     // MARK: - Method Routing
 
     func handleRequest(_ request: RPCRequest) -> Data {
+        ExtensionRPCNamespace.recordIncomingMethod(request.method)
+
+        guard let canonicalMethod = ExtensionRPCNamespace.canonicalHandlerMethod(from: request.method) else {
+            let error = RPCErrorResponse(
+                error: RPCErrorObject(code: RPCErrorCode.methodNotFound, message: "Method not found: \(request.method)"),
+                id: request.id
+            )
+            return (try? encoder.encode(error)) ?? Data()
+        }
+
         let result: Codable
 
-        switch request.method {
+        switch canonicalMethod {
         case "atoll.getVersion":
             result = handleGetVersion(id: request.id)
 

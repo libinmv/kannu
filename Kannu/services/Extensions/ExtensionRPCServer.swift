@@ -89,9 +89,9 @@ final class ExtensionRPCServer {
     // MARK: - Client Notifications
 
     func notifyActivityDismiss(bundleIdentifier: String, activityID: String) {
-        sendNotification(
+        sendDualNamespaceNotification(
             to: bundleIdentifier,
-            method: "atoll.activityDidDismiss",
+            legacyMethod: "atoll.activityDidDismiss",
             params: [
                 "bundleIdentifier": .string(bundleIdentifier),
                 "activityID": .string(activityID)
@@ -100,9 +100,9 @@ final class ExtensionRPCServer {
     }
 
     func notifyWidgetDismiss(bundleIdentifier: String, widgetID: String) {
-        sendNotification(
+        sendDualNamespaceNotification(
             to: bundleIdentifier,
-            method: "atoll.widgetDidDismiss",
+            legacyMethod: "atoll.widgetDidDismiss",
             params: [
                 "bundleIdentifier": .string(bundleIdentifier),
                 "widgetID": .string(widgetID)
@@ -111,9 +111,9 @@ final class ExtensionRPCServer {
     }
 
     func notifyNotchExperienceDismiss(bundleIdentifier: String, experienceID: String) {
-        sendNotification(
+        sendDualNamespaceNotification(
             to: bundleIdentifier,
-            method: "atoll.notchExperienceDidDismiss",
+            legacyMethod: "atoll.notchExperienceDidDismiss",
             params: [
                 "bundleIdentifier": .string(bundleIdentifier),
                 "experienceID": .string(experienceID)
@@ -122,9 +122,9 @@ final class ExtensionRPCServer {
     }
 
     func notifyAuthorizationChange(bundleIdentifier: String, isAuthorized: Bool) {
-        sendNotification(
+        sendDualNamespaceNotification(
             to: bundleIdentifier,
-            method: "atoll.authorizationDidChange",
+            legacyMethod: "atoll.authorizationDidChange",
             params: [
                 "bundleIdentifier": .string(bundleIdentifier),
                 "isAuthorized": .bool(isAuthorized)
@@ -146,9 +146,9 @@ final class ExtensionRPCServer {
             "itemIDs": .array(itemIDs.map { .string($0) })
         ]
         for subscriber in shelfSubscribers {
-            sendNotification(
+            sendDualNamespaceNotification(
                 to: subscriber,
-                method: "atoll.shelfItemsDidChange",
+                legacyMethod: "atoll.shelfItemsDidChange",
                 params: params
             )
         }
@@ -253,7 +253,7 @@ final class ExtensionRPCServer {
         }
 
         // Bind a single, attested bundle identifier during the initial authorization handshake.
-        if request.method == "atoll.requestAuthorization" {
+        if ExtensionRPCNamespace.isAuthorizationHandshake(request.method) {
             guard clientConn.bundleIdentifier == nil else {
                 let errorResponse = RPCErrorResponse(
                     error: RPCErrorObject(code: RPCErrorCode.invalidRequest, message: "Connection is already bound to an identity"),
@@ -341,6 +341,16 @@ final class ExtensionRPCServer {
                 }
             }
         )
+    }
+
+    private func sendDualNamespaceNotification(
+        to bundleIdentifier: String,
+        legacyMethod: String,
+        params: [String: RPCValue]
+    ) {
+        for method in ExtensionRPCNamespace.notificationMethods(legacyMethod: legacyMethod) {
+            sendNotification(to: bundleIdentifier, method: method, params: params)
+        }
     }
 
     private func sendNotification(to bundleIdentifier: String, method: String, params: [String: RPCValue]) {

@@ -4,6 +4,33 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-07-10 - Atoll/Ebullioscopic Cleanup — Scope and Implementation Plan
+- **Developer label:** Atoll/Ebullioscopic Cleanup — Scope and Implementation Plan
+- **Agent label:** Implement user-facing Ebullioscopic cleanup scope
+- **Changes:**
+  - Updated `Kannu/components/Onboarding/WelcomeView.swift` to open privacy policy at `https://kannu.app/legal/privacy-policy/`.
+  - Updated `Kannu/managers/LLMUsage/ModelPricingManager.swift` remote pricing source to `https://raw.githubusercontent.com/libinmv/kannu/main/Kannu/managers/LLMUsage/pricing.json`.
+  - Removed empty asset directory `Kannu/Assets.xcassets/ebullioscopic.imageset`.
+  - Removed stale root-level `Localizable.xcstrings`; retained active localization catalog at `Kannu/Localizable.xcstrings`.
+
+### 2026-07-10 - Extension RPC dual namespace migration (Phase 1)
+- **Developer label:** Atoll/Ebullioscopic Cleanup Plan (Two Tracks)
+- **Agent label:** Track 2 extension RPC dual namespace support
+- **Changes:**
+  - Added `Kannu/services/Extensions/ExtensionRPCNamespace.swift` to canonicalize `atoll.*` and `kannu.*` RPC method names and track namespace usage counters.
+  - Updated `ExtensionRPCService.swift` to route both namespaces to existing handlers without breaking legacy extension clients.
+  - Updated `ExtensionRPCServer.swift` to accept `kannu.requestAuthorization` for identity binding and dual-emit `atoll.*`/`kannu.*` notifications during migration.
+  - Extended `docs/ATOLL_TO_KANNU_MIGRATION_PLAN.md` with Phase 1 implementation status and client migration examples.
+
+### 2026-07-10 - Atoll/Ebullioscopic Cleanup Plan (Two Tracks)
+- **Developer label:** Atoll/Ebullioscopic Cleanup Plan (Two Tracks)
+- **Agent label:** Track 1 branding cleanup and Track 2 migration plan
+- **Changes:**
+  - Removed stale Ebullioscopic onboarding leftovers by deleting the unused `ebullioscopic.imageset` and stale `Made with ❤️ by Ebullioscopic` localization key.
+  - Rebranded `logo.imageset` from `Atoll.png` to `KannuIcon-1024.png` and updated asset metadata to keep the `logo` image key stable.
+  - Updated internal sharing notification namespace to `com.kannu.sharingDidFinish` and added TODO markers for migrating privacy-policy/pricing URLs to Kannu-owned hosting.
+  - Added a separate phased migration strategy document for non-breaking `atoll.*` to `kannu.*` extension API transition.
+
 ### 2026-07-10 - Update onboarding branding to Kannu
 - **Developer label:** Update onboarding branding to Kannu
 - **Agent label:** Replace welcome screen Atoll icon and remove Ebullioscopic footer

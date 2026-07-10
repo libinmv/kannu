@@ -25,7 +25,7 @@ import Combine
 import Foundation
 
 extension Notification.Name {
-	static let sharingDidFinish = Notification.Name("com.ebullioscopic.sharingDidFinish")
+	static let sharingDidFinish = Notification.Name("com.kannu.sharingDidFinish")
 }
 
 @MainActor

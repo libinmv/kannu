@@ -76,7 +76,7 @@ struct WelcomeView: View {
                     
                     // Privacy Policy Link
                     Button(action: {
-                        if let url = URL(string: "https://ebullioscopic.github.io/Kannu/privacy-policy") {
+                        if let url = URL(string: "https://kannu.app/legal/privacy-policy/") {
                             NSWorkspace.shared.open(url)
                         }
                     }) {
