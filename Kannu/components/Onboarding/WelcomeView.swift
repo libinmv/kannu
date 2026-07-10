@@ -40,6 +40,7 @@ struct WelcomeView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 100, height: 100)
+                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                         .padding(.bottom, 8)
                     Text("കണ്ണ്")
                         .font(.system(.largeTitle, design: .default))

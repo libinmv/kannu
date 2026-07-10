@@ -1118,6 +1118,7 @@ extension Defaults.Keys {
     
     // MARK: Media Controller
     static let mediaController = Key<MediaControllerType>("mediaController", default: defaultMediaController)
+    static let didMigrateMediaControllerToNowPlaying = Key<Bool>("didMigrateMediaControllerToNowPlaying", default: false)
     static let spotifySPDCCookie = Key<String>("spotifySPDCCookie", default: "")
     static let spotifyAuthAccessToken = Key<String>("spotifyAuthAccessToken", default: "")
     static let spotifyAuthAccessTokenExpiration = Key<Double>("spotifyAuthAccessTokenExpiration", default: 0)
@@ -1329,7 +1330,7 @@ extension Defaults.Keys {
     static let focusMonitoringMode = Key<FocusMonitoringMode>("focusMonitoringMode", default: .withoutDevTools)
     static let showDoNotDisturbIndicator = Key<Bool>("showDoNotDisturbIndicator", default: true)
     static let showDoNotDisturbLabel = Key<Bool>("showDoNotDisturbLabel", default: true)
-    static let focusIndicatorNonPersistent = Key<Bool>("focusIndicatorNonPersistent", default: false)
+    static let focusIndicatorNonPersistent = Key<Bool>("focusIndicatorNonPersistent", default: true)
     
     // MARK: Privacy Indicators (Camera & Microphone Detection)
     static let enableCameraDetection = Key<Bool>("enableCameraDetection", default: true)
@@ -1366,13 +1367,9 @@ extension Defaults.Keys {
     static let enableAppleNotesSync = Key<Bool>("enableAppleNotesSync", default: false)
     static let appleNotesLastSyncDate = Key<Date?>("appleNotesLastSyncDate", default: nil)
     
-    // Helper to determine the default media controller based on macOS version
+    // Use Now Playing as the default media controller for new installs.
     static var defaultMediaController: MediaControllerType {
-        if #available(macOS 15.4, *) {
-            return .appleMusic
-        } else {
-            return .nowPlaying
-        }
+        .nowPlaying
     }
     
     // Migration helper to convert from legacy enableGradient Boolean to new ProgressBarStyle enum
@@ -1425,6 +1422,16 @@ extension Defaults.Keys {
 
         Defaults[.musicControlSlots] = baseLayout.normalized(allowingMediaOutput: allowMediaOutput)
         Defaults[.didMigrateMusicControlSlots] = true
+    }
+
+    static func migrateMediaControllerToNowPlaying() {
+        guard Defaults[.didMigrateMediaControllerToNowPlaying] == false else { return }
+
+        if Defaults[.mediaController] == .appleMusic {
+            Defaults[.mediaController] = .nowPlaying
+        }
+
+        Defaults[.didMigrateMediaControllerToNowPlaying] = true
     }
 
     static func migrateThirdPartyDDCIntegration() {

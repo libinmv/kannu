@@ -4,6 +4,21 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-07-10 - Now Playing Default + Apple-Style Logo Corners
+- **Developer label:** Now Playing Default + Apple-Style Logo Corners
+- **Agent label:** Implement Now Playing default and startup logo cornering
+- **Changes:**
+  - Updated `Kannu/models/Constants.swift` to default `mediaController` to `.nowPlaying` for new installs.
+  - Added one-time migration `migrateMediaControllerToNowPlaying()` and migration flag key so existing `.appleMusic` users move to `.nowPlaying`.
+  - Wired `Defaults.Keys.migrateMediaControllerToNowPlaying()` into launch migrations in `Kannu/KannuApp.swift`.
+  - Updated `Kannu/components/Onboarding/WelcomeView.swift` to clip the startup `logo2` image with Apple-style continuous rounded corners.
+
+### 2026-07-10 - Show focus as brief toast enabled by default
+- **Developer label:** Show focus as brief toast enabled by default
+- **Agent label:** Focus brief toast default on
+- **Changes:**
+  - Set `focusIndicatorNonPersistent` default to `true` in `Kannu/models/Constants.swift`.
+
 ### 2026-07-10 - Upgrade GitHub Actions to Node.js 24
 - **Developer label:** Upgrade GitHub Actions to Node.js 24
 - **Agent label:** Node 24 CI Actions upgrade
