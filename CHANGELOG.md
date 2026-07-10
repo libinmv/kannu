@@ -4,6 +4,18 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-07-10 - Enable feature defaults on by default
+- **Developer label:** Enable feature defaults on by default
+- **Agent label:** Enable LLM usage default-on for new installs
+- **Changes:**
+  - Set `enableLLMUsageFeature` default to `true` in `Constants.swift` so the LLM Usage tab is enabled for new installs; music, shelf/file share, timer, and agent status were already default-on.
+
+### 2026-07-10 - Fix black center band in inactive traffic-light area
+- **Developer label:** Fix black center band in inactive traffic-light area
+- **Agent label:** Fix black center band in inactive traffic-light area
+- **Changes:**
+  - Changed extension standalone live activity center slot from hard-coded `Color.black` to `.clear` in `ExtensionLiveActivityViews.swift` so the closed-notch middle shows the configured notch fill color or skin when agent status is inactive or disabled.
+
 ### 2026-07-09 - Agent status memory optimization
 - **Developer label:** Agent status memory optimization
 - **Agent label:** Agent status memory and scan-path optimization
