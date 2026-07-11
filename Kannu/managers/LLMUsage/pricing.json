@@ -1,40 +1,109 @@
 {
   "models": [
     {
-      "id": "anthropic/claude-3-opus",
-      "name": "",
-      "pricing": {
-        "prompt": "",
-        "completion": ""
-      }
-    }
-,
-    {
-      "id": "anthropic/claude-3-5-sonnet",
-      "name": "",
-      "pricing": {
-        "prompt": "",
-        "completion": ""
-      }
-    }
-,
-    {
       "id": "anthropic/claude-3-haiku",
       "name": "Anthropic: Claude 3 Haiku",
       "pricing": {
         "prompt": "0.00000025",
         "completion": "0.00000125"
       }
-    }
-,
+    },
     {
-      "id": "openai/gpt-5-preview",
-      "name": "",
+      "id": "anthropic/claude-sonnet-4",
+      "name": "Anthropic: Claude Sonnet 4",
       "pricing": {
-        "prompt": "",
-        "completion": ""
+        "prompt": "0.000003",
+        "completion": "0.000015"
+      }
+    },
+    {
+      "id": "anthropic/claude-opus-4",
+      "name": "Anthropic: Claude Opus 4",
+      "pricing": {
+        "prompt": "0.000015",
+        "completion": "0.000075"
+      }
+    },
+    {
+      "id": "openai/gpt-4o-mini",
+      "name": "OpenAI: GPT-4o Mini",
+      "pricing": {
+        "prompt": "0.00000015",
+        "completion": "0.0000006"
+      }
+    },
+    {
+      "id": "openai/gpt-4o",
+      "name": "OpenAI: GPT-4o",
+      "pricing": {
+        "prompt": "0.0000025",
+        "completion": "0.00001"
+      }
+    },
+    {
+      "id": "openai/gpt-4.1-mini",
+      "name": "OpenAI: GPT-4.1 Mini",
+      "pricing": {
+        "prompt": "0.0000004",
+        "completion": "0.0000016"
+      }
+    },
+    {
+      "id": "openai/gpt-4.1",
+      "name": "OpenAI: GPT-4.1",
+      "pricing": {
+        "prompt": "0.000002",
+        "completion": "0.000008"
+      }
+    },
+    {
+      "id": "openai/gpt-5-nano",
+      "name": "OpenAI: GPT-5 Nano",
+      "pricing": {
+        "prompt": "0.00000005",
+        "completion": "0.0000004"
+      }
+    },
+    {
+      "id": "openai/gpt-5-mini",
+      "name": "OpenAI: GPT-5 Mini",
+      "pricing": {
+        "prompt": "0.00000025",
+        "completion": "0.000002"
+      }
+    },
+    {
+      "id": "openai/gpt-5",
+      "name": "OpenAI: GPT-5",
+      "pricing": {
+        "prompt": "0.00000125",
+        "completion": "0.00001"
+      }
+    },
+    {
+      "id": "openai/o4-mini",
+      "name": "OpenAI: o4-mini",
+      "pricing": {
+        "prompt": "0.0000011",
+        "completion": "0.0000044"
+      }
+    },
+    {
+      "id": "openai/o3",
+      "name": "OpenAI: o3",
+      "pricing": {
+        "prompt": "0.000002",
+        "completion": "0.000008"
+      }
+    },
+    {
+      "id": "cursor/composer-default",
+      "name": "Cursor Composer (Estimated)",
+      "pricing": {
+        "prompt": "0.00000015",
+        "completion": "0.0000006"
       }
     }
   ],
-  "last_updated": "2026-07-11T01:27:21Z"
+  "last_updated": "2026-07-12T00:00:00Z"
 }

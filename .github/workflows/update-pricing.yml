@@ -20,13 +20,25 @@ jobs:
           # Fetch all models from OpenRouter
           curl -s https://openrouter.ai/api/v1/models > all_models.json
           
-          # Target models
-          TARGET_MODELS=("anthropic/claude-3-opus" "anthropic/claude-3-5-sonnet" "anthropic/claude-3-haiku" "openai/gpt-5-preview")
+          # Target models that appear in Kannu usage telemetry.
+          TARGET_MODELS=(
+            "anthropic/claude-3-haiku"
+            "anthropic/claude-sonnet-4"
+            "anthropic/claude-opus-4"
+            "openai/gpt-4o-mini"
+            "openai/gpt-4o"
+            "openai/gpt-4.1-mini"
+            "openai/gpt-4.1"
+            "openai/gpt-5-nano"
+            "openai/gpt-5-mini"
+            "openai/gpt-5"
+            "openai/o4-mini"
+            "openai/o3"
+          )
           
           # Filter and format using jq
           # We extract the specific models and their pricing (input/output)
-          # Note: OpenRouter pricing is per 1k tokens, we store per token or as-is based on manager needs.
-          # Here we keep the per-token structure (price / 1000).
+          # Note: OpenRouter pricing values are already stored per token; keep them as-is.
           
           echo "{" > pricing_new.json
           echo "  \"models\": [" >> pricing_new.json
@@ -52,6 +64,18 @@ jobs:
             
             first=false
           done
+
+          # Cursor labels some events as composer/cursor internal model names.
+          # Keep a stable estimated fallback so those events are not silently unpriced.
+          echo "," >> pricing_new.json
+          echo "    {" >> pricing_new.json
+          echo "      \"id\": \"cursor/composer-default\"," >> pricing_new.json
+          echo "      \"name\": \"Cursor Composer (Estimated)\"," >> pricing_new.json
+          echo "      \"pricing\": {" >> pricing_new.json
+          echo "        \"prompt\": \"0.00000015\"," >> pricing_new.json
+          echo "        \"completion\": \"0.0000006\"" >> pricing_new.json
+          echo "      }" >> pricing_new.json
+          echo "    }" >> pricing_new.json
           
           echo "  ]," >> pricing_new.json
           echo "  \"last_updated\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"" >> pricing_new.json

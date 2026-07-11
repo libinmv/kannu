@@ -4,6 +4,7 @@ enum AgentHookProvider: String, CaseIterable, Identifiable {
     case cursor
     case vscode
     case codex
+    case claude
 
     var id: String { rawValue }
 
@@ -12,6 +13,7 @@ enum AgentHookProvider: String, CaseIterable, Identifiable {
         case .cursor: return "Cursor"
         case .vscode: return "VS Code (Copilot)"
         case .codex: return "Codex CLI"
+        case .claude: return "Claude Code"
         }
     }
 }
@@ -29,6 +31,8 @@ enum AgentHookProvider: String, CaseIterable, Identifiable {
 /// - Codex:   script `~/.codex/kannu-agent-status.sh`, entries merged into
 ///   `~/.codex/hooks.json`, plus `features.hooks = true` in
 ///   `~/.codex/config.toml`.
+/// - Claude:  script `~/.claude/kannu-agent-status.sh`, entries merged into
+///   `~/.claude/settings.json` under the `"hooks"` key.
 @MainActor
 final class AgentHookInstaller: ObservableObject {
     static let shared = AgentHookInstaller()
@@ -37,7 +41,7 @@ final class AgentHookInstaller: ObservableObject {
     @Published private(set) var lastError: String?
 
     static let scriptName = "kannu-agent-status.sh"
-    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=15"
+    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=23"
 
     private static var home: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -60,6 +64,9 @@ final class AgentHookInstaller: ObservableObject {
     static var codexConfigTomlURL: URL { home.appendingPathComponent(".codex/config.toml") }
     static var codexScriptURL: URL { home.appendingPathComponent(".codex/\(scriptName)") }
 
+    static var claudeSettingsURL: URL { home.appendingPathComponent(".claude/settings.json") }
+    static var claudeScriptURL: URL { home.appendingPathComponent(".claude/\(scriptName)") }
+
     private init() {
         migrateLegacyStatusDirectoryIfNeeded()
         migrateLegacyCursorInstallIfNeeded()
@@ -67,6 +74,7 @@ final class AgentHookInstaller: ObservableObject {
         migrateIncorrectAwaitingInputHooksIfNeeded()
         migrateHookScriptVersionIfNeeded()
         migrateCursorHookEventArgumentIfNeeded()
+        migrateClaudeStyleHookEventArgumentIfNeeded()
         refresh()
     }
 
@@ -97,6 +105,9 @@ final class AgentHookInstaller: ObservableObject {
                 try Self.writeScript(to: Self.codexScriptURL)
                 try Self.mergeCodexHooksConfig()
                 try Self.ensureCodexHooksFeatureEnabled()
+            case .claude:
+                try Self.writeScript(to: Self.claudeScriptURL)
+                try Self.mergeClaudeHooksConfig()
             }
         } catch {
             lastError = "\(provider.displayName): \(error.localizedDescription)"
@@ -117,6 +128,9 @@ final class AgentHookInstaller: ObservableObject {
             case .codex:
                 try Self.stripEntries(configURL: Self.codexHooksConfigURL)
                 try Self.removeIfExists(Self.codexScriptURL)
+            case .claude:
+                try Self.stripEntries(configURL: Self.claudeSettingsURL)
+                try Self.removeIfExists(Self.claudeScriptURL)
             }
         } catch {
             lastError = "\(provider.displayName): \(error.localizedDescription)"
@@ -127,14 +141,14 @@ final class AgentHookInstaller: ObservableObject {
     // MARK: - Event mappings
 
     /// Cursor hook events (lowerCamelCase) mapped to traffic-light states.
-    /// Measured timing (Cursor 2026-07, events.log): `preToolUse` fires the moment the
-    /// approval card appears (BEFORE the user approves); `postToolUse` fires only after
-    /// approval + execution. So yellow = preToolUse of a gated tool, cleared by postToolUse.
-    /// `afterAgentThought` is intentionally omitted — it overwrites awaiting_input with
-    /// thinking (green) while approval cards are still open.
+    /// Cursor emits `afterAgentThought` while reasoning and between tool calls, so we map it
+    /// to thinking. The script keeps yellow sticky during active approval windows to avoid
+    /// repainting green too early.
     private static let cursorEvents: [(event: String, state: String)] = [
         ("beforeSubmitPrompt", "thinking"),
+        ("afterAgentThought", "thinking"),
         ("afterAgentResponse", "executing"),
+        ("beforeShellExecution", "awaiting_input"),
         ("preToolUse", "executing"),
         ("postToolUse", "executing"),
         ("postToolUseFailure", "executing"),
@@ -204,7 +218,13 @@ final class AgentHookInstaller: ObservableObject {
             compact = lower.replace("_", "").replace("-", "").replace(" ", "")
             return compact in {
                 "websearch", "webfetch", "search", "askquestion", "userquestion",
-            } or lower in {"web_search", "web_fetch", "ask_question"}
+                "shell", "runterminalcmd", "bash",
+            } or lower in {"web_search", "web_fetch", "ask_question", "run_terminal_cmd"}
+
+        def normalize_token(value: str) -> str:
+            return (value or "").strip().lower().replace("_", "").replace("-", "").replace(" ", "")
+
+        TITLE_BEARING_EVENTS = {"beforeSubmitPrompt", "stop", "SessionStart", "UserPromptSubmit", "Stop"}
 
         tool = pick_str(
             data.get("tool_name"),
@@ -229,19 +249,58 @@ final class AgentHookInstaller: ObservableObject {
                 tool = tool or "WebFetch"
             elif "questions" in tool_input:
                 tool = tool or "AskQuestion"
+            elif any(key in tool_input for key in ("command", "working_directory", "description")):
+                tool = tool or "Shell"
 
-        # Measured timing (Cursor 2026-07): preToolUse fires when the approval card is
-        # SHOWN (before the user decides); postToolUse/postToolUseFailure fire after the
-        # decision + execution. So a gated tool's preToolUse == "card open" == yellow,
-        # and the matching post event flips back to green.
-        if hook_event in {"preToolUse", "beforeMCPExecution"}:
-            state = "awaiting_input" if requires_approval(tool) else "executing"
-        elif hook_event in {"postToolUse", "postToolUseFailure"}:
+        def is_ask_question() -> bool:
+            compact = (tool or "").lower().replace("_", "").replace("-", "")
+            if compact in {"askquestion", "userquestion"}:
+                return True
+            return isinstance(tool_input, dict) and "questions" in tool_input
+
+        def looks_gated_payload(name: str, payload) -> bool:
+            if requires_approval(name):
+                return True
+            if not isinstance(payload, dict):
+                return False
+            if "questions" in payload:
+                return True
+            if any(key in payload for key in ("search_term", "searchTerm", "query")):
+                return True
+            if any(key in payload for key in ("url", "uri")):
+                return True
+            if any(key in payload for key in ("command", "working_directory")):
+                return True
+            return False
+
+        # Timing (Cursor):
+        # - WebSearch approval card appears BEFORE preToolUse. preToolUse runs after approve.
+        # - So WebSearch must NOT set awaiting_input on preToolUse (that paints yellow too late).
+        # - afterAgentResponse / transcript catch the proposal while the card is open.
+        # - AskQuestion still uses preToolUse for yellow (card is the tool itself).
+        if hook_event == "afterAgentResponse":
+            if looks_gated_payload(tool, tool_input):
+                state = "awaiting_input"
+        elif hook_event == "afterAgentThought":
+            state = "thinking"
+        elif hook_event in {"preToolUse", "beforeMCPExecution", "PreToolUse"}:
+            if is_ask_question():
+                state = "awaiting_input"
+            else:
+                # Includes WebSearch/WebFetch/Shell: approval already granted; tool is running.
+                state = "executing"
+        elif hook_event in {"beforeShellExecution", "PermissionRequest"}:
+            state = "awaiting_input"
+        elif hook_event in {"postToolUse", "postToolUseFailure", "PostToolUse"}:
             state = "executing"
-        elif hook_event == "stop":
+        elif hook_event in {"stop", "Stop"}:
             state = "stopped"
 
         conversation_id = pick_str(
+            data.get("agentId"),
+            data.get("agent_id"),
+            data.get("composerId"),
+            data.get("composer_id"),
             data.get("conversation_id"),
             data.get("conversationId"),
             data.get("session_id"),
@@ -260,26 +319,45 @@ final class AgentHookInstaller: ObservableObject {
             except Exception:
                 existing = {}
 
-        # Sticky yellow: while a card is open, unrelated lifecycle events (thinking,
-        # afterAgentResponse) must not repaint green. Only the tool's own post event,
-        # another preToolUse, or stop may change the state.
-        if existing_state == "awaiting_input" and hook_event not in {
-            "preToolUse", "beforeMCPExecution", "postToolUse", "postToolUseFailure", "stop",
-        }:
-            existing["state"] = "awaiting_input"
-            existing["ts"] = int(time.time() * 1000)
-            existing["provider"] = provider
-            status_file.write_text(json.dumps(existing, separators=(",", ":")))
-            print('{"permission":"allow","continue":true}')
-            raise SystemExit(0)
-
-        name = pick_str(data.get("name"), data.get("title"), data.get("conversation_title"))
         roots = data.get("workspace_roots")
         project = ""
         if isinstance(roots, list) and roots:
             root = str(roots[0]).replace("file://", "").rstrip("/")
             if root:
                 project = Path(root).name
+        project = pick_str(project, existing.get("project"), existing.get("project_name"), existing.get("workspace_name"))
+
+        if hook_event in TITLE_BEARING_EVENTS:
+            title = pick_str(
+                data.get("conversation_title"),
+                data.get("title"),
+                data.get("chat_name"),
+                data.get("conversation_name"),
+                data.get("chatTitle"),
+                data.get("bubbleTitle"),
+            )
+            name = pick_str(title, existing.get("name"), existing.get("title"), existing.get("conversation_title"))
+        else:
+            name = pick_str(existing.get("name"), existing.get("title"), existing.get("conversation_title"))
+
+        if hook_event in {"preToolUse", "beforeMCPExecution", "postToolUse", "postToolUseFailure", "PreToolUse", "PostToolUse"}:
+            if normalize_token(name) == normalize_token(tool):
+                name = ""
+
+        # Sticky yellow only against reasoning noise during an open approval card.
+        # UserPromptSubmit / SessionStart must clear yellow and enter thinking.
+        if existing_state == "awaiting_input" and state not in {"awaiting_input", "stopped"}:
+            if hook_event in {"beforeSubmitPrompt", "afterAgentThought"}:
+                existing["state"] = "awaiting_input"
+                existing["ts"] = int(time.time() * 1000)
+                existing["provider"] = provider
+                if name:
+                    existing["name"] = name
+                if project:
+                    existing["project"] = project
+                status_file.write_text(json.dumps(existing, separators=(",", ":")))
+                print('{"permission":"allow","continue":true}')
+                raise SystemExit(0)
 
         payload = {
             "state": state,
@@ -352,7 +430,7 @@ final class AgentHookInstaller: ObservableObject {
         for (event, state) in claudeStyleEvents {
             events[event] = [[
                 "type": "command",
-                "command": "\(vscodeScriptURL.path) \(state) vscode",
+                "command": "\(vscodeScriptURL.path) \(state) vscode \(event)",
                 "timeout": 10
             ]]
         }
@@ -371,7 +449,7 @@ final class AgentHookInstaller: ObservableObject {
             groups.append([
                 "hooks": [[
                     "type": "command",
-                    "command": "\(codexScriptURL.path) \(state) codex",
+                    "command": "\(codexScriptURL.path) \(state) codex \(event)",
                     "timeout": 10
                 ]]
             ])
@@ -397,6 +475,33 @@ final class AgentHookInstaller: ObservableObject {
                 hooks[event] = groups
             }
         }
+    }
+
+    // MARK: - Claude Code (~/.claude/settings.json, matcher-group schema)
+
+    private static func mergeClaudeHooksConfig() throws {
+        var config = readJSON(at: claudeSettingsURL) ?? [:]
+        var hooks = config["hooks"] as? [String: Any] ?? [:]
+        stripClaudeEntries(from: &hooks)
+
+        for (event, state) in claudeStyleEvents {
+            var groups = hooks[event] as? [[String: Any]] ?? []
+            groups.append([
+                "hooks": [[
+                    "type": "command",
+                    "command": "\(claudeScriptURL.path) \(state) claude \(event)",
+                    "timeout": 10
+                ]]
+            ])
+            hooks[event] = groups
+        }
+
+        config["hooks"] = hooks
+        try writeJSON(config, to: claudeSettingsURL)
+    }
+
+    private static func stripClaudeEntries(from hooks: inout [String: Any]) {
+        stripCodexEntries(from: &hooks)
     }
 
     /// Codex only runs hooks.json when `features.hooks = true` is set in
@@ -477,13 +582,24 @@ final class AgentHookInstaller: ObservableObject {
                     return handlers.contains { (($0["command"] as? String)?.contains(scriptName)) == true }
                 }
             }
+        case .claude:
+            guard FileManager.default.fileExists(atPath: claudeScriptURL.path),
+                  let config = readJSON(at: claudeSettingsURL),
+                  let hooks = config["hooks"] as? [String: Any] else { return false }
+            return claudeStyleEvents.allSatisfy { event, _ in
+                guard let groups = hooks[event] as? [[String: Any]] else { return false }
+                return groups.contains { group in
+                    guard let handlers = group["hooks"] as? [[String: Any]] else { return false }
+                    return handlers.contains { (($0["command"] as? String)?.contains(scriptName)) == true }
+                }
+            }
         }
     }
 
     private static func stripEntries(configURL: URL) throws {
         guard var config = readJSON(at: configURL),
               var hooks = config["hooks"] as? [String: Any] else { return }
-        if configURL == codexHooksConfigURL {
+        if configURL == codexHooksConfigURL || configURL == claudeSettingsURL {
             stripCodexEntries(from: &hooks)
         } else {
             stripCursorEntries(from: &hooks)
@@ -500,7 +616,7 @@ final class AgentHookInstaller: ObservableObject {
               let config = Self.readJSON(at: Self.cursorHooksConfigURL),
               let hooks = config["hooks"] as? [String: Any] else { return }
 
-        let staleEvents = ["beforeShellExecution", "beforeMCPExecution", "beforeReadFile"]
+        let staleEvents = ["beforeMCPExecution", "beforeReadFile"]
         let hasStaleAwaitingHooks = staleEvents.contains { event in
             guard let entries = hooks[event] as? [[String: Any]] else { return false }
             return entries.contains { ($0["command"] as? String)?.contains("awaiting_input") == true }
@@ -512,7 +628,12 @@ final class AgentHookInstaller: ObservableObject {
 
     /// Reinstalls hooks when the shared status script gains new approval-detection logic.
     private func migrateHookScriptVersionIfNeeded() {
-        let scriptURLs = [Self.cursorScriptURL, Self.vscodeScriptURL, Self.codexScriptURL]
+        let scriptURLs = [
+            Self.cursorScriptURL,
+            Self.vscodeScriptURL,
+            Self.codexScriptURL,
+            Self.claudeScriptURL
+        ]
         let needsRefresh = scriptURLs.contains { url in
             guard FileManager.default.fileExists(atPath: url.path),
                   let content = try? String(contentsOf: url, encoding: .utf8) else { return false }
@@ -543,6 +664,52 @@ final class AgentHookInstaller: ObservableObject {
         install(.cursor)
     }
 
+    /// Upgrades VS Code/Codex/Claude hook commands that omit the hook event argument.
+    private func migrateClaudeStyleHookEventArgumentIfNeeded() {
+        for provider in [AgentHookProvider.vscode, .codex, .claude] {
+            guard Self.checkInstalled(provider) else { continue }
+            let configURL: URL
+            switch provider {
+            case .vscode:
+                guard let config = Self.readJSON(at: Self.vscodeHookFileURL),
+                      let hooks = config["hooks"] as? [String: Any] else { continue }
+                let needsEventArg = hooks.contains { _, value in
+                    guard let handlers = value as? [[String: Any]] else { return false }
+                    return handlers.contains { handler in
+                        let command = handler["command"] as? String ?? ""
+                        guard command.contains(Self.scriptName) else { return false }
+                        return command.split(separator: " ").count < 4
+                    }
+                }
+                guard needsEventArg else { continue }
+                install(provider)
+                continue
+            case .codex:
+                configURL = Self.codexHooksConfigURL
+            case .claude:
+                configURL = Self.claudeSettingsURL
+            default:
+                continue
+            }
+
+            guard let config = Self.readJSON(at: configURL),
+                  let hooks = config["hooks"] as? [String: Any] else { continue }
+            let needsEventArg = hooks.contains { _, value in
+                guard let groups = value as? [[String: Any]] else { return false }
+                return groups.contains { group in
+                    guard let handlers = group["hooks"] as? [[String: Any]] else { return false }
+                    return handlers.contains { handler in
+                        let command = handler["command"] as? String ?? ""
+                        guard command.contains(Self.scriptName) else { return false }
+                        return command.split(separator: " ").count < 4
+                    }
+                }
+            }
+            guard needsEventArg else { continue }
+            install(provider)
+        }
+    }
+
     /// Copies status JSON from older `~/.atoll/agent-status` into `~/.kannu/agent-status`.
     private func migrateLegacyStatusDirectoryIfNeeded() {
         let legacy = Self.home.appendingPathComponent(".atoll/agent-status", isDirectory: true)
@@ -566,6 +733,7 @@ final class AgentHookInstaller: ObservableObject {
             case .cursor: scriptURL = Self.cursorScriptURL
             case .vscode: scriptURL = Self.vscodeScriptURL
             case .codex: scriptURL = Self.codexScriptURL
+            case .claude: scriptURL = Self.claudeScriptURL
             }
             guard FileManager.default.fileExists(atPath: scriptURL.path),
                   let content = try? String(contentsOf: scriptURL, encoding: .utf8),

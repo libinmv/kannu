@@ -73,6 +73,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
         lastPublishedTrafficLightState = nil
         lastPublishedShouldShowTrafficLight = nil
         CursorTranscriptParser.invalidatePathCache()
+        AgentSessionLogParser.invalidatePathCache()
     }
 
     private func installWatchers() {
@@ -107,6 +108,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
             let monitor = Unmanaged<CursorAgentStatusMonitor>.fromOpaque(info).takeUnretainedValue()
             Task { @MainActor in
                 CursorTranscriptParser.invalidatePathCache()
+                AgentSessionLogParser.invalidatePathCache()
                 monitor.scheduleRescan(delay: 0.35)
             }
         }
@@ -229,14 +231,15 @@ final class CursorAgentStatusMonitor: ObservableObject {
             ),
             staleMinutes: staleMinutes
         )
+        let resolvedSessions = enrichChatNames(fromComposerStore: mergedSessions)
 
-        let sortedSessions = mergedSessions.sorted { $0.updatedAt > $1.updatedAt }
+        let sortedSessions = resolvedSessions.sorted { $0.updatedAt > $1.updatedAt }
         if sessions != sortedSessions {
             sessions = sortedSessions
         }
         hadHookFilesThisCycle = !hookSessions.isEmpty || hadRecentHookFiles(staleMinutes: staleMinutes)
 
-        let visibleSessions = mergedSessions.filter(\.isVisible)
+        let visibleSessions = resolvedSessions.filter(\.isVisible)
         if visibleSessions.isEmpty {
             publishTrafficLight(state: .inactive, shouldShow: false)
         } else {
@@ -290,11 +293,67 @@ final class CursorAgentStatusMonitor: ObservableObject {
 
     /// Prefer the more urgent traffic-light state; break ties with the newer timestamp.
     private func preferredMergedSession(_ existing: AgentSessionStatus, _ incoming: AgentSessionStatus) -> AgentSessionStatus {
-        if existing.displayState != incoming.displayState {
-            if existing.displayState > incoming.displayState { return existing }
-            if incoming.displayState > existing.displayState { return incoming }
+        let winner: AgentSessionStatus
+        let loser: AgentSessionStatus
+        if shouldPreferFreshHookActiveState(primary: existing, secondary: incoming) {
+            winner = existing
+            loser = incoming
+        } else if shouldPreferFreshHookActiveState(primary: incoming, secondary: existing) {
+            winner = incoming
+            loser = existing
+        } else if existing.displayState != incoming.displayState {
+            if existing.displayState > incoming.displayState {
+                winner = existing
+                loser = incoming
+            } else {
+                winner = incoming
+                loser = existing
+            }
+        } else if incoming.updatedAt >= existing.updatedAt {
+            winner = incoming
+            loser = existing
+        } else {
+            winner = existing
+            loser = incoming
         }
-        return incoming.updatedAt >= existing.updatedAt ? incoming : existing
+        return AgentSessionStatus(
+            id: winner.id,
+            provider: winner.provider,
+            conversationID: winner.conversationID,
+            chatName: preferredChatName(primary: winner.chatName, fallback: loser.chatName),
+            projectName: normalizedProjectName(winner.projectName) ?? normalizedProjectName(loser.projectName),
+            rawState: winner.rawState,
+            displayState: winner.displayState,
+            updatedAt: winner.updatedAt,
+            isVisible: winner.isVisible || loser.isVisible,
+            executionStartedAt: winner.executionStartedAt ?? loser.executionStartedAt
+        )
+    }
+
+    /// Hook state is authoritative while it is fresh: transcript `hasPendingToolApproval`
+    /// can linger and incorrectly paint yellow during active thinking/executing.
+    private func shouldPreferFreshHookActiveState(
+        primary: AgentSessionStatus,
+        secondary: AgentSessionStatus
+    ) -> Bool {
+        guard isHookStateSession(primary) else { return false }
+        guard secondary.displayState == .awaitingInput else { return false }
+        guard !isHookStateSession(secondary) else { return false }
+        guard Date().timeIntervalSince(primary.updatedAt) < 90 else { return false }
+        // Prefer hook executing over stale transcript yellow (WebSearch already approved).
+        if primary.displayState == .executing { return true }
+        // Let transcript yellow beat hook thinking (Shell Run card).
+        return false
+    }
+
+    private func isHookStateSession(_ session: AgentSessionStatus) -> Bool {
+        switch session.rawState.lowercased() {
+        case "thinking", "executing", "awaiting_input", "awaitinginput", "awaiting",
+             "stopped", "stop", "completed", "aborted", "error":
+            return true
+        default:
+            return false
+        }
     }
 
     /// Roll Task/subagent activity into the parent chat so they don't appear as extra sessions.
@@ -421,6 +480,22 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 )
             }
 
+            if analysis?.hasPendingToolApproval == true,
+               session.displayState == .thinking || session.displayState == .executing {
+                return AgentSessionStatus(
+                    id: session.id,
+                    provider: session.provider,
+                    conversationID: session.conversationID,
+                    chatName: session.chatName,
+                    projectName: session.projectName,
+                    rawState: "awaiting_input",
+                    displayState: .awaitingInput,
+                    updatedAt: session.updatedAt,
+                    isVisible: true,
+                    executionStartedAt: session.executionStartedAt
+                )
+            }
+
             // Transcript `turn_ended` lags behind live hooks. Never demote a fresh
             // thinking/executing hook file to stopped or green never appears.
             let hookIsLiveActive = ["thinking", "executing", "awaiting_input"].contains(rawState)
@@ -484,9 +559,21 @@ final class CursorAgentStatusMonitor: ObservableObject {
             let provider = (json["provider"] as? String) ?? "unknown"
             let conversationID = file.deletingPathExtension().lastPathComponent
                 .replacingOccurrences(of: "\(provider)-", with: "")
-            let chatName = normalizedChatName(
-                json["name"] as? String ?? json["title"] as? String ?? json["conversation_title"] as? String
-            )
+
+            if AgentTrafficLightMapper.isSimulationConversationID(conversationID) {
+                try? FileManager.default.removeItem(at: file)
+                continue
+            }
+
+            if !hasHookSessionBacking(
+                conversationID: conversationID,
+                provider: provider,
+                staleMinutes: staleMinutes
+            ) {
+                try? FileManager.default.removeItem(at: file)
+                continue
+            }
+            let chatName = preferredHookChatName(from: json)
             let projectName = normalizedProjectName(
                 json["project"] as? String ?? json["project_name"] as? String ?? json["workspace_name"] as? String
             )
@@ -555,8 +642,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
             )
         }
 
-        // Prefer lightweight composer headers; skip scanning every workspace DB each cycle.
-        let composerMeta = CursorComposerStore.loadComposerMeta(forIDs: ids, includeWorkspaceDatabases: false)
+        // Prefer lightweight composer headers first, then only scan workspace DBs for unresolved IDs.
+        let composerMeta = loadComposerMetaWithWorkspaceFallback(forIDs: ids)
         snapshots = snapshots.map { snapshot in
             guard let meta = composerMeta[snapshot.sessionID] else { return snapshot }
             let lastActivity = max(snapshot.lastActivityMs, meta.updatedMs, meta.checkpointMs)
@@ -572,6 +659,21 @@ final class CursorAgentStatusMonitor: ObservableObject {
             )
         }
 
+        let transcriptChatNames = CursorTranscriptParser.displayChatNamesBySessionID(
+            maxAgeMinutes: staleMinutes
+        )
+        let transcriptAssistantSnippets = CursorTranscriptParser.assistantSnippetsBySessionID(
+            maxAgeMinutes: staleMinutes
+        )
+        let glassTitles = CursorGlassAgentStore.loadAgentTitles(forIDs: ids)
+        let titleSources = ChatTitleSources(
+            composerMeta: composerMeta,
+            glassTitles: glassTitles,
+            transcriptTitles: transcriptChatNames,
+            transcriptAssistantSnippets: transcriptAssistantSnippets,
+            planRegistryTitles: CursorComposerStore.loadPlanRegistryNames()
+        )
+
         return snapshots.map { snapshot in
             let mapped = AgentTrafficLightMapper.map(
                 session: snapshot,
@@ -579,11 +681,16 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 stoppedCollapseMinutes: collapseMinutes,
                 inactiveDisplayMinutes: inactiveMinutes
             )
+            let chatName = resolveCursorChatName(
+                sessionID: snapshot.sessionID,
+                hookName: nil,
+                sources: titleSources
+            )
             return AgentSessionStatus(
                 id: "cursor-\(snapshot.sessionID)",
                 provider: "cursor",
                 conversationID: snapshot.sessionID,
-                chatName: normalizedChatName(composerMeta[snapshot.sessionID]?.name),
+                chatName: chatName,
                 projectName: normalizedProjectName(projectNamesBySessionID[snapshot.sessionID]),
                 rawState: snapshot.composerStatus ?? "transcript",
                 displayState: mapped.state,
@@ -594,9 +701,135 @@ final class CursorAgentStatusMonitor: ObservableObject {
         }
     }
 
+    private struct ChatTitleSources {
+        let composerMeta: [String: ComposerMeta]
+        let glassTitles: [String: String]
+        let transcriptTitles: [String: String]
+        let transcriptAssistantSnippets: [String: [String]]
+        let planRegistryTitles: Set<String>
+    }
+
+    private struct HookProviderTitleSources {
+        let logTitles: [String: String]
+        let logAssistantSnippets: [String: [String]]
+    }
+
+    private func isUnreliableChatTitle(
+        _ candidate: String?,
+        sessionID: String,
+        sources: ChatTitleSources
+    ) -> Bool {
+        guard let candidate = normalizedChatName(candidate) else { return true }
+        if Self.looksLikeToolName(candidate) { return true }
+        if sources.planRegistryTitles.contains(candidate) { return true }
+        if CursorTranscriptParser.isTranscriptPromptFallback(
+            candidate,
+            sessionID: sessionID,
+            transcriptTitles: sources.transcriptTitles
+        ) {
+            return true
+        }
+        if CursorTranscriptParser.isAssistantProseFallback(
+            candidate,
+            sessionID: sessionID,
+            transcriptAssistantSnippets: sources.transcriptAssistantSnippets
+        ) {
+            return true
+        }
+        return false
+    }
+
     private func normalizedChatName(_ value: String?) -> String? {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func preferredHookChatName(from json: [String: Any]) -> String? {
+        let titleCandidates = [
+            json["conversation_title"] as? String,
+            json["title"] as? String,
+            json["chat_name"] as? String,
+            json["conversation_name"] as? String,
+            json["chatTitle"] as? String,
+            json["bubbleTitle"] as? String
+        ]
+        for candidate in titleCandidates {
+            guard let normalized = normalizedChatName(candidate), !Self.looksLikeToolName(normalized) else { continue }
+            return normalized
+        }
+        guard let storedName = normalizedChatName(json["name"] as? String), !Self.looksLikeToolName(storedName) else {
+            return nil
+        }
+        return storedName
+    }
+
+    private func resolveCursorChatName(
+        sessionID: String,
+        hookName: String?,
+        sources: ChatTitleSources
+    ) -> String? {
+        let candidates = [
+            hookName,
+            sources.composerMeta[sessionID]?.name,
+            sources.glassTitles[sessionID],
+            sources.transcriptTitles[sessionID]
+        ]
+
+        for candidate in candidates {
+            guard let normalized = normalizedChatName(candidate),
+                  !isUnreliableChatTitle(normalized, sessionID: sessionID, sources: sources) else {
+                continue
+            }
+            return normalized
+        }
+
+        return nil
+    }
+
+    private func loadChatTitleSources(forIDs ids: Set<String>, maxAgeMinutes: Int) -> ChatTitleSources {
+        ChatTitleSources(
+            composerMeta: loadComposerMetaWithWorkspaceFallback(forIDs: ids),
+            glassTitles: CursorGlassAgentStore.loadAgentTitles(forIDs: ids),
+            transcriptTitles: CursorTranscriptParser.displayChatNamesBySessionID(maxAgeMinutes: maxAgeMinutes),
+            transcriptAssistantSnippets: CursorTranscriptParser.assistantSnippetsBySessionID(maxAgeMinutes: maxAgeMinutes),
+            planRegistryTitles: CursorComposerStore.loadPlanRegistryNames()
+        )
+    }
+
+    private func authoritativeHookChatName(
+        from storedName: String?,
+        sessionID: String,
+        sources: ChatTitleSources
+    ) -> String? {
+        guard let storedName = normalizedChatName(storedName),
+              !isUnreliableChatTitle(storedName, sessionID: sessionID, sources: sources) else {
+            return nil
+        }
+        return storedName
+    }
+
+    private func shouldReplaceChatName(
+        current: String?,
+        resolved: String?,
+        sessionID: String,
+        sources: ChatTitleSources
+    ) -> Bool {
+        guard let resolved else { return false }
+        guard let current = normalizedChatName(current) else { return true }
+        if isUnreliableChatTitle(current, sessionID: sessionID, sources: sources) {
+            return resolved != current
+        }
+        return false
+    }
+
+    private func preferredChatName(primary: String?, fallback: String?) -> String? {
+        if let primary = normalizedChatName(primary), !Self.looksLikeToolName(primary) {
+            return primary
+        }
+        if let fallback = normalizedChatName(fallback), !Self.looksLikeToolName(fallback) {
+            return fallback
+        }
+        return normalizedChatName(primary) ?? normalizedChatName(fallback)
     }
 
     private func normalizedProjectName(_ value: String?) -> String? {
@@ -605,56 +838,264 @@ final class CursorAgentStatusMonitor: ObservableObject {
     }
 
     private func enrichChatNames(fromComposerStore sessions: [AgentSessionStatus]) -> [AgentSessionStatus] {
-        let unresolvedCursorIDs = Set(
+        let staleMinutes = Defaults[.agentStatusStaleMinutes]
+        let cursorIDs = Set(
             sessions
-                .filter { $0.provider.lowercased() == "cursor" && normalizedChatName($0.chatName) == nil }
+                .filter { $0.provider.lowercased() == "cursor" }
                 .map(\.conversationID)
         )
-        guard !unresolvedCursorIDs.isEmpty else { return sessions }
+        let cursorSources = cursorIDs.isEmpty
+            ? nil
+            : loadChatTitleSources(forIDs: cursorIDs, maxAgeMinutes: staleMinutes)
 
-        let composerMeta = CursorComposerStore.loadComposerMeta(
-            forIDs: unresolvedCursorIDs,
-            includeWorkspaceDatabases: false
-        )
-        return sessions.map { session in
-            guard session.provider.lowercased() == "cursor",
-                  normalizedChatName(session.chatName) == nil,
-                  let name = normalizedChatName(composerMeta[session.conversationID]?.name) else {
-                return session
-            }
-            return AgentSessionStatus(
-                id: session.id,
-                provider: session.provider,
-                conversationID: session.conversationID,
-                chatName: name,
-                projectName: session.projectName,
-                rawState: session.rawState,
-                displayState: session.displayState,
-                updatedAt: session.updatedAt,
-                isVisible: session.isVisible,
-                executionStartedAt: session.executionStartedAt
+        var hookProviderSources: [AgentSessionLogProvider: HookProviderTitleSources] = [:]
+        for logProvider in AgentSessionLogProvider.allCases {
+            let ids = Set(
+                sessions
+                    .filter { AgentSessionLogProvider.from(hookProvider: $0.provider) == logProvider }
+                    .map(\.conversationID)
+            )
+            guard !ids.isEmpty else { continue }
+            hookProviderSources[logProvider] = HookProviderTitleSources(
+                logTitles: AgentSessionLogParser.displayChatNamesBySessionID(
+                    provider: logProvider,
+                    maxAgeMinutes: staleMinutes
+                ),
+                logAssistantSnippets: AgentSessionLogParser.assistantSnippetsBySessionID(
+                    provider: logProvider,
+                    maxAgeMinutes: staleMinutes
+                )
             )
         }
+
+        return sessions.map { session in
+            let providerKey = session.provider.lowercased()
+
+            if providerKey == "cursor", let cursorSources {
+                let hookName = authoritativeHookChatName(
+                    from: session.chatName,
+                    sessionID: session.conversationID,
+                    sources: cursorSources
+                )
+                let resolved = resolveCursorChatName(
+                    sessionID: session.conversationID,
+                    hookName: hookName,
+                    sources: cursorSources
+                )
+                guard shouldReplaceChatName(
+                    current: session.chatName,
+                    resolved: resolved,
+                    sessionID: session.conversationID,
+                    sources: cursorSources
+                ), let resolved else {
+                    return session
+                }
+                return session.replacingChatName(resolved)
+            }
+
+            if let logProvider = AgentSessionLogProvider.from(hookProvider: providerKey),
+               let sources = hookProviderSources[logProvider] {
+                let hookName = authoritativeHookProviderChatName(
+                    from: session.chatName,
+                    sessionID: session.conversationID,
+                    sources: sources
+                )
+                let resolved = resolveHookProviderChatName(
+                    sessionID: session.conversationID,
+                    hookName: hookName,
+                    sources: sources
+                )
+                guard shouldReplaceHookProviderChatName(
+                    current: session.chatName,
+                    resolved: resolved,
+                    sessionID: session.conversationID,
+                    sources: sources
+                ), let resolved else {
+                    return session
+                }
+                return session.replacingChatName(resolved)
+            }
+
+            if providerKey == "vscode" {
+                let hookName = normalizedChatName(session.chatName)
+                guard let hookName,
+                      !Self.looksLikeToolName(hookName),
+                      hookName != session.chatName else {
+                    return session
+                }
+                return session.replacingChatName(hookName)
+            }
+
+            return session
+        }
+    }
+
+    private func resolveHookProviderChatName(
+        sessionID: String,
+        hookName: String?,
+        sources: HookProviderTitleSources
+    ) -> String? {
+        let candidates = [hookName, sources.logTitles[sessionID]]
+        for candidate in candidates {
+            guard let normalized = normalizedChatName(candidate),
+                  !isUnreliableHookProviderChatTitle(normalized, sessionID: sessionID, sources: sources) else {
+                continue
+            }
+            return normalized
+        }
+        return nil
+    }
+
+    private func authoritativeHookProviderChatName(
+        from storedName: String?,
+        sessionID: String,
+        sources: HookProviderTitleSources
+    ) -> String? {
+        guard let storedName = normalizedChatName(storedName),
+              !isUnreliableHookProviderChatTitle(storedName, sessionID: sessionID, sources: sources) else {
+            return nil
+        }
+        return storedName
+    }
+
+    private func shouldReplaceHookProviderChatName(
+        current: String?,
+        resolved: String?,
+        sessionID: String,
+        sources: HookProviderTitleSources
+    ) -> Bool {
+        guard let resolved else { return false }
+        guard let current = normalizedChatName(current) else { return true }
+        if isUnreliableHookProviderChatTitle(current, sessionID: sessionID, sources: sources) {
+            return resolved != current
+        }
+        return false
+    }
+
+    private func isUnreliableHookProviderChatTitle(
+        _ candidate: String?,
+        sessionID: String,
+        sources: HookProviderTitleSources
+    ) -> Bool {
+        guard let candidate = normalizedChatName(candidate) else { return true }
+        if Self.looksLikeToolName(candidate) { return true }
+        if AgentSessionLogParser.isPromptFallback(
+            candidate,
+            sessionID: sessionID,
+            logTitles: sources.logTitles
+        ) {
+            return true
+        }
+        if AgentSessionLogParser.isAssistantProseFallback(
+            candidate,
+            sessionID: sessionID,
+            assistantSnippets: sources.logAssistantSnippets
+        ) {
+            return true
+        }
+        return false
+    }
+
+    private func hasHookSessionBacking(
+        conversationID: String,
+        provider: String,
+        staleMinutes: Int
+    ) -> Bool {
+        switch provider.lowercased() {
+        case "cursor":
+            let transcriptPaths = CursorTranscriptParser.listRecentTranscriptPaths(maxAgeMinutes: staleMinutes)
+            if transcriptPaths.contains(where: { CursorTranscriptParser.sessionID(from: $0) == conversationID }) {
+                return true
+            }
+            let meta = CursorComposerStore.loadComposerMeta(forIDs: [conversationID])
+            return meta[conversationID] != nil
+        case "codex":
+            return AgentSessionLogParser.hasSessionBacking(
+                provider: .codex,
+                conversationID: conversationID,
+                maxAgeMinutes: staleMinutes
+            )
+        case "claude":
+            return AgentSessionLogParser.hasSessionBacking(
+                provider: .claude,
+                conversationID: conversationID,
+                maxAgeMinutes: staleMinutes
+            )
+        case "vscode":
+            return true
+        default:
+            return true
+        }
+    }
+
+    private func loadComposerMetaWithWorkspaceFallback(forIDs ids: Set<String>) -> [String: ComposerMeta] {
+        guard !ids.isEmpty else { return [:] }
+
+        var composerMeta = CursorComposerStore.loadComposerMeta(
+            forIDs: ids,
+            includeWorkspaceDatabases: false
+        )
+        let unresolved = ids.filter { composerMeta[$0] == nil }
+        guard !unresolved.isEmpty else { return composerMeta }
+
+        let workspaceMeta = CursorComposerStore.loadComposerMeta(
+            forIDs: Set(unresolved),
+            includeWorkspaceDatabases: true
+        )
+        for (id, meta) in workspaceMeta {
+            composerMeta[id] = meta
+        }
+        return composerMeta
+    }
+
+    nonisolated static func looksLikeToolName(_ value: String?) -> Bool {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return false }
+
+        if AgentApprovalGatedTools.requiresUserApproval(trimmed) {
+            return true
+        }
+
+        let lower = trimmed.lowercased()
+        let compact = lower
+            .replacingOccurrences(of: "_", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: " ", with: "")
+        let commonTools: Set<String> = [
+            "shell", "read", "grep", "rg", "edit", "write", "task",
+            "applypatch", "strreplace", "glob", "openresource",
+            "todowrite", "createsubagent", "subagent"
+        ]
+        return commonTools.contains(compact)
     }
 
     private func enrichProjectNamesFromTranscripts(
         _ sessions: [AgentSessionStatus],
         maxAgeMinutes: Int
     ) -> [AgentSessionStatus] {
-        let unresolvedCursorIDs = Set(
-            sessions
-                .filter { $0.provider.lowercased() == "cursor" && normalizedProjectName($0.projectName) == nil }
-                .map(\.conversationID)
-        )
-        guard !unresolvedCursorIDs.isEmpty else { return sessions }
+        let cursorProjectBySessionID = projectNamesFromTranscriptPaths(maxAgeMinutes: maxAgeMinutes)
+        var logProjectBySessionID: [String: [String: String]] = [:]
+        for logProvider in AgentSessionLogProvider.allCases {
+            logProjectBySessionID[logProvider.rawValue] = AgentSessionLogParser.projectNamesBySessionID(
+                provider: logProvider,
+                maxAgeMinutes: maxAgeMinutes
+            )
+        }
 
-        let projectBySessionID = projectNamesFromTranscriptPaths(maxAgeMinutes: maxAgeMinutes)
         return sessions.map { session in
-            guard session.provider.lowercased() == "cursor",
-                  normalizedProjectName(session.projectName) == nil,
-                  let projectName = projectBySessionID[session.conversationID] else {
-                return session
+            guard normalizedProjectName(session.projectName) == nil else { return session }
+
+            let providerKey = session.provider.lowercased()
+            let projectName: String?
+            if providerKey == "cursor" {
+                projectName = cursorProjectBySessionID[session.conversationID]
+            } else if let logProvider = AgentSessionLogProvider.from(hookProvider: providerKey) {
+                projectName = logProjectBySessionID[logProvider.rawValue]?[session.conversationID]
+            } else {
+                projectName = nil
             }
+
+            guard let projectName else { return session }
             return AgentSessionStatus(
                 id: session.id,
                 provider: session.provider,
@@ -695,9 +1136,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
 
         return sessions.map { session in
             let start: Date?
-            if session.displayState == .executing {
+            if session.displayState.isActiveRun {
                 let previousState = previousStateByConversationID[session.conversationID]
-                if previousState == .executing {
+                if previousState?.isActiveRun == true {
                     let existing = executionStartByConversationID[session.conversationID]
                     let fallback = session.updatedAt
                     let resolvedStart = existing ?? fallback
@@ -712,7 +1153,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 start = nil
             }
 
-            let executionStartForSession = (session.displayState == .executing) ? start : nil
+            let executionStartForSession = session.displayState.isActiveRun ? start : nil
 
             return AgentSessionStatus(
                 id: session.id,
@@ -747,5 +1188,22 @@ final class CursorAgentStatusMonitor: ObservableObject {
             guard let bundleID = app.bundleIdentifier else { return false }
             return bundleID.hasPrefix("com.todesktop.") || bundleID == "com.cursor.Cursor"
         }
+    }
+}
+
+private extension AgentSessionStatus {
+    func replacingChatName(_ chatName: String) -> AgentSessionStatus {
+        AgentSessionStatus(
+            id: id,
+            provider: provider,
+            conversationID: conversationID,
+            chatName: chatName,
+            projectName: projectName,
+            rawState: rawState,
+            displayState: displayState,
+            updatedAt: updatedAt,
+            isVisible: isVisible,
+            executionStartedAt: executionStartedAt
+        )
     }
 }

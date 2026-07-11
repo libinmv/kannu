@@ -184,6 +184,20 @@ class KannuViewCoordinator: ObservableObject {
             }
             .store(in: &cancellables)
 
+        Publishers.MergeMany(
+            Defaults.publisher(.enableStatsFeature).map { _ in () }.eraseToAnyPublisher(),
+            Defaults.publisher(.showCpuGraph).map { _ in () }.eraseToAnyPublisher(),
+            Defaults.publisher(.showMemoryGraph).map { _ in () }.eraseToAnyPublisher(),
+            Defaults.publisher(.showGpuGraph).map { _ in () }.eraseToAnyPublisher(),
+            Defaults.publisher(.showNetworkGraph).map { _ in () }.eraseToAnyPublisher(),
+            Defaults.publisher(.showDiskGraph).map { _ in () }.eraseToAnyPublisher()
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] _ in
+            self?.handleStatsTabAvailability()
+        }
+        .store(in: &cancellables)
+
         Defaults.publisher(.enableMinimalisticUI)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] change in
@@ -228,6 +242,11 @@ class KannuViewCoordinator: ObservableObject {
             Defaults.publisher(.enableTimerFeature).map { _ in () }.eraseToAnyPublisher(),
             Defaults.publisher(.timerDisplayMode).map { _ in () }.eraseToAnyPublisher(),
             Defaults.publisher(.enableStatsFeature).map { _ in () }.eraseToAnyPublisher(),
+            Defaults.publisher(.showCpuGraph).map { _ in () }.eraseToAnyPublisher(),
+            Defaults.publisher(.showMemoryGraph).map { _ in () }.eraseToAnyPublisher(),
+            Defaults.publisher(.showGpuGraph).map { _ in () }.eraseToAnyPublisher(),
+            Defaults.publisher(.showNetworkGraph).map { _ in () }.eraseToAnyPublisher(),
+            Defaults.publisher(.showDiskGraph).map { _ in () }.eraseToAnyPublisher(),
             Defaults.publisher(.enableNotes).map { _ in () }.eraseToAnyPublisher(),
             Defaults.publisher(.enableClipboardManager).map { _ in () }.eraseToAnyPublisher(),
             Defaults.publisher(.clipboardDisplayMode).map { _ in () }.eraseToAnyPublisher(),
@@ -241,6 +260,7 @@ class KannuViewCoordinator: ObservableObject {
 
         // Enforce minimum width on launch for existing configurations
         enforceMinimumNotchWidth()
+        handleStatsTabAvailability()
     }
 
     var isHoverOpenSuppressed: Bool {
@@ -255,6 +275,13 @@ class KannuViewCoordinator: ObservableObject {
         guard oldValue != newValue else { return }
         if newValue == .stats && Defaults[.enableStatsFeature] {
             statsSecondRowExpansion = 1
+        }
+    }
+
+    private func handleStatsTabAvailability() {
+        guard currentView == .stats, !Defaults[.enableStatsFeature] else { return }
+        withAnimation(.smooth) {
+            currentView = .home
         }
     }
 

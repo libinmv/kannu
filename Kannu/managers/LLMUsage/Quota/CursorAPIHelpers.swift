@@ -84,6 +84,29 @@ enum CursorAPIHelpers {
         }
     }
 
+    /// Parses Cursor money fields. `usageBasedCosts` uses dollar strings like "$0.40".
+    static func parseMoneyUSD(_ value: Any?) -> Double? {
+        switch value {
+        case let number as Double: return number
+        case let number as Int: return Double(number)
+        case let string as String:
+            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty || trimmed == "-" { return nil }
+            if trimmed.hasPrefix("$") {
+                return Double(trimmed.dropFirst())
+            }
+            return Double(trimmed)
+        default:
+            return nil
+        }
+    }
+
+    /// Converts Cursor API cent amounts (e.g. onDemand.used) to USD.
+    static func centsToUSD(_ value: Any?) -> Double? {
+        guard let cents = parseDouble(value) else { return nil }
+        return cents / 100
+    }
+
     static func parsePercent(from planUsage: [String: Any]) -> Double? {
         if let percent = parseDouble(planUsage["totalPercentUsed"]), percent.isFinite {
             return percent
