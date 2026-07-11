@@ -208,7 +208,7 @@ func applyProfileSettings(_ profiles: Set<String>) {
     let isDeveloper = profiles.contains("developer")
     if isDeveloper {
         Defaults[.enableAgentStatusFeature] = true
-        Defaults[.enableStatsFeature] = true
+        Defaults[.enableStatsFeature] = false
         Defaults[.enableTimerFeature] = true
         Defaults[.enableScreenAssistant] = true
         Defaults[.enableMinimalisticUI] = false

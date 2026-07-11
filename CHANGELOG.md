@@ -4,6 +4,19 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-07-11 - Agent stats and recent chats default instead of CPU metrics
+- **Developer label:** Agent stats and recent chats default instead of CPU metrics
+- **Agent label:** Agent defaults over CPU stats
+- **Changes:**
+  - Set `showCpuGraph`, `showMemoryGraph`, and `showGpuGraph` defaults to `false` in `Kannu/models/Constants.swift`.
+  - Updated Developer onboarding profile in `Kannu/components/Onboarding/ProfileSelectionView.swift` to keep `enableStatsFeature` off while `enableAgentStatusFeature` stays on.
+
+### 2026-07-11 - Display on all screens on by default
+- **Developer label:** Display on all screens on by default
+- **Agent label:** Show on all displays default on
+- **Changes:**
+  - Set `showOnAllDisplays` default to `true` in `Kannu/models/Constants.swift`.
+
 ### 2026-07-10 - Now Playing Default + Apple-Style Logo Corners
 - **Developer label:** Now Playing Default + Apple-Style Logo Corners
 - **Agent label:** Implement Now Playing default and startup logo cornering
