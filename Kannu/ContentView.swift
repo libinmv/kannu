@@ -415,7 +415,7 @@ struct ContentView: View {
 
         return max(
             0,
-            (physicalNotchAgentHeight - vm.effectiveClosedNotchHeight) / 2
+            (physicalNotchAgentHeight - vm.effectiveClosedNotchHeight) / 1.26
         )
     }
 
