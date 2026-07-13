@@ -396,6 +396,38 @@ struct ContentView: View {
         return screen.safeAreaInsets.top <= 0
     }
 
+    private let physicalNotchAgentHeight: CGFloat = 52
+
+    private var isPhysicalNotchScreen: Bool {
+        !isNonNotchScreen
+    }
+
+    private var shouldExpandPhysicalNotchForAgent: Bool {
+        isPhysicalNotchScreen
+            && vm.notchState == .closed
+            && enableAgentStatusFeature
+            && agentStatusMonitor.shouldShowTrafficLight
+            && !vm.hideOnClosed
+    }
+
+    private var physicalNotchAgentVerticalOffset: CGFloat {
+        guard shouldExpandPhysicalNotchForAgent else { return 0 }
+
+        return max(
+            0,
+            (physicalNotchAgentHeight - vm.effectiveClosedNotchHeight) / 2
+        )
+    }
+
+    private var physicalNotchAgentHeightExpansion: CGFloat {
+        guard shouldExpandPhysicalNotchForAgent else { return 0 }
+
+        return max(
+            0,
+            physicalNotchAgentHeight - vm.effectiveClosedNotchHeight
+        )
+    }
+
     /// Whether the global sneak peek is visible on this specific screen.
     private var isSneakPeekVisibleOnCurrentScreen: Bool {
         guard coordinator.sneakPeek.show else { return false }
@@ -802,16 +834,6 @@ struct ContentView: View {
                 Button("Settings") {
                     SettingsWindowController.shared.showWindow()
                 }
-//                Button("Edit") { // Doesnt work....
-//                    let dn = DynamicNotch(content: EditPanelView())
-//                    dn.toggle()
-//                }
-//                #if DEBUG
-//                .disabled(false)
-//                #else
-//                .disabled(true)
-//                #endif
-//                .keyboardShortcut("E", modifiers: .command)
             }
     }
 
@@ -821,7 +843,16 @@ struct ContentView: View {
         }
         .frame(
             maxWidth: (dynamicNotchSize.width + (vm.notchState == .open ? 24 : 0) + (isDynamicIslandMode ? dynamicIslandShadowInset * 2 : 0)).rounded(),
-            maxHeight: (dynamicNotchSize.height + (vm.notchState == .open ? 12 : 0) + (isDynamicIslandMode ? dynamicIslandTopOffset + dynamicIslandShadowInset * 2 : currentShadowPadding)).rounded(),
+            maxHeight: (
+                dynamicNotchSize.height
+                + physicalNotchAgentHeightExpansion
+                + (vm.notchState == .open ? 12 : 0)
+                + (
+                    isDynamicIslandMode
+                        ? dynamicIslandTopOffset + dynamicIslandShadowInset * 2
+                        : currentShadowPadding
+                )
+            ).rounded(),
             alignment: .top
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -1054,14 +1085,18 @@ struct ContentView: View {
                               .transition(closedLiveActivitySwapTransition)
                       } else if !isCurrentScreenExpansionVisible && vm.notchState == .closed && enableAgentStatusFeature && agentStatusMonitor.shouldShowTrafficLight && !vm.hideOnClosed {
                           // No music playing: standalone traffic light.
-                          AgentTrafficLightLiveActivity(
-                              isHovering: isHovering,
-                              gestureProgress: gestureProgress,
-                              onHoverAgentCenter: { hovering in
-                                  handleRegionHoverOpen(hovering, focus: .agentStatus)
-                              }
-                          )
-                              .transition(.blurReplace.animation(.interactiveSpring(dampingFraction: 1.2)))
+                            AgentTrafficLightLiveActivity(
+                                isHovering: isHovering,
+                                gestureProgress: gestureProgress,
+                                physicalNotchExpandedHeight: shouldExpandPhysicalNotchForAgent
+                                    ? physicalNotchAgentHeight
+                                    : nil,
+                                trafficLightVerticalOffset: physicalNotchAgentVerticalOffset,
+                                onHoverAgentCenter: { hovering in
+                                    handleRegionHoverOpen(hovering, focus: .agentStatus)
+                                }
+                            )
+                            .transition(.blurReplace.animation(.interactiveSpring(dampingFraction: 1.2)))
                       } else if (!isCurrentScreenExpansionVisible || currentScreenExpansionType == .timer) && vm.notchState == .closed && timerManager.isTimerActive && coordinator.timerLiveActivityEnabled && !vm.hideOnClosed {
                           TimerLiveActivity()
                       } else if (!isCurrentScreenExpansionVisible || currentScreenExpansionType == .recording) && vm.notchState == .closed && (recordingManager.isRecording || !recordingManager.isRecorderIdle) && Defaults[.enableScreenRecordingDetection] && !vm.hideOnClosed && !musicPairingEligible {
@@ -1326,10 +1361,16 @@ struct ContentView: View {
 
             Rectangle()
                 .fill(.clear)
-                .frame(width: effectiveCenterWidth, height: notchContentHeight)
+                .frame(
+                    width: effectiveCenterWidth,
+                    height: shouldExpandPhysicalNotchForAgent
+                        ? physicalNotchAgentHeight
+                        : notchContentHeight
+                )
                 .overlay {
                     if enableAgentStatusFeature && agentStatusMonitor.shouldShowTrafficLight {
                         AgentTrafficLightIndicator()
+                            .offset(y: physicalNotchAgentVerticalOffset)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         closedMusicCenterMetadata(
@@ -1340,7 +1381,10 @@ struct ContentView: View {
                 }
                 .contentShape(Rectangle())
                 .onHover { hovering in
-                    guard enableAgentStatusFeature, agentStatusMonitor.shouldShowTrafficLight else { return }
+                    guard enableAgentStatusFeature,
+                        agentStatusMonitor.shouldShowTrafficLight
+                    else { return }
+
                     handleRegionHoverOpen(hovering, focus: .agentStatus)
                 }
 
@@ -1363,8 +1407,22 @@ struct ContentView: View {
                 .id(secondary?.id ?? "music-spectrum")
                 .contentTransition(.symbolEffect(.replace))
         }
-        .frame(width: notchWidth, height: notchContentHeight)
-        .frame(height: max(0, vm.effectiveClosedNotchHeight + (isHovering ? 8 : 0)), alignment: .center)
+        .frame(
+            width: notchWidth,
+            height: shouldExpandPhysicalNotchForAgent
+                ? physicalNotchAgentHeight
+                : notchContentHeight,
+            alignment: shouldExpandPhysicalNotchForAgent ? .top : .center
+        )
+        .frame(
+            height: shouldExpandPhysicalNotchForAgent
+                ? physicalNotchAgentHeight
+                : max(
+                    0,
+                    vm.effectiveClosedNotchHeight + (isHovering ? 8 : 0)
+                ),
+            alignment: shouldExpandPhysicalNotchForAgent ? .top : .center
+        )
         .animation(.smooth(duration: 0.25), value: secondary?.id)
     }
 

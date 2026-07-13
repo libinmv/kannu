@@ -114,7 +114,7 @@ enum CursorComposerStore {
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { continue }
             defer { sqlite3_finalize(stmt) }
 
-            key.withCString { cKey in
+            _ = key.withCString { cKey in
                 sqlite3_bind_text(stmt, 1, cKey, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
             }
 

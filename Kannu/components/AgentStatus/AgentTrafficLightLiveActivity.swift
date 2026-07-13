@@ -40,24 +40,58 @@ struct AgentTrafficLightIndicator: View {
 struct AgentTrafficLightLiveActivity: View {
     @EnvironmentObject var vm: KannuViewModel
     @ObservedObject private var monitor = CursorAgentStatusMonitor.shared
+
     let isHovering: Bool
     let gestureProgress: CGFloat
+
+    /// Only supplied when rendering on a display with a physical notch.
+    /// Non-notch displays receive nil and retain their existing sizing.
+    var physicalNotchExpandedHeight: CGFloat? = nil
+
+    /// Must remain zero on non-notch displays.
+    var trafficLightVerticalOffset: CGFloat = 0
+
     var onHoverAgentCenter: ((Bool) -> Void)? = nil
 
     private var notchContentHeight: CGFloat {
-        max(0, vm.effectiveClosedNotchHeight - (isHovering ? 0 : 12))
+        let normalHeight = max(
+            0,
+            vm.effectiveClosedNotchHeight - (isHovering ? 0 : 12)
+        )
+
+        guard let physicalNotchExpandedHeight else {
+            return normalHeight
+        }
+
+        return max(normalHeight, physicalNotchExpandedHeight)
     }
 
     private var outerHeight: CGFloat {
-        max(0, vm.effectiveClosedNotchHeight + (isHovering ? 8 : 0))
+        let normalHeight = max(
+            0,
+            vm.effectiveClosedNotchHeight + (isHovering ? 8 : 0)
+        )
+
+        guard let physicalNotchExpandedHeight else {
+            return normalHeight
+        }
+
+        return max(
+            normalHeight,
+            physicalNotchExpandedHeight + (isHovering ? 8 : 0)
+        )
     }
 
     private var contentWidth: CGFloat {
-        max(0, vm.closedNotchSize.width + (isHovering ? 8 : 0))
+        max(
+            0,
+            vm.closedNotchSize.width + (isHovering ? 8 : 0)
+        )
     }
 
     var body: some View {
         AgentTrafficLightIndicator()
+            .offset(y: trafficLightVerticalOffset)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .frame(width: contentWidth, height: notchContentHeight)
             .frame(height: outerHeight)
