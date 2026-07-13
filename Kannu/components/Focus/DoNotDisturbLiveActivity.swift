@@ -44,7 +44,7 @@ struct DoNotDisturbLiveActivity: View {
                 .frame(width: iconWingWidth, height: wingHeight)
 
             Rectangle()
-                .fill(Color.black)
+                .fill(.clear)
                 .frame(width: centerSegmentWidth)
 
             labelWing

@@ -198,6 +198,159 @@ enum CursorTranscriptParser {
         return results
     }
 
+    /// Last-resort title derived from the first user prompt in an agent transcript.
+    /// Prefer composer headers and Glass agent plan titles before using this.
+    static func displayChatName(from path: URL) -> String? {
+        guard let text = readLeadingLines(at: path, byteLimit: 32_000) else { return nil }
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            guard let data = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  (json["role"] as? String) == "user",
+                  let message = json["message"] as? [String: Any],
+                  let content = message["content"] as? [[String: Any]] else {
+                continue
+            }
+            for block in content where (block["type"] as? String) == "text" {
+                guard let raw = block["text"] as? String else { continue }
+                if let title = normalizedChatTitle(fromUserText: raw) {
+                    return title
+                }
+            }
+        }
+        return nil
+    }
+
+    static func displayChatNamesBySessionID(maxAgeMinutes: Int, now: Date = Date()) -> [String: String] {
+        var results: [String: String] = [:]
+        for path in listRecentTranscriptPaths(maxAgeMinutes: maxAgeMinutes, now: now) {
+            guard let title = displayChatName(from: path) else { continue }
+            results[sessionID(from: path)] = title
+        }
+        return results
+    }
+
+    static func isTranscriptPromptFallback(
+        _ candidate: String?,
+        sessionID: String,
+        transcriptTitles: [String: String]
+    ) -> Bool {
+        guard let candidate = candidate?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !candidate.isEmpty,
+              let transcriptTitle = transcriptTitles[sessionID] else {
+            return false
+        }
+        return candidate == transcriptTitle
+    }
+
+    /// Assistant narration lines from an agent transcript — used to reject
+    /// interim hook/Glass titles that mirror in-chat agent prose.
+    static func assistantSnippets(from path: URL) -> [String] {
+        guard let text = readLeadingLines(at: path, byteLimit: 32_000) else { return [] }
+        var snippets: [String] = []
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            guard let data = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  (json["role"] as? String) == "assistant",
+                  let message = json["message"] as? [String: Any],
+                  let content = message["content"] as? [[String: Any]] else {
+                continue
+            }
+            for block in content where (block["type"] as? String) == "text" {
+                guard let raw = block["text"] as? String else { continue }
+                if let snippet = normalizedAssistantSnippet(from: raw) {
+                    snippets.append(snippet)
+                }
+            }
+        }
+        return snippets
+    }
+
+    static func firstAssistantSnippet(from path: URL) -> String? {
+        assistantSnippets(from: path).first
+    }
+
+    static func assistantSnippetsBySessionID(maxAgeMinutes: Int, now: Date = Date()) -> [String: [String]] {
+        var results: [String: [String]] = [:]
+        for path in listRecentTranscriptPaths(maxAgeMinutes: maxAgeMinutes, now: now) {
+            let snippets = assistantSnippets(from: path)
+            guard !snippets.isEmpty else { continue }
+            results[sessionID(from: path)] = snippets
+        }
+        return results
+    }
+
+    static func isAssistantProseFallback(
+        _ candidate: String?,
+        sessionID: String,
+        transcriptAssistantSnippets: [String: [String]]
+    ) -> Bool {
+        guard let candidate = candidate?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !candidate.isEmpty,
+              let snippets = transcriptAssistantSnippets[sessionID] else {
+            return false
+        }
+        for snippet in snippets {
+            if candidate == snippet { return true }
+            if snippet.hasPrefix(candidate) || candidate.hasPrefix(snippet) { return true }
+        }
+        return false
+    }
+
+    private static func normalizedAssistantSnippet(from raw: String) -> String? {
+        let candidate = raw
+            .replacingOccurrences(of: "\\[REDACTED\\]", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !candidate.isEmpty else { return nil }
+
+        let firstLine = candidate
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty }) ?? candidate
+        let collapsed = firstLine.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        guard collapsed.count >= 4 else { return nil }
+        return String(collapsed.prefix(72))
+    }
+
+    private static func readLeadingLines(at url: URL, byteLimit: Int) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+
+        let data: Data
+        if #available(macOS 10.15.4, *) {
+            data = (try? handle.read(upToCount: byteLimit)) ?? Data()
+        } else {
+            data = handle.readData(ofLength: byteLimit)
+        }
+        return String(data: data, encoding: .utf8)
+    }
+
+    private static func normalizedChatTitle(fromUserText raw: String) -> String? {
+        let tagged = extractTaggedContent(named: "user_query", in: raw)
+            ?? extractTaggedContent(named: "user_query", in: raw.replacingOccurrences(of: "&lt;", with: "<"))
+        let candidate = (tagged ?? raw)
+            .replacingOccurrences(of: "<timestamp>.*?</timestamp>", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !candidate.isEmpty else { return nil }
+
+        let firstLine = candidate
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty }) ?? candidate
+        let collapsed = firstLine.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        guard collapsed.count >= 4 else { return nil }
+        return String(collapsed.prefix(72))
+    }
+
+    private static func extractTaggedContent(named tag: String, in text: String) -> String? {
+        let pattern = "<\(tag)>(.*?)</\(tag)>"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let range = Range(match.range(at: 1), in: text) else {
+            return nil
+        }
+        return String(text[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private static func readTailLines(at url: URL) -> [String] {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return [] }
         defer { try? handle.close() }

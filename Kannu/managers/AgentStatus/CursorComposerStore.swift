@@ -26,6 +26,21 @@ enum CursorComposerStore {
     private static var cachedHeaders: [String: ComposerMeta] = [:]
     private static var cachedHeadersAt: Date?
 
+    private static let planRegistryCacheTTL: TimeInterval = 10.0
+    private static var cachedPlanNames: Set<String> = []
+    private static var cachedPlanNamesAt: Date?
+
+    static func loadPlanRegistryNames() -> Set<String> {
+        let now = Date()
+        if let cachedPlanNamesAt, now.timeIntervalSince(cachedPlanNamesAt) < planRegistryCacheTTL {
+            return cachedPlanNames
+        }
+        let fresh = loadPlanRegistryNamesFromDB()
+        cachedPlanNames = fresh
+        cachedPlanNamesAt = now
+        return fresh
+    }
+
     static func loadComposerMeta(
         forIDs ids: Set<String>,
         includeWorkspaceDatabases: Bool = false
@@ -33,6 +48,10 @@ enum CursorComposerStore {
         guard !ids.isEmpty else { return [:] }
 
         var merged = loadComposerHeadersCached()
+
+        for meta in loadComposerDataFromDiskKV(forIDs: ids) {
+            mergeMeta(&merged, meta)
+        }
 
         if includeWorkspaceDatabases {
             for meta in loadFromDatabase(path: globalDBPath) where ids.contains(meta.composerID) {
@@ -78,6 +97,86 @@ enum CursorComposerStore {
         } else {
             merged[meta.composerID] = meta
         }
+    }
+
+    private static func loadComposerDataFromDiskKV(forIDs ids: Set<String>) -> [ComposerMeta] {
+        guard !ids.isEmpty, FileManager.default.fileExists(atPath: globalDBPath) else { return [] }
+
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(globalDBPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else { return [] }
+        defer { sqlite3_close(db) }
+
+        var results: [ComposerMeta] = []
+        for id in ids {
+            let key = "composerData:\(id)"
+            var stmt: OpaquePointer?
+            let sql = "SELECT value FROM cursorDiskKV WHERE key = ?"
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { continue }
+            defer { sqlite3_finalize(stmt) }
+
+            _ = key.withCString { cKey in
+                sqlite3_bind_text(stmt, 1, cKey, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            }
+
+            guard sqlite3_step(stmt) == SQLITE_ROW, let valueText = sqlite3_column_text(stmt, 0) else { continue }
+            let jsonString = String(cString: valueText)
+            if let meta = parseDiskKVComposerData(composerID: id, jsonString: jsonString) {
+                results.append(meta)
+            }
+        }
+        return results
+    }
+
+    private static func parseDiskKVComposerData(composerID: String, jsonString: String) -> ComposerMeta? {
+        guard let data = jsonString.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+
+        let checkpoint = int64(from: dict["conversationCheckpointLastUpdatedAt"])
+        let updated = max(int64(from: dict["lastUpdatedAt"]), checkpoint)
+        return ComposerMeta(
+            composerID: composerID,
+            status: dict["status"] as? String,
+            updatedMs: updated,
+            checkpointMs: checkpoint,
+            createdMs: int64(from: dict["createdAt"]),
+            name: dict["name"] as? String
+        )
+    }
+
+    private static func loadPlanRegistryNamesFromDB() -> Set<String> {
+        guard FileManager.default.fileExists(atPath: globalDBPath) else { return [] }
+
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(globalDBPath, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK, let db else { return [] }
+        defer { sqlite3_close(db) }
+
+        var stmt: OpaquePointer?
+        let sql = "SELECT value FROM ItemTable WHERE key='composer.planRegistry'"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return [] }
+        defer { sqlite3_finalize(stmt) }
+
+        guard sqlite3_step(stmt) == SQLITE_ROW, let valueText = sqlite3_column_text(stmt, 0) else {
+            return []
+        }
+
+        let jsonString = String(cString: valueText)
+        guard let data = jsonString.data(using: .utf8),
+              let registry = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return []
+        }
+
+        var names: Set<String> = []
+        for entry in registry.values {
+            guard let dict = entry as? [String: Any],
+                  let name = dict["name"] as? String else { continue }
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                names.insert(trimmed)
+            }
+        }
+        return names
     }
 
     private static func loadComposerHeaders(from path: String) -> [String: ComposerMeta] {

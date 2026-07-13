@@ -58,6 +58,14 @@ enum AgentTrafficLightState: Equatable, Comparable {
     var showsRedTrafficLight: Bool {
         self == .stopped
     }
+
+    /// Active run states between idle boundaries.
+    var isActiveRun: Bool {
+        switch self {
+        case .thinking, .executing, .awaitingInput: return true
+        case .stopped, .inactive: return false
+        }
+    }
 }
 
 struct AgentSessionStatus: Identifiable, Equatable {
@@ -77,6 +85,7 @@ struct AgentSessionStatus: Identifiable, Equatable {
         case "cursor": return "Cursor"
         case "vscode": return "VS Code"
         case "codex": return "Codex"
+        case "claude": return "Claude"
         default: return provider.capitalized
         }
     }
@@ -236,14 +245,34 @@ enum AgentTrafficLightMapper {
         let visible = sessions.filter { $0.isVisible && !isSimulationSession($0) }
         guard !visible.isEmpty else { return nil }
         let topState = visible.map(\.displayState).max() ?? .inactive
-        return visible
-            .filter { $0.displayState == topState }
-            .max(by: { $0.updatedAt < $1.updatedAt })
+        let candidates = visible.filter { $0.displayState == topState }
+        return candidates.max(by: { lhs, rhs in
+            let lhsReliable = hasReliableChatName(lhs.chatName)
+            let rhsReliable = hasReliableChatName(rhs.chatName)
+            if lhsReliable != rhsReliable {
+                return !lhsReliable
+            }
+            return lhs.updatedAt < rhs.updatedAt
+        })
     }
 
-    private static func isSimulationSession(_ session: AgentSessionStatus) -> Bool {
-        session.conversationID.lowercased().contains("kannu-test")
-            || session.id.lowercased().contains("kannu-test")
+    static func isSimulationSession(_ session: AgentSessionStatus) -> Bool {
+        isSimulationConversationID(session.conversationID)
+            || isSimulationConversationID(session.id)
+    }
+
+    static func isSimulationConversationID(_ value: String) -> Bool {
+        let id = value.lowercased()
+        if id.contains("kannu-test") { return true }
+        if id == "default" { return true }
+        if id.hasPrefix("test-") { return true }
+        return false
+    }
+
+    private static func hasReliableChatName(_ value: String?) -> Bool {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return false }
+        return !CursorAgentStatusMonitor.looksLikeToolName(trimmed)
     }
 
     static func aggregate(_ sessions: [AgentSessionStatus]) -> AgentTrafficLightState {

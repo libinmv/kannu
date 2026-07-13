@@ -11,6 +11,8 @@ enum AgentApprovalGatedTools {
         "ask_question",
         "userquestion",
         "permissionrequest",
+        "shell",
+        "run_terminal_cmd",
     ]
 
     static func requiresUserApproval(_ toolName: String) -> Bool {
@@ -22,6 +24,9 @@ enum AgentApprovalGatedTools {
 
         let compact = lower.replacingOccurrences(of: "_", with: "").replacingOccurrences(of: "-", with: "")
         if compact == "websearch" || compact == "webfetch" || compact == "search" || compact == "askquestion" {
+            return true
+        }
+        if compact == "shell" || compact == "runterminalcmd" {
             return true
         }
 

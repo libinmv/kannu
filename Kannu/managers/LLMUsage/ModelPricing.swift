@@ -21,7 +21,7 @@ import Foundation
 /// Utility to resolve LLM model pricing dynamically
 struct ModelPricing {
     /// Resolves prompt and completion rates for a given model
-    /// Rates are per 1M tokens or as defined by the pricing.json structure
+    /// Rates are stored as USD per token in pricing.json.
     static func resolveRates(for modelId: String) -> (prompt: Double, completion: Double) {
         // Try to get dynamic rates from the manager (Remote or Local Bundled Fallback)
         if let dynamicRates = ModelPricingManager.shared.getPricing(for: modelId) {

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Installed by Kannu: reports AI agent status for the notch traffic light.
-# KANNU_HOOK_SCRIPT_VERSION=14
+# KANNU_HOOK_SCRIPT_VERSION=23
 # Usage: kannu-agent-status.sh <state> <provider> [hook_event]  (hook JSON arrives on stdin)
 
 export KANNU_STATE="${1:-thinking}"
@@ -44,17 +44,13 @@ def requires_approval(name: str) -> bool:
     compact = lower.replace("_", "").replace("-", "").replace(" ", "")
     return compact in {
         "websearch", "webfetch", "search", "askquestion", "userquestion",
-    } or lower in {"web_search", "web_fetch", "ask_question"}
+        "shell", "runterminalcmd", "bash",
+    } or lower in {"web_search", "web_fetch", "ask_question", "run_terminal_cmd"}
 
-def looks_gated_payload(payload: str) -> bool:
-    lower = payload.lower()
-    return any(
-        token in lower
-        for token in (
-            "search_term", "searchterm", "websearch", "webfetch",
-            "askquestion", "ask_question", '"questions"',
-        )
-    )
+def normalize_token(value: str) -> str:
+    return (value or "").strip().lower().replace("_", "").replace("-", "").replace(" ", "")
+
+TITLE_BEARING_EVENTS = {"beforeSubmitPrompt", "stop", "SessionStart", "UserPromptSubmit", "Stop"}
 
 tool = pick_str(
     data.get("tool_name"),
@@ -79,6 +75,8 @@ if not tool and isinstance(tool_input, dict):
         tool = tool or "WebFetch"
     elif "questions" in tool_input:
         tool = tool or "AskQuestion"
+    elif any(key in tool_input for key in ("command", "working_directory", "description")):
+        tool = tool or "Shell"
 
 def is_ask_question() -> bool:
     compact = (tool or "").lower().replace("_", "").replace("-", "")
@@ -86,26 +84,49 @@ def is_ask_question() -> bool:
         return True
     return isinstance(tool_input, dict) and "questions" in tool_input
 
+def looks_gated_payload(name: str, payload) -> bool:
+    if requires_approval(name):
+        return True
+    if not isinstance(payload, dict):
+        return False
+    if "questions" in payload:
+        return True
+    if any(key in payload for key in ("search_term", "searchTerm", "query")):
+        return True
+    if any(key in payload for key in ("url", "uri")):
+        return True
+    if any(key in payload for key in ("command", "working_directory")):
+        return True
+    return False
+
 # Timing (Cursor):
 # - WebSearch approval card appears BEFORE preToolUse. preToolUse runs after approve.
 # - So WebSearch must NOT set awaiting_input on preToolUse (that paints yellow too late).
 # - afterAgentResponse / transcript catch the proposal while the card is open.
 # - AskQuestion still uses preToolUse for yellow (card is the tool itself).
 if hook_event == "afterAgentResponse":
-    if looks_gated_payload(raw):
+    if looks_gated_payload(tool, tool_input):
         state = "awaiting_input"
-elif hook_event in {"preToolUse", "beforeMCPExecution"}:
+elif hook_event == "afterAgentThought":
+    state = "thinking"
+elif hook_event in {"preToolUse", "beforeMCPExecution", "PreToolUse"}:
     if is_ask_question():
         state = "awaiting_input"
     else:
-        # Includes WebSearch/WebFetch: approval already granted; tool is running.
+        # Includes WebSearch/WebFetch/Shell: approval already granted; tool is running.
         state = "executing"
-elif hook_event in {"postToolUse", "postToolUseFailure"}:
+elif hook_event in {"beforeShellExecution", "PermissionRequest"}:
+    state = "awaiting_input"
+elif hook_event in {"postToolUse", "postToolUseFailure", "PostToolUse"}:
     state = "executing"
-elif hook_event == "stop":
+elif hook_event in {"stop", "Stop"}:
     state = "stopped"
 
 conversation_id = pick_str(
+    data.get("agentId"),
+    data.get("agent_id"),
+    data.get("composerId"),
+    data.get("composer_id"),
     data.get("conversation_id"),
     data.get("conversationId"),
     data.get("session_id"),
@@ -124,24 +145,45 @@ if status_file.exists():
     except Exception:
         existing = {}
 
-# Sticky yellow only against thinking noise — never block preToolUse from clearing
-# to green (WebSearch starts after the user already approved).
-if existing_state == "awaiting_input" and state not in {"awaiting_input", "stopped"}:
-    if hook_event in {"beforeSubmitPrompt", "afterAgentThought"}:
-        existing["state"] = "awaiting_input"
-        existing["ts"] = int(time.time() * 1000)
-        existing["provider"] = provider
-        status_file.write_text(json.dumps(existing, separators=(",", ":")))
-        print('{"permission":"allow","continue":true}')
-        raise SystemExit(0)
-
-name = pick_str(data.get("name"), data.get("title"), data.get("conversation_title"))
 roots = data.get("workspace_roots")
 project = ""
 if isinstance(roots, list) and roots:
     root = str(roots[0]).replace("file://", "").rstrip("/")
     if root:
         project = Path(root).name
+project = pick_str(project, existing.get("project"), existing.get("project_name"), existing.get("workspace_name"))
+
+if hook_event in TITLE_BEARING_EVENTS:
+    title = pick_str(
+        data.get("conversation_title"),
+        data.get("title"),
+        data.get("chat_name"),
+        data.get("conversation_name"),
+        data.get("chatTitle"),
+        data.get("bubbleTitle"),
+    )
+    name = pick_str(title, existing.get("name"), existing.get("title"), existing.get("conversation_title"))
+else:
+    name = pick_str(existing.get("name"), existing.get("title"), existing.get("conversation_title"))
+
+if hook_event in {"preToolUse", "beforeMCPExecution", "postToolUse", "postToolUseFailure", "PreToolUse", "PostToolUse"}:
+    if normalize_token(name) == normalize_token(tool):
+        name = ""
+
+# Sticky yellow only against reasoning noise during an open approval card.
+# UserPromptSubmit / SessionStart must clear yellow and enter thinking.
+if existing_state == "awaiting_input" and state not in {"awaiting_input", "stopped"}:
+    if hook_event in {"beforeSubmitPrompt", "afterAgentThought"}:
+        existing["state"] = "awaiting_input"
+        existing["ts"] = int(time.time() * 1000)
+        existing["provider"] = provider
+        if name:
+            existing["name"] = name
+        if project:
+            existing["project"] = project
+        status_file.write_text(json.dumps(existing, separators=(",", ":")))
+        print('{"permission":"allow","continue":true}')
+        raise SystemExit(0)
 
 payload = {
     "state": state,

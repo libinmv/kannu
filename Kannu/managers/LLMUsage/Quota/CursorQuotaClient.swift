@@ -12,13 +12,27 @@ struct CursorQuotaClient {
             return QuotaFetchResult(errorMessage: "Cursor not signed in")
         }
 
-        if let connect = await fetchConnectLimits() {
-            return connect
+        var result = QuotaFetchResult()
+
+        if let summary = await fetchUsageSummary() {
+            result.week = summary.week
+            result.onDemandSpendUSD = summary.onDemandSpendUSD
         }
-        if let summary = await fetchUsageSummaryLimits() {
-            return summary
+
+        if result.week == nil, let connect = await fetchConnectLimits() {
+            result.week = connect.week
         }
-        return QuotaFetchResult(errorMessage: "Cursor quota unavailable")
+
+        if result.week == nil && result.onDemandSpendUSD == nil {
+            result.errorMessage = "Cursor quota unavailable"
+        }
+
+        return result
+    }
+
+    private struct UsageSummaryData: Equatable {
+        var week: UsageLimit?
+        var onDemandSpendUSD: Double?
     }
 
     private func fetchConnectLimits() async -> QuotaFetchResult? {
@@ -48,7 +62,7 @@ struct CursorQuotaClient {
         }
     }
 
-    private func fetchUsageSummaryLimits() async -> QuotaFetchResult? {
+    private func fetchUsageSummary() async -> UsageSummaryData? {
         guard let url = URL(string: "https://cursor.com/api/usage-summary") else { return nil }
         do {
             let (data, http) = try await CursorAPIHelpers.restRequest(url: url, session: session)
@@ -62,27 +76,30 @@ struct CursorQuotaClient {
             }
 
             let individual = root["individualUsage"] as? [String: Any]
-            let plan = individual?["plan"] as? [String: Any]
-            if let plan, let percent = CursorAPIHelpers.parsePercent(from: plan) {
-                let resets = CursorAPIHelpers.parseTimestamp(root["billingCycleEnd"])
-                return QuotaFetchResult(week: UsageLimit(used: percent, limit: 100, resetsAt: resets))
+            let onDemandSpendUSD = CursorAPIHelpers.centsToUSD(
+                (individual?["onDemand"] as? [String: Any])?["used"]
+            )
+            let resets = CursorAPIHelpers.parseTimestamp(root["billingCycleEnd"])
+            var week: UsageLimit?
+
+            if let plan = individual?["plan"] as? [String: Any],
+               let percent = CursorAPIHelpers.parsePercent(from: plan) {
+                week = UsageLimit(used: percent, limit: 100, resetsAt: resets)
+            } else if let overall = individual?["overall"] as? [String: Any],
+                      let percent = CursorAPIHelpers.parsePercent(from: overall) {
+                week = UsageLimit(used: percent, limit: 100, resetsAt: resets)
+            } else if let team = root["teamUsage"] as? [String: Any],
+                      let pooled = team["pooled"] as? [String: Any],
+                      let percent = CursorAPIHelpers.parsePercent(from: pooled) {
+                week = UsageLimit(used: percent, limit: 100, resetsAt: resets)
             }
 
-            if let overall = individual?["overall"] as? [String: Any],
-               let percent = CursorAPIHelpers.parsePercent(from: overall) {
-                let resets = CursorAPIHelpers.parseTimestamp(root["billingCycleEnd"])
-                return QuotaFetchResult(week: UsageLimit(used: percent, limit: 100, resetsAt: resets))
+            guard week != nil || onDemandSpendUSD != nil else {
+                Self.log.error("usage-summary missing usable quota fields")
+                return nil
             }
 
-            if let team = root["teamUsage"] as? [String: Any],
-               let pooled = team["pooled"] as? [String: Any],
-               let percent = CursorAPIHelpers.parsePercent(from: pooled) {
-                let resets = CursorAPIHelpers.parseTimestamp(root["billingCycleEnd"])
-                return QuotaFetchResult(week: UsageLimit(used: percent, limit: 100, resetsAt: resets))
-            }
-
-            Self.log.error("usage-summary missing usable quota fields")
-            return nil
+            return UsageSummaryData(week: week, onDemandSpendUSD: onDemandSpendUSD)
         } catch {
             Self.log.error("usage-summary failed: \(error.localizedDescription, privacy: .public)")
             return nil

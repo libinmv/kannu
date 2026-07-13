@@ -35,11 +35,27 @@ struct NotchAgentStatusView: View {
                 latestByConversationID[session.conversationID] = session
                 continue
             }
-            if session.updatedAt > existing.updatedAt {
-                latestByConversationID[session.conversationID] = session
-            }
+            latestByConversationID[session.conversationID] = preferredSession(existing: existing, incoming: session)
         }
         return Array(latestByConversationID.values)
+    }
+
+    private func preferredSession(existing: AgentSessionStatus, incoming: AgentSessionStatus) -> AgentSessionStatus {
+        if existing.displayState != incoming.displayState {
+            return existing.displayState > incoming.displayState ? existing : incoming
+        }
+        let existingHasReliableTitle = hasReliableChatName(existing.chatName)
+        let incomingHasReliableTitle = hasReliableChatName(incoming.chatName)
+        if existingHasReliableTitle != incomingHasReliableTitle {
+            return incomingHasReliableTitle ? incoming : existing
+        }
+        return incoming.updatedAt >= existing.updatedAt ? incoming : existing
+    }
+
+    private func hasReliableChatName(_ value: String?) -> Bool {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return false }
+        return !CursorAgentStatusMonitor.looksLikeToolName(trimmed)
     }
 
     var body: some View {
@@ -141,8 +157,7 @@ struct NotchAgentStatusView: View {
 
     @ViewBuilder
     private func statusText(for session: AgentSessionStatus, font: Font) -> some View {
-        if session.displayState == .executing {
-            let startedAt = session.executionStartedAt ?? session.updatedAt
+        if session.displayState.isActiveRun, let startedAt = session.executionStartedAt {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 (
                     Text(session.displayState.displayName).foregroundStyle(stateColor(session.displayState))

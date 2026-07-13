@@ -3,6 +3,7 @@ import os
 
 struct CursorUsageEventsClient {
     private static let log = os.Logger(subsystem: "com.kannu.app", category: "CursorUsage")
+    private static let cacheReadPromptDiscount = 0.10
     let session: URLSession
 
     init(session: URLSession = URLSession(configuration: .ephemeral)) {
@@ -78,32 +79,35 @@ struct CursorUsageEventsClient {
                 let totalInput = input + cacheWrite + cacheRead
                 guard totalInput + output > 0 else { continue }
 
-                let costUSD: Double? = {
-                    if let cents = CursorAPIHelpers.parseDouble(event["chargedCents"]) {
-                        return cents / 100
-                    }
-                    if let cents = CursorAPIHelpers.parseDouble(tokenUsage["totalCents"]) {
-                        return cents / 100
-                    }
-                    return ModelPricing.cost(model: model, inputTokens: totalInput, outputTokens: output)
-                }()
+                let costUSD = eventCostUSD(event: event, model: model, tokenUsage: tokenUsage)
 
-                func add(_ totals: inout UsageTotals) {
+                func addTokens(_ totals: inout UsageTotals) {
                     totals.inputTokens += totalInput
                     totals.outputTokens += output
+                }
+
+                func addCost(_ totals: inout UsageTotals) {
                     if let costUSD {
                         totals.costUSD += costUSD
-                    } else {
+                    } else if Self.isUsageBasedEvent(event) {
                         totals.hasUnpricedModel = true
                     }
                 }
 
-                add(&snapshot.week)
-                if calendar.isDate(timestamp, inSameDayAs: now) { add(&snapshot.today) }
-                if timestamp >= sessionStart { add(&snapshot.session) }
+                addTokens(&snapshot.week)
+                addCost(&snapshot.week)
+                if calendar.isDate(timestamp, inSameDayAs: now) {
+                    addTokens(&snapshot.today)
+                    addCost(&snapshot.today)
+                }
+                if timestamp >= sessionStart {
+                    addTokens(&snapshot.session)
+                    addCost(&snapshot.session)
+                }
 
                 var modelTotals = perModel[model] ?? UsageTotals()
-                add(&modelTotals)
+                addTokens(&modelTotals)
+                addCost(&modelTotals)
                 perModel[model] = modelTotals
             }
 
@@ -119,6 +123,40 @@ struct CursorUsageEventsClient {
             .map { ModelUsage(model: $0.key, totals: $0.value) }
             .sorted { $0.totals.costUSD > $1.totals.costUSD }
         return snapshot
+    }
+
+    private func eventCostUSD(
+        event: [String: Any],
+        model: String,
+        tokenUsage: [String: Any]
+    ) -> Double? {
+        guard Self.isUsageBasedEvent(event) else { return nil }
+
+        if let dollars = CursorAPIHelpers.parseMoneyUSD(event["usageBasedCosts"]) {
+            return dollars
+        }
+        if let cents = CursorAPIHelpers.parseDouble(event["chargedCents"]) {
+            return cents / 100
+        }
+        if let cents = CursorAPIHelpers.parseDouble(tokenUsage["totalCents"]) {
+            return cents / 100
+        }
+
+        let input = Int(CursorAPIHelpers.parseDouble(tokenUsage["inputTokens"]) ?? 0)
+        let output = Int(CursorAPIHelpers.parseDouble(tokenUsage["outputTokens"]) ?? 0)
+        let cacheWrite = Int(CursorAPIHelpers.parseDouble(tokenUsage["cacheWriteTokens"]) ?? 0)
+        let cacheRead = Int(CursorAPIHelpers.parseDouble(tokenUsage["cacheReadTokens"]) ?? 0)
+        guard let rates = ModelPricingManager.shared.getPricing(for: model) else {
+            return nil
+        }
+        let billablePromptTokens = Double(input + cacheWrite)
+            + (Double(cacheRead) * Self.cacheReadPromptDiscount)
+        return (billablePromptTokens * rates.prompt) + (Double(output) * rates.completion)
+    }
+
+    private static func isUsageBasedEvent(_ event: [String: Any]) -> Bool {
+        let kind = (event["kind"] as? String) ?? ""
+        return kind.contains("USAGE_BASED")
     }
 
     private func parseEventTimestamp(_ value: Any?) -> Date? {

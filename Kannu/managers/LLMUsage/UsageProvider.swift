@@ -47,6 +47,7 @@ struct UsageSnapshot: Equatable {
     var week: UsageTotals = .init()
     var sessionLimit: UsageLimit? = nil // 5h window quota
     var weekLimit: UsageLimit? = nil // 7d window quota
+    var onDemandSpendUSD: Double? = nil // billing-cycle on-demand spend from usage-summary
     var models: [ModelUsage] = []
     var lastUpdated: Date = .distantPast
     var quotaError: String? = nil
@@ -56,6 +57,7 @@ struct UsageSnapshot: Equatable {
 struct QuotaFetchResult: Equatable {
     var session: UsageLimit?
     var week: UsageLimit?
+    var onDemandSpendUSD: Double? = nil
     var errorMessage: String?
 
     var hasLimits: Bool { session != nil || week != nil }

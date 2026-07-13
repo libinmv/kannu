@@ -71,8 +71,10 @@ struct NotchLLMUsageView: View {
 
     @ViewBuilder
     private func success(_ snap: UsageSnapshot) -> some View {
+        let hasPartialEstimate = snap.today.hasUnpricedModel || snap.week.hasUnpricedModel || snap.session.hasUnpricedModel
+        let showsQuota = snap.sessionLimit != nil || snap.weekLimit != nil
         VStack(alignment: .leading, spacing: 6) {
-            if snap.sessionLimit == nil && snap.weekLimit == nil {
+            if !showsQuota {
                 if snap.logsUnavailable {
                     Text("No local usage logs yet").font(.caption2).foregroundStyle(.secondary)
                 } else {
@@ -92,14 +94,39 @@ struct NotchLLMUsageView: View {
                     Text("Token totals unavailable (no local logs)").font(.caption2).foregroundStyle(.secondary)
                 } else {
                     VStack(alignment: .leading, spacing: 2) {
-                        window("Today", snap.today, compact: true)
-                        window("Week", snap.week, compact: true)
+                        window("Today", snap.today, compact: true, showCost: false)
+                        window("Week", snap.week, compact: true, showCost: false)
                     }
+                }
+                if let onDemand = snap.onDemandSpendUSD {
+                    onDemandSpendRow(onDemand)
+                } else if !snap.logsUnavailable {
+                    onDemandSpendRow(snap.week.costUSD, partial: snap.week.hasUnpricedModel)
                 }
                 if let quotaError = snap.quotaError {
                     Text(quotaError).font(.caption2).foregroundStyle(.secondary).lineLimit(4)
                 }
             }
+            if hasPartialEstimate && !showsQuota {
+                Text("Some models are unpriced; totals are partial estimates.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func onDemandSpendRow(_ amount: Double, partial: Bool = false) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text("On-demand")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .frame(width: 68, alignment: .leading)
+            Spacer(minLength: 4)
+            Text(partial ? money(amount) + "+" : money(amount))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
         }
     }
 
@@ -145,15 +172,23 @@ struct NotchLLMUsageView: View {
         return hours > 0 ? "resets in \(hours)h \(minutes)m" : "resets in \(minutes)m"
     }
 
-    private func window(_ label: String, _ totals: UsageTotals, prominent: Bool = false, compact: Bool = false) -> some View {
+    private func window(
+        _ label: String,
+        _ totals: UsageTotals,
+        prominent: Bool = false,
+        compact: Bool = false,
+        showCost: Bool = true
+    ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(label).font(.caption2).foregroundStyle(.secondary).frame(width: compact ? 34 : 48, alignment: .leading)
             Text(tokens(totals.totalTokens))
                 .font(.system(size: compact ? 11 : (prominent ? 17 : 13), weight: prominent ? .bold : .semibold, design: .rounded))
                 .monospacedDigit()
             Spacer(minLength: 4)
-            Text(totals.hasUnpricedModel ? money(totals.costUSD) + "+" : money(totals.costUSD))
-                .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+            if showCost {
+                Text(totals.hasUnpricedModel ? money(totals.costUSD) + "+" : money(totals.costUSD))
+                    .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+            }
         }
     }
 

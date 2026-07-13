@@ -31,6 +31,7 @@ enum AgentProviderIconSource: Equatable {
         case .cursor: self = .cursor
         case .vscode: self = .vscode
         case .codex: self = .codex
+        case .claude: self = .claude
         }
     }
 }

@@ -22,6 +22,7 @@ struct CursorUsageProvider: UsageProvider {
         if var eventsSnapshot = await eventsClient.fetchSnapshot(now: now) {
             eventsSnapshot.sessionLimit = eventsSnapshot.sessionLimit ?? quota.session
             eventsSnapshot.weekLimit = eventsSnapshot.weekLimit ?? quota.week
+            eventsSnapshot.onDemandSpendUSD = quota.onDemandSpendUSD
             eventsSnapshot.quotaError = quota.errorMessage
             return eventsSnapshot
         }
@@ -32,14 +33,16 @@ struct CursorUsageProvider: UsageProvider {
             var snapshot = legacy
             snapshot.sessionLimit = quota.session
             snapshot.weekLimit = quota.week
+            snapshot.onDemandSpendUSD = quota.onDemandSpendUSD
             snapshot.quotaError = quota.errorMessage
             return snapshot
         }
 
-        if quota.hasLimits {
+        if quota.hasLimits || quota.onDemandSpendUSD != nil {
             var snapshot = UsageSnapshot()
             snapshot.sessionLimit = quota.session
             snapshot.weekLimit = quota.week
+            snapshot.onDemandSpendUSD = quota.onDemandSpendUSD
             snapshot.quotaError = quota.errorMessage
             snapshot.logsUnavailable = true
             snapshot.lastUpdated = now

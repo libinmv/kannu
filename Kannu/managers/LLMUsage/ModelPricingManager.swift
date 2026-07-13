@@ -48,6 +48,10 @@ struct ModelRates: Codable {
     var completionPrice: Double {
         Double(completion) ?? 0.0
     }
+
+    var isUnpriced: Bool {
+        promptPrice <= 0 && completionPrice <= 0
+    }
 }
 
 /// Manager class to handle fetching and caching of LLM pricing data
@@ -106,8 +110,14 @@ class ModelPricingManager: ObservableObject {
             let decoded = try JSONDecoder().decode(ModelPricingData.self, from: data)
             
             await MainActor.run {
-                self.pricingData = decoded
-                print("✅ ModelPricingManager: Successfully updated pricing from remote")
+                if self.shouldAcceptRemotePricing(local: self.pricingData, remote: decoded) {
+                    self.pricingData = decoded
+                    print("✅ ModelPricingManager: Successfully updated pricing from remote")
+                } else {
+                    let localCount = self.pricedModelCount(in: self.pricingData)
+                    let remoteCount = self.pricedModelCount(in: decoded)
+                    print("⚠️ ModelPricingManager: Ignoring remote pricing (remote priced models: \(remoteCount), local priced models: \(localCount))")
+                }
             }
         } catch {
             print("⚠️ ModelPricingManager: Failed to fetch remote pricing (using local/cached): \(error)")
@@ -116,9 +126,68 @@ class ModelPricingManager: ObservableObject {
     
     /// Resolves pricing for a specific model ID
     func getPricing(for modelId: String) -> (prompt: Double, completion: Double)? {
-        guard let model = pricingData?.models.first(where: { $0.id == modelId }) else {
+        guard let model = pricingEntry(for: modelId), !model.pricing.isUnpriced else {
             return nil
         }
         return (model.pricing.promptPrice, model.pricing.completionPrice)
+    }
+
+    private func pricingEntry(for modelId: String) -> ModelPriceEntry? {
+        guard let models = pricingData?.models else { return nil }
+        if let direct = models.first(where: { $0.id.caseInsensitiveCompare(modelId) == .orderedSame }) {
+            return direct
+        }
+
+        let normalized = normalizedModelID(modelId)
+        return models.first(where: { $0.id.caseInsensitiveCompare(normalized) == .orderedSame })
+    }
+
+    private func normalizedModelID(_ rawModelId: String) -> String {
+        let raw = rawModelId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = raw.lowercased()
+
+        let aliases: [(String, String)] = [
+            ("anthropic/claude-sonnet-4", "anthropic/claude-sonnet-4"),
+            ("claude-sonnet-4", "anthropic/claude-sonnet-4"),
+            ("anthropic/claude-opus-4", "anthropic/claude-opus-4"),
+            ("claude-opus-4", "anthropic/claude-opus-4"),
+            ("anthropic/claude-3-haiku", "anthropic/claude-3-haiku"),
+            ("claude-3-haiku", "anthropic/claude-3-haiku"),
+            ("openai/gpt-4o-mini", "openai/gpt-4o-mini"),
+            ("gpt-4o-mini", "openai/gpt-4o-mini"),
+            ("openai/gpt-4o", "openai/gpt-4o"),
+            ("gpt-4o", "openai/gpt-4o"),
+            ("openai/gpt-4.1-mini", "openai/gpt-4.1-mini"),
+            ("gpt-4.1-mini", "openai/gpt-4.1-mini"),
+            ("openai/gpt-4.1", "openai/gpt-4.1"),
+            ("gpt-4.1", "openai/gpt-4.1"),
+            ("openai/gpt-5-mini", "openai/gpt-5-mini"),
+            ("gpt-5-mini", "openai/gpt-5-mini"),
+            ("openai/gpt-5-nano", "openai/gpt-5-nano"),
+            ("gpt-5-nano", "openai/gpt-5-nano"),
+            ("openai/gpt-5", "openai/gpt-5"),
+            ("gpt-5", "openai/gpt-5"),
+            ("openai/o4-mini", "openai/o4-mini"),
+            ("o4-mini", "openai/o4-mini"),
+            ("openai/o3", "openai/o3"),
+            ("o3", "openai/o3")
+        ]
+        if let mapped = aliases.first(where: { lower.hasPrefix($0.0) })?.1 {
+            return mapped
+        }
+
+        if lower.hasPrefix("composer-") || lower.hasPrefix("cursor-") {
+            return "cursor/composer-default"
+        }
+        return raw
+    }
+
+    private func pricedModelCount(in data: ModelPricingData?) -> Int {
+        data?.models.filter { !$0.pricing.isUnpriced }.count ?? 0
+    }
+
+    private func shouldAcceptRemotePricing(local: ModelPricingData?, remote: ModelPricingData) -> Bool {
+        guard local != nil else { return true }
+        return pricedModelCount(in: remote) >= pricedModelCount(in: local)
     }
 }
