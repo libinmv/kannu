@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import CoreServices
+import Darwin
 import Defaults
 import Foundation
 
@@ -188,12 +189,25 @@ final class CursorAgentStatusMonitor: ObservableObject {
         let collapseMinutes = Defaults[.agentStoppedCollapseMinutes]
         let inactiveMinutes = Defaults[.agentInactiveDisplayMinutes]
 
-        let hookSessions = parseHookSessions(
+        var hookSessions = parseHookSessions(
             staleMinutes: staleMinutes,
             collapseMinutes: collapseMinutes,
             inactiveMinutes: inactiveMinutes,
             now: now
         )
+
+        let passiveClaudeSessions = buildClaudeSessions(
+            staleMinutes: staleMinutes,
+            collapseMinutes: collapseMinutes,
+            inactiveMinutes: inactiveMinutes,
+            now: now
+        )
+        if !passiveClaudeSessions.isEmpty {
+            let hookConversationIDs = Set(hookSessions.map(\.conversationID))
+            for session in passiveClaudeSessions where !hookConversationIDs.contains(session.conversationID) {
+                hookSessions.append(session)
+            }
+        }
 
         let transcriptAnalysis: [String: TranscriptAnalysis]
         let transcriptSessions: [AgentSessionStatus]
@@ -1181,6 +1195,119 @@ final class CursorAgentStatusMonitor: ObservableObject {
             projectBySessionID[sessionID] = projectName
         }
         return projectBySessionID
+    }
+
+    // MARK: - Passive Claude session detection
+
+    private func buildClaudeSessions(
+        staleMinutes: Int,
+        collapseMinutes: Int,
+        inactiveMinutes: Int,
+        now: Date = Date()
+    ) -> [AgentSessionStatus] {
+        let sessionsDir = AgentSessionLogParser.claudeSessionsDirectory
+        guard FileManager.default.fileExists(atPath: sessionsDir.path),
+              let files = try? FileManager.default.contentsOfDirectory(
+                at: sessionsDir,
+                includingPropertiesForKeys: [.contentModificationDateKey]
+              ) else { return [] }
+
+        let staleMs = Int64(staleMinutes) * 60_000
+        let nowMs = Int64(now.timeIntervalSince1970 * 1000)
+        let collapseMs = Int64(collapseMinutes) * 60_000
+        let inactiveMs = Int64(inactiveMinutes) * 60_000
+        let recentJsonlThreshold: TimeInterval = 5 * 60  // 5 min → "thinking"
+
+        var results: [AgentSessionStatus] = []
+
+        for file in files where file.pathExtension == "json" {
+            guard let data = try? Data(contentsOf: file),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let pid = json["pid"] as? Int,
+                  let sessionId = json["sessionId"] as? String,
+                  let startedAtMs = json["startedAt"] as? Int64 else { continue }
+
+            guard json["kind"] as? String == "interactive" else { continue }
+            guard nowMs - startedAtMs <= staleMs else { continue }
+
+            let processAlive = kill(pid_t(pid), 0) == 0
+
+            let jsonlURL = claudeJSONLURL(forSessionId: sessionId)
+            var jsonlMtime: Date? = nil
+            if let url = jsonlURL {
+                jsonlMtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            }
+
+            let rawState: String
+            if processAlive {
+                if let mtime = jsonlMtime, now.timeIntervalSince(mtime) < recentJsonlThreshold {
+                    rawState = "thinking"
+                } else {
+                    rawState = "stopped"
+                }
+            } else {
+                rawState = "stopped"
+            }
+
+            let tsMs: Int64
+            if let mtime = jsonlMtime {
+                tsMs = Int64(mtime.timeIntervalSince1970 * 1000)
+            } else {
+                tsMs = startedAtMs
+            }
+
+            let ageMs = nowMs - tsMs
+            let resolved = AgentTrafficLightMapper.resolveHookState(
+                rawState: rawState,
+                ageMs: ageMs,
+                collapseMs: collapseMs,
+                inactiveMs: inactiveMs
+            )
+
+            let chatName: String? = jsonlURL.flatMap {
+                AgentSessionLogParser.displayChatName(from: $0, provider: .claude)
+            }
+
+            let projectName: String?
+            if let cwd = json["cwd"] as? String {
+                let base = URL(fileURLWithPath: cwd).lastPathComponent
+                projectName = base.isEmpty ? nil : base
+            } else {
+                projectName = nil
+            }
+
+            results.append(AgentSessionStatus(
+                id: "claude-\(sessionId)",
+                provider: "claude",
+                conversationID: sessionId,
+                chatName: chatName,
+                projectName: projectName,
+                rawState: rawState,
+                displayState: resolved.state,
+                updatedAt: Date(timeIntervalSince1970: TimeInterval(tsMs) / 1000),
+                isVisible: resolved.visible,
+                executionStartedAt: nil
+            ))
+        }
+
+        return results
+    }
+
+    private func claudeJSONLURL(forSessionId sessionId: String) -> URL? {
+        let projectsDir = AgentSessionLogParser.claudeProjectsDirectory
+        guard let enumerator = FileManager.default.enumerator(
+            at: projectsDir,
+            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return nil }
+
+        let target = "\(sessionId).jsonl"
+        for case let url as URL in enumerator {
+            guard url.lastPathComponent == target,
+                  !url.path.contains("/subagents/") else { continue }
+            return url
+        }
+        return nil
     }
 
     private func isCursorRunning() -> Bool {

@@ -21,6 +21,9 @@ import CoreGraphics
 import Defaults
 import AppKit
 import AVFoundation
+#if canImport(ApplicationServices)
+import ApplicationServices
+#endif
 
 final class SystemChangesObserver: MediaKeyInterceptorDelegate {
     private weak var coordinator: KannuViewCoordinator?
@@ -93,8 +96,15 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
 
         mediaKeyInterceptor.delegate = self
         let tapStarted = mediaKeyInterceptor.start()
-        if !tapStarted {
-            NSLog("⚠️ Media key interception unavailable; system HUD will remain visible")
+        let hasAccessibility = Self.isAccessibilityAuthorized()
+        if !tapStarted || !hasAccessibility {
+            NSLog("⚠️ Native volume/brightness indicators will show until Accessibility is granted for this build.")
+            if !tapStarted {
+                NSLog("⚠️ Media key interception unavailable; system HUD will remain visible")
+            }
+            if !hasAccessibility {
+                NSLog("⚠️ Accessibility permission missing; grant Kannu access in System Settings › Privacy & Security › Accessibility")
+            }
         }
         mediaKeyInterceptor.configuration = MediaKeyConfiguration(
             interceptVolume: volumeEnabled,
@@ -155,6 +165,9 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
         modifiers: NSEvent.ModifierFlags
     ) {
         guard volumeEnabled else { return }
+
+        // Beat CoreAudio waking OSDUIHelper before the volume write.
+        SystemOSDManager.suppressNativeOSDNow()
         
         // Elastic Limit Detection (Vertical HUD)
         if Defaults[.enableVerticalHUD] {
@@ -174,6 +187,7 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
 
     func mediaKeyInterceptorDidToggleMute(_ interceptor: MediaKeyInterceptor) {
         guard volumeEnabled else { return }
+        SystemOSDManager.suppressNativeOSDNow()
         volumeController.toggleMute()
     }
 
@@ -349,6 +363,14 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
 }
 
 private extension SystemChangesObserver {
+    static func isAccessibilityAuthorized() -> Bool {
+#if canImport(ApplicationServices)
+        return AXIsProcessTrusted()
+#else
+        return true
+#endif
+    }
+
     func volumeStep(for step: MediaKeyStep) -> Float {
         switch step {
         case .standard:

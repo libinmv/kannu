@@ -4,6 +4,27 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-07-12 - Fix brightness and native OSD regression
+- **Developer label:** Fix brightness and native OSD regression
+- **Agent label:** Non-blocking OSD suppress and brightness path restore
+- **Changes:**
+  - Restored brightness handling in `Kannu/managers/SystemChangesObserver.swift` by removing `suppressNativeOSDNow()` from the brightness key handler and `sendBrightnessNotification`, which had been blocking the main-thread brightness animation timer.
+  - Made `SystemOSDManager.suppressNativeOSDNow()` dispatch `SIGSTOP` on a dedicated queue in `Kannu/managers/SystemOSDManager.swift` so volume suppress never blocks the event tap or main thread.
+  - Added Accessibility and media-key tap failure logging in `SystemChangesObserver.startObserving()` when native volume/brightness indicators are expected to show through.
+
+### 2026-07-12 - Hide native volume brightness OSD
+- **Developer label:** Hide native volume brightness OSD
+- **Agent label:** Synchronous OSDUIHelper suppress before media-key writes
+- **Changes:**
+  - Made `SystemOSDManager.suppressNativeOSDNow()` run `SIGSTOP` inline in `Kannu/managers/SystemOSDManager.swift` instead of `Task.detached`, so suppression can beat CoreAudio waking the native bezel.
+  - Called `suppressNativeOSDNow()` before volume, mute, and brightness media-key adjusts in `Kannu/managers/SystemChangesObserver.swift`, and at the start of `sendBrightnessNotification` for non-key brightness changes.
+
+### 2026-07-12 - Notch fill color picker fix
+- **Developer label:** Notch fill color picker fix
+- **Agent label:** Notch fill popover picker
+- **Changes:**
+  - Replaced `NotchFillColorPickerRow` `NSColorPanel` usage in `Kannu/components/Settings/SettingsView.swift` with `SettingsColorPickerRow` popover so the notch fill picker no longer traps inside the Settings window.
+
 ### 2026-07-12 - Fix Recent Chat Names and LLM Usage Pricing
 - **Developer label:** Fix Recent Chat Names and LLM Usage Pricing
 - **Agent label:** Agent status, chat titles, and usage pricing overhaul
