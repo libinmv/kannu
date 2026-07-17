@@ -4,6 +4,13 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-07-17 - v1.0.0 release
+- **Developer label:** v1.0.0 release
+- **Agent label:** Initial public release version bump
+- **Changes:**
+  - Set `MARKETING_VERSION` to `1.0.0` and `CURRENT_PROJECT_VERSION` to `1` in `Kannu.xcodeproj/project.pbxproj`.
+  - Updated release examples in `scripts/RELEASE.md` for the `v1.0.0` tag.
+
 ### 2026-07-17 - Automate CI releases
 - **Developer label:** Automate CI releases
 - **Agent label:** Tag-triggered signed notarized release pipeline

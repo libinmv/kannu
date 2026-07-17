@@ -39,8 +39,8 @@ gh secret set SPARKLE_EDDSA_PRIVATE_KEY --repo libinmv/kannu < ~/path/to/eddsa_p
 3. Tag and push:
 
 ```bash
-git tag v2.2.1
-git push origin v2.2.1
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
 4. Watch **Actions → Release**
@@ -49,8 +49,8 @@ git push origin v2.2.1
 ### Test with a pre-release tag
 
 ```bash
-git tag v2.2.1-test.1
-git push origin v2.2.1-test.1
+git tag v1.0.0-test.1
+git push origin v1.0.0-test.1
 ```
 
 Delete the test release afterward if desired.
@@ -72,8 +72,8 @@ chmod +x scripts/manual-release.sh
 
 ./scripts/manual-release.sh \
   --app ~/Desktop/KannuRelease/Kannu.app \
-  --version 2.2.1 \
-  --tag v2.2.1 \
+  --version 1.0.0 \
+  --tag v1.0.0 \
   --sparkle-key ~/path/to/eddsa_private.key \
   --publish \
   --push-appcast

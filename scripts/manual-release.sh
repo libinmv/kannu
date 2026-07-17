@@ -35,8 +35,8 @@ Usage:
 Examples:
   $0 \\
     --app ~/Desktop/KannuRelease/Kannu.app \\
-    --version 2.2.1 \\
-    --tag v2.2.1 \\
+    --version 1.0.0 \\
+    --tag v1.0.0 \\
     --sparkle-key ~/Keys/kannu-sparkle.key
 
   # Also create GitHub release and push Updates/appcast.xml:
