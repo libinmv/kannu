@@ -36,7 +36,26 @@ Verify locally before uploading:
 security find-identity -v -p codesigning | grep "Developer ID Application"
 ```
 
-Upload to GitHub:
+#### Add secrets in GitHub (no CLI required)
+
+1. Open **https://github.com/libinmv/kannu/settings/secrets/actions**
+2. For each secret: **New repository secret** (or **Update** if it already exists)
+3. **Name** must match the table exactly; paste the **Value**; click **Add secret**
+
+| Secret | How to get the value |
+|--------|----------------------|
+| `APPLE_CERTIFICATE` | Terminal: `base64 -i ~/path/to/cert.p12 \| pbcopy` → paste entire output (one long line is fine) |
+| `APPLE_CERTIFICATE_PASSWORD` | The password you set when exporting the `.p12` |
+| `KEYCHAIN_PASSWORD` | Terminal: `openssl rand -base64 32` → copy output |
+| `APPLE_TEAM_ID` | `S2WWHQQH2V` |
+| `APPLE_ID` | Your Apple ID email |
+| `APPLE_NOTARIZATION_PASSWORD` | App-specific password from [appleid.apple.com](https://appleid.apple.com) |
+| `SPARKLE_EDDSA_PRIVATE_KEY` | Open your Sparkle private key file in a text editor → copy all contents |
+
+To **update** a secret after a bad upload: open the secret on that page → **Update** → paste the new value.
+
+<details>
+<summary>Optional: GitHub CLI (<code>gh</code>)</summary>
 
 ```bash
 gh secret set APPLE_CERTIFICATE --repo libinmv/kannu < <(base64 -i ~/path/to/cert.p12)
@@ -47,6 +66,8 @@ gh secret set APPLE_ID --repo libinmv/kannu
 gh secret set APPLE_NOTARIZATION_PASSWORD --repo libinmv/kannu
 gh secret set SPARKLE_EDDSA_PRIVATE_KEY --repo libinmv/kannu < ~/path/to/eddsa_private.key
 ```
+
+</details>
 
 ### Release day
 
@@ -102,7 +123,7 @@ Without `--publish` / `--push-appcast`, the script only builds `build/Kannu.<ver
 1. Verifies the exported app is code-signed
 2. Creates `build/Kannu.<version>.dmg` via [`create-dmg.sh`](create-dmg.sh)
 3. Sparkle-signs the DMG and merges [`Updates/appcast.xml`](../Updates/appcast.xml) via [`export-sparkle-update.sh`](export-sparkle-update.sh)
-4. Optionally runs `gh release create` and pushes the appcast to `main`
+4. Optionally creates a GitHub Release via `gh` (omit `--publish` to upload the DMG manually on github.com → Releases → Draft a new release)
 
 Manual releases do **not** notarize automatically; use CI for notarized builds.
 
