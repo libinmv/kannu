@@ -4,6 +4,14 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-07-17 - Automate CI releases
+- **Developer label:** Automate CI releases
+- **Agent label:** Tag-triggered signed notarized release pipeline
+- **Changes:**
+  - Rewrote [`.github/workflows/release.yml`](.github/workflows/release.yml) to validate secrets, archive/export with Developer ID, notarize the DMG, and publish on `v*` tag push only.
+  - Added [`ExportOptions.plist`](ExportOptions.plist) and [`scripts/notarize-dmg.sh`](scripts/notarize-dmg.sh) for CI notarization.
+  - Expanded [`scripts/RELEASE.md`](scripts/RELEASE.md) with GitHub secrets setup and automated release instructions.
+
 ### 2026-07-17 - Manual GitHub release
 - **Developer label:** Manual GitHub release
 - **Agent label:** Manual release script and docs

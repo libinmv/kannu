@@ -4,7 +4,6 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -24,6 +23,36 @@ jobs:
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
+
+      - name: Validate release secrets
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_NOTARIZATION_PASSWORD: ${{ secrets.APPLE_NOTARIZATION_PASSWORD }}
+          SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
+        run: |
+          missing=()
+          for var in \
+            APPLE_CERTIFICATE \
+            APPLE_CERTIFICATE_PASSWORD \
+            KEYCHAIN_PASSWORD \
+            APPLE_TEAM_ID \
+            APPLE_ID \
+            APPLE_NOTARIZATION_PASSWORD \
+            SPARKLE_EDDSA_PRIVATE_KEY
+          do
+            if [ -z "${!var:-}" ]; then
+              missing+=("$var")
+            fi
+          done
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Missing required release secrets: ${missing[*]}"
+            exit 1
+          fi
 
       - name: Download Metal Toolchain
         run: |
@@ -49,11 +78,6 @@ jobs:
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
-          if [ -z "${APPLE_CERTIFICATE:-}" ]; then
-            echo "No APPLE_CERTIFICATE secret configured; skipping Developer ID import."
-            exit 0
-          fi
-
           KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
           KEYCHAIN_PASSWORD="${KEYCHAIN_PASSWORD:-$RUNNER_TEMP}"
 
@@ -70,6 +94,8 @@ jobs:
           security list-keychain -d user -s "$KEYCHAIN_PATH"
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
       - name: Download Sparkle Tools
         run: |
           curl -sL "https://github.com/sparkle-project/Sparkle/releases/download/2.7.0/Sparkle-2.7.0.tar.xz" -o /tmp/Sparkle-2.7.0.tar.xz
@@ -77,13 +103,19 @@ jobs:
           tar -xf /tmp/Sparkle-2.7.0.tar.xz -C /tmp/sparkle-tools
           echo "SPARKLE_BIN_DIR=/tmp/sparkle-tools/bin" >> "$GITHUB_ENV"
 
-      - name: Build Release App
+      - name: Archive and export Release app
         env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          set -euo pipefail
           sudo DevToolsSecurity -enable
+
+          SIGNING_IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | sed -n 's/.*"\(Developer ID Application:.*\)".*/\1/p' | head -1)"
+          if [ -z "$SIGNING_IDENTITY" ]; then
+            echo "::error::Developer ID Application identity not found in imported keychain."
+            exit 1
+          fi
+          echo "SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
 
           if ! plutil_out=$(plutil -remove com.apple.security.mach-services Kannu/Kannu.entitlements 2>&1); then
             if printf '%s' "$plutil_out" | grep -q "No value to remove"; then
@@ -94,84 +126,74 @@ jobs:
             fi
           fi
 
-          BUILD_ARGS=(
-            -project Kannu.xcodeproj
-            -scheme Kannu
-            -configuration Release
-            -destination "platform=macOS"
-            -derivedDataPath build
-            CODE_SIGNING_ALLOWED=YES
-          )
+          xcodebuild archive \
+            -project Kannu.xcodeproj \
+            -scheme Kannu \
+            -configuration Release \
+            -destination "platform=macOS" \
+            -archivePath build/Kannu.xcarchive \
+            CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" \
+            CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID"
 
-          if [ -n "$APPLE_CERTIFICATE" ]; then
-            KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
-            SIGNING_IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | sed -n 's/.*"\(Developer ID Application:.*\)".*/\1/p' | head -1)"
-            if [ -z "$SIGNING_IDENTITY" ]; then
-              echo "::error::Developer ID Application identity not found in imported keychain."
-              exit 1
-            fi
-            BUILD_ARGS+=(
-              CODE_SIGN_IDENTITY="$SIGNING_IDENTITY"
-              CODE_SIGNING_REQUIRED=YES
-              CODE_SIGN_STYLE=Manual
-              DEVELOPMENT_TEAM=""
-            )
-          else
-            BUILD_ARGS+=(
-              CODE_SIGN_IDENTITY="-"
-              CODE_SIGNING_REQUIRED=NO
-              CODE_SIGN_INJECT_BASE_ENTITLEMENTS=YES
-            )
-          fi
+          cp ExportOptions.plist build/ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Set :teamID $APPLE_TEAM_ID" build/ExportOptions.plist
 
-          xcodebuild build "${BUILD_ARGS[@]}"
+          xcodebuild -exportArchive \
+            -archivePath build/Kannu.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist build/ExportOptions.plist
 
       - name: Create DMG
         run: |
-          chmod +x scripts/create-dmg.sh
-          ./scripts/create-dmg.sh build/Build/Products/Release/Kannu.app build/Kannu.dmg
-
-      - name: Export Sparkle Update Assets
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
-        run: |
-          if [ -z "${SPARKLE_EDDSA_PRIVATE_KEY:-}" ]; then
-            echo "::warning::SPARKLE_EDDSA_PRIVATE_KEY is not set. Sparkle update signing will be skipped."
-          fi
-
           TAG="${GITHUB_REF#refs/tags/}"
           VERSION="${TAG#v}"
           DMG_NAME="Kannu.${VERSION}.dmg"
-          cp build/Kannu.dmg "build/${DMG_NAME}"
+
+          chmod +x scripts/create-dmg.sh
+          ./scripts/create-dmg.sh build/export/Kannu.app "build/${DMG_NAME}"
+
+          echo "RELEASE_DMG=${DMG_NAME}" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=${VERSION}" >> "$GITHUB_ENV"
+
+      - name: Notarize DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_NOTARIZATION_PASSWORD: ${{ secrets.APPLE_NOTARIZATION_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          chmod +x scripts/notarize-dmg.sh
+          ./scripts/notarize-dmg.sh "build/${RELEASE_DMG}"
+
+      - name: Export Sparkle Update Assets
+        env:
+          SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
 
           chmod +x scripts/export-sparkle-update.sh
           ./scripts/export-sparkle-update.sh \
-            "build/${DMG_NAME}" \
+            "build/${RELEASE_DMG}" \
             Updates \
             "https://github.com/libinmv/kannu/releases/download/${TAG}/" \
             "$SPARKLE_BIN_DIR"
-
-          echo "RELEASE_DMG=${DMG_NAME}" >> "$GITHUB_ENV"
 
       - name: Upload Release Artifact
         uses: actions/upload-artifact@v7
         with:
           name: Kannu-dmg
-          path: build/Kannu.dmg
+          path: build/${{ env.RELEASE_DMG }}
           if-no-files-found: error
 
       - name: Upload Sparkle Artifact
-        if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v7
         with:
           name: Kannu-sparkle
-          path: |
-            Updates/appcast.xml
+          path: Updates/appcast.xml
           if-no-files-found: warn
 
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
           files: |
@@ -181,7 +203,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update appcast on main
-        if: startsWith(github.ref, 'refs/tags/')
         run: |
           if [ ! -f Updates/appcast.xml ]; then
             echo "No generated Updates/appcast.xml found; skipping main branch update."
