@@ -44,12 +44,16 @@ jobs:
           fi
 
       - name: Install Apple Certificate
-        if: secrets.APPLE_CERTIFICATE != ''
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
+          if [ -z "${APPLE_CERTIFICATE:-}" ]; then
+            echo "No APPLE_CERTIFICATE secret configured; skipping Developer ID import."
+            exit 0
+          fi
+
           KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
           KEYCHAIN_PASSWORD="${KEYCHAIN_PASSWORD:-$RUNNER_TEMP}"
 
@@ -137,12 +141,18 @@ jobs:
           fi
 
           TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          DMG_NAME="Kannu.${VERSION}.dmg"
+          cp build/Kannu.dmg "build/${DMG_NAME}"
+
           chmod +x scripts/export-sparkle-update.sh
           ./scripts/export-sparkle-update.sh \
-            build/Build/Products/Release/Kannu.app \
-            build/sparkle \
+            "build/${DMG_NAME}" \
+            Updates \
             "https://github.com/libinmv/kannu/releases/download/${TAG}/" \
             "$SPARKLE_BIN_DIR"
+
+          echo "RELEASE_DMG=${DMG_NAME}" >> "$GITHUB_ENV"
 
       - name: Upload Release Artifact
         uses: actions/upload-artifact@v7
@@ -157,8 +167,7 @@ jobs:
         with:
           name: Kannu-sparkle
           path: |
-            build/sparkle/Kannu.zip
-            build/sparkle/appcast.xml
+            Updates/appcast.xml
           if-no-files-found: warn
 
       - name: Publish GitHub Release
@@ -166,8 +175,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           files: |
-            build/Kannu.dmg
-            build/sparkle/Kannu.zip
+            build/${{ env.RELEASE_DMG }}
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -175,20 +183,22 @@ jobs:
       - name: Update appcast on main
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          if [ ! -f build/sparkle/appcast.xml ]; then
-            echo "No generated appcast.xml found; skipping main branch update."
+          if [ ! -f Updates/appcast.xml ]; then
+            echo "No generated Updates/appcast.xml found; skipping main branch update."
             exit 0
           fi
 
           TAG="${GITHUB_REF#refs/tags/}"
+          cp Updates/appcast.xml /tmp/kannu-appcast.xml
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin main
           git checkout main
-          cp build/sparkle/appcast.xml appcast.xml
-          git add appcast.xml
+          cp /tmp/kannu-appcast.xml Updates/appcast.xml
+          git add Updates/appcast.xml
           if git diff --staged --quiet; then
-            echo "appcast.xml unchanged."
+            echo "Updates/appcast.xml unchanged."
           else
             git commit -m "Update appcast for ${TAG}"
             git push origin main
