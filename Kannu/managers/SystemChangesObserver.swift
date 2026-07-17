@@ -85,9 +85,10 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
 
         brightnessController.onBrightnessChange = { [weak self] brightness in
             guard let self, self.brightnessEnabled else { return }
-            self.sendBrightnessNotification(value: brightness)
+            Task { @MainActor in
+                self.sendBrightnessNotification(value: brightness)
+            }
         }
-        brightnessController.start()
 
         configureKeyboardBacklightCallback()
         if keyboardBacklightEnabled {
@@ -109,8 +110,11 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
         mediaKeyInterceptor.configuration = MediaKeyConfiguration(
             interceptVolume: volumeEnabled,
             interceptBrightness: brightnessEnabled,
-            interceptCommandModifiedBrightness: keyboardBacklightEnabled
+            interceptCommandModifiedBrightness: keyboardBacklightEnabled,
+            observeBrightnessKeys: brightnessEnabled
         )
+        brightnessController.mediaKeyInterceptionActive = tapStarted && brightnessEnabled
+        brightnessController.start()
     }
 
     func update(volumeEnabled: Bool, brightnessEnabled: Bool, keyboardBacklightEnabled: Bool) {
@@ -136,8 +140,10 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
         mediaKeyInterceptor.configuration = MediaKeyConfiguration(
             interceptVolume: volumeEnabled,
             interceptBrightness: brightnessEnabled,
-            interceptCommandModifiedBrightness: keyboardBacklightEnabled
+            interceptCommandModifiedBrightness: keyboardBacklightEnabled,
+            observeBrightnessKeys: brightnessEnabled
         )
+        brightnessController.mediaKeyInterceptionActive = mediaKeyInterceptor.configuration.interceptBrightness
     }
 
     func stopObserving() {
@@ -217,6 +223,11 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
         }
     }
 
+    func mediaKeyInterceptorDidObserveBrightnessKey(_ interceptor: MediaKeyInterceptor) {
+        guard brightnessEnabled else { return }
+        brightnessController.noteBrightnessKeyPress()
+    }
+
     // MARK: - HUD Dispatch
 
     @MainActor
@@ -274,6 +285,7 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
         return icon
     }
 
+    @MainActor
     private func sendBrightnessNotification(value: Float) {
         // Send to Circular HUD if enabled
         if Defaults[.enableCircularHUD] && Defaults[.enableBrightnessHUD] {
@@ -300,15 +312,13 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
         
         // Send to notch HUD if enabled and OSD/Vertical/Circular is not enabled
         if Defaults[.enableSystemHUD] && !Defaults[.enableCustomOSD] && !Defaults[.enableVerticalHUD] && !Defaults[.enableCircularHUD] && Defaults[.enableBrightnessHUD] {
-            Task { @MainActor in
-                guard let coordinator else { return }
-                coordinator.toggleSneakPeek(
-                    status: true,
-                    type: .brightness,
-                    value: CGFloat(value),
-                    icon: ""
-                )
-            }
+            guard let coordinator else { return }
+            coordinator.toggleSneakPeek(
+                status: true,
+                type: .brightness,
+                value: CGFloat(value),
+                icon: ""
+            )
         }
     }
 

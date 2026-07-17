@@ -18,7 +18,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v6
         with:
-          persist-credentials: false
+          persist-credentials: true
 
       - name: Select Xcode Version
         uses: maxim-lobanov/setup-xcode@v1
@@ -43,7 +43,41 @@ jobs:
             echo "macOS $MAJOR: Metal ships with Xcode, skipping download."
           fi
 
+      - name: Install Apple Certificate
+        if: secrets.APPLE_CERTIFICATE != ''
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASSWORD="${KEYCHAIN_PASSWORD:-$RUNNER_TEMP}"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+      - name: Download Sparkle Tools
+        run: |
+          curl -sL "https://github.com/sparkle-project/Sparkle/releases/download/2.7.0/Sparkle-2.7.0.tar.xz" -o /tmp/Sparkle-2.7.0.tar.xz
+          mkdir -p /tmp/sparkle-tools
+          tar -xf /tmp/Sparkle-2.7.0.tar.xz -C /tmp/sparkle-tools
+          echo "SPARKLE_BIN_DIR=/tmp/sparkle-tools/bin" >> "$GITHUB_ENV"
+
       - name: Build Release App
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
           sudo DevToolsSecurity -enable
 
@@ -56,21 +90,59 @@ jobs:
             fi
           fi
 
-          xcodebuild build \
-            -project Kannu.xcodeproj \
-            -scheme Kannu \
-            -configuration Release \
-            -destination "platform=macOS" \
-            -derivedDataPath build \
-            CODE_SIGN_IDENTITY="-" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=YES \
-            CODE_SIGN_INJECT_BASE_ENTITLEMENTS=YES
+          BUILD_ARGS=(
+            -project Kannu.xcodeproj
+            -scheme Kannu
+            -configuration Release
+            -destination "platform=macOS"
+            -derivedDataPath build
+            CODE_SIGNING_ALLOWED=YES
+          )
+
+          if [ -n "$APPLE_CERTIFICATE" ]; then
+            KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+            SIGNING_IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | sed -n 's/.*"\(Developer ID Application:.*\)".*/\1/p' | head -1)"
+            if [ -z "$SIGNING_IDENTITY" ]; then
+              echo "::error::Developer ID Application identity not found in imported keychain."
+              exit 1
+            fi
+            BUILD_ARGS+=(
+              CODE_SIGN_IDENTITY="$SIGNING_IDENTITY"
+              CODE_SIGNING_REQUIRED=YES
+              CODE_SIGN_STYLE=Manual
+              DEVELOPMENT_TEAM=""
+            )
+          else
+            BUILD_ARGS+=(
+              CODE_SIGN_IDENTITY="-"
+              CODE_SIGNING_REQUIRED=NO
+              CODE_SIGN_INJECT_BASE_ENTITLEMENTS=YES
+            )
+          fi
+
+          xcodebuild build "${BUILD_ARGS[@]}"
 
       - name: Create DMG
         run: |
           chmod +x scripts/create-dmg.sh
           ./scripts/create-dmg.sh build/Build/Products/Release/Kannu.app build/Kannu.dmg
+
+      - name: Export Sparkle Update Assets
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
+        run: |
+          if [ -z "${SPARKLE_EDDSA_PRIVATE_KEY:-}" ]; then
+            echo "::warning::SPARKLE_EDDSA_PRIVATE_KEY is not set. Sparkle update signing will be skipped."
+          fi
+
+          TAG="${GITHUB_REF#refs/tags/}"
+          chmod +x scripts/export-sparkle-update.sh
+          ./scripts/export-sparkle-update.sh \
+            build/Build/Products/Release/Kannu.app \
+            build/sparkle \
+            "https://github.com/libinmv/kannu/releases/download/${TAG}/" \
+            "$SPARKLE_BIN_DIR"
 
       - name: Upload Release Artifact
         uses: actions/upload-artifact@v7
@@ -79,11 +151,45 @@ jobs:
           path: build/Kannu.dmg
           if-no-files-found: error
 
+      - name: Upload Sparkle Artifact
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v7
+        with:
+          name: Kannu-sparkle
+          path: |
+            build/sparkle/Kannu.zip
+            build/sparkle/appcast.xml
+          if-no-files-found: warn
+
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
-          files: build/Kannu.dmg
+          files: |
+            build/Kannu.dmg
+            build/sparkle/Kannu.zip
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update appcast on main
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          if [ ! -f build/sparkle/appcast.xml ]; then
+            echo "No generated appcast.xml found; skipping main branch update."
+            exit 0
+          fi
+
+          TAG="${GITHUB_REF#refs/tags/}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout main
+          cp build/sparkle/appcast.xml appcast.xml
+          git add appcast.xml
+          if git diff --staged --quiet; then
+            echo "appcast.xml unchanged."
+          else
+            git commit -m "Update appcast for ${TAG}"
+            git push origin main
+          fi

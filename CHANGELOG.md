@@ -16,6 +16,23 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
   - Color picker swatch: replaced two-step swatch→popover→NSColorPanel with direct NSColorWell (one click opens wheel); swatch shrunk to 22×14
   - Notch skin importer: added SVG support in file picker and allowed extensions; vector files skip pixel-size validation
 
+### 2026-07-17 - Brightness notch indicator fix
+- **Developer label:** Brightness indicator is not working in notch
+- **Agent label:** Brightness notch HUD passive detection restore
+- **Changes:**
+  - Restored always-on brightness polling in `Kannu/managers/SystemMediaControllers.swift` with key-press-only notch HUD: intercepted keys, observe-only key taps, and discrete step heuristics; auto-brightness updates baseline silently.
+  - Added brightness key observe-only handling in `Kannu/managers/MediaKeyInterceptor.swift` and `Kannu/managers/SystemChangesObserver.swift` so key presses are tagged before macOS applies the change.
+  - Fixed standard (non-inline) notch HUD drag handling for brightness/volume/backlight in `Kannu/ContentView.swift`.
+
+### 2026-07-17 - Sparkle auto update
+- **Developer label:** Sparkle auto update
+- **Agent label:** Sparkle auto update integration
+- **Changes:**
+  - Added `Kannu/managers/SparkleUpdaterController.swift` to start Sparkle in Release builds with bundle ID `com.kannu.app`.
+  - Wired automatic update checks and manual **Check for Updates…** entry points in the menu bar extra, app menu, and Settings → About.
+  - Added Sparkle feed keys to `Kannu/Info.plist` and an initial `appcast.xml` hosted from `main`.
+  - Extended `.github/workflows/release.yml` and `scripts/export-sparkle-update.sh` to publish signed `Kannu.zip` update archives and refresh the appcast on release.
+
 ### 2026-07-12 - Fix brightness and native OSD regression
 - **Developer label:** Fix brightness and native OSD regression
 - **Agent label:** Non-blocking OSD suppress and brightness path restore

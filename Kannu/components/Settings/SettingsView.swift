@@ -3071,6 +3071,11 @@ struct About: View {
                             showBuildNumber.toggle()
                         }
                     }
+                    if SparkleUpdaterController.shared.isEnabled {
+                        Button("Check for Updates…") {
+                            SparkleUpdaterController.shared.checkForUpdates(nil)
+                        }
+                    }
                 } header: {
                     Text("Version info")
                 }
