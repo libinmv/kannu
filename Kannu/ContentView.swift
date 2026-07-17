@@ -396,8 +396,6 @@ struct ContentView: View {
         return screen.safeAreaInsets.top <= 0
     }
 
-    private let physicalNotchAgentHeight: CGFloat = 52
-
     private var isPhysicalNotchScreen: Bool {
         !isNonNotchScreen
     }
@@ -410,12 +408,20 @@ struct ContentView: View {
             && !vm.hideOnClosed
     }
 
+    private var physicalNotchAgentHeight: CGFloat {
+        physicalNotchAgentTrafficLightHeight(
+            screenName: currentScreenName,
+            closedNotchHeight: vm.effectiveClosedNotchHeight
+        )
+    }
+
     private var physicalNotchAgentVerticalOffset: CGFloat {
         guard shouldExpandPhysicalNotchForAgent else { return 0 }
 
-        return max(
-            0,
-            (physicalNotchAgentHeight - vm.effectiveClosedNotchHeight) / 1.26
+        return physicalNotchAgentTrafficLightVerticalOffset(
+            expandedHeight: physicalNotchAgentHeight,
+            closedNotchHeight: vm.effectiveClosedNotchHeight,
+            screenName: currentScreenName
         )
     }
 
@@ -1150,8 +1156,17 @@ struct ContentView: View {
                       
                       if isSneakPeekVisibleOnCurrentScreen {
                           if (coordinator.sneakPeek.type != .music) && (coordinator.sneakPeek.type != .battery) && (coordinator.sneakPeek.type != .timer) && (coordinator.sneakPeek.type != .capsLock) && !coordinator.sneakPeek.type.isExtensionPayload && !Defaults[.inlineHUD] && !isAirPodsListeningModeSneak && ((coordinator.sneakPeek.type != .volume && coordinator.sneakPeek.type != .brightness && coordinator.sneakPeek.type != .backlight) || vm.notchState == .closed) {
-                              SystemEventIndicatorModifier(eventType: $coordinator.sneakPeek.type, value: $coordinator.sneakPeek.value, icon: $coordinator.sneakPeek.icon, sendEventBack: { _ in
-                                  //
+                              SystemEventIndicatorModifier(eventType: $coordinator.sneakPeek.type, value: $coordinator.sneakPeek.value, icon: $coordinator.sneakPeek.icon, sendEventBack: { newValue in
+                                  switch coordinator.sneakPeek.type {
+                                  case .volume:
+                                      SystemVolumeController.shared.setVolume(Float(newValue))
+                                  case .brightness:
+                                      SystemBrightnessController.shared.setBrightness(Float(newValue))
+                                  case .backlight:
+                                      SystemKeyboardBacklightController.shared.setLevel(Float(newValue))
+                                  default:
+                                      break
+                                  }
                               })
                               .padding(.bottom, 10)
                               .padding(.leading, 4)

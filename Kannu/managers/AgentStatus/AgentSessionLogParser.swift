@@ -15,6 +15,7 @@ enum AgentSessionLogProvider: String, CaseIterable {
 
 enum AgentSessionLogParser {
     private static let leadingByteLimit = 32_000
+    private static let trailingByteLimit = 16_000
     private static let maxSessionsPerScan = 24
     private static let pathListCacheTTL: TimeInterval = 2.0
 
@@ -30,6 +31,11 @@ enum AgentSessionLogParser {
     static var claudeProjectsDirectory: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects", isDirectory: true)
+    }
+
+    static var claudeSessionsDirectory: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/sessions", isDirectory: true)
     }
 
     static func invalidatePathCache() {
@@ -115,7 +121,31 @@ enum AgentSessionLogParser {
 
     static func displayChatName(from path: URL, provider: AgentSessionLogProvider) -> String? {
         guard let text = readLeadingLines(at: path) else { return nil }
-        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: true)
+
+        // Claude Code writes ai-title records with a clean model-generated title — prefer those.
+        // Search both leading and trailing bytes since the record may appear late in long sessions.
+        if provider == .claude {
+            let searchChunks: [Substring.SubSequence] = {
+                var chunks = lines
+                if let tail = readTrailingLines(at: path) {
+                    chunks += tail.split(separator: "\n", omittingEmptySubsequences: true)
+                }
+                return chunks
+            }()
+            var lastAiTitle: String? = nil
+            for line in searchChunks {
+                guard let data = line.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      (json["type"] as? String) == "ai-title",
+                      let title = json["aiTitle"] as? String,
+                      !title.isEmpty else { continue }
+                lastAiTitle = String(title.prefix(72))
+            }
+            if let title = lastAiTitle { return title }
+        }
+
+        for line in lines {
             guard let data = line.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let raw = userPromptText(from: json, provider: provider),
@@ -266,6 +296,24 @@ enum AgentSessionLogParser {
             data = handle.readData(ofLength: leadingByteLimit)
         }
         return String(data: data, encoding: .utf8)
+    }
+
+    private static func readTrailingLines(at url: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let fileSize = try? handle.seekToEnd() else { return nil }
+        let readSize = UInt64(trailingByteLimit)
+        guard fileSize > readSize else { return nil }
+        let offset = fileSize - readSize
+        if #available(macOS 10.15.4, *) {
+            try? handle.seek(toOffset: offset)
+            let data = (try? handle.readToEnd()) ?? Data()
+            return String(data: data, encoding: .utf8)
+        } else {
+            handle.seek(toFileOffset: offset)
+            let data = handle.readDataToEndOfFile()
+            return String(data: data, encoding: .utf8)
+        }
     }
 
     private static func userPromptText(from json: [String: Any], provider: AgentSessionLogProvider) -> String? {

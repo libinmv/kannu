@@ -45,20 +45,23 @@ final class NotchSkinManager: ObservableObject {
             return
         }
 
-        let minWidth: CGFloat = 200
-        let minHeight: CGFloat = 40
-        let size = image.size
-        guard size.width >= minWidth, size.height >= minHeight else {
-            importError = "Image must be at least \(Int(minWidth))×\(Int(minHeight)) pixels."
+        let name = url.deletingPathExtension().lastPathComponent
+        let ext = url.pathExtension.isEmpty ? "png" : url.pathExtension.lowercased()
+        let allowedExtensions = ["png", "jpg", "jpeg", "webp", "heic", "gif", "svg"]
+        guard allowedExtensions.contains(ext) else {
+            importError = "Supported formats: PNG, JPG, WebP, HEIC, GIF, SVG."
             return
         }
 
-        let name = url.deletingPathExtension().lastPathComponent
-        let ext = url.pathExtension.isEmpty ? "png" : url.pathExtension.lowercased()
-        let allowedExtensions = ["png", "jpg", "jpeg", "webp", "heic", "gif"]
-        guard allowedExtensions.contains(ext) else {
-            importError = "Supported formats: PNG, JPG, WebP, HEIC, GIF."
-            return
+        // SVGs are vector — skip pixel-size validation; raster formats must meet minimum dimensions.
+        if ext != "svg" {
+            let minWidth: CGFloat = 200
+            let minHeight: CGFloat = 40
+            let size = image.size
+            guard size.width >= minWidth, size.height >= minHeight else {
+                importError = "Image must be at least \(Int(minWidth))×\(Int(minHeight)) pixels."
+                return
+            }
         }
 
         let id = UUID()

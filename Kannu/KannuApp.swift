@@ -37,6 +37,11 @@ struct KannuApp: App {
             Button("Settings") {
                 SettingsWindowController.shared.showWindow()
             }
+            if SparkleUpdaterController.shared.isEnabled {
+                Button("Check for Updates…") {
+                    SparkleUpdaterController.shared.checkForUpdates(nil)
+                }
+            }
             Divider()
             Button("Restart Kannu") {
                 guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return }
@@ -66,6 +71,13 @@ struct KannuApp: App {
         CommandGroup(replacing: .appSettings) {
             Button("Settings…") {
                 SettingsWindowController.shared.showWindow()
+            }
+        }
+        CommandGroup(after: .appInfo) {
+            if SparkleUpdaterController.shared.isEnabled {
+                Button("Check for Updates…") {
+                    SparkleUpdaterController.shared.checkForUpdates(nil)
+                }
             }
         }
     }
@@ -549,6 +561,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         LockScreenManager.shared.configure(viewModel: vm)
         extensionXPCServiceHost.start()
         extensionRPCServer.start()
+        SparkleUpdaterController.shared.configure()
         
         // Migrate legacy progress bar settings
         Defaults.Keys.migrateProgressBarStyle()
@@ -912,6 +925,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let insertionIndex = preferredMenuInsertionIndex(in: mainMenu)
+        var menuOffset = 0
+
+        if SparkleUpdaterController.shared.isEnabled {
+            let kannuMenuItem = NSMenuItem(title: "Kannu", action: nil, keyEquivalent: "")
+            kannuMenuItem.identifier = NSUserInterfaceItemIdentifier("Kannu.App.Menu")
+            let kannuSubmenu = NSMenu(title: "Kannu")
+
+            let checkForUpdates = NSMenuItem(
+                title: "Check for Updates…",
+                action: #selector(checkForUpdatesFromMenu),
+                keyEquivalent: ""
+            )
+            checkForUpdates.target = self
+            kannuSubmenu.addItem(checkForUpdates)
+            kannuMenuItem.submenu = kannuSubmenu
+            mainMenu.insertItem(kannuMenuItem, at: insertionIndex)
+            menuOffset = 1
+        }
 
         let focusMenuItem = NSMenuItem(title: "Focus", action: nil, keyEquivalent: "")
         focusMenuItem.identifier = NSUserInterfaceItemIdentifier("Kannu.Focus.Menu")
@@ -934,7 +965,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         focusSubmenu.addItem(withoutDevTools)
         focusSubmenu.addItem(useDevTools)
         focusMenuItem.submenu = focusSubmenu
-        mainMenu.insertItem(focusMenuItem, at: insertionIndex)
+        mainMenu.insertItem(focusMenuItem, at: insertionIndex + menuOffset)
 
         focusWithoutDevToolsMenuItem = withoutDevTools
         focusUseDevToolsMenuItem = useDevTools
@@ -960,7 +991,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         accessibilitySubmenu.addItem(requestAccessibility)
         accessibilitySubmenu.addItem(openAccessibility)
         accessibilityMenuItem.submenu = accessibilitySubmenu
-        mainMenu.insertItem(accessibilityMenuItem, at: insertionIndex + 1)
+        mainMenu.insertItem(accessibilityMenuItem, at: insertionIndex + menuOffset + 1)
 
         let permissionsMenuItem = NSMenuItem(title: "Permissions", action: nil, keyEquivalent: "")
         permissionsMenuItem.identifier = NSUserInterfaceItemIdentifier("Kannu.Permissions.Menu")
@@ -992,7 +1023,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         permissionsSubmenu.addItem(NSMenuItem.separator())
         permissionsSubmenu.addItem(openDevTools)
         permissionsMenuItem.submenu = permissionsSubmenu
-        mainMenu.insertItem(permissionsMenuItem, at: insertionIndex + 2)
+        mainMenu.insertItem(permissionsMenuItem, at: insertionIndex + menuOffset + 2)
 
         let toolsMenuItem = NSMenuItem(title: "Tools", action: nil, keyEquivalent: "")
         toolsMenuItem.identifier = NSUserInterfaceItemIdentifier("Kannu.Tools.Menu")
@@ -1026,7 +1057,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         toolsSubmenu.addItem(exportLogsItem)
 
         toolsMenuItem.submenu = toolsSubmenu
-        mainMenu.insertItem(toolsMenuItem, at: insertionIndex + 3)
+        mainMenu.insertItem(toolsMenuItem, at: insertionIndex + menuOffset + 3)
 
         updateFocusMenuState()
     }
@@ -1045,6 +1076,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let mode = Defaults[.focusMonitoringMode]
         focusWithoutDevToolsMenuItem?.state = mode == .withoutDevTools ? .on : .off
         focusUseDevToolsMenuItem?.state = mode == .useDevTools ? .on : .off
+    }
+
+    @objc private func checkForUpdatesFromMenu() {
+        SparkleUpdaterController.shared.checkForUpdates(nil)
     }
 
     @objc private func selectFocusWithoutDevTools() {

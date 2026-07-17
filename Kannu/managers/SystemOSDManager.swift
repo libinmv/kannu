@@ -35,6 +35,10 @@ class SystemOSDManager {
         var systemSleeping = false
     }
     private static let suppressionState = OSAllocatedUnfairLock(initialState: SuppressionState())
+    private static let osdSuppressionQueue = DispatchQueue(
+        label: "com.kannu.osd-suppression",
+        qos: .userInitiated
+    )
 
     /// Call once at startup to register sleep/wake observers.
     /// Safe to call multiple times — observers are registered only once.
@@ -152,13 +156,14 @@ class SystemOSDManager {
     }
 
     /// Immediately SIGSTOPs OSDUIHelper, bypassing the 150ms watcher poll. The
-    /// CoreAudio volume write wakes/respawns the helper to draw the native OSD
-    /// (brightness's private APIs never do), and the watcher can lose that race.
+    /// CoreAudio volume write wakes/respawns the helper to draw the native OSD,
+    /// and the watcher can lose that race. Dispatched asynchronously so callers
+    /// on the event tap or main thread are never blocked.
     /// No-op unless suppression is active.
     public static func suppressNativeOSDNow() {
         let active = suppressionState.withLock { $0.active }
         guard active else { return }
-        Task.detached(priority: .userInitiated) {
+        osdSuppressionQueue.async {
             suspendOSDUIHelper()
             if let pid = osduiHelperPID() {
                 suppressionState.withLock { $0.lastSuspendedPID = pid }

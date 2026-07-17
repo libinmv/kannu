@@ -21,6 +21,9 @@ import CoreGraphics
 import Defaults
 import AppKit
 import AVFoundation
+#if canImport(ApplicationServices)
+import ApplicationServices
+#endif
 
 final class SystemChangesObserver: MediaKeyInterceptorDelegate {
     private weak var coordinator: KannuViewCoordinator?
@@ -82,9 +85,10 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
 
         brightnessController.onBrightnessChange = { [weak self] brightness in
             guard let self, self.brightnessEnabled else { return }
-            self.sendBrightnessNotification(value: brightness)
+            Task { @MainActor in
+                self.sendBrightnessNotification(value: brightness)
+            }
         }
-        brightnessController.start()
 
         configureKeyboardBacklightCallback()
         if keyboardBacklightEnabled {
@@ -93,14 +97,24 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
 
         mediaKeyInterceptor.delegate = self
         let tapStarted = mediaKeyInterceptor.start()
-        if !tapStarted {
-            NSLog("⚠️ Media key interception unavailable; system HUD will remain visible")
+        let hasAccessibility = Self.isAccessibilityAuthorized()
+        if !tapStarted || !hasAccessibility {
+            NSLog("⚠️ Native volume/brightness indicators will show until Accessibility is granted for this build.")
+            if !tapStarted {
+                NSLog("⚠️ Media key interception unavailable; system HUD will remain visible")
+            }
+            if !hasAccessibility {
+                NSLog("⚠️ Accessibility permission missing; grant Kannu access in System Settings › Privacy & Security › Accessibility")
+            }
         }
         mediaKeyInterceptor.configuration = MediaKeyConfiguration(
             interceptVolume: volumeEnabled,
             interceptBrightness: brightnessEnabled,
-            interceptCommandModifiedBrightness: keyboardBacklightEnabled
+            interceptCommandModifiedBrightness: keyboardBacklightEnabled,
+            observeBrightnessKeys: brightnessEnabled
         )
+        brightnessController.mediaKeyInterceptionActive = tapStarted && brightnessEnabled
+        brightnessController.start()
     }
 
     func update(volumeEnabled: Bool, brightnessEnabled: Bool, keyboardBacklightEnabled: Bool) {
@@ -126,8 +140,10 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
         mediaKeyInterceptor.configuration = MediaKeyConfiguration(
             interceptVolume: volumeEnabled,
             interceptBrightness: brightnessEnabled,
-            interceptCommandModifiedBrightness: keyboardBacklightEnabled
+            interceptCommandModifiedBrightness: keyboardBacklightEnabled,
+            observeBrightnessKeys: brightnessEnabled
         )
+        brightnessController.mediaKeyInterceptionActive = mediaKeyInterceptor.configuration.interceptBrightness
     }
 
     func stopObserving() {
@@ -155,6 +171,9 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
         modifiers: NSEvent.ModifierFlags
     ) {
         guard volumeEnabled else { return }
+
+        // Beat CoreAudio waking OSDUIHelper before the volume write.
+        SystemOSDManager.suppressNativeOSDNow()
         
         // Elastic Limit Detection (Vertical HUD)
         if Defaults[.enableVerticalHUD] {
@@ -174,6 +193,7 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
 
     func mediaKeyInterceptorDidToggleMute(_ interceptor: MediaKeyInterceptor) {
         guard volumeEnabled else { return }
+        SystemOSDManager.suppressNativeOSDNow()
         volumeController.toggleMute()
     }
 
@@ -201,6 +221,11 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
         } else if brightnessEnabled {
             brightnessController.adjust(by: delta)
         }
+    }
+
+    func mediaKeyInterceptorDidObserveBrightnessKey(_ interceptor: MediaKeyInterceptor) {
+        guard brightnessEnabled else { return }
+        brightnessController.noteBrightnessKeyPress()
     }
 
     // MARK: - HUD Dispatch
@@ -260,6 +285,7 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
         return icon
     }
 
+    @MainActor
     private func sendBrightnessNotification(value: Float) {
         // Send to Circular HUD if enabled
         if Defaults[.enableCircularHUD] && Defaults[.enableBrightnessHUD] {
@@ -286,15 +312,13 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
         
         // Send to notch HUD if enabled and OSD/Vertical/Circular is not enabled
         if Defaults[.enableSystemHUD] && !Defaults[.enableCustomOSD] && !Defaults[.enableVerticalHUD] && !Defaults[.enableCircularHUD] && Defaults[.enableBrightnessHUD] {
-            Task { @MainActor in
-                guard let coordinator else { return }
-                coordinator.toggleSneakPeek(
-                    status: true,
-                    type: .brightness,
-                    value: CGFloat(value),
-                    icon: ""
-                )
-            }
+            guard let coordinator else { return }
+            coordinator.toggleSneakPeek(
+                status: true,
+                type: .brightness,
+                value: CGFloat(value),
+                icon: ""
+            )
         }
     }
 
@@ -349,6 +373,14 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
 }
 
 private extension SystemChangesObserver {
+    static func isAccessibilityAuthorized() -> Bool {
+#if canImport(ApplicationServices)
+        return AXIsProcessTrusted()
+#else
+        return true
+#endif
+    }
+
     func volumeStep(for step: MediaKeyStep) -> Float {
         switch step {
         case .standard:

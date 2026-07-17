@@ -4,6 +4,56 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-07-17 - Claude detection fixes, glass UI, color picker, SVG skin support
+- **Developer label:** Claude detection fixes, glass UI, color picker, SVG skin support
+- **Agent label:** Claude passive session detection, frosted glass notch, wheel color picker, SVG skins
+- **Changes:**
+  - Fixed Claude agent detection: NSNumber int64 cast, stale-check bypass for live processes, PID-reuse guard via sysctl start-time comparison, force isVisible=true for live sessions waiting for user input
+  - Agent tab empty state with fun message and provider install strip; strip hidden when any session exists
+  - Settings > Agent Status: added Detected Editors row showing Cursor/Claude Code/Codex install status
+  - Tab switching on hover with 80ms debounce; frosted glass capsule (ultraThinMaterial) replacing flat fill; removed hidden matchedGeometry capsule that caused blink on tab change
+  - Agent status cards updated to ultraThinMaterial frosted glass with hairline borders
+  - Color picker swatch: replaced two-step swatch→popover→NSColorPanel with direct NSColorWell (one click opens wheel); swatch shrunk to 22×14
+  - Notch skin importer: added SVG support in file picker and allowed extensions; vector files skip pixel-size validation
+
+### 2026-07-17 - Brightness notch indicator fix
+- **Developer label:** Brightness indicator is not working in notch
+- **Agent label:** Brightness notch HUD passive detection restore
+- **Changes:**
+  - Restored always-on brightness polling in `Kannu/managers/SystemMediaControllers.swift` with key-press-only notch HUD: intercepted keys, observe-only key taps, and discrete step heuristics; auto-brightness updates baseline silently.
+  - Added brightness key observe-only handling in `Kannu/managers/MediaKeyInterceptor.swift` and `Kannu/managers/SystemChangesObserver.swift` so key presses are tagged before macOS applies the change.
+  - Fixed standard (non-inline) notch HUD drag handling for brightness/volume/backlight in `Kannu/ContentView.swift`.
+
+### 2026-07-17 - Sparkle auto update
+- **Developer label:** Sparkle auto update
+- **Agent label:** Sparkle auto update integration
+- **Changes:**
+  - Added `Kannu/managers/SparkleUpdaterController.swift` to start Sparkle in Release builds with bundle ID `com.kannu.app`.
+  - Wired automatic update checks and manual **Check for Updates…** entry points in the menu bar extra, app menu, and Settings → About.
+  - Added Sparkle feed keys to `Kannu/Info.plist` and an initial `appcast.xml` hosted from `main`.
+  - Extended `.github/workflows/release.yml` and `scripts/export-sparkle-update.sh` to publish signed `Kannu.zip` update archives and refresh the appcast on release.
+
+### 2026-07-12 - Fix brightness and native OSD regression
+- **Developer label:** Fix brightness and native OSD regression
+- **Agent label:** Non-blocking OSD suppress and brightness path restore
+- **Changes:**
+  - Restored brightness handling in `Kannu/managers/SystemChangesObserver.swift` by removing `suppressNativeOSDNow()` from the brightness key handler and `sendBrightnessNotification`, which had been blocking the main-thread brightness animation timer.
+  - Made `SystemOSDManager.suppressNativeOSDNow()` dispatch `SIGSTOP` on a dedicated queue in `Kannu/managers/SystemOSDManager.swift` so volume suppress never blocks the event tap or main thread.
+  - Added Accessibility and media-key tap failure logging in `SystemChangesObserver.startObserving()` when native volume/brightness indicators are expected to show through.
+
+### 2026-07-12 - Hide native volume brightness OSD
+- **Developer label:** Hide native volume brightness OSD
+- **Agent label:** Synchronous OSDUIHelper suppress before media-key writes
+- **Changes:**
+  - Made `SystemOSDManager.suppressNativeOSDNow()` run `SIGSTOP` inline in `Kannu/managers/SystemOSDManager.swift` instead of `Task.detached`, so suppression can beat CoreAudio waking the native bezel.
+  - Called `suppressNativeOSDNow()` before volume, mute, and brightness media-key adjusts in `Kannu/managers/SystemChangesObserver.swift`, and at the start of `sendBrightnessNotification` for non-key brightness changes.
+
+### 2026-07-12 - Notch fill color picker fix
+- **Developer label:** Notch fill color picker fix
+- **Agent label:** Notch fill popover picker
+- **Changes:**
+  - Replaced `NotchFillColorPickerRow` `NSColorPanel` usage in `Kannu/components/Settings/SettingsView.swift` with `SettingsColorPickerRow` popover so the notch fill picker no longer traps inside the Settings window.
+
 ### 2026-07-12 - Fix Recent Chat Names and LLM Usage Pricing
 - **Developer label:** Fix Recent Chat Names and LLM Usage Pricing
 - **Agent label:** Agent status, chat titles, and usage pricing overhaul

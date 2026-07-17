@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import CoreServices
+import Darwin
 import Defaults
 import Foundation
 
@@ -188,12 +189,25 @@ final class CursorAgentStatusMonitor: ObservableObject {
         let collapseMinutes = Defaults[.agentStoppedCollapseMinutes]
         let inactiveMinutes = Defaults[.agentInactiveDisplayMinutes]
 
-        let hookSessions = parseHookSessions(
+        var hookSessions = parseHookSessions(
             staleMinutes: staleMinutes,
             collapseMinutes: collapseMinutes,
             inactiveMinutes: inactiveMinutes,
             now: now
         )
+
+        let passiveClaudeSessions = buildClaudeSessions(
+            staleMinutes: staleMinutes,
+            collapseMinutes: collapseMinutes,
+            inactiveMinutes: inactiveMinutes,
+            now: now
+        )
+        if !passiveClaudeSessions.isEmpty {
+            let hookConversationIDs = Set(hookSessions.map(\.conversationID))
+            for session in passiveClaudeSessions where !hookConversationIDs.contains(session.conversationID) {
+                hookSessions.append(session)
+            }
+        }
 
         let transcriptAnalysis: [String: TranscriptAnalysis]
         let transcriptSessions: [AgentSessionStatus]
@@ -1183,11 +1197,146 @@ final class CursorAgentStatusMonitor: ObservableObject {
         return projectBySessionID
     }
 
+    // MARK: - Passive Claude session detection
+
+    private func buildClaudeSessions(
+        staleMinutes: Int,
+        collapseMinutes: Int,
+        inactiveMinutes: Int,
+        now: Date = Date()
+    ) -> [AgentSessionStatus] {
+        let sessionsDir = AgentSessionLogParser.claudeSessionsDirectory
+        guard FileManager.default.fileExists(atPath: sessionsDir.path),
+              let files = try? FileManager.default.contentsOfDirectory(
+                at: sessionsDir,
+                includingPropertiesForKeys: [.contentModificationDateKey]
+              ) else { return [] }
+
+        let staleMs = Int64(staleMinutes) * 60_000
+        let nowMs = Int64(now.timeIntervalSince1970 * 1000)
+        let collapseMs = Int64(collapseMinutes) * 60_000
+        let inactiveMs = Int64(inactiveMinutes) * 60_000
+        let recentJsonlThreshold: TimeInterval = 5 * 60  // 5 min → "thinking"
+
+        var results: [AgentSessionStatus] = []
+
+        for file in files where file.pathExtension == "json" {
+            guard let data = try? Data(contentsOf: file),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let pid = json["pid"] as? Int,
+                  let sessionId = json["sessionId"] as? String,
+                  let startedAtNum = json["startedAt"] as? NSNumber else { continue }
+            let startedAtMs = startedAtNum.int64Value
+
+            guard json["kind"] as? String == "interactive" else { continue }
+
+            let processAlive = isClaudeProcessAlive(pid: pid, startedAtMs: startedAtMs)
+            // Skip stale check for live processes — a session may run for many hours.
+            if !processAlive {
+                guard nowMs - startedAtMs <= staleMs else { continue }
+            }
+
+            let jsonlURL = claudeJSONLURL(forSessionId: sessionId)
+            var jsonlMtime: Date? = nil
+            if let url = jsonlURL {
+                jsonlMtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            }
+
+            let rawState: String
+            if processAlive {
+                if let mtime = jsonlMtime, now.timeIntervalSince(mtime) < recentJsonlThreshold {
+                    rawState = "thinking"
+                } else {
+                    rawState = "stopped"
+                }
+            } else {
+                rawState = "stopped"
+            }
+
+            let tsMs: Int64
+            if let mtime = jsonlMtime {
+                tsMs = Int64(mtime.timeIntervalSince1970 * 1000)
+            } else {
+                tsMs = startedAtMs
+            }
+
+            let ageMs = nowMs - tsMs
+            var resolved = AgentTrafficLightMapper.resolveHookState(
+                rawState: rawState,
+                ageMs: ageMs,
+                collapseMs: collapseMs,
+                inactiveMs: inactiveMs
+            )
+            // Live processes are always visible — JSONL mtime only reflects last write, not whether
+            // the session is open. A Claude Code session waiting for the user shows no recent writes.
+            if processAlive {
+                resolved = (state: resolved.state, visible: true)
+            }
+
+            let chatName: String? = jsonlURL.flatMap {
+                AgentSessionLogParser.displayChatName(from: $0, provider: .claude)
+            }
+
+            let projectName: String?
+            if let cwd = json["cwd"] as? String {
+                let base = URL(fileURLWithPath: cwd).lastPathComponent
+                projectName = base.isEmpty ? nil : base
+            } else {
+                projectName = nil
+            }
+
+            results.append(AgentSessionStatus(
+                id: "claude-\(sessionId)",
+                provider: "claude",
+                conversationID: sessionId,
+                chatName: chatName,
+                projectName: projectName,
+                rawState: rawState,
+                displayState: resolved.state,
+                updatedAt: Date(timeIntervalSince1970: TimeInterval(tsMs) / 1000),
+                isVisible: resolved.visible,
+                executionStartedAt: nil
+            ))
+        }
+
+        return results
+    }
+
+    private func claudeJSONLURL(forSessionId sessionId: String) -> URL? {
+        let projectsDir = AgentSessionLogParser.claudeProjectsDirectory
+        guard let enumerator = FileManager.default.enumerator(
+            at: projectsDir,
+            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return nil }
+
+        let target = "\(sessionId).jsonl"
+        for case let url as URL in enumerator {
+            guard url.lastPathComponent == target,
+                  !url.path.contains("/subagents/") else { continue }
+            return url
+        }
+        return nil
+    }
+
     private func isCursorRunning() -> Bool {
         NSWorkspace.shared.runningApplications.contains { app in
             guard let bundleID = app.bundleIdentifier else { return false }
             return bundleID.hasPrefix("com.todesktop.") || bundleID == "com.cursor.Cursor"
         }
+    }
+
+    // Returns true only if the process is alive AND its start time matches startedAtMs
+    // within 5 seconds, preventing PID-reuse false positives.
+    private func isClaudeProcessAlive(pid: Int, startedAtMs: Int64) -> Bool {
+        guard kill(pid_t(pid), 0) == 0 else { return false }
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, Int32(pid)]
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.size
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return true }
+        let procStartMs = Int64(info.kp_proc.p_starttime.tv_sec) * 1000
+            + Int64(info.kp_proc.p_starttime.tv_usec) / 1000
+        return abs(procStartMs - startedAtMs) < 5_000
     }
 }
 

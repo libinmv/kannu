@@ -290,6 +290,69 @@ enum MusicPlayerImageSizes {
     static let size = (opened: CGSize(width: 90, height: 90), closed: CGSize(width: 20, height: 20))
 }
 
+// MARK: - Agent traffic light (physical notch)
+
+private let agentTrafficLightIndicatorHeight: CGFloat = 10
+private let agentTrafficLightVerticalPadding: CGFloat = 10
+
+private func resolvedNotchScreen(named screenName: String?) -> NSScreen? {
+    if let screenName {
+        return NSScreen.screens.first(where: { $0.localizedName == screenName })
+    }
+    return NSScreen.main
+}
+
+/// Expanded closed-notch height on physical-notch displays when the agent
+/// traffic-light row is visible. Derived from the active screen's menu-bar band
+/// and safe-area inset so taller MacBook menu bars do not crop the indicator.
+func physicalNotchAgentTrafficLightHeight(
+    screenName: String?,
+    closedNotchHeight: CGFloat
+) -> CGFloat {
+    guard closedNotchHeight > 0 else { return 52 }
+
+    guard let screen = resolvedNotchScreen(named: screenName),
+          screen.safeAreaInsets.top > 0
+    else {
+        return closedNotchHeight + agentTrafficLightIndicatorHeight + agentTrafficLightVerticalPadding
+    }
+
+    let menuBarHeight = screen.frame.maxY - screen.visibleFrame.maxY
+    let safeAreaTop = screen.safeAreaInsets.top
+    let belowNotchClearance = agentTrafficLightIndicatorHeight + agentTrafficLightVerticalPadding
+
+    // Grow past the configured closed-notch height when the menu bar is taller
+    // than the notch setting (common on 14"/16" MacBook Pro with "Match Menu Bar").
+    let extraMenuBarBand = max(0, menuBarHeight - closedNotchHeight)
+    let menuBarRelativeHeight = closedNotchHeight + extraMenuBarBand + belowNotchClearance
+    let safeAreaRelativeHeight = safeAreaTop + belowNotchClearance
+
+    return max(
+        menuBarRelativeHeight,
+        safeAreaRelativeHeight,
+        closedNotchHeight + belowNotchClearance
+    )
+}
+
+/// Vertical offset that pushes the traffic-light row into the expansion band
+/// below the physical camera notch.
+func physicalNotchAgentTrafficLightVerticalOffset(
+    expandedHeight: CGFloat,
+    closedNotchHeight: CGFloat,
+    screenName: String?
+) -> CGFloat {
+    let expansion = max(0, expandedHeight - closedNotchHeight)
+    guard expansion > 0 else { return 0 }
+
+    let safeAreaTop = resolvedNotchScreen(named: screenName)?.safeAreaInsets.top ?? closedNotchHeight
+    let belowNotchStart = max(0, safeAreaTop - closedNotchHeight)
+    let legacyOffset = expansion / 1.26
+    let minimumOffset = belowNotchStart + agentTrafficLightVerticalPadding / 2
+    let maximumOffset = max(0, expansion - agentTrafficLightIndicatorHeight / 2)
+
+    return min(max(legacyOffset, minimumOffset), maximumOffset)
+}
+
 func getScreenFrame(_ screen: String? = nil) -> CGRect? {
     var selectedScreen = NSScreen.main
 

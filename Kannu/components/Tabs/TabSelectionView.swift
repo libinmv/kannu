@@ -63,7 +63,8 @@ struct TabSelectionView: View {
     @Default(.showStandardMediaControls) private var showStandardMediaControls
     @Default(.enableMinimalisticUI) private var enableMinimalisticUI
     @Namespace var animation
-    
+    @State private var hoverTask: Task<Void, Never>? = nil
+
     private var tabs: [TabModel] {
         var tabsArray: [TabModel] = []
 
@@ -129,19 +130,36 @@ struct TabSelectionView: View {
                     }
                     coordinator.currentView = tab.view
                 }
+                .onHover { hovering in
+                    hoverTask?.cancel()
+                    guard hovering else { return }
+                    hoverTask = Task {
+                        try? await Task.sleep(nanoseconds: 80_000_000)
+                        guard !Task.isCancelled else { return }
+                        await MainActor.run {
+                            if tab.view == .extensionExperience {
+                                coordinator.selectedExtensionExperienceID = tab.experienceID
+                            }
+                            coordinator.currentView = tab.view
+                        }
+                    }
+                }
                 .frame(height: 26)
                 .foregroundStyle(isSelected ? activeAccent : .gray)
                 .background {
                     if isSelected {
                         Capsule()
-                            .fill((tab.accentColor ?? Color(nsColor: .secondarySystemFill)).opacity(0.25))
-                            .shadow(color: (tab.accentColor ?? .clear).opacity(0.4), radius: 8)
+                            .fill(.ultraThinMaterial)
+                            .overlay {
+                                Capsule()
+                                    .fill((tab.accentColor ?? Color.white).opacity(0.18))
+                            }
+                            .overlay {
+                                Capsule()
+                                    .strokeBorder((tab.accentColor ?? Color.white).opacity(0.22), lineWidth: 0.5)
+                            }
+                            .shadow(color: (tab.accentColor ?? Color.white).opacity(0.25), radius: 10)
                             .matchedGeometryEffect(id: "capsule", in: animation)
-                    } else {
-                        Capsule()
-                            .fill(Color.clear)
-                            .matchedGeometryEffect(id: "capsule", in: animation)
-                            .hidden()
                     }
                 }
 

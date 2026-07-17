@@ -28,7 +28,7 @@ struct ClaudeUsageProvider: UsageProvider {
         let quota = await quotaClient.fetchLimits()
         snapshot.sessionLimit = quota.session
         snapshot.weekLimit = quota.week
-        snapshot.quotaError = quota.errorMessage
+        snapshot.quotaError = snapshot.logsUnavailable ? quota.errorMessage : nil
 
         if snapshot.logsUnavailable && !quota.hasLimits {
             throw UsageError.notConfigured("Sign in to Claude Code locally (~/.claude/.credentials.json) to show quota.")

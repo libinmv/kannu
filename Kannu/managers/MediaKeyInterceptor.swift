@@ -48,11 +48,14 @@ struct MediaKeyConfiguration {
     var interceptVolume: Bool
     var interceptBrightness: Bool
     var interceptCommandModifiedBrightness: Bool
+    /// Listen for brightness keys without swallowing them (macOS applies the change).
+    var observeBrightnessKeys: Bool
 
     static let disabled = MediaKeyConfiguration(
         interceptVolume: false,
         interceptBrightness: false,
-        interceptCommandModifiedBrightness: false
+        interceptCommandModifiedBrightness: false,
+        observeBrightnessKeys: false
     )
 }
 
@@ -71,6 +74,7 @@ protocol MediaKeyInterceptorDelegate: AnyObject {
         isRepeat: Bool,
         modifiers: NSEvent.ModifierFlags
     )
+    func mediaKeyInterceptorDidObserveBrightnessKey(_ interceptor: MediaKeyInterceptor)
     func mediaKeyInterceptorDidToggleMute(_ interceptor: MediaKeyInterceptor)
 }
 
@@ -168,7 +172,10 @@ final class MediaKeyInterceptor {
 
     private func updateTapState() {
         guard let tap = eventTap else { return }
-        let shouldEnable = configuration.interceptVolume || configuration.interceptBrightness || configuration.interceptCommandModifiedBrightness
+        let shouldEnable = configuration.interceptVolume
+            || configuration.interceptBrightness
+            || configuration.interceptCommandModifiedBrightness
+            || configuration.observeBrightnessKeys
         if shouldEnable != isTapEnabled {
             CGEvent.tapEnable(tap: tap, enable: shouldEnable)
             isTapEnabled = shouldEnable
@@ -213,13 +220,23 @@ final class MediaKeyInterceptor {
             delegate?.mediaKeyInterceptorDidToggleMute(self)
             return nil
         case NX_KEYTYPE_BRIGHTNESS_UP:
-            guard shouldHandleBrightness(modifiers: modifiers) else { return Unmanaged.passUnretained(cgEvent) }
-            delegate?.mediaKeyInterceptor(self, didReceiveBrightnessCommand: .up, step: step, isRepeat: isRepeat, modifiers: modifiers)
-            return nil
+            if shouldInterceptBrightness(modifiers: modifiers) {
+                delegate?.mediaKeyInterceptor(self, didReceiveBrightnessCommand: .up, step: step, isRepeat: isRepeat, modifiers: modifiers)
+                return nil
+            }
+            if configuration.observeBrightnessKeys && shouldObserveBrightness(modifiers: modifiers) {
+                delegate?.mediaKeyInterceptorDidObserveBrightnessKey(self)
+            }
+            return Unmanaged.passUnretained(cgEvent)
         case NX_KEYTYPE_BRIGHTNESS_DOWN:
-            guard shouldHandleBrightness(modifiers: modifiers) else { return Unmanaged.passUnretained(cgEvent) }
-            delegate?.mediaKeyInterceptor(self, didReceiveBrightnessCommand: .down, step: step, isRepeat: isRepeat, modifiers: modifiers)
-            return nil
+            if shouldInterceptBrightness(modifiers: modifiers) {
+                delegate?.mediaKeyInterceptor(self, didReceiveBrightnessCommand: .down, step: step, isRepeat: isRepeat, modifiers: modifiers)
+                return nil
+            }
+            if configuration.observeBrightnessKeys && shouldObserveBrightness(modifiers: modifiers) {
+                delegate?.mediaKeyInterceptorDidObserveBrightnessKey(self)
+            }
+            return Unmanaged.passUnretained(cgEvent)
         default:
             return Unmanaged.passUnretained(cgEvent)
         }
@@ -236,11 +253,19 @@ final class MediaKeyInterceptor {
         }
     }
 
-    private func shouldHandleBrightness(modifiers: NSEvent.ModifierFlags) -> Bool {
+    private func shouldInterceptBrightness(modifiers: NSEvent.ModifierFlags) -> Bool {
         if configuration.interceptBrightness {
             return true
         }
         return configuration.interceptCommandModifiedBrightness && modifiers.contains(.command)
+    }
+
+    private func shouldObserveBrightness(modifiers: NSEvent.ModifierFlags) -> Bool {
+        !modifiers.contains(.command)
+    }
+
+    private func shouldHandleBrightness(modifiers: NSEvent.ModifierFlags) -> Bool {
+        shouldInterceptBrightness(modifiers: modifiers)
     }
 
     private func step(for event: NSEvent) -> MediaKeyStep {

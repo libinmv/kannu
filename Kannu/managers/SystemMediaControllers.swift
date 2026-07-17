@@ -20,6 +20,7 @@ import Foundation
 import CoreAudio
 import CoreGraphics
 import IOKit
+import Defaults
 
 extension Notification.Name {
     static let systemVolumeDidChange = Notification.Name("DynamicIsland.systemVolumeDidChange")
@@ -509,6 +510,9 @@ final class SystemBrightnessController {
     private let userInitiatedWindow: TimeInterval = 1.5
     private var didLogPollingFallback = false
 
+    /// True while the media-key event tap is actively intercepting brightness keys.
+    var mediaKeyInterceptionActive = false
+
     // MARK: - Emission throttling
     // Prevent notification storms when the animation timer fires rapidly.
     private var lastEmissionDate: Date = .distantPast
@@ -525,13 +529,10 @@ final class SystemBrightnessController {
         } else {
             NSLog("⚠️ SystemBrightnessController: CoreBrightnessDisplayClient unavailable; will rely on DisplayServices / IODisplay + polling fallback")
         }
-        notifyCurrentBrightness()
-        // Only start polling as a fallback when CoreBrightness notifications
-        // are unavailable.  When CoreBrightness IS available the distributed
-        // notifications (registerExternalNotifications) handle detection.
-        if !coreBrightnessClient.isAvailable {
-            startPolling()
-        }
+        syncBaselineFromSystem()
+        // Always poll: on Tahoe, BezelEngine distributed notifications are unreliable
+        // and CoreBrightness availability alone does not guarantee they fire.
+        startPolling()
     }
 
     func stop() {
@@ -543,6 +544,7 @@ final class SystemBrightnessController {
         userInitiatedResetTimer?.invalidate()
         userInitiatedResetTimer = nil
         userInitiatedBrightnessChange = false
+        mediaKeyInterceptionActive = false
     }
 
     func adjust(by delta: Float) {
@@ -563,16 +565,70 @@ final class SystemBrightnessController {
         }
     }
 
+    /// Called when a brightness media key is observed but not intercepted.
+    func noteBrightnessKeyPress() {
+        markUserInitiated()
+    }
+
     // MARK: - User-initiated helpers
 
     /// Marks the current brightness change as user-initiated (key press).
     /// Automatically resets after `userInitiatedWindow` seconds.
     private func markUserInitiated() {
-        userInitiatedBrightnessChange = true
-        userInitiatedResetTimer?.invalidate()
-        userInitiatedResetTimer = Timer.scheduledTimer(withTimeInterval: userInitiatedWindow, repeats: false) { [weak self] _ in
-            self?.userInitiatedBrightnessChange = false
+        let apply = { [weak self] in
+            guard let self else { return }
+            self.userInitiatedBrightnessChange = true
+            self.userInitiatedResetTimer?.invalidate()
+            self.userInitiatedResetTimer = Timer.scheduledTimer(withTimeInterval: self.userInitiatedWindow, repeats: false) { [weak self] _ in
+                self?.userInitiatedBrightnessChange = false
+            }
         }
+        if Thread.isMainThread {
+            apply()
+        } else {
+            DispatchQueue.main.async(execute: apply)
+        }
+    }
+
+    /// Passive polling / notifications: show HUD for key presses only, never auto-brightness.
+    private func handlePassiveBrightnessDetection(system: Float) {
+        let clamped = max(0, min(1, system))
+        guard abs(clamped - lastEmittedBrightness) > pollChangeThreshold else { return }
+
+        if userInitiatedBrightnessChange {
+            emitBrightnessChange(value: clamped)
+            return
+        }
+
+        if mediaKeyInterceptionActive {
+            // Kannu intercepts keys — absorb ambient/auto changes silently.
+            lastEmittedBrightness = clamped
+            return
+        }
+
+        // macOS handles keys (no intercept). Match discrete key steps; ignore gradual auto-brightness.
+        let delta = abs(clamped - lastEmittedBrightness)
+        if looksLikeKeyboardBrightnessStep(delta) {
+            markUserInitiated()
+            emitBrightnessChange(value: clamped)
+        } else {
+            lastEmittedBrightness = clamped
+        }
+    }
+
+    private func looksLikeKeyboardBrightnessStep(_ delta: Float) -> Bool {
+        // Auto-brightness typically moves less than ~2% between poll ticks.
+        guard delta >= 0.02 else { return false }
+
+        let standard = Float(Defaults[.brightnessStepPercent]) / 100.0
+        let fine = Float(Defaults[.brightnessFineStepPercent]) / 100.0
+        let tolerance: Float = 0.018
+        let macOSStep: Float = 1.0 / 16.0
+
+        if abs(delta - standard) <= tolerance { return true }
+        if abs(delta - fine) <= tolerance { return true }
+        if abs(delta - macOSStep) <= tolerance { return true }
+        return delta >= standard * 0.75
     }
 
     var currentBrightness: Float {
@@ -597,6 +653,10 @@ final class SystemBrightnessController {
         emitBrightnessChange(value: brightness)
     }
 
+    private func syncBaselineFromSystem() {
+        lastEmittedBrightness = max(0, min(1, currentBrightness))
+    }
+
     private func syncWithSystemBrightnessIfNeeded() {
         // Align our internal baseline with the actual system brightness so that
         // subsequent adjustments apply deltas from the true value (important when
@@ -617,7 +677,7 @@ final class SystemBrightnessController {
         let start = lastEmittedBrightness
         if abs(start - target) <= 0.0005 {
             applyBrightness(target)
-            emitBrightnessChange(value: target)
+            emitBrightnessChange(value: target, force: true)
             return
         }
 
@@ -771,12 +831,7 @@ final class SystemBrightnessController {
                 // so that subsequent key-press deltas are accurate, but only fire the
                 // HUD callback when the change was user-initiated (key press).
                 let system = self.currentBrightness
-                if self.userInitiatedBrightnessChange {
-                    self.notifyCurrentBrightness()
-                } else {
-                    // Silently absorb auto-brightness change — update baseline only.
-                    self.lastEmittedBrightness = max(0, min(1, system))
-                }
+                self.handlePassiveBrightnessDetection(system: system)
             }
         }
         notificationsInstalled = true
@@ -792,18 +847,7 @@ final class SystemBrightnessController {
             guard self.brightnessAnimationTimer == nil else { return }
             let system = self.currentBrightness
             guard abs(system - self.lastEmittedBrightness) > self.pollChangeThreshold else { return }
-
-            if self.userInitiatedBrightnessChange {
-                // User recently pressed a brightness key — show the HUD.
-                if !self.didLogPollingFallback {
-                    NSLog("ℹ️ SystemBrightnessController: Brightness change detected via polling fallback (value: %.3f)", system)
-                    self.didLogPollingFallback = true
-                }
-                self.emitBrightnessChange(value: system)
-            } else {
-                // Auto-brightness or external change — absorb silently.
-                self.lastEmittedBrightness = max(0, min(1, system))
-            }
+            self.handlePassiveBrightnessDetection(system: system)
         }
     }
 
