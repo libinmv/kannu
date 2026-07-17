@@ -12,7 +12,7 @@ Add at **Settings → Secrets and variables → Actions** on `libinmv/kannu`:
 
 | Secret | Description |
 |--------|-------------|
-| `APPLE_CERTIFICATE` | Base64-encoded **Developer ID Application** `.p12` |
+| `APPLE_CERTIFICATE` | Base64-encoded **Developer ID Application** `.p12` (must include private key) |
 | `APPLE_CERTIFICATE_PASSWORD` | Password for the `.p12` export |
 | `KEYCHAIN_PASSWORD` | Random string for the CI keychain (`openssl rand -base64 32`) |
 | `APPLE_TEAM_ID` | 10-character team ID (Release: `S2WWHQQH2V`) |
@@ -21,6 +21,22 @@ Add at **Settings → Secrets and variables → Actions** on `libinmv/kannu`:
 | `SPARKLE_EDDSA_PRIVATE_KEY` | Ed25519 private seed matching `SUPublicEDKey` in `Kannu/Info.plist` |
 
 Example (run locally after exporting your `.p12`):
+
+**Export the correct certificate from Keychain Access:**
+
+1. Open **Keychain Access** → **login** keychain → **My Certificates**
+2. Find **Developer ID Application: Your Name (S2WWHQQH2V)** — not "Apple Development"
+3. Expand it; a **private key** must appear nested underneath
+4. Select the certificate (not just the key) → **File → Export Items** → `.p12`
+5. Set a password (this becomes `APPLE_CERTIFICATE_PASSWORD`)
+
+Verify locally before uploading:
+
+```bash
+security find-identity -v -p codesigning | grep "Developer ID Application"
+```
+
+Upload to GitHub:
 
 ```bash
 gh secret set APPLE_CERTIFICATE --repo libinmv/kannu < <(base64 -i ~/path/to/cert.p12)

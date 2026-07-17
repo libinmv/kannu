@@ -4,6 +4,13 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-07-17 - Fix CI certificate import
+- **Developer label:** Fix CI release certificate import
+- **Agent label:** PKCS12 private key import fix for Developer ID
+- **Changes:**
+  - Fixed [`.github/workflows/release.yml`](.github/workflows/release.yml) to import PKCS#12 cert + private key (removed `-t cert`) and list identities on failure.
+  - Documented Developer ID `.p12` export steps in [`scripts/RELEASE.md`](scripts/RELEASE.md).
+
 ### 2026-07-17 - v1.0.0 release
 - **Developer label:** v1.0.0 release
 - **Agent label:** Initial public release version bump
