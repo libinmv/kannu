@@ -74,6 +74,10 @@ warn for apps you build yourself.
 2. Select the **Kannu** scheme and your Mac as the run destination.
 3. Build and run (⌘R).
 
+## Release manually (Xcode signing)
+
+To ship a signed DMG and update Sparkle auto-update from your Mac, see [scripts/RELEASE.md](scripts/RELEASE.md). After archiving in Xcode, run `scripts/manual-release.sh` with your exported `Kannu.app` and Sparkle private key.
+
 Application support data is stored under `~/Library/Application Support/Kannu/`. Agent status hooks write to `~/.kannu/agent-status/`.
 
 ## Quick Start

@@ -30,8 +30,12 @@
 	<string>Kannu needs screen recording permission to capture screenshots for the AI assistant feature.</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
+	<key>SUEnableDownloaderService</key>
+	<true/>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
 	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/libinmv/kannu/main/appcast.xml</string>
+	<string>https://raw.githubusercontent.com/libinmv/kannu/main/Updates/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>gmAk/vxvHlGmWczyxtmTHxSK6GCbAVqWHd9bGLB97lA=</string>
 	<key>SUScheduledCheckInterval</key>

@@ -4,6 +4,22 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-07-17 - Automate CI releases
+- **Developer label:** Automate CI releases
+- **Agent label:** Tag-triggered signed notarized release pipeline
+- **Changes:**
+  - Rewrote [`.github/workflows/release.yml`](.github/workflows/release.yml) to validate secrets, archive/export with Developer ID, notarize the DMG, and publish on `v*` tag push only.
+  - Added [`ExportOptions.plist`](ExportOptions.plist) and [`scripts/notarize-dmg.sh`](scripts/notarize-dmg.sh) for CI notarization.
+  - Expanded [`scripts/RELEASE.md`](scripts/RELEASE.md) with GitHub secrets setup and automated release instructions.
+
+### 2026-07-17 - Manual GitHub release
+- **Developer label:** Manual GitHub release
+- **Agent label:** Manual release script and docs
+- **Changes:**
+  - Bumped Release version to `2.2.1` (build `13`) in `Kannu.xcodeproj/project.pbxproj`.
+  - Added `scripts/manual-release.sh` to build a versioned DMG, Sparkle-sign it, update `Updates/appcast.xml`, and optionally publish via `gh`.
+  - Added `scripts/RELEASE.md` and linked it from `ReadMe.md`.
+
 ### 2026-07-17 - Claude detection fixes, glass UI, color picker, SVG skin support
 - **Developer label:** Claude detection fixes, glass UI, color picker, SVG skin support
 - **Agent label:** Claude passive session detection, frosted glass notch, wheel color picker, SVG skins
@@ -32,6 +48,20 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
   - Wired automatic update checks and manual **Check for Updates…** entry points in the menu bar extra, app menu, and Settings → About.
   - Added Sparkle feed keys to `Kannu/Info.plist` and an initial `appcast.xml` hosted from `main`.
   - Extended `.github/workflows/release.yml` and `scripts/export-sparkle-update.sh` to publish signed `Kannu.zip` update archives and refresh the appcast on release.
+
+### 2026-07-17 - Sparkle release workflow fix
+- **Developer label:** Sparkle auto update
+- **Agent label:** Release workflow secrets guard fix
+- **Changes:**
+  - Fixed `.github/workflows/release.yml` so Apple certificate import skips inside the step script instead of using `secrets` in a step `if` (unsupported by GitHub Actions).
+
+### 2026-07-17 - Atoll-style Sparkle appcast layout
+- **Developer label:** Sparkle auto update
+- **Agent label:** Atoll-style Updates appcast layout
+- **Changes:**
+  - Moved the Sparkle feed to `Updates/appcast.xml` (matching [Atoll](https://github.com/Ebullioscopic/Atoll/tree/main/Updates)) and updated `SUFeedURL` in `Kannu/Info.plist`.
+  - Added `SUEnableDownloaderService` and `SUEnableInstallerLauncherService` Sparkle keys like Atoll.
+  - Switched `scripts/export-sparkle-update.sh` and release CI from `Kannu.zip` to versioned DMG enclosures (`Kannu.<version>.dmg`).
 
 ### 2026-07-12 - Fix brightness and native OSD regression
 - **Developer label:** Fix brightness and native OSD regression
