@@ -4,6 +4,18 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-07-17 - Claude detection fixes, glass UI, color picker, SVG skin support
+- **Developer label:** Claude detection fixes, glass UI, color picker, SVG skin support
+- **Agent label:** Claude passive session detection, frosted glass notch, wheel color picker, SVG skins
+- **Changes:**
+  - Fixed Claude agent detection: NSNumber int64 cast, stale-check bypass for live processes, PID-reuse guard via sysctl start-time comparison, force isVisible=true for live sessions waiting for user input
+  - Agent tab empty state with fun message and provider install strip; strip hidden when any session exists
+  - Settings > Agent Status: added Detected Editors row showing Cursor/Claude Code/Codex install status
+  - Tab switching on hover with 80ms debounce; frosted glass capsule (ultraThinMaterial) replacing flat fill; removed hidden matchedGeometry capsule that caused blink on tab change
+  - Agent status cards updated to ultraThinMaterial frosted glass with hairline borders
+  - Color picker swatch: replaced two-step swatch→popover→NSColorPanel with direct NSColorWell (one click opens wheel); swatch shrunk to 22×14
+  - Notch skin importer: added SVG support in file picker and allowed extensions; vector files skip pixel-size validation
+
 ### 2026-07-12 - Fix brightness and native OSD regression
 - **Developer label:** Fix brightness and native OSD regression
 - **Agent label:** Non-blocking OSD suppress and brightness path restore

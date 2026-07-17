@@ -4052,7 +4052,7 @@ struct Appearance: View {
         }
         .fileImporter(
             isPresented: $isSkinImporterPresented,
-            allowedContentTypes: [.png, .jpeg, .image]
+            allowedContentTypes: [.png, .jpeg, .image, .svg]
         ) { result in
             switch result {
             case .success(let url):
@@ -7230,49 +7230,56 @@ private struct SettingsColorPickerRow: View {
     @Binding var selection: Color
     var supportsOpacity: Bool = false
 
-    @State private var isPresented = false
-
     var body: some View {
         HStack {
             Text(title)
             Spacer()
-            colorSwatchButton
-        }
-    }
-
-    private var colorSwatchButton: some View {
-        Button {
-            isPresented.toggle()
-        } label: {
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(selection)
-                .frame(width: 32, height: 20)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
-                )
-        }
-        .buttonStyle(.plain)
-        .popover(isPresented: $isPresented, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
-            SettingsColorPickerPopover(
-                title: title,
-                selection: $selection,
-                supportsOpacity: supportsOpacity
-            )
+            ColorWellSwatch(color: $selection, supportsOpacity: supportsOpacity)
         }
     }
 }
 
-private struct SettingsColorPickerPopover: View {
-    let title: String
-    @Binding var selection: Color
+private struct ColorWellSwatch: NSViewRepresentable {
+    @Binding var color: Color
     var supportsOpacity: Bool
 
-    var body: some View {
-        ColorPicker(title, selection: $selection, supportsOpacity: supportsOpacity)
-            .labelsHidden()
-            .padding(16)
-            .frame(width: 260, height: 280)
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> WheelColorWell {
+        let well = WheelColorWell(style: .minimal)
+        well.color = NSColor(color)
+        well.isBordered = false
+        well.wantsLayer = true
+        well.layer?.cornerRadius = 4
+        well.layer?.masksToBounds = true
+        well.target = context.coordinator
+        well.action = #selector(Coordinator.colorChanged(_:))
+        return well
+    }
+
+    func updateNSView(_ nsView: WheelColorWell, context: Context) {
+        let new = NSColor(color)
+        if nsView.color != new { nsView.color = new }
+        context.coordinator.parent = self
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: WheelColorWell, context: Context) -> CGSize? {
+        CGSize(width: 22, height: 14)
+    }
+
+    class Coordinator: NSObject {
+        var parent: ColorWellSwatch
+        init(_ parent: ColorWellSwatch) { self.parent = parent }
+        @objc func colorChanged(_ sender: WheelColorWell) {
+            parent.color = Color(sender.color)
+        }
+    }
+}
+
+final class WheelColorWell: NSColorWell {
+    override func activate(_ exclusive: Bool) {
+        super.activate(exclusive)
+        NSColorPanel.shared.mode = .wheel
     }
 }
 
@@ -7415,6 +7422,14 @@ struct AgentStatusSettings: View {
             }
 
             if enableAgentStatusFeature {
+                Section {
+                    detectedProvidersRow
+                } header: {
+                    Text("Detected Editors")
+                } footer: {
+                    Text("Kannu watches these editors automatically. Install a hook below for richer status on editors marked as not detected.")
+                }
+
                 Section {
                     legendRow(color: .green, title: String(localized: "Active"), detail: String(localized: "The agent is thinking, planning, executing tools, or otherwise working"))
                     legendRow(color: .yellow, title: String(localized: "Awaiting Input"), detail: String(localized: "The agent needs your approval or a response"))
@@ -7600,6 +7615,35 @@ struct AgentStatusSettings: View {
             hookInstaller.refresh()
         }
         .navigationTitle("Agent Status")
+    }
+
+    private var detectedProviders: [(source: AgentProviderIconSource, name: String, detected: Bool)] {
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser
+        return [
+            (.cursor, "Cursor", fm.fileExists(atPath: home.appendingPathComponent("Library/Application Support/Cursor/User/globalStorage/state.vscdb").path)),
+            (.claude, "Claude Code", fm.fileExists(atPath: home.appendingPathComponent(".claude/projects").path)),
+            (.codex, "Codex", fm.fileExists(atPath: home.appendingPathComponent(".codex/sessions").path)),
+        ]
+    }
+
+    private var detectedProvidersRow: some View {
+        HStack(spacing: 0) {
+            ForEach(detectedProviders, id: \.name) { p in
+                HStack(spacing: 6) {
+                    AgentProviderIconView(source: p.source, size: 16)
+                        .opacity(p.detected ? 1 : 0.35)
+                    Text(p.name)
+                        .font(.subheadline)
+                        .foregroundStyle(p.detected ? .primary : .secondary)
+                    Circle()
+                        .fill(p.detected ? Color.green : Color.secondary.opacity(0.4))
+                        .frame(width: 6, height: 6)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.vertical, 2)
     }
 
     @ViewBuilder

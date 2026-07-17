@@ -149,8 +149,16 @@ struct TabSelectionView: View {
                 .background {
                     if isSelected {
                         Capsule()
-                            .fill((tab.accentColor ?? Color(nsColor: .secondarySystemFill)).opacity(0.25))
-                            .shadow(color: (tab.accentColor ?? .clear).opacity(0.4), radius: 8)
+                            .fill(.ultraThinMaterial)
+                            .overlay {
+                                Capsule()
+                                    .fill((tab.accentColor ?? Color.white).opacity(0.18))
+                            }
+                            .overlay {
+                                Capsule()
+                                    .strokeBorder((tab.accentColor ?? Color.white).opacity(0.22), lineWidth: 0.5)
+                            }
+                            .shadow(color: (tab.accentColor ?? Color.white).opacity(0.25), radius: 10)
                             .matchedGeometryEffect(id: "capsule", in: animation)
                     }
                 }

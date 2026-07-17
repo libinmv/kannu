@@ -58,17 +58,38 @@ struct NotchAgentStatusView: View {
         return !CursorAgentStatusMonitor.looksLikeToolName(trimmed)
     }
 
+    private struct ProviderInstallStatus {
+        let source: AgentProviderIconSource
+        let name: String
+        let detected: Bool
+    }
+
+    private var providerStatuses: [ProviderInstallStatus] {
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser
+        return [
+            ProviderInstallStatus(
+                source: .cursor, name: "Cursor",
+                detected: fm.fileExists(atPath: home.appendingPathComponent("Library/Application Support/Cursor/User/globalStorage/state.vscdb").path)
+            ),
+            ProviderInstallStatus(
+                source: .claude, name: "Claude Code",
+                detected: fm.fileExists(atPath: home.appendingPathComponent(".claude/projects").path)
+            ),
+            ProviderInstallStatus(
+                source: .codex, name: "Codex",
+                detected: fm.fileExists(atPath: home.appendingPathComponent(".codex/sessions").path)
+            ),
+        ]
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 if let primary = primarySession {
                     primaryCard(primary)
-                } else {
-                    Text("No active agent sessions")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.vertical, 24)
+                } else if dedupedSessions.isEmpty {
+                    emptyStateView
                 }
 
                 if !recentChats.isEmpty {
@@ -93,6 +114,51 @@ struct NotchAgentStatusView: View {
         .onDisappear {
             updateScrollGestureSuppression(for: false)
         }
+    }
+
+    @ViewBuilder
+    private var emptyStateView: some View {
+        VStack(spacing: 10) {
+            Text("Your agents are taking a coffee break ☕")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.center)
+            Text("Fire up Cursor, Claude Code, or Codex and start a session — we'll watch the lights for you.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+
+            HStack(spacing: 0) {
+                ForEach(providerStatuses, id: \.name) { status in
+                    HStack(spacing: 5) {
+                        AgentProviderIconView(source: status.source, size: 14)
+                            .opacity(status.detected ? 1 : 0.3)
+                        Text(status.name)
+                            .font(.system(size: 10))
+                            .foregroundStyle(status.detected ? .primary : .tertiary)
+                            .lineLimit(1)
+                        if status.detected {
+                            Circle()
+                                .fill(Color.green.opacity(0.85))
+                                .frame(width: 5, height: 5)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            .padding(.vertical, 7)
+            .padding(.horizontal, 6)
+            .background {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(.ultraThinMaterial)
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.white.opacity(0.06))
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
     }
 
     @ViewBuilder
@@ -122,7 +188,14 @@ struct NotchAgentStatusView: View {
             stateBadge(session.displayState, large: true)
         }
         .padding(12)
-        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+        .background {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.ultraThinMaterial)
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.white.opacity(0.08))
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.5)
+        }
     }
 
     @ViewBuilder
@@ -152,7 +225,14 @@ struct NotchAgentStatusView: View {
             stateBadge(session.displayState, large: false)
         }
         .padding(10)
-        .background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+        .background {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(.ultraThinMaterial)
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.white.opacity(0.05))
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
+        }
     }
 
     @ViewBuilder

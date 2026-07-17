@@ -1225,12 +1225,16 @@ final class CursorAgentStatusMonitor: ObservableObject {
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let pid = json["pid"] as? Int,
                   let sessionId = json["sessionId"] as? String,
-                  let startedAtMs = json["startedAt"] as? Int64 else { continue }
+                  let startedAtNum = json["startedAt"] as? NSNumber else { continue }
+            let startedAtMs = startedAtNum.int64Value
 
             guard json["kind"] as? String == "interactive" else { continue }
-            guard nowMs - startedAtMs <= staleMs else { continue }
 
-            let processAlive = kill(pid_t(pid), 0) == 0
+            let processAlive = isClaudeProcessAlive(pid: pid, startedAtMs: startedAtMs)
+            // Skip stale check for live processes — a session may run for many hours.
+            if !processAlive {
+                guard nowMs - startedAtMs <= staleMs else { continue }
+            }
 
             let jsonlURL = claudeJSONLURL(forSessionId: sessionId)
             var jsonlMtime: Date? = nil
@@ -1257,12 +1261,17 @@ final class CursorAgentStatusMonitor: ObservableObject {
             }
 
             let ageMs = nowMs - tsMs
-            let resolved = AgentTrafficLightMapper.resolveHookState(
+            var resolved = AgentTrafficLightMapper.resolveHookState(
                 rawState: rawState,
                 ageMs: ageMs,
                 collapseMs: collapseMs,
                 inactiveMs: inactiveMs
             )
+            // Live processes are always visible — JSONL mtime only reflects last write, not whether
+            // the session is open. A Claude Code session waiting for the user shows no recent writes.
+            if processAlive {
+                resolved = (state: resolved.state, visible: true)
+            }
 
             let chatName: String? = jsonlURL.flatMap {
                 AgentSessionLogParser.displayChatName(from: $0, provider: .claude)
@@ -1315,6 +1324,19 @@ final class CursorAgentStatusMonitor: ObservableObject {
             guard let bundleID = app.bundleIdentifier else { return false }
             return bundleID.hasPrefix("com.todesktop.") || bundleID == "com.cursor.Cursor"
         }
+    }
+
+    // Returns true only if the process is alive AND its start time matches startedAtMs
+    // within 5 seconds, preventing PID-reuse false positives.
+    private func isClaudeProcessAlive(pid: Int, startedAtMs: Int64) -> Bool {
+        guard kill(pid_t(pid), 0) == 0 else { return false }
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, Int32(pid)]
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.size
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return true }
+        let procStartMs = Int64(info.kp_proc.p_starttime.tv_sec) * 1000
+            + Int64(info.kp_proc.p_starttime.tv_usec) / 1000
+        return abs(procStartMs - startedAtMs) < 5_000
     }
 }
 
