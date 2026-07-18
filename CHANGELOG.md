@@ -4,6 +4,16 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-07-18 - Indicator timing fixes and auto-install hooks
+- **Developer label:** Indicator timing granularity and hook auto-install
+- **Agent label:** Second-level control over indicator persistence, automatic hook setup
+- **Changes:**
+  - Changed indicator timing from minutes to seconds: agentStoppedCollapseMinutes → agentStoppedCollapseSeconds (default 5s), agentInactiveDisplayMinutes → agentInactiveDisplaySeconds (default 5s)
+  - Fixed unit multipliers in state mapper to use direct seconds instead of `×60` scaling
+  - Updated Settings time pickers with second-granular options: Hide indicator (3s–5min), Show dim light (Off/5s–2min)
+  - Auto-install hooks on first launch for detected providers (Claude, Cursor, Codex); gated by agentHooksAutoInstallAttempted flag
+  - Red light now hides after 5 seconds instead of persisting for minutes; state transitions are instant with hook events active
+
 ### 2026-07-17 - v1.0.0 release
 - **Developer label:** v1.0.0 release
 - **Agent label:** Initial public release version bump

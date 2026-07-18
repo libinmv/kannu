@@ -23,6 +23,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
     private var watchedPaths: [String] = []
     private var hadHookFilesThisCycle = false
     private var executionStartByConversationID: [String: Date] = [:]
+    private var claudeJSONLURLBySessionId: [String: URL] = [:]
     private var cachedTranscriptAnalysisBySession: [String: TranscriptAnalysis] = [:]
     private var cachedTranscriptAnalysisAt: Date?
     private var lastPublishedTrafficLightState: AgentTrafficLightState?
@@ -35,8 +36,10 @@ final class CursorAgentStatusMonitor: ObservableObject {
         isRunning = true
         installWatchers()
         scheduleRescan(delay: 0)
-        // Slow background poll; hook directory watcher handles near-real-time updates.
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+        // Background poll; hook directory watcher handles near-real-time updates for hook-based
+        // providers, but Claude's passive session detection has no filesystem watcher, so this
+        // interval is also its detection latency ceiling.
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.scheduleRescan(delay: 0)
             }
@@ -186,20 +189,20 @@ final class CursorAgentStatusMonitor: ObservableObject {
         let previousStateByConversationID = latestDisplayStateByConversationID(from: sessions)
 
         let staleMinutes = Defaults[.agentStatusStaleMinutes]
-        let collapseMinutes = Defaults[.agentStoppedCollapseMinutes]
-        let inactiveMinutes = Defaults[.agentInactiveDisplayMinutes]
+        let collapseSeconds = Defaults[.agentStoppedCollapseSeconds]
+        let inactiveSeconds = Defaults[.agentInactiveDisplaySeconds]
 
         var hookSessions = parseHookSessions(
             staleMinutes: staleMinutes,
-            collapseMinutes: collapseMinutes,
-            inactiveMinutes: inactiveMinutes,
+            collapseSeconds: collapseSeconds,
+            inactiveSeconds: inactiveSeconds,
             now: now
         )
 
         let passiveClaudeSessions = buildClaudeSessions(
             staleMinutes: staleMinutes,
-            collapseMinutes: collapseMinutes,
-            inactiveMinutes: inactiveMinutes,
+            collapseSeconds: collapseSeconds,
+            inactiveSeconds: inactiveSeconds,
             now: now
         )
         if !passiveClaudeSessions.isEmpty {
@@ -224,8 +227,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
             transcriptSessions = buildTranscriptSessions(
                 analysisBySession: transcriptAnalysis,
                 staleMinutes: staleMinutes,
-                collapseMinutes: collapseMinutes,
-                inactiveMinutes: inactiveMinutes
+                collapseSeconds: collapseSeconds,
+                inactiveSeconds: inactiveSeconds
             )
         } else {
             transcriptAnalysis = [:]
@@ -537,8 +540,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
 
     private func parseHookSessions(
         staleMinutes: Int,
-        collapseMinutes: Int,
-        inactiveMinutes: Int,
+        collapseSeconds: Int,
+        inactiveSeconds: Int,
         now: Date = Date()
     ) -> [AgentSessionStatus] {
         let directory = AgentHookInstaller.statusDirectory
@@ -549,8 +552,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
 
         let nowMs = Int64(now.timeIntervalSince1970 * 1000)
         let staleMs = Int64(staleMinutes) * 60_000
-        let collapseMs = Int64(collapseMinutes) * 60_000
-        let inactiveMs = Int64(inactiveMinutes) * 60_000
+        let collapseMs = Int64(collapseSeconds) * 1_000
+        let inactiveMs = Int64(inactiveSeconds) * 1_000
 
         var results: [AgentSessionStatus] = []
 
@@ -622,8 +625,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
     private func buildTranscriptSessions(
         analysisBySession: [String: TranscriptAnalysis],
         staleMinutes: Int,
-        collapseMinutes: Int,
-        inactiveMinutes: Int
+        collapseSeconds: Int,
+        inactiveSeconds: Int
     ) -> [AgentSessionStatus] {
         let paths = CursorTranscriptParser.listRecentTranscriptPaths(maxAgeMinutes: staleMinutes)
         guard !paths.isEmpty else { return [] }
@@ -692,8 +695,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
             let mapped = AgentTrafficLightMapper.map(
                 session: snapshot,
                 staleMinutes: staleMinutes,
-                stoppedCollapseMinutes: collapseMinutes,
-                inactiveDisplayMinutes: inactiveMinutes
+                stoppedCollapseSeconds: collapseSeconds,
+                inactiveDisplaySeconds: inactiveSeconds
             )
             let chatName = resolveCursorChatName(
                 sessionID: snapshot.sessionID,
@@ -1201,8 +1204,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
 
     private func buildClaudeSessions(
         staleMinutes: Int,
-        collapseMinutes: Int,
-        inactiveMinutes: Int,
+        collapseSeconds: Int,
+        inactiveSeconds: Int,
         now: Date = Date()
     ) -> [AgentSessionStatus] {
         let sessionsDir = AgentSessionLogParser.claudeSessionsDirectory
@@ -1214,9 +1217,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
 
         let staleMs = Int64(staleMinutes) * 60_000
         let nowMs = Int64(now.timeIntervalSince1970 * 1000)
-        let collapseMs = Int64(collapseMinutes) * 60_000
-        let inactiveMs = Int64(inactiveMinutes) * 60_000
-        let recentJsonlThreshold: TimeInterval = 5 * 60  // 5 min → "thinking"
+        let collapseMs = Int64(collapseSeconds) * 1_000
+        let inactiveMs = Int64(inactiveSeconds) * 1_000
+        let recentJsonlThreshold: TimeInterval = 10  // seconds of silence before we stop assuming "thinking"
 
         var results: [AgentSessionStatus] = []
 
@@ -1245,12 +1248,21 @@ final class CursorAgentStatusMonitor: ObservableObject {
             let rawState: String
             if processAlive {
                 if let mtime = jsonlMtime, now.timeIntervalSince(mtime) < recentJsonlThreshold {
-                    rawState = "thinking"
+                    // Recently writing. If the newest record is a pending tool_use and writes
+                    // paused for a few seconds, Claude is showing a permission prompt → yellow.
+                    let idleSinceWrite = now.timeIntervalSince(mtime)
+                    if idleSinceWrite > 5,
+                       let url = jsonlURL,
+                       AgentSessionLogParser.claudeAppearsAwaitingApproval(at: url) {
+                        rawState = "awaiting_input"
+                    } else {
+                        rawState = "thinking"   // Claude actively writing → green
+                    }
                 } else {
-                    rawState = "stopped"
+                    rawState = "awaiting_input" // Alive but idle → waiting for user → yellow
                 }
             } else {
-                rawState = "stopped"
+                rawState = "stopped"            // Process dead → red
             }
 
             let tsMs: Int64
@@ -1303,6 +1315,12 @@ final class CursorAgentStatusMonitor: ObservableObject {
     }
 
     private func claudeJSONLURL(forSessionId sessionId: String) -> URL? {
+        // The projects-tree walk is expensive and session→JSONL mapping never changes,
+        // so cache hits (validated by fileExists) skip the enumeration entirely.
+        if let cached = claudeJSONLURLBySessionId[sessionId],
+           FileManager.default.fileExists(atPath: cached.path) {
+            return cached
+        }
         let projectsDir = AgentSessionLogParser.claudeProjectsDirectory
         guard let enumerator = FileManager.default.enumerator(
             at: projectsDir,
@@ -1314,6 +1332,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
         for case let url as URL in enumerator {
             guard url.lastPathComponent == target,
                   !url.path.contains("/subagents/") else { continue }
+            claudeJSONLURLBySessionId[sessionId] = url
             return url
         }
         return nil

@@ -30,7 +30,9 @@ struct KannuApp: App {
     @Default(.menubarIcon) var showMenuBarIcon
     @Environment(\.openWindow) var openWindow
 
-    init() {}
+    init() {
+        LLMUsageManager.configureProviderDefaultsIfNeeded()
+    }
 
     var body: some Scene {
         MenuBarExtra("Kannu", systemImage: "mountain.2.fill", isInserted: $showMenuBarIcon) {
@@ -759,7 +761,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Agent status (traffic light live activity)
         if Defaults[.enableAgentStatusFeature] {
-            _ = AgentHookInstaller.shared // triggers legacy hook migration
+            let installer = AgentHookInstaller.shared // triggers legacy hook migration
+            // First launch: auto-install hooks for tools that are present on this machine,
+            // so real-time state events work out of the box. Users can uninstall in Settings.
+            if !Defaults[.agentHooksAutoInstallAttempted] {
+                Defaults[.agentHooksAutoInstallAttempted] = true
+                let home = FileManager.default.homeDirectoryForCurrentUser
+                let detectedProviders: [AgentHookProvider] = [
+                    (.cursor, ".cursor"),
+                    (.vscode, ".copilot"),
+                    (.codex, ".codex"),
+                    (.claude, ".claude"),
+                ].compactMap { provider, dir in
+                    FileManager.default.fileExists(atPath: home.appendingPathComponent(dir).path) ? provider : nil
+                }
+                for provider in detectedProviders where !installer.isInstalled(provider) {
+                    installer.install(provider)
+                }
+            }
             CursorAgentStatusMonitor.shared.start()
             AgentStatusNotificationBridge.shared.start()
         }

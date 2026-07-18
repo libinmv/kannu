@@ -1138,10 +1138,11 @@ extension Defaults.Keys {
     // MARK: Stats Feature
     static let enableStatsFeature = Key<Bool>("enableStatsFeature", default: false)
     static let enableLLMUsageFeature = Key<Bool>("enableLLMUsageFeature", default: true)
-    static let enableClaudeProvider = Key<Bool>("enableClaudeProvider", default: true)
-    static let enableCodexProvider = Key<Bool>("enableCodexProvider", default: true)
-    static let enableCursorProvider = Key<Bool>("enableCursorProvider", default: true)
-    static let autoStartStatsMonitoring = Key<Bool>("autoStartStatsMonitoring", default: true)
+    static let enableClaudeProvider = Key<Bool>("enableClaudeProvider", default: false)
+    static let enableCodexProvider = Key<Bool>("enableCodexProvider", default: false)
+    static let enableCursorProvider = Key<Bool>("enableCursorProvider", default: false)
+    static let llmProviderDefaultsConfigured = Key<Bool>("llmProviderDefaultsConfigured", default: false)
+    static let autoStartStatsMonitoring = Key<Bool>("autoStartStatsMonitoring", default: false)
     static let statsStopWhenNotchCloses = Key<Bool>("statsStopWhenNotchCloses", default: true)
     static let statsUpdateInterval = Key<Double>("statsUpdateInterval", default: 1.0)
     static let showCpuGraph = Key<Bool>("showCpuGraph", default: false)
@@ -1206,8 +1207,9 @@ extension Defaults.Keys {
     // MARK: Agent Status Feature (Cursor)
     static let enableAgentStatusFeature = Key<Bool>("enableAgentStatusFeature", default: true)
     static let agentStatusStaleMinutes = Key<Int>("agentStatusStaleMinutes", default: 30)
-    static let agentStoppedCollapseMinutes = Key<Int>("agentStoppedCollapseMinutes", default: 5)
-    static let agentInactiveDisplayMinutes = Key<Int>("agentInactiveDisplayMinutes", default: 5)
+    static let agentStoppedCollapseSeconds = Key<Int>("agentStoppedCollapseSeconds", default: 5)
+    static let agentInactiveDisplaySeconds = Key<Int>("agentInactiveDisplaySeconds", default: 5)
+    static let agentHooksAutoInstallAttempted = Key<Bool>("agentHooksAutoInstallAttempted", default: false)
     static let showAgentStoppedIndicator = Key<Bool>("showAgentStoppedIndicator", default: false)
 
     // MARK: Agent Status Mobile Notifications

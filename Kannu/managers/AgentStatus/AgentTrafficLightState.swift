@@ -29,10 +29,10 @@ enum AgentTrafficLightState: Equatable, Comparable {
 
     private var sortPriority: Int {
         switch self {
-        case .awaitingInput: return 6
-        case .executing: return 5
-        case .thinking: return 4
-        case .stopped: return 3
+        case .stopped: return 6         // Red: task completed (highest priority to show)
+        case .awaitingInput: return 5   // Yellow: waiting for user input
+        case .executing: return 4       // Green: executing
+        case .thinking: return 3        // Green: thinking
         case .inactive: return 1
         }
     }
@@ -133,8 +133,8 @@ enum AgentTrafficLightMapper {
         session: AgentSessionSnapshot?,
         now: Date = Date(),
         staleMinutes: Int,
-        stoppedCollapseMinutes: Int,
-        inactiveDisplayMinutes: Int
+        stoppedCollapseSeconds: Int,
+        inactiveDisplaySeconds: Int
     ) -> (state: AgentTrafficLightState, visible: Bool) {
         guard let session else { return (.inactive, false) }
 
@@ -146,8 +146,8 @@ enum AgentTrafficLightMapper {
             return (.inactive, false)
         }
 
-        let collapseSec = TimeInterval(stoppedCollapseMinutes * 60)
-        let inactiveSec = TimeInterval(inactiveDisplayMinutes * 60)
+        let collapseSec = TimeInterval(stoppedCollapseSeconds)
+        let inactiveSec = TimeInterval(inactiveDisplaySeconds)
 
         func lifecycleAfterStop() -> (AgentTrafficLightState, Bool) {
             let age = nowSec - lastActivitySec
