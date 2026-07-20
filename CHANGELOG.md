@@ -4,6 +4,14 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-07-20 - Fix chat name regressions for all agents
+- **Developer label:** Chat name self-comparison bug fix for Cursor/Claude/Codex
+- **Agent label:** Restore AI-generated and transcript-derived session titles
+- **Changes:**
+  - Fixed `resolveHookProviderChatName` (Claude/Codex): log-derived titles (ai-title) were compared against themselves in reliability checks and always rejected; now trusted directly with only tool-name heuristic
+  - Fixed `resolveCursorChatName` (Cursor): transcript titles were compared against themselves and always rejected; now handled separately and trusted directly
+  - Both fixes were dormant bugs exposed when hooks were auto-installed, routing sessions through the hook-driven merge pipeline for the first time
+
 ### 2026-07-20 - Tab retention, native HUD suppression fix, battery easter egg
 - **Developer label:** Always-on tab retention, brightness HUD suppression fix, 69% battery easter egg
 - **Agent label:** Fixed tab-restore race with Defaults publishers, wired up missing brightness OSD suppression, added subtle battery percentage easter egg

@@ -785,19 +785,23 @@ final class CursorAgentStatusMonitor: ObservableObject {
         hookName: String?,
         sources: ChatTitleSources
     ) -> String? {
+        // Hook and composer/glass titles go through full reliability vetting.
         let candidates = [
             hookName,
             sources.composerMeta[sessionID]?.name,
-            sources.glassTitles[sessionID],
-            sources.transcriptTitles[sessionID]
+            sources.glassTitles[sessionID]
         ]
-
         for candidate in candidates {
             guard let normalized = normalizedChatName(candidate),
                   !isUnreliableChatTitle(normalized, sessionID: sessionID, sources: sources) else {
                 continue
             }
             return normalized
+        }
+
+        // Transcript title is trusted directly (only tool-name heuristic), not compared against itself.
+        if let transcriptTitle = normalizedChatName(sources.transcriptTitles[sessionID]), !Self.looksLikeToolName(transcriptTitle) {
+            return transcriptTitle
         }
 
         return nil
@@ -952,13 +956,16 @@ final class CursorAgentStatusMonitor: ObservableObject {
         hookName: String?,
         sources: HookProviderTitleSources
     ) -> String? {
-        let candidates = [hookName, sources.logTitles[sessionID]]
-        for candidate in candidates {
-            guard let normalized = normalizedChatName(candidate),
-                  !isUnreliableHookProviderChatTitle(normalized, sessionID: sessionID, sources: sources) else {
-                continue
-            }
-            return normalized
+        // The log-derived title (e.g. Claude's ai-title) is the trusted source here, not a
+        // hook-echoed candidate to sanity-check against itself — isUnreliableHookProviderChatTitle's
+        // isPromptFallback compares a candidate against sources.logTitles[sessionID], which is
+        // always true when the candidate *is* that value, so it must be excluded from that check.
+        if let normalizedHook = normalizedChatName(hookName),
+           !isUnreliableHookProviderChatTitle(normalizedHook, sessionID: sessionID, sources: sources) {
+            return normalizedHook
+        }
+        if let logTitle = normalizedChatName(sources.logTitles[sessionID]), !Self.looksLikeToolName(logTitle) {
+            return logTitle
         }
         return nil
     }
