@@ -204,6 +204,9 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
         isRepeat: Bool,
         modifiers: NSEvent.ModifierFlags
     ) {
+        // Beat the DisplayServices/IOKit brightness write waking OSDUIHelper, same as volume.
+        SystemOSDManager.suppressNativeOSDNow()
+
         // Elastic Limit Detection (Vertical HUD)
         if Defaults[.enableVerticalHUD] {
             let brightness = brightnessController.currentBrightness
@@ -213,7 +216,7 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
                 Task { @MainActor in VerticalHUDWindowManager.shared.triggerBump(direction: -1) }
             }
         }
-        
+
         let baseStep = brightnessStep(for: step)
         let delta = direction == .up ? baseStep : -baseStep
         if modifiers.contains(.command) && keyboardBacklightEnabled {
@@ -287,6 +290,10 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
 
     @MainActor
     private func sendBrightnessNotification(value: Float) {
+        // Auto-brightness and DDC-driven changes land here without going through the
+        // key handler above, so suppress here too — parity with the volume notification path.
+        SystemOSDManager.suppressNativeOSDNow()
+
         // Send to Circular HUD if enabled
         if Defaults[.enableCircularHUD] && Defaults[.enableBrightnessHUD] {
             Task { @MainActor in

@@ -238,6 +238,12 @@ struct BatteryMenuView: View {
                     .font(.headline)
                     .fontWeight(.semibold)
                 Spacer()
+                if Int(levelBattery) == 69 {
+                    Text("nice.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .transition(.opacity)
+                }
                 Text("\(Int(levelBattery))%")
                     .font(.headline)
                     .fontWeight(.semibold)
@@ -327,11 +333,26 @@ struct KannuBatteryView: View {
                     Text("100%")
                         .font(.callout)
                         .hidden()
-                    
-                    Text("\(Int32(levelBattery))%")
-                        .font(.callout)
-                        .foregroundStyle(notchForeground)
-                        .lineLimit(1)
+
+                    if Int(levelBattery) == 69 {
+                        // Subtle easter egg: a quiet golden shimmer at 69%.
+                        Text("\(Int32(levelBattery))%")
+                            .font(.callout)
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color(red: 1.0, green: 0.85, blue: 0.4), Color(red: 1.0, green: 0.7, blue: 0.55)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .lineLimit(1)
+                            .help("nice.")
+                    } else {
+                        Text("\(Int32(levelBattery))%")
+                            .font(.callout)
+                            .foregroundStyle(notchForeground)
+                            .lineLimit(1)
+                    }
                 }
                 .fixedSize(horizontal: true, vertical: false)
             }

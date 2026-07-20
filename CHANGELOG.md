@@ -4,6 +4,16 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-07-20 - Tab retention, native HUD suppression fix, battery easter egg
+- **Developer label:** Always-on tab retention, brightness HUD suppression fix, 69% battery easter egg
+- **Agent label:** Fixed tab-restore race with Defaults publishers, wired up missing brightness OSD suppression, added subtle battery percentage easter egg
+- **Changes:**
+  - Notch tab selection now always persists across app restarts (removed the "Remember last tab" toggle; behavior is unconditional)
+  - Fixed a race in `KannuViewCoordinator.init()` where initial-fire `Defaults.publisher` subscriptions (stats/timer/minimalistic UI gating) could reset `currentView` to `.home` after the tab was restored, depending on which tab was last selected — restore is now deferred to run after those resets
+  - Auto-focusing the Agent tab on notch hover-open now only happens when the current tab is Home, so it no longer overrides a deliberately selected tab
+  - Fixed missing native OSD suppression for brightness: `SystemOSDManager.suppressNativeOSDNow()` was called for volume/mute but never for brightness key presses or `sendBrightnessNotification`, so the native brightness HUD could win the race against Kannu's notch HUD
+  - Added a subtle easter egg: battery percentage at exactly 69% gets a quiet golden shimmer with a "nice." tooltip, and the battery detail popup shows "nice." next to the percentage
+
 ### 2026-07-18 - Glass UI, tab hover, approval detection
 - **Developer label:** Frosted glass UI, hover-based tabs, AI chat title detection, provider auto-detection
 - **Agent label:** Enhanced visual polish with glass effects, responsive tab switching, smart session naming
