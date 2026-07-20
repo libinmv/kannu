@@ -17,6 +17,20 @@ final class LLMUsageManager: ObservableObject {
         self.injectedProviders = providers
     }
 
+    // Runs once on first launch to enable only the providers that are actually installed.
+    // Uses UserDefaults.standard directly (thread-safe, no @MainActor needed) so it can
+    // be called synchronously from KannuApp.init() before any UI reads these keys.
+    nonisolated static func configureProviderDefaultsIfNeeded() {
+        let ud = UserDefaults.standard
+        guard !ud.bool(forKey: "llmProviderDefaultsConfigured") else { return }
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser
+        ud.set(fm.fileExists(atPath: home.appendingPathComponent(".claude/projects").path), forKey: "enableClaudeProvider")
+        ud.set(fm.fileExists(atPath: home.appendingPathComponent("Library/Application Support/Cursor/User/globalStorage/state.vscdb").path), forKey: "enableCursorProvider")
+        ud.set(fm.fileExists(atPath: home.appendingPathComponent(".codex/sessions").path), forKey: "enableCodexProvider")
+        ud.set(true, forKey: "llmProviderDefaultsConfigured")
+    }
+
     private static let allProviders: [UsageProvider] = [ClaudeUsageProvider(), CodexUsageProvider(), CursorUsageProvider()]
 
     private var enabledProviders: [UsageProvider] {

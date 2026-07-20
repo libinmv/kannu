@@ -285,6 +285,34 @@ enum AgentSessionLogParser {
         return parts.suffix(5).joined(separator: "-")
     }
 
+    /// Passive approval detection for Claude Code: the session is likely waiting on a
+    /// permission prompt when the newest transcript record is an assistant `tool_use`
+    /// with no tool_result recorded after it. (Indistinguishable from a long-running
+    /// tool by transcript alone, so callers should also require a short write-idle gap.)
+    static func claudeAppearsAwaitingApproval(at path: URL) -> Bool {
+        let text = readTrailingLines(at: path) ?? readLeadingLines(at: path) ?? ""
+        var lastKind: String? = nil // "toolUse" | "toolResult" | "other"
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            guard let data = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let type = json["type"] as? String else { continue }
+            switch type {
+            case "assistant":
+                guard let message = json["message"] as? [String: Any],
+                      let content = message["content"] as? [[String: Any]] else { continue }
+                let hasToolUse = content.contains { ($0["type"] as? String) == "tool_use" }
+                lastKind = hasToolUse ? "toolUse" : "other"
+            case "user":
+                let content = (json["message"] as? [String: Any])?["content"] as? [[String: Any]] ?? []
+                let hasToolResult = content.contains { ($0["type"] as? String) == "tool_result" }
+                lastKind = hasToolResult ? "toolResult" : "other"
+            default:
+                continue // ai-title, summaries, etc. don't change the pending-tool signal
+            }
+        }
+        return lastKind == "toolUse"
+    }
+
     private static func readLeadingLines(at url: URL) -> String? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }

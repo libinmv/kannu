@@ -4,6 +4,16 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-07-18 - Glass UI, tab hover, approval detection
+- **Developer label:** Frosted glass UI, hover-based tabs, AI chat title detection, provider auto-detection
+- **Agent label:** Enhanced visual polish with glass effects, responsive tab switching, smart session naming
+- **Changes:**
+  - NotchAgentStatusView: ultraThinMaterial frosted glass backgrounds for agent cards with tint overlay and hairline borders; red-light blink animation (5s smooth sine pulse) with neon color palette
+  - TabSelectionView/TabButton: hover-based tab switching (80ms debounce to prevent accidental flips); tab selection indicator is now a circle matching icon size with ultraThinMaterial finish
+  - AgentSessionLogParser: displayChatName() now searches trailing JSONL bytes for ai-title records to show AI-generated chat labels instead of raw prompts
+  - LLMUsageManager: auto-detect installed providers on first launch (Claude `~/.claude/projects`, Cursor `state.vscdb`, Codex `~/.codex/sessions`) and enable only those present; stores flag to run once
+  - Empty state in Agent tab shows fun message + provider install strip (visible only when no sessions exist)
+
 ### 2026-07-18 - Indicator timing fixes and auto-install hooks
 - **Developer label:** Indicator timing granularity and hook auto-install
 - **Agent label:** Second-level control over indicator persistence, automatic hook setup

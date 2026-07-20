@@ -27,13 +27,23 @@ struct TabButton: View {
     let icon: String
     let selected: Bool
     let onClick: () -> Void
-    
+    @State private var isHovered = false
+
     var body: some View {
         Button(action: onClick) {
             Image(systemName: icon)
-                .contentShape(Capsule())
+                .imageScale(.small)
+                .frame(width: 26, height: 26)
+                .background {
+                    if isHovered && !selected {
+                        Circle()
+                            .fill(Color.white.opacity(0.1))
+                    }
+                }
+                .contentShape(Circle())
         }
         .buttonStyle(PlainButtonStyle())
+        .onHover { isHovered = $0 }
     }
 }
 
