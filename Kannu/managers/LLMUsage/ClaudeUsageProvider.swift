@@ -29,6 +29,10 @@ struct ClaudeUsageProvider: UsageProvider {
         snapshot.sessionLimit = quota.session
         snapshot.weekLimit = quota.week
         snapshot.quotaError = snapshot.logsUnavailable ? quota.errorMessage : nil
+        snapshot.accountTier = quota.accountTier
+        // Subscription usage isn't billed per-token; show token counts but never
+        // pricing-table cost estimates (parity with how Cursor shows billed spend only).
+        snapshot.billedCostOnly = true
 
         if snapshot.logsUnavailable && !quota.hasLimits {
             throw UsageError.notConfigured("Sign in to Claude Code locally (~/.claude/.credentials.json) to show quota.")

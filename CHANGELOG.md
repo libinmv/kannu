@@ -4,6 +4,15 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-07-20 - Usage limits, tier badges, and reset time formatting
+- **Developer label:** Account tier display, improved reset-time UI, hidden pricing estimates for subscription models
+- **Agent label:** Show plan tier (Pro/Max) per provider, format resets as days/hours or hours/minutes, hide token-pricing for Claude/Codex
+- **Changes:**
+  - Added `accountTier` field to usage snapshots; wired from Claude credential (subscriptionType), Cursor API (membershipType), Codex JWT (chatgpt_plan_type) — renders as capsule badge next to provider name
+  - Updated `resetsIn()` formatting: ≥69h → "Xd Yh", 1–69h → "Xh Ym", <1h → "Xm Ys" — consistent across all provider gauges (Session/Week limits)
+  - Claude and Codex now hide pricing-table cost estimates and show only actual billed spend (via `billedCostOnly` flag), matching Cursor's behavior; token counts always displayed
+  - Idle sessions (SessionStart → "idle" state) now show as dim cards instead of green-lit "running" cards
+
 ### 2026-07-20 - Fix chat name regressions for all agents
 - **Developer label:** Chat name self-comparison bug fix for Cursor/Claude/Codex
 - **Agent label:** Restore AI-generated and transcript-derived session titles

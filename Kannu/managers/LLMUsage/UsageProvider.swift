@@ -52,12 +52,17 @@ struct UsageSnapshot: Equatable {
     var lastUpdated: Date = .distantPast
     var quotaError: String? = nil
     var logsUnavailable: Bool = false
+    /// Show only provider-billed spend; never display pricing-table estimates.
+    var billedCostOnly: Bool = false
+    /// Account plan/tier label (e.g. "Pro", "Max") shown next to the provider name.
+    var accountTier: String? = nil
 }
 
 struct QuotaFetchResult: Equatable {
     var session: UsageLimit?
     var week: UsageLimit?
     var onDemandSpendUSD: Double? = nil
+    var accountTier: String? = nil
     var errorMessage: String?
 
     var hasLimits: Bool { session != nil || week != nil }

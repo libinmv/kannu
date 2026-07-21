@@ -219,6 +219,9 @@ enum AgentTrafficLightMapper {
             return (.inactive, false)
         case "thinking" where ageMs <= activeStaleMs:
             return (.thinking, true)
+        case "idle":
+            // Session opened but nothing running yet — show a dim card, no lit traffic light.
+            return (.inactive, true)
         case "stopped", "stop", "completed", "aborted", "error":
             if ageMs <= collapseMs + inactiveMs { return (.stopped, true) }
             return (.inactive, false)

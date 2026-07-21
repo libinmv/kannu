@@ -53,6 +53,15 @@ struct NotchLLMUsageView: View {
             HStack(spacing: 8) {
                 AgentProviderIconView(source: .init(providerID: provider), size: 24)
                 Text(provider.displayName).font(.headline)
+                if case .success(let snap) = manager.results[provider] ?? .loading,
+                   let tier = snap.accountTier {
+                    Text(tier)
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.white.opacity(0.12), in: Capsule())
+                        .foregroundStyle(.secondary)
+                }
                 Spacer(minLength: 0)
             }
             switch manager.results[provider] ?? .loading {
@@ -73,14 +82,15 @@ struct NotchLLMUsageView: View {
     private func success(_ snap: UsageSnapshot) -> some View {
         let hasPartialEstimate = snap.today.hasUnpricedModel || snap.week.hasUnpricedModel || snap.session.hasUnpricedModel
         let showsQuota = snap.sessionLimit != nil || snap.weekLimit != nil
+        let showEstimatedCost = !snap.billedCostOnly
         VStack(alignment: .leading, spacing: 6) {
             if !showsQuota {
                 if snap.logsUnavailable {
                     Text("No local usage logs yet").font(.caption2).foregroundStyle(.secondary)
                 } else {
-                    window("Today", snap.today, prominent: true)
-                    window("Week", snap.week)
-                    window("Session", snap.session)
+                    window("Today", snap.today, prominent: true, showCost: showEstimatedCost)
+                    window("Week", snap.week, showCost: showEstimatedCost)
+                    window("Session", snap.session, showCost: showEstimatedCost)
                 }
                 if let quotaError = snap.quotaError {
                     Text(quotaError).font(.caption2).foregroundStyle(.orange).lineLimit(4)
@@ -100,14 +110,14 @@ struct NotchLLMUsageView: View {
                 }
                 if let onDemand = snap.onDemandSpendUSD {
                     onDemandSpendRow(onDemand)
-                } else if !snap.logsUnavailable {
+                } else if !snap.logsUnavailable && showEstimatedCost {
                     onDemandSpendRow(snap.week.costUSD, partial: snap.week.hasUnpricedModel)
                 }
                 if let quotaError = snap.quotaError {
                     Text(quotaError).font(.caption2).foregroundStyle(.secondary).lineLimit(4)
                 }
             }
-            if hasPartialEstimate && !showsQuota {
+            if hasPartialEstimate && !showsQuota && showEstimatedCost {
                 Text("Some models are unpriced; totals are partial estimates.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -168,8 +178,14 @@ struct NotchLLMUsageView: View {
         let seconds = Int(date.timeIntervalSinceNow)
         guard seconds > 0 else { return nil }
         let hours = seconds / 3600
-        let minutes = (seconds % 3600) / 60
-        return hours > 0 ? "resets in \(hours)h \(minutes)m" : "resets in \(minutes)m"
+        if hours >= 69 {
+            let days = hours / 24
+            return "resets in \(days)d \(hours % 24)h"
+        }
+        if seconds >= 3600 {
+            return "resets in \(hours)h \((seconds % 3600) / 60)m"
+        }
+        return "resets in \(seconds / 60)m \(seconds % 60)s"
     }
 
     private func window(
