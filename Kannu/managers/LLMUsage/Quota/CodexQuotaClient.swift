@@ -57,7 +57,7 @@ struct CodexQuotaClient {
                 let sessionLimit = decoded.rateLimit?.primaryWindow.map { limit(from: $0, now: now) }
                 let weekLimit = decoded.rateLimit?.secondaryWindow.map { limit(from: $0, now: now) }
                 if sessionLimit != nil || weekLimit != nil {
-                    return QuotaFetchResult(session: sessionLimit, week: weekLimit)
+                    return QuotaFetchResult(session: sessionLimit, week: weekLimit, accountTier: Self.planType(fromJWT: creds.accessToken))
                 }
             }
             let sessionLimit = headerFallback(http, key: "x-codex-primary-used-percent")
@@ -66,7 +66,7 @@ struct CodexQuotaClient {
                 Self.log.error("wham/usage 200 but no usage found — response shape may have changed (\(data.count) bytes)")
                 return QuotaFetchResult(errorMessage: "Codex quota response missing usage data")
             }
-            return QuotaFetchResult(session: sessionLimit, week: weekLimit)
+            return QuotaFetchResult(session: sessionLimit, week: weekLimit, accountTier: Self.planType(fromJWT: creds.accessToken))
         } catch {
             Self.log.error("wham/usage request errored: \(error.localizedDescription, privacy: .public)")
             return QuotaFetchResult(errorMessage: error.localizedDescription)
@@ -81,6 +81,19 @@ struct CodexQuotaClient {
     private func headerFallback(_ http: HTTPURLResponse, key: String) -> UsageLimit? {
         guard let raw = http.value(forHTTPHeaderField: key), let percent = Double(raw) else { return nil }
         return UsageLimit(used: percent, limit: 100)
+    }
+
+    /// ChatGPT plan tier from the access-token JWT claim — no extra network call.
+    private static func planType(fromJWT token: String) -> String? {
+        let parts = token.split(separator: ".")
+        guard parts.count == 3 else { return nil }
+        var payload = String(parts[1]).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        while payload.count % 4 != 0 { payload += "=" }
+        guard let data = Data(base64Encoded: payload),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let auth = json["https://api.openai.com/auth"] as? [String: Any],
+              let plan = auth["chatgpt_plan_type"] as? String, !plan.isEmpty else { return nil }
+        return plan.capitalized
     }
 
     // auth.json ($CODEX_HOME, ~/.codex, ~/.config/codex), then Keychain "Codex Auth" holding the same JSON payload.

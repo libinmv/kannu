@@ -23,6 +23,7 @@ struct ClaudeQuotaClient {
             let accessToken: String
             let refreshToken: String
             let expiresAt: Int64
+            var subscriptionType: String? = nil
         }
         let claudeAiOauth: OAuth
     }
@@ -89,7 +90,7 @@ struct ClaudeQuotaClient {
             if sessionLimit == nil && weekLimit == nil {
                 return QuotaFetchResult(errorMessage: "Claude quota response missing usage windows")
             }
-            return QuotaFetchResult(session: sessionLimit, week: weekLimit)
+            return QuotaFetchResult(session: sessionLimit, week: weekLimit, accountTier: creds.subscriptionType?.capitalized)
         } catch {
             Self.log.error("oauth/usage failed: \(error.localizedDescription, privacy: .public)")
             return QuotaFetchResult(errorMessage: error.localizedDescription)
@@ -141,7 +142,7 @@ struct ClaudeQuotaClient {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         guard let refreshed = try? decoder.decode(RefreshResponse.self, from: data) else { return creds.accessToken }
         let expiresAt = nowMs + Int64(refreshed.expiresIn) * 1000
-        let updated = CredentialFile.OAuth(accessToken: refreshed.accessToken, refreshToken: refreshed.refreshToken, expiresAt: expiresAt)
+        let updated = CredentialFile.OAuth(accessToken: refreshed.accessToken, refreshToken: refreshed.refreshToken, expiresAt: expiresAt, subscriptionType: creds.subscriptionType)
         await ClaudeCredentialStore.shared.set(updated)
         return refreshed.accessToken
     }

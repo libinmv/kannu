@@ -4,6 +4,53 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-07-20 - Usage limits, tier badges, and reset time formatting
+- **Developer label:** Account tier display, improved reset-time UI, hidden pricing estimates for subscription models
+- **Agent label:** Show plan tier (Pro/Max) per provider, format resets as days/hours or hours/minutes, hide token-pricing for Claude/Codex
+- **Changes:**
+  - Added `accountTier` field to usage snapshots; wired from Claude credential (subscriptionType), Cursor API (membershipType), Codex JWT (chatgpt_plan_type) — renders as capsule badge next to provider name
+  - Updated `resetsIn()` formatting: ≥69h → "Xd Yh", 1–69h → "Xh Ym", <1h → "Xm Ys" — consistent across all provider gauges (Session/Week limits)
+  - Claude and Codex now hide pricing-table cost estimates and show only actual billed spend (via `billedCostOnly` flag), matching Cursor's behavior; token counts always displayed
+  - Idle sessions (SessionStart → "idle" state) now show as dim cards instead of green-lit "running" cards
+
+### 2026-07-20 - Fix chat name regressions for all agents
+- **Developer label:** Chat name self-comparison bug fix for Cursor/Claude/Codex
+- **Agent label:** Restore AI-generated and transcript-derived session titles
+- **Changes:**
+  - Fixed `resolveHookProviderChatName` (Claude/Codex): log-derived titles (ai-title) were compared against themselves in reliability checks and always rejected; now trusted directly with only tool-name heuristic
+  - Fixed `resolveCursorChatName` (Cursor): transcript titles were compared against themselves and always rejected; now handled separately and trusted directly
+  - Both fixes were dormant bugs exposed when hooks were auto-installed, routing sessions through the hook-driven merge pipeline for the first time
+
+### 2026-07-20 - Tab retention, native HUD suppression fix, battery easter egg
+- **Developer label:** Always-on tab retention, brightness HUD suppression fix, 69% battery easter egg
+- **Agent label:** Fixed tab-restore race with Defaults publishers, wired up missing brightness OSD suppression, added subtle battery percentage easter egg
+- **Changes:**
+  - Notch tab selection now always persists across app restarts (removed the "Remember last tab" toggle; behavior is unconditional)
+  - Fixed a race in `KannuViewCoordinator.init()` where initial-fire `Defaults.publisher` subscriptions (stats/timer/minimalistic UI gating) could reset `currentView` to `.home` after the tab was restored, depending on which tab was last selected — restore is now deferred to run after those resets
+  - Auto-focusing the Agent tab on notch hover-open now only happens when the current tab is Home, so it no longer overrides a deliberately selected tab
+  - Fixed missing native OSD suppression for brightness: `SystemOSDManager.suppressNativeOSDNow()` was called for volume/mute but never for brightness key presses or `sendBrightnessNotification`, so the native brightness HUD could win the race against Kannu's notch HUD
+  - Added a subtle easter egg: battery percentage at exactly 69% gets a quiet golden shimmer with a "nice." tooltip, and the battery detail popup shows "nice." next to the percentage
+
+### 2026-07-18 - Glass UI, tab hover, approval detection
+- **Developer label:** Frosted glass UI, hover-based tabs, AI chat title detection, provider auto-detection
+- **Agent label:** Enhanced visual polish with glass effects, responsive tab switching, smart session naming
+- **Changes:**
+  - NotchAgentStatusView: ultraThinMaterial frosted glass backgrounds for agent cards with tint overlay and hairline borders; red-light blink animation (5s smooth sine pulse) with neon color palette
+  - TabSelectionView/TabButton: hover-based tab switching (80ms debounce to prevent accidental flips); tab selection indicator is now a circle matching icon size with ultraThinMaterial finish
+  - AgentSessionLogParser: displayChatName() now searches trailing JSONL bytes for ai-title records to show AI-generated chat labels instead of raw prompts
+  - LLMUsageManager: auto-detect installed providers on first launch (Claude `~/.claude/projects`, Cursor `state.vscdb`, Codex `~/.codex/sessions`) and enable only those present; stores flag to run once
+  - Empty state in Agent tab shows fun message + provider install strip (visible only when no sessions exist)
+
+### 2026-07-18 - Indicator timing fixes and auto-install hooks
+- **Developer label:** Indicator timing granularity and hook auto-install
+- **Agent label:** Second-level control over indicator persistence, automatic hook setup
+- **Changes:**
+  - Changed indicator timing from minutes to seconds: agentStoppedCollapseMinutes → agentStoppedCollapseSeconds (default 5s), agentInactiveDisplayMinutes → agentInactiveDisplaySeconds (default 5s)
+  - Fixed unit multipliers in state mapper to use direct seconds instead of `×60` scaling
+  - Updated Settings time pickers with second-granular options: Hide indicator (3s–5min), Show dim light (Off/5s–2min)
+  - Auto-install hooks on first launch for detected providers (Claude, Cursor, Codex); gated by agentHooksAutoInstallAttempted flag
+  - Red light now hides after 5 seconds instead of persisting for minutes; state transitions are instant with hook events active
+
 ### 2026-07-17 - v1.0.0 release
 - **Developer label:** v1.0.0 release
 - **Agent label:** Initial public release version bump

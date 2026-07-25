@@ -2245,7 +2245,8 @@ struct ContentView: View {
                         }
                     } else if self.enableAgentStatusFeature
                         && self.agentStatusMonitor.shouldShowTrafficLight
-                        && !self.isClosedMusicPairingEligible {
+                        && !self.isClosedMusicPairingEligible
+                        && self.coordinator.currentView == .home {
                         withAnimation(.smooth) {
                             self.coordinator.currentView = .agentStatus
                         }

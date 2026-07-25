@@ -1228,7 +1228,6 @@ struct GeneralSettings: View {
                 Text("Open notch on hover")
             }
             .settingsHighlight(id: highlightID("Open notch on hover"))
-            Toggle("Remember last tab", isOn: $coordinator.openLastTabByDefault)
             if openNotchOnHover {
                 Slider(value: $minimumHoverDuration, in: 0...1, step: 0.1) {
                     HStack {
@@ -7396,8 +7395,8 @@ struct AgentStatusSettings: View {
     @ObservedObject private var notificationBridge = AgentStatusNotificationBridge.shared
     @Default(.enableAgentStatusFeature) var enableAgentStatusFeature
     @Default(.agentStatusStaleMinutes) var agentStatusStaleMinutes
-    @Default(.agentStoppedCollapseMinutes) var agentStoppedCollapseMinutes
-    @Default(.agentInactiveDisplayMinutes) var agentInactiveDisplayMinutes
+    @Default(.agentStoppedCollapseSeconds) var agentStoppedCollapseSeconds
+    @Default(.agentInactiveDisplaySeconds) var agentInactiveDisplaySeconds
     @Default(.showAgentStoppedIndicator) var showAgentStoppedIndicator
     @Default(.enableAgentStatusMobileNotifications) var enableMobileNotifications
     @Default(.agentStatusNotificationProvider) var notificationProvider
@@ -7460,12 +7459,15 @@ struct AgentStatusSettings: View {
                     HStack {
                         Text("Hide indicator after agent stops for")
                         Spacer()
-                        Picker("", selection: $agentStoppedCollapseMinutes) {
-                            Text("1 minute").tag(1)
-                            Text("2 minutes").tag(2)
-                            Text("5 minutes").tag(5)
-                            Text("10 minutes").tag(10)
-                            Text("15 minutes").tag(15)
+                        Picker("", selection: $agentStoppedCollapseSeconds) {
+                            Text("3 seconds").tag(3)
+                            Text("5 seconds").tag(5)
+                            Text("10 seconds").tag(10)
+                            Text("15 seconds").tag(15)
+                            Text("30 seconds").tag(30)
+                            Text("1 minute").tag(60)
+                            Text("2 minutes").tag(120)
+                            Text("5 minutes").tag(300)
                         }
                         .pickerStyle(.menu)
                         .frame(minWidth: 120)
@@ -7477,11 +7479,14 @@ struct AgentStatusSettings: View {
                     HStack {
                         Text("Show dim traffic light for")
                         Spacer()
-                        Picker("", selection: $agentInactiveDisplayMinutes) {
-                            Text("1 minute").tag(1)
-                            Text("2 minutes").tag(2)
-                            Text("5 minutes").tag(5)
-                            Text("10 minutes").tag(10)
+                        Picker("", selection: $agentInactiveDisplaySeconds) {
+                            Text("Off").tag(0)
+                            Text("5 seconds").tag(5)
+                            Text("10 seconds").tag(10)
+                            Text("15 seconds").tag(15)
+                            Text("30 seconds").tag(30)
+                            Text("1 minute").tag(60)
+                            Text("2 minutes").tag(120)
                         }
                         .pickerStyle(.menu)
                         .frame(minWidth: 120)

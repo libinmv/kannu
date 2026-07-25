@@ -4,8 +4,12 @@ import SwiftUI
 struct NotchAgentStatusView: View {
     @EnvironmentObject private var vm: KannuViewModel
     @ObservedObject private var monitor = CursorAgentStatusMonitor.shared
+    @ObservedObject private var skinManager = NotchSkinManager.shared
     @State private var isSuppressingScrollGesture = false
+    @State private var redBlinkStartTimes: [String: Date] = [:]
     private let scrollSuppressionToken = UUID()
+
+    private var hasSkin: Bool { skinManager.selectedSkinImage != nil }
 
     private var dedupedSessions: [AgentSessionStatus] {
         deduplicateLatestSessions(monitor.sessions)
@@ -150,11 +154,13 @@ struct NotchAgentStatusView: View {
             .padding(.horizontal, 6)
             .background {
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(.ultraThinMaterial)
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.white.opacity(0.06))
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
+                    .fill(hasSkin ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.white.opacity(0.05)))
+                if hasSkin {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.white.opacity(0.1))
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5)
+                }
             }
         }
         .frame(maxWidth: .infinity)
@@ -185,16 +191,18 @@ struct NotchAgentStatusView: View {
                 )
             }
             Spacer(minLength: 0)
-            stateBadge(session.displayState, large: true)
+            stateBadge(session.displayState, sessionId: session.id, large: true)
         }
         .padding(12)
         .background {
             RoundedRectangle(cornerRadius: 12)
-                .fill(.ultraThinMaterial)
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.white.opacity(0.08))
-            RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.5)
+                .fill(hasSkin ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.white.opacity(0.06)))
+            if hasSkin {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.white.opacity(0.12))
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Color.white.opacity(0.2), lineWidth: 0.5)
+            }
         }
     }
 
@@ -222,16 +230,18 @@ struct NotchAgentStatusView: View {
                 )
             }
             Spacer(minLength: 0)
-            stateBadge(session.displayState, large: false)
+            stateBadge(session.displayState, sessionId: session.id, large: false)
         }
         .padding(10)
         .background {
             RoundedRectangle(cornerRadius: 10)
-                .fill(.ultraThinMaterial)
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color.white.opacity(0.05))
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
+                .fill(hasSkin ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.white.opacity(0.04)))
+            if hasSkin {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.white.opacity(0.08))
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.5)
+            }
         }
     }
 
@@ -261,30 +271,53 @@ struct NotchAgentStatusView: View {
         return String(format: "%02d:%02d", minutes, seconds)
     }
 
+    // Saturated neon palette — brighter than the system colors so the dots read as "lit" rather than flat fills.
+    private static let neonRed = Color(red: 1.0, green: 0.06, blue: 0.16)
+    private static let neonYellow = Color(red: 1.0, green: 0.86, blue: 0.0)
+    private static let neonGreen = Color(red: 0.12, green: 1.0, blue: 0.35)
+
     @ViewBuilder
-    private func stateBadge(_ state: AgentTrafficLightState, large: Bool) -> some View {
+    private func stateBadge(_ state: AgentTrafficLightState, sessionId: String, large: Bool) -> some View {
         let width: CGFloat = large ? 28 : 20
         let height: CGFloat = large ? 36 : 28
+        let dotSize: CGFloat = large ? 8 : 6
+        let blinkStart = redBlinkStartTimes[sessionId]
+        let shouldBlink = state.showsRedTrafficLight && blinkStart.map { Date().timeIntervalSince($0) < 5 } ?? false
+
         VStack(spacing: 3) {
-            Circle()
-                .fill(Color.red.opacity(state.showsRedTrafficLight ? 1 : 0.25))
-                .frame(width: large ? 8 : 6, height: large ? 8 : 6)
-            Circle()
-                .fill(Color.yellow.opacity(state.showsYellowTrafficLight ? 1 : 0.25))
-                .frame(width: large ? 8 : 6, height: large ? 8 : 6)
-            Circle()
-                // Green is already exclusive of yellow/red via AgentTrafficLightState.
-                .fill(Color.green.opacity(state.showsGreenTrafficLight ? 1 : 0.25))
-                .frame(width: large ? 8 : 6, height: large ? 8 : 6)
+            if shouldBlink {
+                TimelineView(.periodic(from: .now, by: 0.1)) { context in
+                    let elapsed = context.date.timeIntervalSince(blinkStart ?? .now)
+                    let pulse = (sin(elapsed * .pi * 4) + 1) / 2 // smooth 0...1 pulse, ~2 blinks/sec
+                    neonDot(Self.neonRed, size: dotSize, opacity: 0.35 + pulse * 0.65, glowRadius: 2 + pulse * (large ? 7 : 5))
+                }
+            } else {
+                neonDot(Self.neonRed, size: dotSize, opacity: state.showsRedTrafficLight ? 1 : 0.2, glowRadius: state.showsRedTrafficLight ? (large ? 5 : 3.5) : 0)
+            }
+            neonDot(Self.neonYellow, size: dotSize, opacity: state.showsYellowTrafficLight ? 1 : 0.2, glowRadius: state.showsYellowTrafficLight ? (large ? 5 : 3.5) : 0)
+            neonDot(Self.neonGreen, size: dotSize, opacity: state.showsGreenTrafficLight ? 1 : 0.2, glowRadius: state.showsGreenTrafficLight ? (large ? 5 : 3.5) : 0)
         }
         .frame(width: width, height: height)
+        .onChange(of: state.showsRedTrafficLight) { _, isRed in
+            if isRed && (blinkStart == nil || Date().timeIntervalSince(blinkStart!) > 5) {
+                redBlinkStartTimes[sessionId] = Date()
+            }
+        }
+    }
+
+    private func neonDot(_ color: Color, size: CGFloat, opacity: Double, glowRadius: CGFloat) -> some View {
+        Circle()
+            .fill(color.opacity(opacity))
+            .frame(width: size, height: size)
+            .shadow(color: color.opacity(opacity * 0.9), radius: glowRadius)
+            .shadow(color: color.opacity(opacity * 0.5), radius: glowRadius * 2)
     }
 
     private func stateColor(_ state: AgentTrafficLightState) -> Color {
         switch state {
-        case .executing, .thinking: return .green
-        case .awaitingInput: return .yellow
-        case .stopped: return .red
+        case .executing, .thinking: return Self.neonGreen
+        case .awaitingInput: return Self.neonYellow
+        case .stopped: return Self.neonRed
         case .inactive: return .secondary
         }
     }

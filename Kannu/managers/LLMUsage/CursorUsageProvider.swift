@@ -24,6 +24,7 @@ struct CursorUsageProvider: UsageProvider {
             eventsSnapshot.weekLimit = eventsSnapshot.weekLimit ?? quota.week
             eventsSnapshot.onDemandSpendUSD = quota.onDemandSpendUSD
             eventsSnapshot.quotaError = quota.errorMessage
+            eventsSnapshot.accountTier = quota.accountTier
             return eventsSnapshot
         }
 
@@ -35,6 +36,7 @@ struct CursorUsageProvider: UsageProvider {
             snapshot.weekLimit = quota.week
             snapshot.onDemandSpendUSD = quota.onDemandSpendUSD
             snapshot.quotaError = quota.errorMessage
+            snapshot.accountTier = quota.accountTier
             return snapshot
         }
 
@@ -44,6 +46,7 @@ struct CursorUsageProvider: UsageProvider {
             snapshot.weekLimit = quota.week
             snapshot.onDemandSpendUSD = quota.onDemandSpendUSD
             snapshot.quotaError = quota.errorMessage
+            snapshot.accountTier = quota.accountTier
             snapshot.logsUnavailable = true
             snapshot.lastUpdated = now
             return snapshot

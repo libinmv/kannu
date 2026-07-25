@@ -119,6 +119,7 @@ class KannuViewCoordinator: ObservableObject {
             let newIdx = Self.tabOrder.firstIndex(of: currentView) ?? 0
             tabSwitchForward = newIdx >= oldIdx
             handleStatsTabTransition(from: oldValue, to: currentView)
+            UserDefaults.standard.set(currentView.rawValue, forKey: "lastNotchTab")
         }
     }
     
@@ -138,18 +139,9 @@ class KannuViewCoordinator: ObservableObject {
     @AppStorage("alwaysShowTabs") var alwaysShowTabs: Bool = true {
         didSet {
             if !alwaysShowTabs {
-                openLastTabByDefault = false
                 if TrayDrop.shared.isEmpty || !Defaults[.openShelfByDefault] {
                     currentView = .home
                 }
-            }
-        }
-    }
-    
-    @AppStorage("openLastTabByDefault") var openLastTabByDefault: Bool = false {
-        didSet {
-            if openLastTabByDefault {
-                alwaysShowTabs = true
             }
         }
     }
@@ -261,6 +253,17 @@ class KannuViewCoordinator: ObservableObject {
         // Enforce minimum width on launch for existing configurations
         enforceMinimumNotchWidth()
         handleStatsTabAvailability()
+
+        // Restore the last open tab across app restarts. Deferred to the next runloop tick so
+        // it applies after the initial-fire Defaults publishers above (which can force currentView
+        // back to .home based on feature flags) have already run — otherwise they race and
+        // intermittently clobber the restore depending on which tab was last selected.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !Defaults[.enableMinimalisticUI],
+                  let raw = UserDefaults.standard.string(forKey: "lastNotchTab"),
+                  let restored = NotchViews(rawValue: raw) else { return }
+            self.currentView = restored
+        }
     }
 
     var isHoverOpenSuppressed: Bool {

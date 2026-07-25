@@ -17,6 +17,7 @@ struct CursorQuotaClient {
         if let summary = await fetchUsageSummary() {
             result.week = summary.week
             result.onDemandSpendUSD = summary.onDemandSpendUSD
+            result.accountTier = summary.accountTier
         }
 
         if result.week == nil, let connect = await fetchConnectLimits() {
@@ -33,6 +34,7 @@ struct CursorQuotaClient {
     private struct UsageSummaryData: Equatable {
         var week: UsageLimit?
         var onDemandSpendUSD: Double?
+        var accountTier: String?
     }
 
     private func fetchConnectLimits() async -> QuotaFetchResult? {
@@ -99,7 +101,8 @@ struct CursorQuotaClient {
                 return nil
             }
 
-            return UsageSummaryData(week: week, onDemandSpendUSD: onDemandSpendUSD)
+            let tier = (root["membershipType"] as? String) ?? (root["subscriptionStatus"] as? String)
+            return UsageSummaryData(week: week, onDemandSpendUSD: onDemandSpendUSD, accountTier: tier?.capitalized)
         } catch {
             Self.log.error("usage-summary failed: \(error.localizedDescription, privacy: .public)")
             return nil

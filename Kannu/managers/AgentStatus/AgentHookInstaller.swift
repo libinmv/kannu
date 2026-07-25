@@ -158,7 +158,9 @@ final class AgentHookInstaller: ObservableObject {
 
     /// VS Code Copilot / Codex hook events (PascalCase, Claude-compatible).
     private static let claudeStyleEvents: [(event: String, state: String)] = [
-        ("SessionStart", "thinking"),
+        // idle, not thinking: opening a session must not paint the green "running" light
+        // (thinking stays visible for activeStaleMs, minutes of false "running").
+        ("SessionStart", "idle"),
         ("UserPromptSubmit", "thinking"),
         ("PreToolUse", "executing"),
         ("PostToolUse", "executing"),

@@ -64,6 +64,9 @@ struct TabSelectionView: View {
     @Default(.enableMinimalisticUI) private var enableMinimalisticUI
     @Namespace var animation
     @State private var hoverTask: Task<Void, Never>? = nil
+    @ObservedObject private var skinManager = NotchSkinManager.shared
+
+    private var hasSkin: Bool { skinManager.selectedSkinImage != nil }
 
     private var tabs: [TabModel] {
         var tabsArray: [TabModel] = []
@@ -80,8 +83,10 @@ struct TabSelectionView: View {
             tabsArray.append(TabModel(label: "Timer", icon: "timer", view: .timer))
         }
 
-        // Stats tab only shown when stats feature is enabled
-        if Defaults[.enableStatsFeature] {
+        // Stats tab only shown when stats feature is enabled and at least one graph is active
+        let anyGraphEnabled = Defaults[.showCpuGraph] || Defaults[.showMemoryGraph]
+            || Defaults[.showGpuGraph] || Defaults[.showNetworkGraph] || Defaults[.showDiskGraph]
+        if Defaults[.enableStatsFeature] && anyGraphEnabled {
             tabsArray.append(TabModel(label: "Stats", icon: "chart.xyaxis.line", view: .stats))
         }
 
@@ -144,22 +149,23 @@ struct TabSelectionView: View {
                         }
                     }
                 }
-                .frame(height: 26)
                 .foregroundStyle(isSelected ? activeAccent : .gray)
                 .background {
                     if isSelected {
-                        Capsule()
-                            .fill(.ultraThinMaterial)
-                            .overlay {
-                                Capsule()
-                                    .fill((tab.accentColor ?? Color.white).opacity(0.18))
-                            }
-                            .overlay {
-                                Capsule()
-                                    .strokeBorder((tab.accentColor ?? Color.white).opacity(0.22), lineWidth: 0.5)
-                            }
-                            .shadow(color: (tab.accentColor ?? Color.white).opacity(0.25), radius: 10)
-                            .matchedGeometryEffect(id: "capsule", in: animation)
+                        let accent = tab.accentColor ?? Color.white
+                        if hasSkin {
+                            Circle()
+                                .fill(.ultraThinMaterial)
+                                .overlay { Circle().fill(accent.opacity(0.22)) }
+                                .overlay { Circle().strokeBorder(accent.opacity(0.28), lineWidth: 0.5) }
+                                .shadow(color: accent.opacity(0.3), radius: 8)
+                                .matchedGeometryEffect(id: "capsule", in: animation)
+                        } else {
+                            Circle()
+                                .fill(accent.opacity(0.15))
+                                .overlay { Circle().strokeBorder(accent.opacity(0.18), lineWidth: 0.5) }
+                                .matchedGeometryEffect(id: "capsule", in: animation)
+                        }
                     }
                 }
 
@@ -167,7 +173,6 @@ struct TabSelectionView: View {
             }
         }
         .animation(.smooth(duration: 0.3), value: coordinator.currentView)
-        .clipShape(Capsule())
         .onAppear {
             ensureValidSelection(with: tabs)
         }
