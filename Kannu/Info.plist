@@ -37,7 +37,7 @@
 	<key>SUFeedURL</key>
 	<string>https://raw.githubusercontent.com/libinmv/kannu/main/Updates/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>gmAk/vxvHlGmWczyxtmTHxSK6GCbAVqWHd9bGLB97lA=</string>
+	<string>4Fn3K8kTmS7fOZdRBf35FimKl+cjViH/vS1dfAH61g0=</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
 </dict>
