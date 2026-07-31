@@ -4,6 +4,14 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-07-31 - Fix Sparkle CI appcast signing
+- **Developer label:** Fix Sparkle update export in release workflow
+- **Agent label:** Pass EdDSA key file to generate_appcast on CI
+- **Changes:**
+  - Fixed `scripts/export-sparkle-update.sh` so `generate_appcast` receives `--ed-key-file` (CI has no Sparkle Keychain account, which caused "lack of private EdDSA key")
+  - Kept the private key file until after appcast generation instead of deleting it after `sign_update`
+  - Corrected existing-feed reuse: copy `Updates/appcast.xml` into the archives staging dir (was incorrectly using `--link`)
+
 ### 2026-07-20 - Usage limits, tier badges, and reset time formatting
 - **Developer label:** Account tier display, improved reset-time UI, hidden pricing estimates for subscription models
 - **Agent label:** Show plan tier (Pro/Max) per provider, format resets as days/hours or hours/minutes, hide token-pricing for Claude/Codex
