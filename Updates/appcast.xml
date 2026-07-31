@@ -2,5 +2,13 @@
 <rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
     <channel>
         <title>Kannu</title>
+        <item>
+            <title>1.0.0</title>
+            <pubDate>Fri, 31 Jul 2026 06:54:55 +0000</pubDate>
+            <sparkle:version>1</sparkle:version>
+            <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/libinmv/kannu/releases/download/v1.0.0/Kannu.1.0.0.dmg" length="18833102" type="application/octet-stream" sparkle:edSignature="38fWCci53k6KO3s1uGBONR53H/6GZ7Am8qtEm/cv2n/OrJqjvEMs/W21Z3TeIHvTwd/zuo0zsX0rQgpV4eDgAg=="/>
+        </item>
     </channel>
 </rss>
