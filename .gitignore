@@ -162,3 +162,8 @@ mew-notch/
 /References/
 /appdmg.json
 COMPREHENSIVE_DOCUMENTATION.md
+
+local env
+
+
+*.env

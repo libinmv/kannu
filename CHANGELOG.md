@@ -21,6 +21,14 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
   - Hovering the hidden island no longer leaves it out after the pointer leaves; agent activity reveals it for 3s (was 6s), with a 2s heartbeat while a run is in progress so a long silent tool keeps the light lit
   - Fixed `readTrailingLines` returning nil for files smaller than its read window, which silently sent callers to a fallback that read the start of the transcript
 
+### 2026-07-31 - Fix Sparkle CI appcast signing
+- **Developer label:** Fix Sparkle update export in release workflow
+- **Agent label:** Pass EdDSA key file to generate_appcast on CI
+- **Changes:**
+  - Fixed `scripts/export-sparkle-update.sh` so `generate_appcast` receives `--ed-key-file` (CI has no Sparkle Keychain account, which caused "lack of private EdDSA key")
+  - Kept the private key file until after appcast generation instead of deleting it after `sign_update`
+  - Corrected existing-feed reuse: copy `Updates/appcast.xml` into the archives staging dir (was incorrectly using `--link`)
+
 ### 2026-07-20 - Usage limits, tier badges, and reset time formatting
 - **Developer label:** Account tier display, improved reset-time UI, hidden pricing estimates for subscription models
 - **Agent label:** Show plan tier (Pro/Max) per provider, format resets as days/hours or hours/minutes, hide token-pricing for Claude/Codex
