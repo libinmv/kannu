@@ -448,9 +448,11 @@ enum CursorTranscriptParser {
         var index = events.count - 1
         while index >= 0 {
             let kind = events[index].kind
+            // Walking back from the tail, either of these means the proposal was resolved:
+            // the turn completed, or the user side already answered. Skipping past them (as
+            // this loop used to) reported a long-finished tool call as still pending.
             if kind == "turn_ended" || kind == "user" {
-                index -= 1
-                continue
+                return false
             }
             if kind == "assistant" {
                 if events[index].toolUses.isEmpty {

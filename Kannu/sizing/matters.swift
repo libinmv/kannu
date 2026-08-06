@@ -248,8 +248,66 @@ func addShadowPadding(to size: CGSize, isMinimalistic: Bool) -> CGSize {
 /// 2. The screen does NOT have a physical notch (safeAreaInsets.top == 0)
 ///
 /// Screens with a physical notch always use the standard notch shape.
+// MARK: - Display identity
+
+/// Whether `screen` is this Mac's own built-in display.
+///
+/// `CGDisplayIsBuiltin` is exact on every Mac and needs no model list — unlike matching
+/// `hw.model` against a hardcoded set, which would need updating for each new machine.
+func isBuiltInDisplay(_ screen: NSScreen) -> Bool {
+    guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+        return false
+    }
+    return CGDisplayIsBuiltin(CGDirectDisplayID(number.uint32Value)) != 0
+}
+
+/// Whether the built-in display has a notch, or `nil` when it isn't currently connected
+/// (clamshell mode, or an external-only Mac such as a Mini or Studio).
+func builtInDisplayNotchState() -> Bool? {
+    guard let builtIn = NSScreen.screens.first(where: isBuiltInDisplay) else { return nil }
+    return builtIn.safeAreaInsets.top > 0
+}
+
+/// Whether this Mac's own display has a notch, remembering the answer across launches.
+///
+/// Asking `NSScreen.main` instead — as onboarding used to — reads whichever screen holds the
+/// key window, so setting up while docked to an external monitor misclassified a notched
+/// MacBook as non-notched and handed its built-in display the wrong shape.
+@discardableResult
+func macHasNotchedBuiltInDisplay() -> Bool {
+    if let observed = builtInDisplayNotchState() {
+        if Defaults[.machineHasNotchedBuiltInDisplay] != observed {
+            Defaults[.machineHasNotchedBuiltInDisplay] = observed
+        }
+        return observed
+    }
+    // Built-in not visible right now — fall back to what we saw last time. A Mac that has
+    // never shown us one (Mini, Studio, or first run in clamshell) is treated as non-notched
+    // until the lid opens, at which point this corrects itself.
+    return Defaults[.machineHasNotchedBuiltInDisplay] ?? false
+}
+
+// MARK: - Per-display settings
+
+/// The style to use for `screenName`, preferring a per-display override over the global choice.
+func effectiveDisplayStyle(for screenName: String?) -> ExternalDisplayStyle {
+    if let screenName, let override = Defaults[.displayStyleOverrides][screenName] {
+        return override
+    }
+    return Defaults[.externalDisplayStyle]
+}
+
+/// Whether `screenName` should tuck the island away until hovered, preferring a per-display
+/// override over the global choice.
+func effectiveHideUntilHover(for screenName: String?) -> Bool {
+    if let screenName, let override = Defaults[.hideUntilHoverOverrides][screenName] {
+        return override
+    }
+    return Defaults[.hideNonNotchUntilHover]
+}
+
 func shouldUseDynamicIslandMode(for screenName: String?) -> Bool {
-    guard Defaults[.externalDisplayStyle] == .dynamicIsland else {
+    guard effectiveDisplayStyle(for: screenName) == .dynamicIsland else {
         return false
     }
 
@@ -284,6 +342,23 @@ let dynamicIslandTopOffset: CGFloat = 6
 /// Island mode so the drop shadow has room to render without being clipped
 /// by the outer frame constraint.
 let dynamicIslandShadowInset: CGFloat = 14
+
+/// How long the island stays revealed on a non-notch display after an agent update
+/// pulls it back into view. Applies to agent activity only — a plain hover does not
+/// start a hold, so moving the pointer away puts the island straight back.
+let nonNotchRevealHoldSeconds: TimeInterval = 3
+
+/// How long the agent traffic light stays lit after the most recent agent
+/// activity when hide-until-hover is on. Separate from the reveal hold so the
+/// two can diverge later; displays with a physical notch keep the light
+/// visible for as long as sessions exist and ignore this entirely.
+let agentTrafficLightHoverModeWindowSeconds: TimeInterval = 3
+
+/// How often a still-running agent re-announces itself. A long tool emits no state
+/// change and no new transcript records, so without a heartbeat the window above
+/// would expire mid-run and the light would go dark while work was still going on.
+/// Must stay comfortably under that window.
+let agentActivityHeartbeatSeconds: TimeInterval = 2
 
 enum MusicPlayerImageSizes {
     static let cornerRadiusInset: (opened: CGFloat, closed: CGFloat) = (opened: 13.0, closed: 4.0)

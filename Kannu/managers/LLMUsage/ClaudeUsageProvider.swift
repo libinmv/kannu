@@ -10,7 +10,7 @@ struct ClaudeUsageProvider: UsageProvider {
         self.quotaClient = quotaClient
     }
 
-    func fetchSnapshot(now: Date) async throws -> UsageSnapshot {
+    func fetchSnapshot(now: Date, interactive: Bool) async throws -> UsageSnapshot {
         var snapshot = UsageSnapshot()
         snapshot.lastUpdated = now
 
@@ -25,19 +25,20 @@ struct ClaudeUsageProvider: UsageProvider {
             snapshot.logsUnavailable = true
         }
 
-        let quota = await quotaClient.fetchLimits()
+        let quota = await quotaClient.fetchLimits(interactive: interactive)
         snapshot.sessionLimit = quota.session
         snapshot.weekLimit = quota.week
-        snapshot.quotaError = snapshot.logsUnavailable ? quota.errorMessage : nil
+        // Always surface why quota is missing — hiding it whenever local logs happen to
+        // exist left the card showing a bare "quota unavailable" with no way to act on it.
+        snapshot.quotaError = quota.errorMessage
+        snapshot.quotaAction = quota.action
         snapshot.accountTier = quota.accountTier
         // Subscription usage isn't billed per-token; show token counts but never
         // pricing-table cost estimates (parity with how Cursor shows billed spend only).
         snapshot.billedCostOnly = true
 
-        if snapshot.logsUnavailable && !quota.hasLimits {
-            throw UsageError.notConfigured("Sign in to Claude Code locally (~/.claude/.credentials.json) to show quota.")
-        }
-
+        // Even with neither logs nor quota, return the snapshot rather than throwing: the
+        // card can then render the reason plus its fix-it button instead of a dead end.
         return snapshot
     }
 

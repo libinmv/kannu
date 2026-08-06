@@ -260,11 +260,19 @@ func applyProfileSettings(_ profiles: Set<String>) {
     // Weather widget defaults to inline style
     Defaults[.lockScreenWeatherWidgetStyle] = .inline
     
-    // Auto-detect notch: Dynamic Island for non-notch Macs, standard notch otherwise
-    if mainScreenHasNotch() {
+    // Auto-detect notch: Dynamic Island for non-notch Macs, standard notch otherwise.
+    // Without a physical notch there is no hardware cutout to hide behind, so a permanently
+    // visible island reads as clutter — keep it tucked off-screen until hovered or until an
+    // agent does something. Notched Macs keep the global default (visible) since the pill
+    // sits inside the cutout anyway.
+    //
+    // Asks the built-in display specifically. Reading `NSScreen.main` meant onboarding while
+    // docked sampled the external monitor and handed a notched MacBook the wrong shape.
+    if macHasNotchedBuiltInDisplay() {
         Defaults[.externalDisplayStyle] = .notch
     } else {
         Defaults[.externalDisplayStyle] = .dynamicIsland
+        Defaults[.hideNonNotchUntilHover] = true
     }
     
     // Lock screen glass: custom liquid glass v11 on macOS 26+
@@ -277,11 +285,6 @@ func applyProfileSettings(_ profiles: Set<String>) {
     print("✅ Applied profile settings for: \(profiles.joined(separator: ", "))")
 }
 
-/// Returns `true` when the main screen has a physical notch (safe area insets > 0).
-private func mainScreenHasNotch() -> Bool {
-    guard let screen = NSScreen.main else { return false }
-    return screen.safeAreaInsets.top > 0
-}
 
 #Preview {
     ProfileSelectionView(onContinue: { profiles in

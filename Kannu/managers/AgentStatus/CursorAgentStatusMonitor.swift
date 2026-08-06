@@ -13,6 +13,12 @@ final class CursorAgentStatusMonitor: ObservableObject {
     @Published private(set) var shouldShowTrafficLight = false
     @Published private(set) var sessions: [AgentSessionStatus] = []
 
+    /// Bumped whenever an agent actually does something — a traffic light transition or any
+    /// change to the session list. Views use it to drive time-boxed reveals; unlike
+    /// `trafficLightState` it also fires on same-state activity (executing → executing), so a
+    /// window keyed off it stays open for the whole of a long run rather than expiring mid-way.
+    @Published private(set) var activityPulse: Int = 0
+
     private var eventStream: FSEventStreamRef?
     private var statusDirectorySource: DispatchSourceFileSystemObject?
     private var statusDirectoryFD: Int32 = -1
@@ -26,6 +32,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
     private var claudeJSONLURLBySessionId: [String: URL] = [:]
     private var cachedTranscriptAnalysisBySession: [String: TranscriptAnalysis] = [:]
     private var cachedTranscriptAnalysisAt: Date?
+    private var lastActivityPulseAt: Date?
     private var lastPublishedTrafficLightState: AgentTrafficLightState?
     private var lastPublishedShouldShowTrafficLight: Bool?
 
@@ -71,6 +78,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
         trafficLightState = .inactive
         shouldShowTrafficLight = false
         sessions = []
+        activityPulse = 0
+        lastActivityPulseAt = nil
         executionStartByConversationID.removeAll()
         cachedTranscriptAnalysisBySession.removeAll()
         cachedTranscriptAnalysisAt = nil
@@ -206,6 +215,30 @@ final class CursorAgentStatusMonitor: ObservableObject {
             now: now
         )
         if !passiveClaudeSessions.isEmpty {
+            let passiveByConversationID = Dictionary(
+                passiveClaudeSessions.map { ($0.conversationID, $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
+
+            // Hooks only fire at tool boundaries. A single long-running tool — a build, a test
+            // suite, an extended turn with no tool calls — leaves the status file untouched for
+            // minutes, and `resolveHookState` then ages it out of its active state and dims the
+            // session while it is hardest at work. Passive detection can still see the truth
+            // (process alive, tool in flight), and a live process beats a stale timestamp.
+            hookSessions = hookSessions.map { session in
+                guard session.provider.lowercased() == "claude",
+                      session.hasActiveRawState,
+                      !session.displayState.isActiveRun,
+                      let passive = passiveByConversationID[session.conversationID],
+                      passive.displayState.isActiveRun
+                else { return session }
+                return session.withDisplayState(
+                    passive.displayState,
+                    visible: true,
+                    updatedAt: max(session.updatedAt, passive.updatedAt)
+                )
+            }
+
             let hookConversationIDs = Set(hookSessions.map(\.conversationID))
             for session in passiveClaudeSessions where !hookConversationIDs.contains(session.conversationID) {
                 hookSessions.append(session)
@@ -253,6 +286,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
         let sortedSessions = resolvedSessions.sorted { $0.updatedAt > $1.updatedAt }
         if sessions != sortedSessions {
             sessions = sortedSessions
+            activityPulse &+= 1
         }
         hadHookFilesThisCycle = !hookSessions.isEmpty || hadRecentHookFiles(staleMinutes: staleMinutes)
 
@@ -262,6 +296,26 @@ final class CursorAgentStatusMonitor: ObservableObject {
         } else {
             applyDisplay(from: visibleSessions)
         }
+
+        emitActivityHeartbeatIfRunning(now: now)
+    }
+
+    /// Keeps a still-running agent visible to time-boxed consumers.
+    ///
+    /// A long tool changes neither the traffic light state nor the session list, so the
+    /// change-driven pulses above fall silent and any window keyed off them expires mid-run.
+    /// Re-announcing on a slow cadence while the aggregate state is an active run keeps that
+    /// window refreshed, without extending it once work actually stops.
+    private func emitActivityHeartbeatIfRunning(now: Date) {
+        guard trafficLightState.isActiveRun, shouldShowTrafficLight else {
+            lastActivityPulseAt = nil
+            return
+        }
+        if let last = lastActivityPulseAt, now.timeIntervalSince(last) < agentActivityHeartbeatSeconds {
+            return
+        }
+        lastActivityPulseAt = now
+        activityPulse &+= 1
     }
 
     private func cachedTranscriptAnalysis(
@@ -281,13 +335,19 @@ final class CursorAgentStatusMonitor: ObservableObject {
     }
 
     private func publishTrafficLight(state: AgentTrafficLightState, shouldShow: Bool) {
+        var changed = false
         if lastPublishedTrafficLightState != state {
             trafficLightState = state
             lastPublishedTrafficLightState = state
+            changed = true
         }
         if lastPublishedShouldShowTrafficLight != shouldShow {
             shouldShowTrafficLight = shouldShow
             lastPublishedShouldShowTrafficLight = shouldShow
+            changed = true
+        }
+        if changed {
+            activityPulse &+= 1
         }
     }
 
@@ -1252,26 +1312,6 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 jsonlMtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
             }
 
-            let rawState: String
-            if processAlive {
-                if let mtime = jsonlMtime, now.timeIntervalSince(mtime) < recentJsonlThreshold {
-                    // Recently writing. If the newest record is a pending tool_use and writes
-                    // paused for a few seconds, Claude is showing a permission prompt → yellow.
-                    let idleSinceWrite = now.timeIntervalSince(mtime)
-                    if idleSinceWrite > 5,
-                       let url = jsonlURL,
-                       AgentSessionLogParser.claudeAppearsAwaitingApproval(at: url) {
-                        rawState = "awaiting_input"
-                    } else {
-                        rawState = "thinking"   // Claude actively writing → green
-                    }
-                } else {
-                    rawState = "awaiting_input" // Alive but idle → waiting for user → yellow
-                }
-            } else {
-                rawState = "stopped"            // Process dead → red
-            }
-
             let tsMs: Int64
             if let mtime = jsonlMtime {
                 tsMs = Int64(mtime.timeIntervalSince1970 * 1000)
@@ -1279,17 +1319,55 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 tsMs = startedAtMs
             }
 
-            let ageMs = nowMs - tsMs
-            var resolved = AgentTrafficLightMapper.resolveHookState(
-                rawState: rawState,
-                ageMs: ageMs,
-                collapseMs: collapseMs,
-                inactiveMs: inactiveMs
-            )
-            // Live processes are always visible — JSONL mtime only reflects last write, not whether
-            // the session is open. A Claude Code session waiting for the user shows no recent writes.
+            // Passive detection can see writes and process liveness — it cannot see whether Claude
+            // is actually asking the user anything. It must therefore never claim yellow: a quiet
+            // live session is shown as a dim idle card, and yellow is left to real hook signals.
+            //
+            // Live sessions bypass `resolveHookState` deliberately. Its staleness ladder maps a
+            // long-running "thinking" to `.stopped`, which the old unconditional `visible: true`
+            // override then force-showed — a live session pinned as red.
+            let rawState: String
+            let resolved: (state: AgentTrafficLightState, visible: Bool)
             if processAlive {
-                resolved = (state: resolved.state, visible: true)
+                let isWriting = jsonlMtime.map { now.timeIntervalSince($0) < recentJsonlThreshold } ?? false
+                if isWriting {
+                    rawState = "thinking"
+                    resolved = (.thinking, true)
+                } else {
+                    // Quiet on disk means nothing on its own — a multi-minute tool writes its
+                    // `tool_use` record up front and then stays silent until it returns. Ask the
+                    // transcript what the newest record actually was.
+                    switch jsonlURL.map({ AgentSessionLogParser.claudeTailState(at: $0) }) ?? .unknown {
+                    case .toolInFlight:
+                        rawState = "executing"
+                        resolved = (.executing, true)
+                    case .working:
+                        rawState = "thinking"
+                        resolved = (.thinking, true)
+                    case .turnFinished:
+                        rawState = "stopped"
+                        let lifecycle = AgentTrafficLightMapper.resolveHookState(
+                            rawState: rawState,
+                            ageMs: nowMs - tsMs,
+                            collapseMs: collapseMs,
+                            inactiveMs: inactiveMs
+                        )
+                        // Red flashes and collapses as usual, but the process is still running,
+                        // so the session stays in the list as a dim card rather than vanishing.
+                        resolved = lifecycle.visible ? lifecycle : (.inactive, true)
+                    case .unknown:
+                        rawState = "idle"
+                        resolved = (.inactive, true)
+                    }
+                }
+            } else {
+                rawState = "stopped"
+                resolved = AgentTrafficLightMapper.resolveHookState(
+                    rawState: rawState,
+                    ageMs: nowMs - tsMs,
+                    collapseMs: collapseMs,
+                    inactiveMs: inactiveMs
+                )
             }
 
             let chatName: String? = jsonlURL.flatMap {

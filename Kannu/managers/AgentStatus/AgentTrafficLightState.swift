@@ -80,6 +80,30 @@ struct AgentSessionStatus: Identifiable, Equatable {
     let isVisible: Bool
     let executionStartedAt: Date?
 
+    /// True when the hook that produced this session reported work in progress, regardless of
+    /// what the staleness ladder later concluded about its age.
+    var hasActiveRawState: Bool {
+        switch rawState.lowercased() {
+        case "executing", "thinking": return true
+        default: return false
+        }
+    }
+
+    func withDisplayState(_ state: AgentTrafficLightState, visible: Bool, updatedAt: Date? = nil) -> AgentSessionStatus {
+        AgentSessionStatus(
+            id: id,
+            provider: provider,
+            conversationID: conversationID,
+            chatName: chatName,
+            projectName: projectName,
+            rawState: rawState,
+            displayState: state,
+            updatedAt: updatedAt ?? self.updatedAt,
+            isVisible: visible,
+            executionStartedAt: executionStartedAt
+        )
+    }
+
     var providerLabel: String {
         switch provider.lowercased() {
         case "cursor": return "Cursor"
@@ -161,11 +185,15 @@ enum AgentTrafficLightMapper {
             return (.awaitingInput, true)
         }
 
-        if session.hasPendingToolApproval {
+        let isGenerating = ["generating", "running", "streaming", "thinking"].contains(liveStatus)
+
+        // `hasPendingToolApproval` comes from the transcript, which lags the live card — it stays
+        // true for an already-approved tool until a later message lands. A live generating status
+        // or an in-flight tool is fresher evidence, so it wins.
+        if session.hasPendingToolApproval && !isGenerating && !session.hasActiveToolUse {
             return (.awaitingInput, true)
         }
 
-        let isGenerating = ["generating", "running", "streaming", "thinking"].contains(liveStatus)
         let checkpointMs = session.transcriptMtimeMs
         let abortedIdle = liveStatus == "aborted"
             && checkpointMs > 0
@@ -222,6 +250,10 @@ enum AgentTrafficLightMapper {
         case "idle":
             // Session opened but nothing running yet — show a dim card, no lit traffic light.
             return (.inactive, true)
+        case "session_end", "ended":
+            // The session is gone. Current scripts delete the status file outright; this
+            // covers files left behind by an older one.
+            return (.inactive, false)
         case "stopped", "stop", "completed", "aborted", "error":
             if ageMs <= collapseMs + inactiveMs { return (.stopped, true) }
             return (.inactive, false)

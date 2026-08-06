@@ -992,6 +992,15 @@ struct GeneralSettings: View {
     @Default(.externalDisplayStyle) var externalDisplayStyle
     @Default(.hideNonNotchUntilHover) var hideNonNotchUntilHover
 
+    /// `SMAppService.mainApp` registers whatever bundle is currently running, so a build
+    /// launched from DerivedData or a build folder pins that path as the login item forever —
+    /// the OS then keeps relaunching that stale copy even after a newer release is installed
+    /// in /Applications. Only offer the toggle when we're running from a real install location.
+    private var isRunningFromApplicationsFolder: Bool {
+        let path = Bundle.main.bundleURL.resolvingSymlinksInPath().path
+        return path.hasPrefix("/Applications/") || path.hasPrefix(NSHomeDirectory() + "/Applications/")
+    }
+
     private func highlightID(_ title: String) -> String {
         SettingsTab.general.highlightID(for: title)
     }
@@ -1032,10 +1041,23 @@ struct GeneralSettings: View {
                     Text("Menubar icon")
                 }
                 .settingsHighlight(id: highlightID("Menubar icon"))
-                LaunchAtLogin.Toggle {
-                    Text("Launch at login")
+                if isRunningFromApplicationsFolder {
+                    LaunchAtLogin.Toggle {
+                        Text("Launch at login")
+                    }
+                    .settingsHighlight(id: highlightID("Launch at login"))
+                } else {
+                    Toggle(isOn: .constant(false)) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Launch at login")
+                            Text("Move Kannu to your Applications folder to enable this.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .disabled(true)
+                    .settingsHighlight(id: highlightID("Launch at login"))
                 }
-                .settingsHighlight(id: highlightID("Launch at login"))
                 Defaults.Toggle(key: .showOnAllDisplays) {
                     Text("Show on all displays")
                 }
@@ -1264,6 +1286,93 @@ struct GeneralSettings: View {
         } header: {
             Text("Notch behavior")
         }
+
+        perDisplayOverridesSection
+    }
+
+    /// Per-display overrides for the two settings above.
+    ///
+    /// Only screens without a physical notch are listed: a built-in notched display always
+    /// renders the standard notch shape regardless of settings, so offering a choice there
+    /// would be a control that does nothing.
+    @ViewBuilder
+    private var perDisplayOverridesSection: some View {
+        let customisable = NSScreen.screens.filter { $0.safeAreaInsets.top <= 0 }
+        if !customisable.isEmpty {
+            Section {
+                ForEach(customisable, id: \.localizedName) { screen in
+                    let name = screen.localizedName
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(name).font(.callout)
+                            if isBuiltInDisplay(screen) {
+                                Text("Built-in")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("Reset") {
+                                Defaults[.displayStyleOverrides].removeValue(forKey: name)
+                                Defaults[.hideUntilHoverOverrides].removeValue(forKey: name)
+                                NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
+                            }
+                            .buttonStyle(.link)
+                            .disabled(
+                                Defaults[.displayStyleOverrides][name] == nil
+                                    && Defaults[.hideUntilHoverOverrides][name] == nil
+                            )
+                        }
+                        Picker("Style", selection: displayStyleBinding(for: name)) {
+                            Text("Follow default").tag(ExternalDisplayStyle?.none)
+                            ForEach(ExternalDisplayStyle.allCases) { style in
+                                Text(style.localizedName).tag(ExternalDisplayStyle?.some(style))
+                            }
+                        }
+                        Picker("Hide until hovered", selection: hideUntilHoverBinding(for: name)) {
+                            Text("Follow default").tag(Bool?.none)
+                            Text("On").tag(Bool?.some(true))
+                            Text("Off").tag(Bool?.some(false))
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            } header: {
+                Text("Per-display")
+            } footer: {
+                Text("Displays without their own setting follow the defaults above. Built-in displays with a notch always use the notch shape and aren't listed.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func displayStyleBinding(for name: String) -> Binding<ExternalDisplayStyle?> {
+        Binding(
+            get: { Defaults[.displayStyleOverrides][name] },
+            set: { newValue in
+                if let newValue {
+                    Defaults[.displayStyleOverrides][name] = newValue
+                } else {
+                    Defaults[.displayStyleOverrides].removeValue(forKey: name)
+                }
+                NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
+            }
+        )
+    }
+
+    private func hideUntilHoverBinding(for name: String) -> Binding<Bool?> {
+        Binding(
+            get: { Defaults[.hideUntilHoverOverrides][name] },
+            set: { newValue in
+                if let newValue {
+                    Defaults[.hideUntilHoverOverrides][name] = newValue
+                } else {
+                    Defaults[.hideUntilHoverOverrides].removeValue(forKey: name)
+                }
+                // Changes the closed-notch offset, so the window geometry needs re-evaluating.
+                NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
+            }
+        )
     }
 }
 
@@ -6288,7 +6397,7 @@ struct StatsSettings: View {
                 } header: {
                     Text("LLM Providers")
                 } footer: {
-                    Text("Choose which AI providers appear in the Usage tab. Quota requires each CLI to be signed in locally (Claude: ~/.claude/.credentials.json, Codex: ~/.codex/auth.json, Cursor: signed into the Cursor app). Full Disk Access is not required for usage monitoring.")
+                    Text("Choose which AI providers appear in the Usage tab. Quota requires each CLI to be signed in locally (Claude: ~/.claude/.credentials.json or the \"Claude Code-credentials\" keychain item, Codex: ~/.codex/auth.json, Cursor: signed into the Cursor app). Claude's login lives in the keychain on macOS, so the Usage tab asks for approval once before it can show quota. Full Disk Access is not required for usage monitoring.")
                         .multilineTextAlignment(.trailing)
                         .foregroundStyle(.secondary)
                         .font(.caption)

@@ -285,32 +285,53 @@ enum AgentSessionLogParser {
         return parts.suffix(5).joined(separator: "-")
     }
 
-    /// Passive approval detection for Claude Code: the session is likely waiting on a
-    /// permission prompt when the newest transcript record is an assistant `tool_use`
-    /// with no tool_result recorded after it. (Indistinguishable from a long-running
-    /// tool by transcript alone, so callers should also require a short write-idle gap.)
-    static func claudeAppearsAwaitingApproval(at path: URL) -> Bool {
-        let text = readTrailingLines(at: path) ?? readLeadingLines(at: path) ?? ""
-        var lastKind: String? = nil // "toolUse" | "toolResult" | "other"
-        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+    /// What the newest conversational record in a Claude transcript says the session is doing.
+    enum ClaudeTailState {
+        case toolInFlight   // assistant proposed a tool and no result has landed yet
+        case turnFinished   // assistant ended its turn — nothing is running
+        case working        // a tool result or a fresh user prompt; the agent owes a response
+        case unknown
+    }
+
+    /// Reads the tail of a Claude JSONL to tell a running tool apart from an idle prompt.
+    ///
+    /// File mtime alone cannot do this: a long tool writes its `tool_use` record at the start
+    /// and then nothing until it completes, so minutes of real work look identical to an idle
+    /// session. `stop_reason` on the assistant record is the authoritative end-of-turn marker.
+    ///
+    /// Deliberately never reports "awaiting approval" — a pending `tool_use` looks the same
+    /// whether the tool is running or a permission card is open, and guessing there is what
+    /// produced permanent false yellow. Yellow comes from hooks only.
+    static func claudeTailState(at url: URL) -> ClaudeTailState {
+        guard let text = readTrailingLines(at: url) else { return .unknown }
+
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
             guard let data = line.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let type = json["type"] as? String else { continue }
+
             switch type {
             case "assistant":
-                guard let message = json["message"] as? [String: Any],
-                      let content = message["content"] as? [[String: Any]] else { continue }
-                let hasToolUse = content.contains { ($0["type"] as? String) == "tool_use" }
-                lastKind = hasToolUse ? "toolUse" : "other"
+                let message = json["message"] as? [String: Any]
+                let content = message?["content"] as? [[String: Any]] ?? []
+                if content.contains(where: { ($0["type"] as? String) == "tool_use" }) {
+                    return .toolInFlight
+                }
+                let stopReason = message?["stop_reason"] as? String
+                if stopReason == "end_turn" || stopReason == "stop_sequence" {
+                    return .turnFinished
+                }
+                // Text or thinking mid-turn (stop_reason "tool_use") — still working.
+                return .working
             case "user":
-                let content = (json["message"] as? [String: Any])?["content"] as? [[String: Any]] ?? []
-                let hasToolResult = content.contains { ($0["type"] as? String) == "tool_result" }
-                lastKind = hasToolResult ? "toolResult" : "other"
+                return .working
             default:
-                continue // ai-title, summaries, etc. don't change the pending-tool signal
+                // attachment, queue-operation, last-prompt, ai-title, custom-title, mode,
+                // system, pr-link — bookkeeping that says nothing about run state.
+                continue
             }
         }
-        return lastKind == "toolUse"
+        return .unknown
     }
 
     private static func readLeadingLines(at url: URL) -> String? {
@@ -331,8 +352,10 @@ enum AgentSessionLogParser {
         defer { try? handle.close() }
         guard let fileSize = try? handle.seekToEnd() else { return nil }
         let readSize = UInt64(trailingByteLimit)
-        guard fileSize > readSize else { return nil }
-        let offset = fileSize - readSize
+        // Short file: read all of it. Returning nil here sent callers to their
+        // `?? readLeadingLines` fallback, which reads the *start* of the transcript —
+        // the opposite of what a "trailing lines" reader promises.
+        let offset = fileSize > readSize ? fileSize - readSize : 0
         if #available(macOS 10.15.4, *) {
             try? handle.seek(toOffset: offset)
             let data = (try? handle.readToEnd()) ?? Data()

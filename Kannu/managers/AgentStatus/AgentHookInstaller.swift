@@ -41,7 +41,7 @@ final class AgentHookInstaller: ObservableObject {
     @Published private(set) var lastError: String?
 
     static let scriptName = "kannu-agent-status.sh"
-    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=23"
+    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=24"
 
     private static var home: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -67,12 +67,22 @@ final class AgentHookInstaller: ObservableObject {
     static var claudeSettingsURL: URL { home.appendingPathComponent(".claude/settings.json") }
     static var claudeScriptURL: URL { home.appendingPathComponent(".claude/\(scriptName)") }
 
+    static func scriptURL(for provider: AgentHookProvider) -> URL {
+        switch provider {
+        case .cursor: return cursorScriptURL
+        case .vscode: return vscodeScriptURL
+        case .codex: return codexScriptURL
+        case .claude: return claudeScriptURL
+        }
+    }
+
     private init() {
         migrateLegacyStatusDirectoryIfNeeded()
         migrateLegacyCursorInstallIfNeeded()
         migrateLegacyHookScriptsIfNeeded()
         migrateIncorrectAwaitingInputHooksIfNeeded()
         migrateHookScriptVersionIfNeeded()
+        migrateClaudeNotificationHooksIfNeeded()
         migrateCursorHookEventArgumentIfNeeded()
         migrateClaudeStyleHookEventArgumentIfNeeded()
         refresh()
@@ -148,7 +158,10 @@ final class AgentHookInstaller: ObservableObject {
         ("beforeSubmitPrompt", "thinking"),
         ("afterAgentThought", "thinking"),
         ("afterAgentResponse", "executing"),
-        ("beforeShellExecution", "awaiting_input"),
+        // Fires for every shell command, including auto-approved ones — so it cannot mean
+        // "waiting for you". Genuine approvals still surface via afterAgentResponse's
+        // gated-payload check and via the transcript.
+        ("beforeShellExecution", "executing"),
         ("preToolUse", "executing"),
         ("postToolUse", "executing"),
         ("postToolUseFailure", "executing"),
@@ -168,6 +181,35 @@ final class AgentHookInstaller: ObservableObject {
         ("Stop", "stopped")
     ]
 
+    /// Claude Code hook coverage. Richer than `claudeStyleEvents` because Claude supports
+    /// matcher-scoped groups, which is the only way to reach the states that matter:
+    /// `Notification/agent_completed` is the real "it's done", and matching `PreToolUse` on
+    /// the plan-approval tools is the only signal for "waiting on you to approve a plan".
+    ///
+    /// `matcherKey` is a short token handed to the script so it knows the state is already
+    /// unambiguous and does not re-derive it from the event name.
+    private static let claudeHookEntries: [(event: String, matcher: String?, matcherKey: String, state: String)] = [
+        // idle, not thinking: opening a session must not paint the green "running" light.
+        ("SessionStart", nil, "", "idle"),
+        ("UserPromptSubmit", nil, "", "thinking"),
+        // Must come before the generic PreToolUse entry for readability; Claude runs matcher
+        // groups in parallel with no ordering guarantee, so the script also derives this
+        // state from tool_name as a backstop.
+        ("PreToolUse", "ExitPlanMode|AskUserQuestion", "gated", "awaiting_input"),
+        ("PreToolUse", nil, "", "executing"),
+        ("PostToolUse", nil, "", "executing"),
+        ("PermissionRequest", nil, "", "awaiting_input"),
+        ("Notification", "agent_completed", "completed", "stopped"),
+        ("Notification", "permission_prompt|idle_prompt|agent_needs_input", "needs_input", "awaiting_input"),
+        ("Stop", nil, "", "stopped"),
+        ("StopFailure", nil, "", "stopped"),
+        ("SessionEnd", nil, "", "session_end")
+    ]
+
+    /// The subset that defines "Claude hooks are installed". Kept intentionally small so the
+    /// table above can grow without invalidating existing installs — see `checkInstalled`.
+    private static let claudeCoreInstalledEvents = ["SessionStart", "UserPromptSubmit", "PreToolUse", "Stop"]
+
     // MARK: - Shared script
 
     private static func writeScript(to url: URL) throws {
@@ -177,11 +219,13 @@ final class AgentHookInstaller: ObservableObject {
         #!/bin/bash
         # Installed by Kannu: reports AI agent status for the notch traffic light.
         # \(scriptVersionMarker)
-        # Usage: kannu-agent-status.sh <state> <provider> [hook_event]  (hook JSON arrives on stdin)
+        # Usage: kannu-agent-status.sh <state> <provider> [hook_event] [matcher_key]
+        #        (hook JSON arrives on stdin)
 
         export KANNU_STATE="${1:-thinking}"
         export KANNU_PROVIDER="${2:-unknown}"
         export KANNU_HOOK_EVENT="${3:-unknown}"
+        export KANNU_HOOK_MATCHER="${4:-}"
         export KANNU_STATUS_DIR="$HOME/.kannu/agent-status"
         mkdir -p "$KANNU_STATUS_DIR"
         export KANNU_INPUT="$(cat)"
@@ -200,6 +244,7 @@ final class AgentHookInstaller: ObservableObject {
         state = os.environ.get("KANNU_STATE", "thinking")
         provider = os.environ.get("KANNU_PROVIDER", "unknown")
         hook_event = os.environ.get("KANNU_HOOK_EVENT", "unknown")
+        hook_matcher = os.environ.get("KANNU_HOOK_MATCHER", "")
         status_dir = Path(os.environ.get("KANNU_STATUS_DIR", "")).expanduser()
         raw = os.environ.get("KANNU_INPUT", "")
         status_dir.mkdir(parents=True, exist_ok=True)
@@ -254,9 +299,12 @@ final class AgentHookInstaller: ObservableObject {
             elif any(key in tool_input for key in ("command", "working_directory", "description")):
                 tool = tool or "Shell"
 
-        def is_ask_question() -> bool:
+        def is_approval_gated_tool() -> bool:
+            # ExitPlanMode means "here is the plan, approve it" — a wait on the user, not work.
+            # Claude fires the matcher-scoped and generic PreToolUse groups in parallel with no
+            # ordering guarantee, so the generic group has to reach the same verdict on its own.
             compact = (tool or "").lower().replace("_", "").replace("-", "")
-            if compact in {"askquestion", "userquestion"}:
+            if compact in {"askquestion", "userquestion", "askuserquestion", "exitplanmode"}:
                 return True
             return isinstance(tool_input, dict) and "questions" in tool_input
 
@@ -280,23 +328,32 @@ final class AgentHookInstaller: ObservableObject {
         # - So WebSearch must NOT set awaiting_input on preToolUse (that paints yellow too late).
         # - afterAgentResponse / transcript catch the proposal while the card is open.
         # - AskQuestion still uses preToolUse for yellow (card is the tool itself).
-        if hook_event == "afterAgentResponse":
+        if hook_matcher:
+            # Matcher-scoped group: the installer already picked the right state for exactly
+            # this case, so trust the argument rather than re-deriving from the event name.
+            pass
+        elif hook_event == "afterAgentResponse":
             if looks_gated_payload(tool, tool_input):
                 state = "awaiting_input"
         elif hook_event == "afterAgentThought":
             state = "thinking"
         elif hook_event in {"preToolUse", "beforeMCPExecution", "PreToolUse"}:
-            if is_ask_question():
+            if is_approval_gated_tool():
                 state = "awaiting_input"
             else:
                 # Includes WebSearch/WebFetch/Shell: approval already granted; tool is running.
                 state = "executing"
-        elif hook_event in {"beforeShellExecution", "PermissionRequest"}:
+        elif hook_event in {"beforeShellExecution"}:
+            # Fires for auto-approved commands too, so it means "running", not "waiting".
+            state = "executing"
+        elif hook_event in {"PermissionRequest"}:
             state = "awaiting_input"
         elif hook_event in {"postToolUse", "postToolUseFailure", "PostToolUse"}:
             state = "executing"
-        elif hook_event in {"stop", "Stop"}:
+        elif hook_event in {"stop", "Stop", "StopFailure"}:
             state = "stopped"
+        elif hook_event == "SessionEnd":
+            state = "session_end"
 
         conversation_id = pick_str(
             data.get("agentId"),
@@ -312,6 +369,16 @@ final class AgentHookInstaller: ObservableObject {
         conversation_id = re.sub(r"[^A-Za-z0-9_-]", "", conversation_id) or "default"
         status_file = status_dir / f"{provider}-{conversation_id}.json"
 
+        # The session is gone: drop the card outright rather than leaving a terminal state to
+        # age out. Passive detection cannot resurrect it because the process has exited too.
+        if state == "session_end":
+            try:
+                status_file.unlink()
+            except Exception:
+                pass
+            print('{"permission":"allow","continue":true}')
+            raise SystemExit(0)
+
         existing_state = ""
         existing = {}
         if status_file.exists():
@@ -320,6 +387,16 @@ final class AgentHookInstaller: ObservableObject {
                 existing_state = str(existing.get("state", ""))
             except Exception:
                 existing = {}
+
+        # Claude runs the matcher-scoped and generic groups for one event in parallel with no
+        # ordering guarantee. If both land within the same instant, keep the more urgent verdict
+        # so the winner of the race cannot silently downgrade the light.
+        STATE_PRIORITY = {"awaiting_input": 40, "stopped": 30, "executing": 20, "thinking": 10, "idle": 0}
+        if existing_state and existing.get("hook_event") == hook_event:
+            existing_ts_ms = existing.get("ts") or 0
+            if int(time.time() * 1000) - existing_ts_ms <= 2000:
+                if STATE_PRIORITY.get(existing_state, -1) > STATE_PRIORITY.get(state, -1):
+                    state = existing_state
 
         roots = data.get("workspace_roots")
         project = ""
@@ -346,25 +423,30 @@ final class AgentHookInstaller: ObservableObject {
             if normalize_token(name) == normalize_token(tool):
                 name = ""
 
-        # Sticky yellow only against reasoning noise during an open approval card.
-        # UserPromptSubmit / SessionStart must clear yellow and enter thinking.
+        # Sticky yellow holds the light steady against reasoning noise while an approval card
+        # is genuinely open. Two rules keep it from latching forever:
+        #   - only afterAgentThought is absorbed. beforeSubmitPrompt is Cursor's new-prompt
+        #     event, so it must clear yellow rather than renew it.
+        #   - the original ts is preserved, so the 5-minute staleness escape can still fire.
+        #     Refreshing it here is what let yellow survive an entire thinking phase.
         if existing_state == "awaiting_input" and state not in {"awaiting_input", "stopped"}:
-            if hook_event in {"beforeSubmitPrompt", "afterAgentThought"}:
-                existing["state"] = "awaiting_input"
-                existing["ts"] = int(time.time() * 1000)
-                existing["provider"] = provider
-                if name:
-                    existing["name"] = name
-                if project:
-                    existing["project"] = project
-                status_file.write_text(json.dumps(existing, separators=(",", ":")))
-                print('{"permission":"allow","continue":true}')
-                raise SystemExit(0)
+            if hook_event == "afterAgentThought":
+                existing_ts = existing.get("ts") or 0
+                if int(time.time() * 1000) - existing_ts <= 300000:
+                    existing["provider"] = provider
+                    if name:
+                        existing["name"] = name
+                    if project:
+                        existing["project"] = project
+                    status_file.write_text(json.dumps(existing, separators=(",", ":")))
+                    print('{"permission":"allow","continue":true}')
+                    raise SystemExit(0)
 
         payload = {
             "state": state,
             "ts": int(time.time() * 1000),
             "provider": provider,
+            "hook_event": hook_event,
         }
         if name:
             payload["name"] = name
@@ -486,16 +568,23 @@ final class AgentHookInstaller: ObservableObject {
         var hooks = config["hooks"] as? [String: Any] ?? [:]
         stripClaudeEntries(from: &hooks)
 
-        for (event, state) in claudeStyleEvents {
-            var groups = hooks[event] as? [[String: Any]] ?? []
-            groups.append([
+        for entry in claudeHookEntries {
+            var groups = hooks[entry.event] as? [[String: Any]] ?? []
+            // The matcher is passed to the script too: when a group is matcher-scoped its state
+            // is unambiguous, so the script trusts the argument instead of re-deriving it.
+            let matcherArg = entry.matcher == nil ? "" : " \(entry.matcherKey)"
+            var group: [String: Any] = [
                 "hooks": [[
                     "type": "command",
-                    "command": "\(claudeScriptURL.path) \(state) claude \(event)",
+                    "command": "\(claudeScriptURL.path) \(entry.state) claude \(entry.event)\(matcherArg)",
                     "timeout": 10
                 ]]
-            ])
-            hooks[event] = groups
+            ]
+            if let matcher = entry.matcher {
+                group["matcher"] = matcher
+            }
+            groups.append(group)
+            hooks[entry.event] = groups
         }
 
         config["hooks"] = hooks
@@ -588,7 +677,11 @@ final class AgentHookInstaller: ObservableObject {
             guard FileManager.default.fileExists(atPath: claudeScriptURL.path),
                   let config = readJSON(at: claudeSettingsURL),
                   let hooks = config["hooks"] as? [String: Any] else { return false }
-            return claudeStyleEvents.allSatisfy { event, _ in
+            // Only the core events, deliberately. Requiring every entry in `claudeHookEntries`
+            // would make an install from an older Kannu report "not installed" the moment the
+            // table grows — which flips the Settings toggle off and, worse, makes the version
+            // migration skip the very installs that need upgrading.
+            return claudeCoreInstalledEvents.allSatisfy { event in
                 guard let groups = hooks[event] as? [[String: Any]] else { return false }
                 return groups.contains { group in
                     guard let handlers = group["hooks"] as? [[String: Any]] else { return false }
@@ -642,9 +735,31 @@ final class AgentHookInstaller: ObservableObject {
             return !content.contains(Self.scriptVersionMarker)
         }
         guard needsRefresh else { return }
-        for provider in AgentHookProvider.allCases where Self.checkInstalled(provider) {
+        // Gate on the script existing, not on `checkInstalled`. A provider whose config schema
+        // changed in this same release would fail the install check and skip its own upgrade —
+        // exactly the users who need it most.
+        for provider in AgentHookProvider.allCases where FileManager.default.fileExists(atPath: Self.scriptURL(for: provider).path) {
             install(provider)
         }
+    }
+
+    /// Backfills the Claude `Notification` groups for installs that predate them.
+    ///
+    /// Without `Notification/agent_completed` there is no "finished" signal at all, so the
+    /// light never turns red. The script-version migration alone won't cover an install whose
+    /// script is already current but whose settings.json still holds the older group set.
+    private func migrateClaudeNotificationHooksIfNeeded() {
+        guard FileManager.default.fileExists(atPath: Self.claudeScriptURL.path),
+              let config = Self.readJSON(at: Self.claudeSettingsURL),
+              let hooks = config["hooks"] as? [String: Any] else { return }
+
+        let groups = hooks["Notification"] as? [[String: Any]] ?? []
+        let hasKannuNotification = groups.contains { group in
+            guard let handlers = group["hooks"] as? [[String: Any]] else { return false }
+            return handlers.contains { (($0["command"] as? String)?.contains(Self.scriptName)) == true }
+        }
+        guard !hasKannuNotification else { return }
+        install(.claude)
     }
 
     /// Upgrades Cursor hook commands that omit the hook event argument (v6 sticky awaiting_input).
