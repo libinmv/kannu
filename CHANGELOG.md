@@ -4,6 +4,14 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-06 - Fix release version drift
+- **Developer label:** Bump MARKETING_VERSION and CURRENT_PROJECT_VERSION past the shipped tags
+- **Agent label:** Existing installs can see a new release as newer again
+- **Changes:**
+  - `MARKETING_VERSION` 1.0.0 → 1.2.0 and `CURRENT_PROJECT_VERSION` 1 → 2 in both Debug and Release configs. Tags `v1.0.0` and `v1.1.0` both existed while the project file still said `1.0.0 (1)`, so the build tagged v1.1.0 reported itself as 1.0.0
+  - Sparkle compares `CFBundleVersion` / `CFBundleShortVersionString` against the appcast, so any release cut from the old numbers would not have been seen as newer by an installed copy — auto-update was silently dead even after the appcast signing fix
+  - The project file is the sole source of truth: the release workflow and scripts contain no `agvtool` or version handling, and `Info.plist` has no version keys (`GENERATE_INFOPLIST_FILE` synthesises them)
+
 ### 2026-08-06 - Agent state accuracy, resize crash fix, per-display notch settings
 - **Developer label:** AppKit re-entrancy crash, Claude/Cursor traffic-light correctness, per-display display settings
 - **Agent label:** Red means done, yellow means it needs you, and the notch behaves per display
