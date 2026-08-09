@@ -5,6 +5,7 @@ enum AgentHookProvider: String, CaseIterable, Identifiable {
     case vscode
     case codex
     case claude
+    case antigravity
 
     var id: String { rawValue }
 
@@ -14,6 +15,7 @@ enum AgentHookProvider: String, CaseIterable, Identifiable {
         case .vscode: return "VS Code (Copilot)"
         case .codex: return "Codex CLI"
         case .claude: return "Claude Code"
+        case .antigravity: return "Antigravity"
         }
     }
 }
@@ -33,6 +35,8 @@ enum AgentHookProvider: String, CaseIterable, Identifiable {
 ///   `~/.codex/config.toml`.
 /// - Claude:  script `~/.claude/kannu-agent-status.sh`, entries merged into
 ///   `~/.claude/settings.json` under the `"hooks"` key.
+/// - Antigravity: script `~/.gemini/antigravity-ide/kannu-agent-status.sh`,
+///   entries merged into `~/.gemini/antigravity-ide/hooks.json`.
 @MainActor
 final class AgentHookInstaller: ObservableObject {
     static let shared = AgentHookInstaller()
@@ -41,7 +45,7 @@ final class AgentHookInstaller: ObservableObject {
     @Published private(set) var lastError: String?
 
     static let scriptName = "kannu-agent-status.sh"
-    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=24"
+    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=25"
 
     private static var home: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -67,12 +71,18 @@ final class AgentHookInstaller: ObservableObject {
     static var claudeSettingsURL: URL { home.appendingPathComponent(".claude/settings.json") }
     static var claudeScriptURL: URL { home.appendingPathComponent(".claude/\(scriptName)") }
 
+    static var antigravityHooksConfigURL: URL { home.appendingPathComponent(".gemini/antigravity-ide/hooks.json") }
+    static var antigravityConfigHooksURL: URL { home.appendingPathComponent(".gemini/config/hooks.json") }
+    static var antigravityRootHooksURL: URL { home.appendingPathComponent(".gemini/hooks.json") }
+    static var antigravityScriptURL: URL { home.appendingPathComponent(".gemini/antigravity-ide/\(scriptName)") }
+
     static func scriptURL(for provider: AgentHookProvider) -> URL {
         switch provider {
         case .cursor: return cursorScriptURL
         case .vscode: return vscodeScriptURL
         case .codex: return codexScriptURL
         case .claude: return claudeScriptURL
+        case .antigravity: return antigravityScriptURL
         }
     }
 
@@ -118,6 +128,9 @@ final class AgentHookInstaller: ObservableObject {
             case .claude:
                 try Self.writeScript(to: Self.claudeScriptURL)
                 try Self.mergeClaudeHooksConfig()
+            case .antigravity:
+                try Self.writeScript(to: Self.antigravityScriptURL)
+                try Self.mergeAntigravityHooksConfig()
             }
         } catch {
             lastError = "\(provider.displayName): \(error.localizedDescription)"
@@ -141,6 +154,9 @@ final class AgentHookInstaller: ObservableObject {
             case .claude:
                 try Self.stripEntries(configURL: Self.claudeSettingsURL)
                 try Self.removeIfExists(Self.claudeScriptURL)
+            case .antigravity:
+                try Self.stripEntries(configURL: Self.antigravityHooksConfigURL)
+                try Self.removeIfExists(Self.antigravityScriptURL)
             }
         } catch {
             lastError = "\(provider.displayName): \(error.localizedDescription)"
@@ -163,8 +179,8 @@ final class AgentHookInstaller: ObservableObject {
         // gated-payload check and via the transcript.
         ("beforeShellExecution", "executing"),
         ("preToolUse", "executing"),
-        ("postToolUse", "executing"),
-        ("postToolUseFailure", "executing"),
+        ("postToolUse", "thinking"),
+        ("postToolUseFailure", "thinking"),
         ("beforeMCPExecution", "executing"),
         ("stop", "stopped")
     ]
@@ -176,7 +192,7 @@ final class AgentHookInstaller: ObservableObject {
         ("SessionStart", "idle"),
         ("UserPromptSubmit", "thinking"),
         ("PreToolUse", "executing"),
-        ("PostToolUse", "executing"),
+        ("PostToolUse", "thinking"),
         ("PermissionRequest", "awaiting_input"),
         ("Stop", "stopped")
     ]
@@ -209,6 +225,17 @@ final class AgentHookInstaller: ObservableObject {
     /// The subset that defines "Claude hooks are installed". Kept intentionally small so the
     /// table above can grow without invalidating existing installs — see `checkInstalled`.
     private static let claudeCoreInstalledEvents = ["SessionStart", "UserPromptSubmit", "PreToolUse", "Stop"]
+
+    /// Antigravity hook events (PascalCase).
+    private static let antigravityEvents: [(event: String, state: String)] = [
+        ("SessionStart", "idle"),
+        ("UserPromptSubmit", "thinking"),
+        ("PreInvocation", "thinking"),
+        ("PostInvocation", "thinking"),
+        ("PreToolUse", "executing"),
+        ("PostToolUse", "thinking"),
+        ("Stop", "stopped")
+    ]
 
     // MARK: - Shared script
 
@@ -271,7 +298,7 @@ final class AgentHookInstaller: ObservableObject {
         def normalize_token(value: str) -> str:
             return (value or "").strip().lower().replace("_", "").replace("-", "").replace(" ", "")
 
-        TITLE_BEARING_EVENTS = {"beforeSubmitPrompt", "stop", "SessionStart", "UserPromptSubmit", "Stop"}
+        TITLE_BEARING_EVENTS = {"beforeSubmitPrompt", "stop", "SessionStart", "UserPromptSubmit", "Stop", "PreInvocation"}
 
         tool = pick_str(
             data.get("tool_name"),
@@ -335,7 +362,7 @@ final class AgentHookInstaller: ObservableObject {
         elif hook_event == "afterAgentResponse":
             if looks_gated_payload(tool, tool_input):
                 state = "awaiting_input"
-        elif hook_event == "afterAgentThought":
+        elif hook_event in {"afterAgentThought", "PreInvocation"}:
             state = "thinking"
         elif hook_event in {"preToolUse", "beforeMCPExecution", "PreToolUse"}:
             if is_approval_gated_tool():
@@ -348,10 +375,23 @@ final class AgentHookInstaller: ObservableObject {
             state = "executing"
         elif hook_event in {"PermissionRequest"}:
             state = "awaiting_input"
-        elif hook_event in {"postToolUse", "postToolUseFailure", "PostToolUse"}:
-            state = "executing"
+        elif hook_event in {"postToolUse", "postToolUseFailure", "PostToolUse", "PostInvocation"}:
+            state = "thinking"
         elif hook_event in {"stop", "Stop", "StopFailure"}:
             state = "stopped"
+            # Antigravity's Stop payload carries terminationReason/error instead of a
+            # separate "quota exceeded" event — there's no other signal that a run ended
+            # because the account hit a rate limit rather than finishing normally. Surface
+            # it as a distinct raw state string (not a new AgentTrafficLightState case: an
+            # unrecognized raw state already falls back to the same stopped/inactive-by-age
+            # lifecycle in resolveHookState, so this is purely additive) so the Usage-tab
+            # card and chat-name label can show it instead of a generic "stopped".
+            if provider == "antigravity" and hook_event == "Stop":
+                termination_reason = pick_str(data.get("terminationReason"), data.get("termination_reason"))
+                stop_error = pick_str(data.get("error"))
+                quota_signal = (termination_reason + " " + stop_error).lower()
+                if any(marker in quota_signal for marker in ("quota", "rate_limit", "rate limit", "resource_exhausted")):
+                    state = "quota_exceeded"
         elif hook_event == "SessionEnd":
             state = "session_end"
 
@@ -398,7 +438,7 @@ final class AgentHookInstaller: ObservableObject {
                 if STATE_PRIORITY.get(existing_state, -1) > STATE_PRIORITY.get(state, -1):
                     state = existing_state
 
-        roots = data.get("workspace_roots")
+        roots = data.get("workspace_roots") or data.get("workspacePaths") or data.get("workspace_paths")
         project = ""
         if isinstance(roots, list) and roots:
             root = str(roots[0]).replace("file://", "").rstrip("/")
@@ -418,6 +458,9 @@ final class AgentHookInstaller: ObservableObject {
             name = pick_str(title, existing.get("name"), existing.get("title"), existing.get("conversation_title"))
         else:
             name = pick_str(existing.get("name"), existing.get("title"), existing.get("conversation_title"))
+
+        if state == "quota_exceeded":
+            name = "Quota exceeded"  # more useful than whatever chat title was already cached
 
         if hook_event in {"preToolUse", "beforeMCPExecution", "postToolUse", "postToolUseFailure", "PreToolUse", "PostToolUse"}:
             if normalize_token(name) == normalize_token(tool):
@@ -595,6 +638,35 @@ final class AgentHookInstaller: ObservableObject {
         stripCodexEntries(from: &hooks)
     }
 
+    // MARK: - Antigravity (~/.gemini/antigravity-ide/hooks.json, matcher-group schema)
+
+    private static func mergeAntigravityHooksConfig() throws {
+        var config = readJSON(at: antigravityHooksConfigURL) ?? [:]
+        var hooks = config["hooks"] as? [String: Any] ?? [:]
+        stripAntigravityEntries(from: &hooks)
+
+        for (event, state) in antigravityEvents {
+            var groups = hooks[event] as? [[String: Any]] ?? []
+            groups.append([
+                "hooks": [[
+                    "type": "command",
+                    "command": "\(antigravityScriptURL.path) \(state) antigravity \(event)",
+                    "timeout": 10
+                ]]
+            ])
+            hooks[event] = groups
+        }
+
+        config["hooks"] = hooks
+        try writeJSON(config, to: antigravityHooksConfigURL)
+        try? writeJSON(config, to: antigravityConfigHooksURL)
+        try? writeJSON(config, to: antigravityRootHooksURL)
+    }
+
+    private static func stripAntigravityEntries(from hooks: inout [String: Any]) {
+        stripCodexEntries(from: &hooks)
+    }
+
     /// Codex only runs hooks.json when `features.hooks = true` is set in
     /// `~/.codex/config.toml`. Enables the flag with minimal text edits so the
     /// rest of the user's TOML is left untouched.
@@ -688,19 +760,34 @@ final class AgentHookInstaller: ObservableObject {
                     return handlers.contains { (($0["command"] as? String)?.contains(scriptName)) == true }
                 }
             }
+        case .antigravity:
+            guard FileManager.default.fileExists(atPath: antigravityScriptURL.path),
+                  let config = readJSON(at: antigravityHooksConfigURL),
+                  let hooks = config["hooks"] as? [String: Any] else { return false }
+            return antigravityEvents.allSatisfy { event, _ in
+                guard let groups = hooks[event] as? [[String: Any]] else { return false }
+                return groups.contains { group in
+                    guard let handlers = group["hooks"] as? [[String: Any]] else { return false }
+                    return handlers.contains { (($0["command"] as? String)?.contains(scriptName)) == true }
+                }
+            }
         }
     }
 
     private static func stripEntries(configURL: URL) throws {
         guard var config = readJSON(at: configURL),
               var hooks = config["hooks"] as? [String: Any] else { return }
-        if configURL == codexHooksConfigURL || configURL == claudeSettingsURL {
+        if configURL == codexHooksConfigURL || configURL == claudeSettingsURL || configURL == antigravityHooksConfigURL {
             stripCodexEntries(from: &hooks)
         } else {
             stripCursorEntries(from: &hooks)
         }
         config["hooks"] = hooks
         try writeJSON(config, to: configURL)
+        if configURL == antigravityHooksConfigURL {
+            try? stripEntries(configURL: antigravityConfigHooksURL)
+            try? stripEntries(configURL: antigravityRootHooksURL)
+        }
     }
 
     // MARK: - Legacy migration
@@ -727,7 +814,8 @@ final class AgentHookInstaller: ObservableObject {
             Self.cursorScriptURL,
             Self.vscodeScriptURL,
             Self.codexScriptURL,
-            Self.claudeScriptURL
+            Self.claudeScriptURL,
+            Self.antigravityScriptURL
         ]
         let needsRefresh = scriptURLs.contains { url in
             guard FileManager.default.fileExists(atPath: url.path),
@@ -783,7 +871,7 @@ final class AgentHookInstaller: ObservableObject {
 
     /// Upgrades VS Code/Codex/Claude hook commands that omit the hook event argument.
     private func migrateClaudeStyleHookEventArgumentIfNeeded() {
-        for provider in [AgentHookProvider.vscode, .codex, .claude] {
+        for provider in [AgentHookProvider.vscode, .codex, .claude, .antigravity] {
             guard Self.checkInstalled(provider) else { continue }
             let configURL: URL
             switch provider {
@@ -805,6 +893,8 @@ final class AgentHookInstaller: ObservableObject {
                 configURL = Self.codexHooksConfigURL
             case .claude:
                 configURL = Self.claudeSettingsURL
+            case .antigravity:
+                configURL = Self.antigravityHooksConfigURL
             default:
                 continue
             }
@@ -851,6 +941,7 @@ final class AgentHookInstaller: ObservableObject {
             case .vscode: scriptURL = Self.vscodeScriptURL
             case .codex: scriptURL = Self.codexScriptURL
             case .claude: scriptURL = Self.claudeScriptURL
+            case .antigravity: scriptURL = Self.antigravityScriptURL
             }
             guard FileManager.default.fileExists(atPath: scriptURL.path),
                   let content = try? String(contentsOf: scriptURL, encoding: .utf8),

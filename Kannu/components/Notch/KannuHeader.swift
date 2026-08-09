@@ -27,6 +27,7 @@ struct KannuHeader: View {
     @ObservedObject var shelfState = ShelfStateViewModel.shared
     @ObservedObject var timerManager = TimerManager.shared
     @ObservedObject var doNotDisturbManager = DoNotDisturbManager.shared
+    @ObservedObject var llmUsageManager = LLMUsageManager.shared
     @State private var showClipboardPopover = false
     @State private var showColorPickerPopover = false
     @State private var showTimerPopover = false
@@ -115,7 +116,29 @@ struct KannuHeader: View {
                             }
                         }
                     }
-                    
+
+                    // Refresh icon for the Usage tab — moved up here from inside
+                    // NotchLLMUsageView (was a labeled "Refresh" text button in its own
+                    // row there); now icon-only, next to the clipboard button, and only
+                    // shown while the Usage tab is the active view.
+                    if coordinator.currentView == .llmUsage {
+                        Button(action: {
+                            llmUsageManager.refreshAll(force: true)
+                        }) {
+                            Capsule()
+                                .fill(.black)
+                                .frame(width: 30, height: 30)
+                                .overlay {
+                                    Image(systemName: "arrow.clockwise")
+                                        .foregroundColor(.white)
+                                        .padding()
+                                        .imageScale(.medium)
+                                }
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .disabled(llmUsageManager.isRefreshing)
+                    }
+
                     if Defaults[.enableTimerFeature] && timerDisplayMode == .popover {
                         Button(action: {
                             withAnimation(.smooth) {

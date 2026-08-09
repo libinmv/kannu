@@ -827,6 +827,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     (.vscode, ".copilot"),
                     (.codex, ".codex"),
                     (.claude, ".claude"),
+                    (.antigravity, ".gemini"),
                 ].compactMap { provider, dir in
                     FileManager.default.fileExists(atPath: home.appendingPathComponent(dir).path) ? provider : nil
                 }

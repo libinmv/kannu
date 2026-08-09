@@ -110,6 +110,7 @@ struct AgentSessionStatus: Identifiable, Equatable {
         case "vscode": return "VS Code"
         case "codex": return "Codex"
         case "claude": return "Claude"
+        case "antigravity": return "Antigravity"
         default: return provider.capitalized
         }
     }
@@ -138,7 +139,7 @@ struct AgentSessionSnapshot: Equatable {
 }
 
 enum AgentTrafficLightMapper {
-    private static let runningStaleSeconds: TimeInterval = 360
+    private static let runningStaleSeconds: TimeInterval = 15
     private static let abortedIdleSeconds: TimeInterval = 90
     /// Keep yellow visible for the full approval-card window (users often pause).
     private static let awaitingInputStaleMs: Int64 = 300_000
@@ -237,7 +238,7 @@ enum AgentTrafficLightMapper {
         ageMs: Int64,
         collapseMs: Int64,
         inactiveMs: Int64,
-        activeStaleMs: Int64 = 360_000
+        activeStaleMs: Int64 = 15_000
     ) -> (state: AgentTrafficLightState, visible: Bool) {
         switch rawState.lowercased() {
         case "executing" where ageMs <= activeStaleMs:

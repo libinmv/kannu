@@ -1162,6 +1162,7 @@ extension Defaults.Keys {
     static let enableClaudeProvider = Key<Bool>("enableClaudeProvider", default: false)
     static let enableCodexProvider = Key<Bool>("enableCodexProvider", default: false)
     static let enableCursorProvider = Key<Bool>("enableCursorProvider", default: false)
+    static let enableAntigravityProvider = Key<Bool>("enableAntigravityProvider", default: false)
     static let llmProviderDefaultsConfigured = Key<Bool>("llmProviderDefaultsConfigured", default: false)
     static let autoStartStatsMonitoring = Key<Bool>("autoStartStatsMonitoring", default: false)
     static let statsStopWhenNotchCloses = Key<Bool>("statsStopWhenNotchCloses", default: true)

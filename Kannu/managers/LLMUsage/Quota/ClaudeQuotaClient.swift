@@ -64,6 +64,34 @@ actor ClaudeCredentialStore {
     }
 }
 
+/// Cools down `oauth/usage` calls after a 429 so repeated refreshes — including interactive
+/// ones, which otherwise skip `LLMUsageManager`'s own throttle entirely — don't keep hitting
+/// an endpoint that just told us to back off. Shared across every `ClaudeQuotaClient` value
+/// (the struct is cheap to recreate; this state is what needs to persist).
+actor ClaudeQuotaBackoff {
+    static let shared = ClaudeQuotaBackoff()
+
+    private static let defaultCooldown: TimeInterval = 300 // used when the response has no Retry-After
+    private static let minimumCooldown: TimeInterval = 60
+
+    private var retryAt: Date?
+
+    /// Seconds left to wait, or `nil` if a call is allowed right now.
+    func secondsUntilAllowed(now: Date) -> TimeInterval? {
+        guard let retryAt, now < retryAt else { return nil }
+        return retryAt.timeIntervalSince(now)
+    }
+
+    func recordRateLimited(retryAfterHeader: String?, now: Date) {
+        let requested = retryAfterHeader.flatMap(TimeInterval.init) ?? Self.defaultCooldown
+        retryAt = now.addingTimeInterval(max(requested, Self.minimumCooldown))
+    }
+
+    func clear() {
+        retryAt = nil
+    }
+}
+
 struct ClaudeQuotaClient {
     private static let log = os.Logger(subsystem: "com.kannu.app", category: "ClaudeQuota")
     let session: URLSession
@@ -121,6 +149,11 @@ struct ClaudeQuotaClient {
     /// own keychain item. Background refreshes pass `false` and degrade to an actionable
     /// message; the user pressing "Allow keychain access" passes `true`.
     func fetchLimits(interactive: Bool = false) async -> QuotaFetchResult {
+        if let wait = await ClaudeQuotaBackoff.shared.secondsUntilAllowed(now: Date()) {
+            Self.log.notice("oauth/usage on cooldown after a 429, \(Int(wait))s left")
+            return QuotaFetchResult(errorMessage: "Claude quota API rate-limited — retrying in \(Int(wait))s")
+        }
+
         let creds: ClaudeOAuthCredentials
         switch await currentCredentials(interactive: interactive) {
         case .found(let found):
@@ -133,15 +166,15 @@ struct ClaudeQuotaClient {
             )
         case .unreadable:
             Self.log.error("Claude credentials found but unparseable")
-            return QuotaFetchResult(errorMessage: "Claude login found but unreadable — sign in again with `claude`.")
+            return QuotaFetchResult(errorMessage: "Claude login found but unreadable — sign in again with `claude`.", isAuthFailure: true)
         case .notSignedIn:
             Self.log.notice("no Claude credentials in ~/.claude/.credentials.json or Keychain")
-            return QuotaFetchResult(errorMessage: "Claude Code not signed in — run `claude` in a terminal and log in.")
+            return QuotaFetchResult(errorMessage: "Claude Code not signed in — run `claude` in a terminal and log in.", isAuthFailure: true)
         }
 
         guard let token = await validAccessToken(creds) else {
             Self.log.error("could not obtain valid Claude access token")
-            return QuotaFetchResult(errorMessage: "Claude token refresh failed — sign in again with `claude`.")
+            return QuotaFetchResult(errorMessage: "Claude token refresh failed — sign in again with `claude`.", isAuthFailure: true)
         }
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -158,10 +191,16 @@ struct ClaudeQuotaClient {
                     // Our cached copy is stale (revoked, or the CLI rotated its tokens);
                     // drop it so the next refresh re-reads Claude Code's own credentials.
                     await ClaudeCredentialStore.shared.clear()
-                    return QuotaFetchResult(errorMessage: "Claude login expired — it will retry with Claude Code's current login.")
+                    return QuotaFetchResult(errorMessage: "Claude login expired — it will retry with Claude Code's current login.", isAuthFailure: true)
+                }
+                // 429 = rate-limited, 500+ = server error — transient, NOT an auth failure.
+                if code == 429 {
+                    let retryAfterHeader = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Retry-After")
+                    await ClaudeQuotaBackoff.shared.recordRateLimited(retryAfterHeader: retryAfterHeader, now: Date())
                 }
                 return QuotaFetchResult(errorMessage: "Claude quota API HTTP \(code)")
             }
+            await ClaudeQuotaBackoff.shared.clear()
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
             let decoded = try decoder.decode(UsageResponse.self, from: data)

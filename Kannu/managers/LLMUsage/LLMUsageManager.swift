@@ -12,6 +12,13 @@ final class LLMUsageManager: ObservableObject {
     private let injectedProviders: [UsageProvider]? // overrides the flag-based default when non-nil
     private var lastRefresh: Date = .distantPast
     private static let minRefreshInterval: TimeInterval = 60
+    /// `force`/`interactive` refreshes (opening the Usage tab, tapping "Refresh", retrying a
+    /// fix-it button) used to skip the throttle entirely. That's fine for the local providers,
+    /// but for network providers it meant reopening the tab a few times in a row — or a user
+    /// mashing "Allow keychain access…" — fired unlimited requests at Claude's `oauth/usage`
+    /// endpoint, which has its own tight per-account rate limit. Give those a much shorter
+    /// floor instead of zero, so intent ("give me fresh data now") still works.
+    private static let minInteractiveRefreshInterval: TimeInterval = 10
 
     init(providers: [UsageProvider]? = nil) {
         self.injectedProviders = providers
@@ -22,16 +29,23 @@ final class LLMUsageManager: ObservableObject {
     // be called synchronously from KannuApp.init() before any UI reads these keys.
     nonisolated static func configureProviderDefaultsIfNeeded() {
         let ud = UserDefaults.standard
-        guard !ud.bool(forKey: "llmProviderDefaultsConfigured") else { return }
         let fm = FileManager.default
         let home = fm.homeDirectoryForCurrentUser
-        ud.set(fm.fileExists(atPath: home.appendingPathComponent(".claude/projects").path), forKey: "enableClaudeProvider")
-        ud.set(fm.fileExists(atPath: home.appendingPathComponent("Library/Application Support/Cursor/User/globalStorage/state.vscdb").path), forKey: "enableCursorProvider")
-        ud.set(fm.fileExists(atPath: home.appendingPathComponent(".codex/sessions").path), forKey: "enableCodexProvider")
-        ud.set(true, forKey: "llmProviderDefaultsConfigured")
+        if !ud.bool(forKey: "llmProviderDefaultsConfigured") {
+            ud.set(fm.fileExists(atPath: home.appendingPathComponent(".claude/projects").path), forKey: "enableClaudeProvider")
+            ud.set(fm.fileExists(atPath: home.appendingPathComponent("Library/Application Support/Cursor/User/globalStorage/state.vscdb").path), forKey: "enableCursorProvider")
+            ud.set(fm.fileExists(atPath: home.appendingPathComponent(".codex/sessions").path), forKey: "enableCodexProvider")
+            ud.set(true, forKey: "llmProviderDefaultsConfigured")
+        }
+        // Antigravity detection runs independently each launch so existing installs
+        // that already have llmProviderDefaultsConfigured=true pick it up automatically.
+        if !ud.bool(forKey: "antigravityProviderDefaultsConfigured") {
+            ud.set(fm.fileExists(atPath: home.appendingPathComponent(".gemini/antigravity-ide").path), forKey: "enableAntigravityProvider")
+            ud.set(true, forKey: "antigravityProviderDefaultsConfigured")
+        }
     }
 
-    private static let allProviders: [UsageProvider] = [ClaudeUsageProvider(), CodexUsageProvider(), CursorUsageProvider()]
+    private static let allProviders: [UsageProvider] = [AntigravityUsageProvider(), ClaudeUsageProvider(), CodexUsageProvider(), CursorUsageProvider()]
 
     private var enabledProviders: [UsageProvider] {
         if let injectedProviders { return injectedProviders }
@@ -43,16 +57,33 @@ final class LLMUsageManager: ObservableObject {
     /// Automatic and timer-driven refreshes must leave it false so nothing blocks on a dialog.
     func refreshAll(force: Bool = false, interactive: Bool = false) {
         guard !isRefreshing else { return }
-        guard force || interactive || Date().timeIntervalSince(lastRefresh) >= Self.minRefreshInterval else { return }
+        let allEnabled = enabledProviders
+        let localProviders = allEnabled.filter { $0.isLocalFileProvider }
+        let networkProviders = allEnabled.filter { !$0.isLocalFileProvider }
+
+        // Local file providers (e.g. Antigravity) refresh on every open — no throttle.
+        if !localProviders.isEmpty {
+            for provider in localProviders {
+                results[provider.id] = .loading
+            }
+            Task { await runRefresh(providers: localProviders, interactive: interactive) }
+        }
+
+        // Network providers respect the 60-second throttle to avoid hammering APIs. A
+        // force/interactive refresh may jump the queue early, but never below the shorter
+        // interactive floor — see `minInteractiveRefreshInterval`.
+        let elapsed = Date().timeIntervalSince(lastRefresh)
+        let requiredInterval = (force || interactive) ? Self.minInteractiveRefreshInterval : Self.minRefreshInterval
+        guard elapsed >= requiredInterval else { return }
+        guard !networkProviders.isEmpty else { return }
         lastRefresh = Date()
         isRefreshing = true
-        let providers = enabledProviders
-        let enabledIDs = Set(providers.map { $0.id })
-        results = results.filter { enabledIDs.contains($0.key) }
-        for provider in providers {
+        let enabledIDs = Set(networkProviders.map { $0.id })
+        results = results.filter { localProviders.map(\.id).contains($0.key) || enabledIDs.contains($0.key) }
+        for provider in networkProviders {
             results[provider.id] = .loading
         }
-        Task { await runRefresh(providers: providers, interactive: interactive) }
+        Task { await runRefresh(providers: networkProviders, interactive: interactive) }
     }
 
     /// Retries a provider's quota with prompts allowed, after the user taps the card's fix-it button.

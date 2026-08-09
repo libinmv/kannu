@@ -21,24 +21,36 @@ import Defaults
 
 struct NotchLLMUsageView: View {
     @ObservedObject private var manager = LLMUsageManager.shared
+    @State private var hoveredUnavailable: ProviderID? = nil
 
     private func isEnabled(_ provider: ProviderID) -> Bool { Defaults[provider.enabledKey] }
 
+    /// A provider is "active" (shows full card) when:
+    /// - Antigravity: always shown (session info instead of token counts)
+    /// - Others: show unless result is a hard .failure, OR a .success where the provider
+    ///   has neither local logs nor quota limits (e.g. Claude with a dead OAuth token, Codex
+    ///   not installed — both return .success but have nothing useful to display).
+    private func isActiveProvider(_ provider: ProviderID) -> Bool {
+        if provider == .antigravity { return true }
+        switch manager.results[provider] {
+        case .failure:
+            return false   // hard API error
+        case .success(let snap) where snap.isFatallyUnconfigured:
+            return false   // signed out / not installed — move to unavailable chip
+        case .loading, .success, .none:
+            return true
+        }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Spacer()
-                Button {
-                    manager.refreshAll(force: true)
-                } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                        .font(.caption)
-                }
-                .buttonStyle(.plain)
-                .disabled(manager.isRefreshing)
-            }
+        let enabled = ProviderID.allCases.filter { isEnabled($0) }
+        let active = enabled.filter { isActiveProvider($0) }
+
+        VStack(alignment: .leading, spacing: 6) {
+            // Refresh control moved to KannuHeader, next to the clipboard icon
+            // (icon-only, shown while this tab is active) — no longer needed here.
             HStack(alignment: .top, spacing: 10) {
-                ForEach(ProviderID.allCases.filter { isEnabled($0) }) { provider in
+                ForEach(active) { provider in
                     card(for: provider)
                 }
             }
@@ -70,7 +82,11 @@ struct NotchLLMUsageView: View {
             case .failure(let reason):
                 Text(reason).font(.caption).foregroundStyle(.secondary).lineLimit(4)
             case .success(let snap):
-                success(snap)
+                if provider == .antigravity {
+                    antigravitySessionInfo(snap)
+                } else {
+                    success(snap, provider: provider)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -79,7 +95,24 @@ struct NotchLLMUsageView: View {
     }
 
     @ViewBuilder
-    private func success(_ snap: UsageSnapshot) -> some View {
+    private func antigravitySessionInfo(_ snap: UsageSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let info = snap.quotaError {
+                Text(info)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+            } else {
+                Text("No recent sessions")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+
+    @ViewBuilder
+    private func success(_ snap: UsageSnapshot, provider: ProviderID) -> some View {
         let hasPartialEstimate = snap.today.hasUnpricedModel || snap.week.hasUnpricedModel || snap.session.hasUnpricedModel
         let showsQuota = snap.sessionLimit != nil || snap.weekLimit != nil
         let showEstimatedCost = !snap.billedCostOnly
@@ -101,12 +134,17 @@ struct NotchLLMUsageView: View {
             } else {
                 if let limit = snap.sessionLimit { quotaGauge("Session", limit) }
                 if let limit = snap.weekLimit { quotaGauge("Week", limit) }
-                if snap.logsUnavailable {
-                    Text("Token totals unavailable (no local logs)").font(.caption2).foregroundStyle(.secondary)
-                } else {
-                    VStack(alignment: .leading, spacing: 2) {
-                        window("Today", snap.today, compact: true, showCost: false)
-                        window("Week", snap.week, compact: true, showCost: false)
+                // Claude's Session/Week quota gauges above already cover this ground —
+                // the compact Today/Week token counts were redundant for Claude specifically.
+                // Other providers (e.g. Cursor, Codex) keep them.
+                if provider != .claude {
+                    if snap.logsUnavailable {
+                        Text("Token totals unavailable (no local logs)").font(.caption2).foregroundStyle(.secondary)
+                    } else {
+                        VStack(alignment: .leading, spacing: 2) {
+                            window("Today", snap.today, compact: true, showCost: false)
+                            window("Week", snap.week, compact: true, showCost: false)
+                        }
                     }
                 }
                 if let onDemand = snap.onDemandSpendUSD {

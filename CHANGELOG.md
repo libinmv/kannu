@@ -4,6 +4,88 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-09 - Drop Unavailable chips from the Usage tab
+- **Developer label:** Drop Unavailable chips from the Usage tab
+- **Agent label:** Claude: remove hoverable Unavailable chips; omit failed and fatally unconfigured providers from the card row
+- **Changes:**
+  - `NotchLLMUsageView.swift`: removed the `inactive` provider list and `unavailableChip(for:)` UI that previously rendered dimmed "Unavailable" chips next to active cards — the Usage tab now only shows providers that are active/usable
+  - `UsageProvider.swift`: added `UsageSnapshot.isAuthFailure` / `isFatallyUnconfigured`, and threaded `QuotaFetchResult.isAuthFailure` so signed-out / 401–403 / expired-token failures can be distinguished from transient 429/5xx errors
+  - `ClaudeUsageProvider.swift` / `CodexUsageProvider.swift` / `ClaudeQuotaClient.swift` / `CodexQuotaClient.swift`: set `isAuthFailure` on definitive auth failures only (not 429/5xx), and `NotchLLMUsageView.isActiveProvider` now also filters `.success` snapshots where `isFatallyUnconfigured` is true
+
+### 2026-08-09 - Move Usage-tab refresh into the header icon row; drop redundant Claude token counts
+- **Developer label:** Move Usage-tab refresh into the header icon row; drop redundant Claude token counts
+- **Agent label:** Claude: relocate the Refresh control to an icon-only button beside the clipboard icon in KannuHeader; hide Claude's compact Today/Week token rows since its Session/Week quota gauges already cover that ground
+- **Changes:**
+  - `NotchLLMUsageView.swift`: removed the labeled "Refresh" text+icon button that lived in its own row above the provider cards
+  - `KannuHeader.swift`: added a matching icon-only refresh `Button` (same `Capsule().fill(.black)` 30×30 style as the clipboard button, `arrow.clockwise` glyph) positioned right after the clipboard icon in the header's icon row; only shown while `coordinator.currentView == .llmUsage`; calls `LLMUsageManager.shared.refreshAll(force: true)` and disables itself while `isRefreshing`, matching the exact behavior of the button it replaces
+  - `NotchLLMUsageView.swift`: threaded `provider: ProviderID` into `success(_:)` (was called with no provider identity) and wrapped the compact `window("Today", ...)`/`window("Week", ...)` rows in `if provider != .claude`, since for Claude that information duplicates the "Session"/"Week" quota gauge bars already shown above it. Other providers (Cursor, Codex) keep the compact rows unchanged
+
+### 2026-08-09 - Stronger pulse and a completion attention-flash on the closed-notch traffic light
+- **Developer label:** Stronger pulse and a completion attention-flash on the closed-notch traffic light
+- **Agent label:** Claude: widen pulse amplitude, add a brief full-brightness pulse on session completion before it dims
+- **Changes:**
+  - `ConditionalPulseModifier` (`AgentTrafficLightLiveActivity.swift`) widened from 1.0→1.15 scale / 1.0→0.75 opacity to 1.0→1.3 scale / 1.0→0.5 opacity, and sped up from 0.8s to 0.7s per cycle — reported as too subtle to read as "breathing" at these icon sizes
+  - Added a 4-second "attention window" after a session completes: both `singleAgentRow`'s red dot and `multiAgentRow`'s icon now keep pulsing at full brightness for those 4 seconds instead of dropping straight to the static dimmed/settled state — completion was previously a silent instant dim, easy to miss if you weren't already looking at the notch. Red/yellow/green semantics are unchanged (red still means done, green still means running) per explicit confirmation — this is about making the completion *moment* noticeable, not changing what the colors mean
+  - Root cause found (separately, awaiting user confirmation) for "only one of two active agents shows in the closed notch": a provider whose hook payload doesn't resolve a real conversation ID falls back to the literal ID `"default"`, which `CursorAgentStatusMonitor`/`AgentTrafficLightMapper.isSimulationConversationID` treats as a simulation/test session and silently deletes — so that provider's session never reaches the display list. Not yet fixed pending confirmation that `~/.kannu/agent-status/antigravity-*.json` is actually named with a `default` ID.
+
+### 2026-08-09 - Always surface Agent Status on closed-notch hover when an agent is active
+- **Developer label:** Always surface Agent Status on closed-notch hover when an agent is active
+- **Agent label:** Claude: remove the Home-only restriction on hover-triggered Agent Status auto-switch
+- **Changes:**
+  - `ContentView.swift`'s closed-notch hover handler previously only auto-switched `coordinator.currentView` to `.agentStatus` when the current tab was already `.home` — hovering while on Notes/Stats/Timer/etc. never surfaced active agent work. Removed that `currentView == .home` condition; hovering the closed notch now always jumps to Agent Status whenever `agentStatusMonitor.shouldShowTrafficLight` is true, regardless of which tab was last open
+  - Investigated the rest of the request (single-agent icon+name+traffic-light, multi-agent icon row with pulse, auto-disappear once done) and confirmed it's all already implemented in `AgentTrafficLightLiveActivity.swift` (`singleAgentRow`/`multiAgentRow`, `ConditionalPulseModifier`, 30s completion linger window) — no change needed there, confirmed with the user that the existing simultaneous-pulse behavior (not an alternating/rotating display) is what was wanted
+
+### 2026-08-09 - Surface Antigravity quota-exceeded state in the notch
+- **Developer label:** Surface Antigravity quota-exceeded state in the notch
+- **Agent label:** Claude: detect terminationReason/error on Antigravity's Stop hook and label the session "Quota exceeded"; sync the stale standalone hook script copy
+- **Changes:**
+  - `AgentHookInstaller`'s installed hook script (embedded in `writeScript`) now inspects `terminationReason`/`error` on Antigravity's `Stop` event and, when either mentions quota/rate-limit/resource-exhaustion, writes raw state `"quota_exceeded"` instead of `"stopped"` and sets the session name to "Quota exceeded" — previously a quota-exhausted run looked identical to a normal completion, so it never showed up anywhere
+  - No `AgentTrafficLightState` changes needed: an unrecognized raw state already falls back to the same stopped/inactive-by-age lifecycle in `AgentTrafficLightMapper.resolveHookState`, so this is purely additive — the traffic light behaves exactly as before, only the Usage-tab card text (`AntigravityUsageProvider`, which reads the raw state string directly) and the session's chat-name label change
+  - Bumped `KANNU_HOOK_SCRIPT_VERSION` 24 → 25 so existing installs pick up the new script automatically via the existing `migrateHookScriptVersionIfNeeded` path
+  - `scripts/kannu-agent-status.sh` (the standalone reference copy) had drifted stale at v23 despite two rounds of changes already landing in the installed copy — resynced it to match exactly, plus this change
+  - **Unverified assumption:** the exact wording Antigravity puts in `terminationReason`/`error` for a quota/rate-limit stop hasn't been confirmed against a real quota-exhausted run — the marker list (`quota`, `rate_limit`, `rate limit`, `resource_exhausted`) is a best guess from public docs, not observed output. Please check the actual `~/.kannu/agent-status/antigravity-*.json` file (or hook stdin) the next time Antigravity's quota trips, and tell me the real field values if this doesn't catch it.
+
+### 2026-08-09 - Claude quota 429 backoff and notch invisible-text fix
+- **Developer label:** Claude quota 429 backoff and notch invisible-text fix
+- **Agent label:** Claude: rate-limit backoff for oauth/usage; force dark appearance on the notch window; stop routing hosted content through NSGlassEffectView's private contentView blend
+- **Changes:**
+  - Added `ClaudeQuotaBackoff` actor in `ClaudeQuotaClient.swift`: on a 429 from `oauth/usage`, cache a cooldown (from `Retry-After` if present, else 5 minutes, floor 60s) and short-circuit `fetchLimits` until it passes, instead of retrying immediately on the next auto or manual refresh
+  - `LLMUsageManager.refreshAll`'s network-provider throttle previously let `force`/`interactive` skip the 60s cooldown entirely (every Usage-tab open, refresh tap, or "Allow keychain access…" retry fired an uncapped request); added a 10s floor for those instead of zero
+  - Root cause of the invisible notch text, per direct user report (black letters on the notch's black background, not a pure-opacity issue): nothing in the codebase ever pinned dark appearance — no `.preferredColorScheme`, no `NSAppearance`, no per-window `.appearance` — anywhere. `KannuWindow` (the notch panel) inherited whatever the *system* light/dark setting was, so `.secondary`/`.primary` text resolved near-black in Light Mode while the notch's background is hardcoded dark. Fixed by setting `appearance = NSAppearance(named: .darkAqua)` on `KannuWindow` at init, so notch text always resolves correctly regardless of system appearance
+  - Two earlier, narrower attempts at this same bug are kept as harmless robustness improvements, not the actual fix: `LiquidGlassContainerView.configureBackdropLayers` now retries (bounded, 20 attempts) when it finds zero `CABackdropLayer`s instead of giving up silently, and forces a redraw when correcting a `windowServerAware` flip; separately, the hosting view is now added as a plain sibling subview on top of the glass instead of via the glass's private `contentView` key, avoiding an undocumented blend on hosted content; set `hosting.sizingOptions = []` so that sibling hosting view cannot compete with the window root for Auto Layout sizing (prevents Update-Constraints-in-Window / `NSGenericException` crashes)
+  - `Localizable.xcstrings`: Usage-tab provider help text now mentions Claude's macOS keychain item (`Claude Code-credentials`) and the one-time approval prompt needed before quota can load
+  - **Awaiting live confirmation on device that the appearance fix resolves the reported black-text bug.**
+
+### 2026-08-09 - Antigravity usage card and unavailable provider chip in LLM usage panel
+- **Developer label:** Antigravity usage card and unavailable provider chip in LLM usage panel
+- **Agent label:** Gemini: Add AntigravityUsageProvider; show errored providers as hoverable unavailable chip
+- **Changes:**
+  - Add `ProviderID.antigravity` and `enableAntigravityProvider` Defaults key in `UsageProvider.swift` / `Constants.swift`.
+  - Add `AntigravityUsageProvider` reading hook status files from `~/.kannu/agent-status/antigravity-*.json` to show session count and last-active timestamp; mark it `isLocalFileProvider` so `LLMUsageManager.refreshAll` refreshes it on every panel open without the shared 60s network throttle.
+  - Auto-detect Antigravity on first launch via `~/.gemini/antigravity-ide` directory (independent of existing `llmProviderDefaultsConfigured` flag, via `antigravityProviderDefaultsConfigured`).
+  - Show Antigravity as a full card in the usage panel (`antigravitySessionInfo` in `NotchLLMUsageView.swift`) instead of token/cost columns.
+  - Providers with API errors (e.g. Codex HTTP 401) are shown as a dimmed "Unavailable" chip inline with active cards; hovering reveals the full error message with orange border highlight. (Later removed under "Drop Unavailable chips from the Usage tab" above.)
+  - Add `antigravity` case to `AgentProviderIconView.init(providerID:)`.
+
+### 2026-08-09 - Fix green traffic light lingering during idle time after agent completion
+- **Developer label:** Fix green traffic light lingering during idle time after agent completion
+- **Agent label:** Reduce runningStaleSeconds and activeStaleMs timeouts from 6 minutes to 15 seconds
+- **Changes:**
+  - Update `postToolUse`, `postToolUseFailure`, `PostToolUse`, and `PostInvocation` event mappings in `AgentHookInstaller.swift` from `executing` to `thinking`.
+  - Reduce `runningStaleSeconds` in `AgentTrafficLightMapper.map` from 360 to 15 seconds so non-generating sessions do not report false active thinking during idle time.
+  - Reduce `activeStaleMs` default in `AgentTrafficLightMapper.resolveHookState` from 360,000ms (6 minutes) to 15,000ms (15 seconds) so idle hook sessions turn off green light once completed.
+
+### 2026-08-09 - Antigravity agent status provider
+- **Developer label:** Antigravity agent status provider
+- **Agent label:** Antigravity IDE & CLI status hook support
+- **Changes:**
+  - Add Google Antigravity (IDE & CLI) support to `AgentHookProvider` with matcher-group hook installation into `~/.gemini/antigravity-ide/hooks.json` (also mirrored to `~/.gemini/config/hooks.json` and `~/.gemini/hooks.json`).
+  - Extend `kannu-agent-status.sh` / embedded installer script to parse Antigravity invocation and workspace payload events (`PreInvocation`, `workspacePaths`, etc.).
+  - Render running provider icon and provider name label (`Antigravity`, `Cursor`, `Claude`, `Codex`) inside `AgentTrafficLightIndicator`; add `antigravity` to `AgentSessionStatus.providerLabel`.
+  - Add Antigravity provider detection to `NotchAgentStatusView` empty-state cards and `AgentProviderIconView` (bundle IDs / app paths / `atom` SF Symbol).
+  - `KannuApp.swift`: include `(.antigravity, ".gemini")` in the on-launch provider-directory presence scan used for hook setup.
+  - `ReadMe.md`: mention Google Antigravity alongside Cursor, Copilot, Codex, and Claude in the agent-status blurb.
+
 ### 2026-08-06 - Fix release version drift
 - **Developer label:** Bump MARKETING_VERSION and CURRENT_PROJECT_VERSION past the shipped tags
 - **Agent label:** Existing installs can see a new release as newer again

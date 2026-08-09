@@ -84,6 +84,10 @@ struct NotchAgentStatusView: View {
                 source: .codex, name: "Codex",
                 detected: fm.fileExists(atPath: home.appendingPathComponent(".codex/sessions").path)
             ),
+            ProviderInstallStatus(
+                source: .antigravity, name: "Antigravity",
+                detected: fm.fileExists(atPath: home.appendingPathComponent(".gemini").path)
+            ),
         ]
     }
 
@@ -127,7 +131,7 @@ struct NotchAgentStatusView: View {
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.center)
-            Text("Fire up Cursor, Claude Code, or Codex and start a session — we'll watch the lights for you.")
+            Text("Fire up Cursor, Claude Code, Codex, or Antigravity and start a session — we'll watch the lights for you.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

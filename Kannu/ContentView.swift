@@ -2386,8 +2386,11 @@ struct ContentView: View {
                         }
                     } else if self.enableAgentStatusFeature
                         && self.agentStatusMonitor.shouldShowTrafficLight
-                        && !self.isClosedMusicPairingEligible
-                        && self.coordinator.currentView == .home {
+                        && !self.isClosedMusicPairingEligible {
+                        // Previously gated to `currentView == .home` only, so hovering while on
+                        // Notes/Stats/etc. never surfaced active agent work. Requested change:
+                        // always jump to Agent Status on hover when an agent is actually active,
+                        // regardless of whichever tab was last open.
                         withAnimation(.smooth) {
                             self.coordinator.currentView = .agentStatus
                         }

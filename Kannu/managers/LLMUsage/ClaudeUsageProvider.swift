@@ -33,6 +33,7 @@ struct ClaudeUsageProvider: UsageProvider {
         snapshot.quotaError = quota.errorMessage
         snapshot.quotaAction = quota.action
         snapshot.accountTier = quota.accountTier
+        snapshot.isAuthFailure = quota.isAuthFailure
         // Subscription usage isn't billed per-token; show token counts but never
         // pricing-table cost estimates (parity with how Cursor shows billed spend only).
         snapshot.billedCostOnly = true
