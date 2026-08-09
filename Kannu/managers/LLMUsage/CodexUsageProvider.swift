@@ -10,7 +10,7 @@ struct CodexUsageProvider: UsageProvider {
         self.quotaClient = quotaClient
     }
 
-    func fetchSnapshot(now: Date) async throws -> UsageSnapshot {
+    func fetchSnapshot(now: Date, interactive: Bool) async throws -> UsageSnapshot {
         var snapshot = UsageSnapshot()
         snapshot.lastUpdated = now
 

@@ -38,9 +38,12 @@ final class LLMUsageManager: ObservableObject {
         return Self.allProviders.filter { Defaults[$0.id.enabledKey] }
     }
 
-    func refreshAll(force: Bool = false) {
+    /// `interactive` marks a refresh the user asked for directly, letting providers take
+    /// steps that may show a system prompt (e.g. approving a cross-app keychain read).
+    /// Automatic and timer-driven refreshes must leave it false so nothing blocks on a dialog.
+    func refreshAll(force: Bool = false, interactive: Bool = false) {
         guard !isRefreshing else { return }
-        guard force || Date().timeIntervalSince(lastRefresh) >= Self.minRefreshInterval else { return }
+        guard force || interactive || Date().timeIntervalSince(lastRefresh) >= Self.minRefreshInterval else { return }
         lastRefresh = Date()
         isRefreshing = true
         let providers = enabledProviders
@@ -49,15 +52,22 @@ final class LLMUsageManager: ObservableObject {
         for provider in providers {
             results[provider.id] = .loading
         }
-        Task { await runRefresh(providers: providers) }
+        Task { await runRefresh(providers: providers, interactive: interactive) }
     }
 
-    private func runRefresh(providers: [UsageProvider]) async {
+    /// Retries a provider's quota with prompts allowed, after the user taps the card's fix-it button.
+    func resolveQuotaAction(_ action: QuotaAction) {
+        switch action {
+        case .grantClaudeKeychainAccess: refreshAll(force: true, interactive: true)
+        }
+    }
+
+    private func runRefresh(providers: [UsageProvider], interactive: Bool) async {
         let now = Date()
         await withTaskGroup(of: (ProviderID, UsageResult).self) { group in
             for provider in providers {
                 group.addTask {
-                    do { return (provider.id, .success(try await provider.fetchSnapshot(now: now))) }
+                    do { return (provider.id, .success(try await provider.fetchSnapshot(now: now, interactive: interactive))) }
                     catch { return (provider.id, .failure(error.localizedDescription)) }
                 }
             }

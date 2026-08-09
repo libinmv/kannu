@@ -97,6 +97,7 @@ struct NotchLLMUsageView: View {
                 } else {
                     Text("quota unavailable").font(.caption2).foregroundStyle(.secondary.opacity(0.7))
                 }
+                quotaActionButton(snap.quotaAction)
             } else {
                 if let limit = snap.sessionLimit { quotaGauge("Session", limit) }
                 if let limit = snap.weekLimit { quotaGauge("Week", limit) }
@@ -116,12 +117,32 @@ struct NotchLLMUsageView: View {
                 if let quotaError = snap.quotaError {
                     Text(quotaError).font(.caption2).foregroundStyle(.secondary).lineLimit(4)
                 }
+                quotaActionButton(snap.quotaAction)
             }
             if hasPartialEstimate && !showsQuota && showEstimatedCost {
                 Text("Some models are unpriced; totals are partial estimates.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    /// One-tap fix for a quota failure the user can actually resolve (e.g. approving the
+    /// keychain read Claude Code's login lives behind). Only this button may trigger a prompt.
+    @ViewBuilder
+    private func quotaActionButton(_ action: QuotaAction?) -> some View {
+        if let action {
+            Button {
+                manager.resolveQuotaAction(action)
+            } label: {
+                Text(action.buttonTitle)
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(.white.opacity(0.12), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(manager.isRefreshing)
         }
     }
 

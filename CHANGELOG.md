@@ -4,6 +4,31 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-06 - Fix release version drift
+- **Developer label:** Bump MARKETING_VERSION and CURRENT_PROJECT_VERSION past the shipped tags
+- **Agent label:** Existing installs can see a new release as newer again
+- **Changes:**
+  - `MARKETING_VERSION` 1.0.0 → 1.2.0 and `CURRENT_PROJECT_VERSION` 1 → 2 in both Debug and Release configs. Tags `v1.0.0` and `v1.1.0` both existed while the project file still said `1.0.0 (1)`, so the build tagged v1.1.0 reported itself as 1.0.0
+  - Sparkle compares `CFBundleVersion` / `CFBundleShortVersionString` against the appcast, so any release cut from the old numbers would not have been seen as newer by an installed copy — auto-update was silently dead even after the appcast signing fix
+  - The project file is the sole source of truth: the release workflow and scripts contain no `agvtool` or version handling, and `Info.plist` has no version keys (`GENERATE_INFOPLIST_FILE` synthesises them)
+
+### 2026-08-06 - Agent state accuracy, resize crash fix, per-display notch settings
+- **Developer label:** AppKit re-entrancy crash, Claude/Cursor traffic-light correctness, per-display display settings
+- **Agent label:** Red means done, yellow means it needs you, and the notch behaves per display
+- **Changes:**
+  - Fixed random `SIGABRT` on window resize: `NSHostingView.sizingOptions` was unset so SwiftUI resized the window from inside the window's own layout pass. Set `sizingOptions = []`, added a re-entrancy guard with coalesced pending resize dispatched via `RunLoop.main.perform`, and split `setFrame(display: false)` from a deferred `displayIfNeeded()`. Removed the dead `animated` parameter and stubbed `shouldAnimateResize`
+  - Expanded Claude hook coverage to matcher-scoped groups: `Notification/agent_completed` → stopped (the first real "it's done" signal), `Notification/permission_prompt|idle_prompt|agent_needs_input` → awaiting input, `PreToolUse` matched on `ExitPlanMode|AskUserQuestion` → awaiting input (plan-approval waits now show yellow), plus `StopFailure` and `SessionEnd`. Hook script v24
+  - Claude runs matcher groups in parallel with no ordering guarantee, so gated-tool detection is covered three ways: the matcher group, tool-name detection in the generic `PreToolUse` group, and a no-downgrade tiebreak on same-event writes within 2s
+  - Relaxed `checkInstalled(.claude)` to a core event subset and keyed the script-version migration on script-file existence — otherwise growing the hook table would make existing installs report "not installed" and skip their own upgrade
+  - Passive Claude detection now reads the transcript tail instead of file mtime: an assistant `tool_use` with no result means a tool is in flight (green), `stop_reason` of `end_turn`/`stop_sequence` means the turn finished (red). A long tool no longer reads as idle, and Claude reaches red without hooks installed. Passive never reports yellow — that stays hook-only, since a permission dialog isn't visible from disk
+  - Hook sessions in an active state no longer age out while the process is provably alive: a tool running past the 6-minute staleness threshold kept dimming the session mid-work
+  - Fixed Cursor showing yellow while working: `beforeShellExecution` fires for auto-approved commands so it no longer means "waiting", the sticky-yellow latch is narrowed to `afterAgentThought` and preserves its original timestamp (refreshing it defeated the 5-minute escape), a live `generating` status now beats a stale transcript approval flag, and the transcript walk terminates on `turn_ended` or a `tool_result`
+  - New installs on Macs without a notch default to Dynamic Island, hidden until hovered. Notched Macs are unchanged
+  - Notch detection now asks the built-in display via `CGDisplayIsBuiltin` rather than `NSScreen.main` — setting up while docked misclassified a notched MacBook. The answer is cached and re-resolved on display changes, so a clamshell setup corrects itself when the lid opens. No hardcoded model list
+  - Added per-display overrides for notch style and hide-until-hover, keyed by screen name and falling back to the global settings. Notched built-in displays are omitted from the list since their shape is fixed by hardware
+  - Hovering the hidden island no longer leaves it out after the pointer leaves; agent activity reveals it for 3s (was 6s), with a 2s heartbeat while a run is in progress so a long silent tool keeps the light lit
+  - Fixed `readTrailingLines` returning nil for files smaller than its read window, which silently sent callers to a fallback that read the start of the transcript
+
 ### 2026-07-31 - Fix Sparkle CI appcast signing
 - **Developer label:** Fix Sparkle update export in release workflow
 - **Agent label:** Pass EdDSA key file to generate_appcast on CI

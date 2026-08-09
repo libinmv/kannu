@@ -41,6 +41,16 @@ struct UsageLimit: Equatable {
     var fraction: Double { limit > 0 ? min(used / limit, 1) : 0 }
 }
 
+/// A user-fixable reason a quota fetch failed, surfaced as a button in the usage card.
+enum QuotaAction: Equatable {
+    case grantClaudeKeychainAccess
+    var buttonTitle: String {
+        switch self {
+        case .grantClaudeKeychainAccess: return "Allow keychain access…"
+        }
+    }
+}
+
 struct UsageSnapshot: Equatable {
     var session: UsageTotals = .init()
     var today: UsageTotals = .init()
@@ -51,6 +61,8 @@ struct UsageSnapshot: Equatable {
     var models: [ModelUsage] = []
     var lastUpdated: Date = .distantPast
     var quotaError: String? = nil
+    /// Set when the quota failure has a one-tap fix the user can trigger.
+    var quotaAction: QuotaAction? = nil
     var logsUnavailable: Bool = false
     /// Show only provider-billed spend; never display pricing-table estimates.
     var billedCostOnly: Bool = false
@@ -64,6 +76,7 @@ struct QuotaFetchResult: Equatable {
     var onDemandSpendUSD: Double? = nil
     var accountTier: String? = nil
     var errorMessage: String?
+    var action: QuotaAction? = nil
 
     var hasLimits: Bool { session != nil || week != nil }
 }
@@ -76,5 +89,13 @@ enum UsageResult {
 
 protocol UsageProvider {
     var id: ProviderID { get }
-    func fetchSnapshot(now: Date) async throws -> UsageSnapshot
+    /// `interactive` is true only for a refresh the user explicitly asked for; providers may
+    /// then take steps that can show a system dialog (e.g. a cross-app keychain read).
+    func fetchSnapshot(now: Date, interactive: Bool) async throws -> UsageSnapshot
+}
+
+extension UsageProvider {
+    func fetchSnapshot(now: Date) async throws -> UsageSnapshot {
+        try await fetchSnapshot(now: now, interactive: false)
+    }
 }

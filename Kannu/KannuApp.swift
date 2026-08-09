@@ -21,6 +21,7 @@ import AVFoundation
 import Combine
 import Defaults
 import KeyboardShortcuts
+import LaunchAtLogin
 import SwiftUI
 import SkyLightWindow
 
@@ -225,6 +226,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
+    /// `SMAppService.mainApp` pins whichever bundle called `register()`, so enabling "launch at
+    /// login" from a build folder or DerivedData copy leaves the OS relaunching that stale path
+    /// at every login — even after a newer release is installed in /Applications. Re-registering
+    /// from the installed copy repoints the entry at ourselves and clears the ghost.
+    private func repairLoginItemIfStale() {
+        let path = Bundle.main.bundleURL.resolvingSymlinksInPath().path
+        let isInstalled = path.hasPrefix("/Applications/")
+            || path.hasPrefix(NSHomeDirectory() + "/Applications/")
+        guard isInstalled, LaunchAtLogin.isEnabled else { return }
+        LaunchAtLogin.isEnabled = false
+        LaunchAtLogin.isEnabled = true
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         let userInfo: [String: Any] = [
             KannuDistributedNotifications.UserInfoKey.sourcePID: NSNumber(value: ProcessInfo.processInfo.processIdentifier)
@@ -354,12 +368,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.animationBehavior = .none
         // collectionBehavior is configured in KannuWindow.init
 
-        window.contentView = FirstMouseHostingView(
+        let hostingView = FirstMouseHostingView(
             rootView: ContentView()
                 .environmentObject(viewModel)
                 //.moveToSky()
         )
-        
+        // NSHostingView defaults to `.standardBounds`, which pushes SwiftUI's ideal size into
+        // the window from inside the window's own layout pass — that re-entrancy is what threw
+        // `_postWindowNeedsUpdateConstraints` and aborted the app. Every notch dimension already
+        // comes from `resizeWindows` / `calculateDynamicNotchSize`, so automatic sizing is pure
+        // liability here.
+        if #available(macOS 13.0, *) {
+            hostingView.sizingOptions = []
+        }
+        window.contentView = hostingView
+
         window.orderFrontRegardless()
         // Pin above every space (fullscreen included) only for "Never hide"; the
         // hide options leave the window on the collectionBehavior path so
@@ -400,8 +423,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateWindowSizeIfNeeded() {
         // Calculate required size based on current state
         let requiredSize = calculateRequiredNotchSize()
-        let animateResize = shouldAnimateResize(for: requiredSize)
-        resizeWindows(to: requiredSize, animated: animateResize, force: false)
+        resizeWindows(to: requiredSize, animated: true, force: false)
     }
 
     private func updateWindowSizeForTabSwitch() {
@@ -511,27 +533,61 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         resizeWindows(to: size, animated: animated, force: force)
     }
 
+    /// Re-entrancy guard for `resizeWindows`. `setFrame` drives a layout pass, and a SwiftUI
+    /// state change observed during that pass can call straight back in here — resizing a window
+    /// from inside its own layout is what AppKit aborts on.
+    private var isApplyingWindowResize = false
+    private var pendingWindowResize: (size: CGSize, force: Bool)?
+
     private func resizeWindows(to size: CGSize, animated: Bool, force: Bool) {
         guard size.width > 0, size.height > 0 else { return }
+
+        // Already inside a resize: remember the newest request and let the outer call drain it
+        // once the layout pass has finished.
+        if isApplyingWindowResize {
+            pendingWindowResize = (size, force)
+            return
+        }
+
+        isApplyingWindowResize = true
+        var resizedWindows: [NSWindow] = []
 
         if Defaults[.showOnAllDisplays] {
             for (screen, window) in windows {
                 let screenSize = adjustedSizeForScreen(size, screen: screen)
                 if force || window.frame.size != screenSize {
-                    resizeWindow(window, on: screen, to: screenSize, animated: animated)
+                    resizeWindow(window, on: screen, to: screenSize)
+                    resizedWindows.append(window)
                 }
             }
         } else if let window {
             let screen = window.screen ?? NSScreen.screens.first { $0.frame.intersects(window.frame) } ?? NSScreen.main ?? NSScreen.screens.first
-            guard let screen else { return }
+            guard let screen else {
+                isApplyingWindowResize = false
+                return
+            }
             let screenSize = adjustedSizeForScreen(size, screen: screen)
             if force || window.frame.size != screenSize {
-                resizeWindow(window, on: screen, to: screenSize, animated: animated)
+                resizeWindow(window, on: screen, to: screenSize)
+                resizedWindows.append(window)
+            }
+        }
+
+        isApplyingWindowResize = false
+        // Display only after the flag clears, so any relayout it triggers takes the deferred path.
+        resizedWindows.forEach { $0.displayIfNeeded() }
+
+        if let pending = pendingWindowResize {
+            pendingWindowResize = nil
+            // A runloop source, so this lands outside the current CATransaction commit rather
+            // than re-entering it.
+            RunLoop.main.perform(inModes: [.common]) { [weak self] in
+                self?.resizeWindows(to: pending.size, animated: animated, force: pending.force)
             }
         }
     }
 
-    private func resizeWindow(_ window: NSWindow, on screen: NSScreen, to size: CGSize, animated: Bool) {
+    private func resizeWindow(_ window: NSWindow, on screen: NSScreen, to size: CGSize) {
         let screenFrame = screen.frame
         // Clamp width to screen width so the notch never extends beyond screen edges on scaled displays
         let clampedWidth = min(size.width, screenFrame.width).rounded()
@@ -541,13 +597,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let newY = (screenFrame.origin.y + screenFrame.height - clampedHeight).rounded()
         let targetFrame = NSRect(x: newX, y: newY, width: clampedWidth, height: clampedHeight)
 
-        window.setFrame(targetFrame, display: true)
+        // `display: false` matches `positionWindow`; the caller displays once the guard is clear.
+        window.setFrame(targetFrame, display: false)
     }
 
-    private func shouldAnimateResize(for newSize: CGSize) -> Bool {
-        return true
-    }
-    
     func applicationDidFinishLaunching(_ notification: Notification) {
         let userInfo: [String: Any] = [
             KannuDistributedNotifications.UserInfoKey.sourcePID: NSNumber(value: ProcessInfo.processInfo.processIdentifier)
@@ -558,6 +611,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             userInfo: userInfo,
             deliverImmediately: true
         )
+
+        repairLoginItemIfStale()
 
         LockScreenLiveActivityWindowManager.shared.configure(viewModel: vm)
         LockScreenManager.shared.configure(viewModel: vm)
@@ -1322,6 +1377,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     @objc func screenConfigurationDidChange() {
         let currentScreens = NSScreen.screens
+
+        // Opening the lid or undocking may be the first time we ever see the built-in display,
+        // so re-resolve here. A machine set up in clamshell corrects its own classification
+        // rather than staying misconfigured until onboarding is repeated.
+        macHasNotchedBuiltInDisplay()
 
         let screensChanged =
             currentScreens.count != previousScreens?.count

@@ -84,6 +84,10 @@ struct ContentView: View {
     @Default(.showStandardMediaControls) var showStandardMediaControls
     @Default(.externalDisplayStyle) var externalDisplayStyle
     @Default(.hideNonNotchUntilHover) var hideNonNotchUntilHover
+    // Observed so SwiftUI invalidates when a per-display override changes. The resolvers in
+    // matters.swift read Defaults directly, which is not an observable dependency on its own.
+    @Default(.displayStyleOverrides) var displayStyleOverrides
+    @Default(.hideUntilHoverOverrides) var hideUntilHoverOverrides
     
     // Battery settings reactivity
     @Default(.showPowerStatusNotifications) var showPowerStatusNotifications
@@ -207,6 +211,14 @@ struct ContentView: View {
     @State private var hiddenEdgeHoverPollingTask: Task<Void, Never>?
     @State private var isHoveringClosedMusicWaveformControl: Bool = false
     @State private var agentHoverTask: Task<Void, Never>?
+
+    /// Non-notch hide-until-hover reveal windows. `revealHoldDeadline` keeps the island on
+    /// screen; `agentLightDeadline` keeps the traffic light lit. Both are refreshed by agent
+    /// activity and on hover-exit, and are per-screen because the island, its hover state and
+    /// its offset are all per-`ContentView` — see `performViewTeardown` for cancellation.
+    @State private var revealHoldDeadline: Date?
+    @State private var agentLightDeadline: Date?
+    @State private var revealExpiryTask: Task<Void, Never>?
 
     @State private var gestureProgress: CGFloat = .zero
     @State private var skipGestureActiveDirection: MusicManager.SkipDirection?
@@ -381,7 +393,10 @@ struct ContentView: View {
     /// Whether the current screen should render as a Dynamic Island pill
     /// rather than the standard notch shape. Always false on physical notch screens.
     private var isDynamicIslandMode: Bool {
-        shouldUseDynamicIslandMode(for: currentScreenName)
+        // Touch the observed copies so a per-display or global style change invalidates the view;
+        // the resolver itself reads Defaults directly and wouldn't register a dependency.
+        _ = (displayStyleOverrides, externalDisplayStyle)
+        return shouldUseDynamicIslandMode(for: currentScreenName)
     }
 
     private var currentScreenName: String {
@@ -403,8 +418,7 @@ struct ContentView: View {
     private var shouldExpandPhysicalNotchForAgent: Bool {
         isPhysicalNotchScreen
             && vm.notchState == .closed
-            && enableAgentStatusFeature
-            && agentStatusMonitor.shouldShowTrafficLight
+            && showAgentTrafficLight
             && !vm.hideOnClosed
     }
 
@@ -442,14 +456,40 @@ struct ContentView: View {
         return currentScreenName == targetScreenName
     }
 
+    /// Whether hide-until-hover applies to *this* screen. Displays with a physical notch are
+    /// never affected, so all the time-boxing below leaves them on their existing behaviour.
+    private var hideUntilHoverAppliesHere: Bool {
+        let resolved = hideUntilHoverOverrides[currentScreenName] ?? hideNonNotchUntilHover
+        return resolved && isNonNotchScreen
+    }
+
+    /// The traffic light, time-boxed when hide-until-hover is on.
+    ///
+    /// The monitor's `shouldShowTrafficLight` means "a visible agent session exists", which is
+    /// true for as long as a session is open — enough to pin the island on screen indefinitely.
+    /// In hover mode we instead show the light only inside a window refreshed by actual agent
+    /// activity, or while the pointer is on the island. Everywhere else the raw value stands.
+    private var showAgentTrafficLight: Bool {
+        guard enableAgentStatusFeature, agentStatusMonitor.shouldShowTrafficLight else { return false }
+        guard hideUntilHoverAppliesHere else { return true }
+        // While a music pill is already on screen the light is drawn inside it, so keep it
+        // steady rather than blinking a dot in and out of a persistent container.
+        if closedMusicPairingEligible(hasActiveMusicSnapshot: musicManager.isPlaying) { return true }
+        return agentLightDeadline != nil || isHovering
+    }
+
+    /// Whether the island is being held on screen by a reveal window (hover-exit or agent activity).
+    private var isRevealHoldActive: Bool {
+        revealHoldDeadline != nil
+    }
+
     /// Whether the notch/island should hide off-screen when closed on a non-notch display.
     /// Temporarily reveals the notch when a sneakPeek HUD (volume, brightness, music, etc.) is active.
     private var shouldHideUntilHover: Bool {
-        hideNonNotchUntilHover
-            && isNonNotchScreen
+        hideUntilHoverAppliesHere
             && vm.notchState == .closed
             && !isSneakPeekVisibleOnCurrentScreen
-            && !(enableAgentStatusFeature && agentStatusMonitor.shouldShowTrafficLight)
+            && !showAgentTrafficLight
     }
 
     /// Whether the fallback top-edge hover detector should run.
@@ -524,7 +564,7 @@ struct ContentView: View {
 
         if isSneakPeekVisibleOnCurrentScreen && Defaults[.inlineHUD] { return false }
         if capsLockManager.isCapsLockActive && Defaults[.enableCapsLockIndicator] && !lockScreenManager.isLocked { return false }
-        if enableAgentStatusFeature && agentStatusMonitor.shouldShowTrafficLight { return false }
+        if showAgentTrafficLight { return false }
         if timerManager.isTimerActive && coordinator.timerLiveActivityEnabled { return false }
         if recordingManager.isRecording || !recordingManager.isRecorderIdle, Defaults[.enableScreenRecordingDetection] { return false }
         if downloadManager.isDownloading && Defaults[.enableDownloadListener] { return false }
@@ -748,7 +788,10 @@ struct ContentView: View {
             // interaction modifiers so .contentShape / .onHover only covers
             // the actual notch content, not the shadow clearance below it.
             .padding(.bottom, notchBottomPadding)
-            .offset(y: shouldHideUntilHover && !isHovering
+            // `isRevealHoldActive` is a separate term rather than folded into
+            // `shouldHideUntilHover` on purpose: `shouldUseHiddenEdgeHoverPolling` derives from
+            // that property, and collapsing them would stop the hover poller mid-reveal.
+            .offset(y: shouldHideUntilHover && !isHovering && !isRevealHoldActive
                 ? -(vm.closedNotchSize.height + pillTopOffset + currentShadowPadding + 10)
                 : 0
             )
@@ -891,12 +934,28 @@ struct ContentView: View {
                 // unreliable); the window-cleanup path calls this before closing.
                 vm.onViewTeardown = { performViewTeardown() }
             }
+            .onChange(of: agentStatusMonitor.activityPulse) { _, _ in
+                noteAgentActivityPulse()
+            }
+            .onChange(of: hideNonNotchUntilHover) { _, _ in
+                clearRevealState()
+            }
+            .onChange(of: externalDisplayStyle) { _, _ in
+                clearRevealState()
+            }
             .onChange(of: vm.notchState) { _, state in
                 if state == .open {
+                    // An open notch outlives any reveal window; the countdown restarts when
+                    // it closes again.
+                    cancelRevealCountdown()
                     suppressMusicControlWindowUpdates()
                     cancelMusicControlWindowSync()
                     hideMusicControlWindow()
                 } else {
+                    if hideUntilHoverAppliesHere && isRevealHoldActive {
+                        revealHoldDeadline = Date().addingTimeInterval(nonNotchRevealHoldSeconds)
+                        armRevealCountdown()
+                    }
                     releaseMusicControlWindowUpdates(after: musicControlResumeDelay)
                     enqueueMusicControlWindowSync(forceRefresh: true, delay: 0.05)
                 }
@@ -1089,7 +1148,7 @@ struct ContentView: View {
                           MusicLiveActivity(secondary: musicSecondary)
                               .id("closed-music-live-activity")
                               .transition(closedLiveActivitySwapTransition)
-                      } else if !isCurrentScreenExpansionVisible && vm.notchState == .closed && enableAgentStatusFeature && agentStatusMonitor.shouldShowTrafficLight && !vm.hideOnClosed {
+                      } else if !isCurrentScreenExpansionVisible && vm.notchState == .closed && showAgentTrafficLight && !vm.hideOnClosed {
                           // No music playing: standalone traffic light.
                             AgentTrafficLightLiveActivity(
                                 isHovering: isHovering,
@@ -1383,7 +1442,7 @@ struct ContentView: View {
                         : notchContentHeight
                 )
                 .overlay {
-                    if enableAgentStatusFeature && agentStatusMonitor.shouldShowTrafficLight {
+                    if showAgentTrafficLight {
                         AgentTrafficLightIndicator()
                             .offset(y: physicalNotchAgentVerticalOffset)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2111,6 +2170,83 @@ struct ContentView: View {
         return activationRect.contains(location)
     }
 
+    // MARK: - Non-notch reveal windows
+
+    /// An agent did something: pull the island back into view and relight the traffic light,
+    /// each for its own window. Only meaningful when the island is hidden by default.
+    private func noteAgentActivityPulse() {
+        guard hideUntilHoverAppliesHere, enableAgentStatusFeature else { return }
+        let now = Date()
+        let lightDeadline = now.addingTimeInterval(agentTrafficLightHoverModeWindowSeconds)
+        let holdDeadline = now.addingTimeInterval(nonNotchRevealHoldSeconds)
+
+        // Only animate when the island is actually coming back on screen. Repeat pulses during
+        // a long run just extend the deadlines and must not restage the slide. Both deadlines
+        // move together inside one transaction — they each feed the offset, so splitting them
+        // would let half the change render unanimated.
+        if isRevealHoldActive {
+            agentLightDeadline = lightDeadline
+            revealHoldDeadline = holdDeadline
+        } else {
+            withAnimation(vm.animation) {
+                agentLightDeadline = lightDeadline
+                revealHoldDeadline = holdDeadline
+            }
+        }
+        armRevealCountdown()
+    }
+
+    /// Schedules the expiry of whichever reveal window ends last.
+    private func armRevealCountdown() {
+        revealExpiryTask?.cancel()
+        guard let deadline = latestRevealDeadline else {
+            revealExpiryTask = nil
+            return
+        }
+
+        revealExpiryTask = Task { @MainActor in
+            let delay = max(0, deadline.timeIntervalSinceNow)
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            self.revealExpiryTask = nil
+
+            // Hovering, an open notch, or anything that blocks auto-close means the user is
+            // still engaged — leave the island out and let hover-exit / notch-close re-arm.
+            guard !self.isHovering,
+                  self.vm.notchState == .closed,
+                  !self.shouldPreventAutoClose()
+            else { return }
+
+            // A pulse may have pushed the deadline out while we slept.
+            if let current = self.latestRevealDeadline, current > Date() {
+                self.armRevealCountdown()
+                return
+            }
+
+            withAnimation(self.vm.animation) {
+                self.revealHoldDeadline = nil
+                self.agentLightDeadline = nil
+            }
+        }
+    }
+
+    private var latestRevealDeadline: Date? {
+        [revealHoldDeadline, agentLightDeadline].compactMap { $0 }.max()
+    }
+
+    private func cancelRevealCountdown() {
+        revealExpiryTask?.cancel()
+        revealExpiryTask = nil
+    }
+
+    /// Drops the island back out of view immediately — used when the settings that govern this
+    /// behaviour change, so toggling them can't strand a revealed island.
+    private func clearRevealState() {
+        cancelRevealCountdown()
+        revealHoldDeadline = nil
+        agentLightDeadline = nil
+    }
+
     /// Cancels every long-lived task / event monitor this view owns. Called from
     /// `.onDisappear` and from `vm.onViewTeardown` on window close. Idempotent.
     private func performViewTeardown() {
@@ -2123,6 +2259,7 @@ struct ContentView: View {
         clearMusicControlVisibilityDeadline()
         musicControlSuppressionTask?.cancel()
         agentHoverTask?.cancel()
+        cancelRevealCountdown()
         isHoveringClosedMusicWaveformControl = false
     }
 
@@ -2218,6 +2355,10 @@ struct ContentView: View {
                 isHovering = true
             }
 
+            // The island stays out for as long as the pointer is on it; the reveal countdown
+            // is restarted from scratch on hover-exit below.
+            cancelRevealCountdown()
+
             if vm.notchState == .closed && Defaults[.enableHaptics] {
                 triggerHapticIfAllowed()
             }
@@ -2262,6 +2403,13 @@ struct ContentView: View {
                 await MainActor.run {
                     withAnimation(.bouncy.speed(1.2)) {
                         self.isHovering = false
+                    }
+
+                    // A plain hover earns no lingering: once the pointer leaves, the island
+                    // goes straight back. Only an agent update holds it out, and if one is
+                    // still running its deadline simply resumes here.
+                    if self.hideUntilHoverAppliesHere {
+                        self.armRevealCountdown()
                     }
 
                     if self.vm.notchState == .open && !self.shouldPreventAutoClose() {

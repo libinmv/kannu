@@ -16,7 +16,7 @@ struct CursorUsageProvider: UsageProvider {
         self.eventsClient = eventsClient ?? CursorUsageEventsClient(session: session)
     }
 
-    func fetchSnapshot(now: Date) async throws -> UsageSnapshot {
+    func fetchSnapshot(now: Date, interactive: Bool) async throws -> UsageSnapshot {
         let quota = await quotaClient.fetchLimits()
 
         if var eventsSnapshot = await eventsClient.fetchSnapshot(now: now) {

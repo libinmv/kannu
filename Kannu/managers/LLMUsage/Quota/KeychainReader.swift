@@ -3,6 +3,19 @@ import Security
 
 enum KeychainReader {
     static func genericPassword(service: String, account: String? = nil) -> String? {
+        read(service: service, account: account).value
+    }
+
+    /// Reads a generic password and reports the raw status so callers can tell
+    /// "item missing" apart from "item exists but macOS wants the user to approve access".
+    /// `allowInteraction: false` suppresses the system permission dialog entirely — items
+    /// owned by another app then fail with errSecInteractionNotAllowed/errSecUserCanceled
+    /// instead of blocking a background refresh behind a prompt nobody asked for.
+    static func read(
+        service: String,
+        account: String? = nil,
+        allowInteraction: Bool = true
+    ) -> (value: String?, status: OSStatus) {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -10,10 +23,16 @@ enum KeychainReader {
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
         if let account { query[kSecAttrAccount as String] = account } // only filter by account when given
+        if !allowInteraction { query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUISkip }
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess, let data = item as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        guard status == errSecSuccess, let data = item as? Data else { return (nil, status) }
+        return (String(data: data, encoding: .utf8), status)
+    }
+
+    /// True when the item is present but macOS blocked the read pending user approval.
+    static func needsUserApproval(_ status: OSStatus) -> Bool {
+        status == errSecInteractionNotAllowed || status == errSecUserCanceled || status == errSecAuthFailed
     }
 
     @discardableResult

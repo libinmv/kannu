@@ -915,6 +915,27 @@ extension Defaults.Keys {
         default: .notch
     )
     static let hideNonNotchUntilHover = Key<Bool>("hideNonNotchUntilHover", default: false)
+
+    /// Per-display overrides, keyed by `NSScreen.localizedName` (the identifier the rest of the
+    /// app already uses for screens). A screen with no entry follows the global setting above,
+    /// so these stay empty until the user deliberately customises a display.
+    static let displayStyleOverrides = Key<[String: ExternalDisplayStyle]>(
+        "displayStyleOverrides",
+        default: [:]
+    )
+    static let hideUntilHoverOverrides = Key<[String: Bool]>(
+        "hideUntilHoverOverrides",
+        default: [:]
+    )
+
+    /// Whether this Mac's own display has a notch. Cached because the built-in screen is absent
+    /// from `NSScreen.screens` in clamshell mode — without a remembered answer, a setup run with
+    /// the lid shut would misclassify the machine. `nil` means we have never seen the built-in
+    /// display; the value is filled in and corrected on the first display change that reveals it.
+    static let machineHasNotchedBuiltInDisplay = Key<Bool?>(
+        "machineHasNotchedBuiltInDisplay",
+        default: nil
+    )
     static let notchHeightMode = Key<WindowHeightMode>(
         "notchHeightMode",
         default: WindowHeightMode.matchRealNotchSize
