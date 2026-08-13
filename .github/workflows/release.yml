@@ -202,6 +202,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Update Homebrew tap cask
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          chmod +x scripts/update-homebrew-cask.sh
+          ./scripts/update-homebrew-cask.sh "${RELEASE_VERSION}" "build/${RELEASE_DMG}"
+
       - name: Update appcast on main
         run: |
           if [ ! -f Updates/appcast.xml ]; then

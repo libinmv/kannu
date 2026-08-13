@@ -4,7 +4,7 @@ Ship Kannu via **automated CI** (recommended) or **manual Xcode** export.
 
 ## Automated CI release (recommended)
 
-Triggered only by pushing a `v*` tag. The workflow archives with Developer ID, notarizes the DMG, Sparkle-signs the appcast, publishes to GitHub Releases, and commits [`Updates/appcast.xml`](../Updates/appcast.xml).
+Triggered only by pushing a `v*` tag. The workflow archives with Developer ID, notarizes the DMG, Sparkle-signs the appcast, publishes to GitHub Releases, updates the Homebrew tap cask (when configured), and commits [`Updates/appcast.xml`](../Updates/appcast.xml).
 
 ### One-time: GitHub secrets
 
@@ -19,6 +19,7 @@ Add at **Settings → Secrets and variables → Actions** on `libinmv/kannu`:
 | `APPLE_ID` | Apple ID email for notarization |
 | `APPLE_NOTARIZATION_PASSWORD` | App-specific password from [appleid.apple.com](https://appleid.apple.com) |
 | `SPARKLE_EDDSA_PRIVATE_KEY` | Ed25519 private seed matching `SUPublicEDKey` in `Kannu/Info.plist` |
+| `HOMEBREW_TAP_TOKEN` | Fine-grained PAT with **Contents: write** on [`libinmv/homebrew-kannu`](https://github.com/libinmv/homebrew-kannu) (optional; tap step skipped if unset) |
 
 Example (run locally after exporting your `.p12`):
 
@@ -30,6 +31,16 @@ gh secret set APPLE_TEAM_ID --repo libinmv/kannu --body "S2WWHQQH2V"
 gh secret set APPLE_ID --repo libinmv/kannu
 gh secret set APPLE_NOTARIZATION_PASSWORD --repo libinmv/kannu
 gh secret set SPARKLE_EDDSA_PRIVATE_KEY --repo libinmv/kannu < ~/path/to/eddsa_private.key
+gh secret set HOMEBREW_TAP_TOKEN --repo libinmv/kannu
+```
+
+Create the tap repo first (public, can be empty): `libinmv/homebrew-kannu`. The release workflow creates `Casks/kannu.rb` on the first bump.
+
+Install via tap after the first release bump:
+
+```bash
+brew tap libinmv/kannu
+brew install --cask kannu
 ```
 
 ### Release day
@@ -44,7 +55,7 @@ git push origin v1.0.0
 ```
 
 4. Watch **Actions → Release**
-5. Verify the GitHub Release contains `Kannu.<version>.dmg` and `Updates/appcast.xml` updated on `main`
+5. Verify the GitHub Release contains `Kannu.<version>.dmg`, `Updates/appcast.xml` updated on `main`, and (if `HOMEBREW_TAP_TOKEN` is set) a commit on `libinmv/homebrew-kannu` bumping `Casks/kannu.rb`
 
 ### Test with a pre-release tag
 
@@ -113,4 +124,5 @@ Scripts:
 
 - [`notarize-dmg.sh`](notarize-dmg.sh) — `notarytool submit` + staple
 - [`export-sparkle-update.sh`](export-sparkle-update.sh) — Sparkle-sign DMG + appcast
+- [`update-homebrew-cask.sh`](update-homebrew-cask.sh) — bump `libinmv/homebrew-kannu` cask after release
 - [`manual-release.sh`](manual-release.sh) — local release helper
