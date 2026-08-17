@@ -349,11 +349,17 @@ struct ContentView: View {
             && !idleScheduleManager.isActive
     }
 
-    private var isClosedMusicPairingEligible: Bool {
+    /// "There is music worth showing" — playing, or paused with metadata still on screen.
+    /// Single definition on purpose: this was inlined at three call sites and a fourth used
+    /// `isPlaying` alone, which silently disagreed whenever playback was paused.
+    private var hasActiveMusicSnapshot: Bool {
         let hasMusicMetadata = !musicManager.songTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !musicManager.artistName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let hasActiveMusicSnapshot = musicManager.isPlaying || (!musicManager.isPlayerIdle && hasMusicMetadata)
-        return closedMusicPairingEligible(hasActiveMusicSnapshot: hasActiveMusicSnapshot)
+        return musicManager.isPlaying || (!musicManager.isPlayerIdle && hasMusicMetadata)
+    }
+
+    private var isClosedMusicPairingEligible: Bool {
+        closedMusicPairingEligible(hasActiveMusicSnapshot: hasActiveMusicSnapshot)
     }
 
     private var closedLiveActivitySwapTransition: AnyTransition {
@@ -473,8 +479,10 @@ struct ContentView: View {
         guard enableAgentStatusFeature, agentStatusMonitor.shouldShowTrafficLight else { return false }
         guard hideUntilHoverAppliesHere else { return true }
         // While a music pill is already on screen the light is drawn inside it, so keep it
-        // steady rather than blinking a dot in and out of a persistent container.
-        if closedMusicPairingEligible(hasActiveMusicSnapshot: musicManager.isPlaying) { return true }
+        // steady rather than blinking a dot in and out of a persistent container. Uses the
+        // shared snapshot — testing `isPlaying` alone missed the paused-but-still-shown pill,
+        // which is exactly when the blink was visible.
+        if isClosedMusicPairingEligible { return true }
         return agentLightDeadline != nil || isHovering
     }
 
@@ -557,10 +565,7 @@ struct ContentView: View {
         if idlePreviewManager.isActive { return false }
         if idleScheduleManager.isActive { return false }
 
-        let hasMusicMetadata = !musicManager.songTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !musicManager.artistName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let hasActiveMusicSnapshot = musicManager.isPlaying || (!musicManager.isPlayerIdle && hasMusicMetadata)
-        if closedMusicPairingEligible(hasActiveMusicSnapshot: hasActiveMusicSnapshot) { return false }
+        if isClosedMusicPairingEligible { return false }
 
         if isSneakPeekVisibleOnCurrentScreen && Defaults[.inlineHUD] { return false }
         if capsLockManager.isCapsLockActive && Defaults[.enableCapsLockIndicator] && !lockScreenManager.isLocked { return false }

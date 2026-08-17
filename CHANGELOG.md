@@ -4,6 +4,18 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-13 - Address CodeRabbit review on the Antigravity integration
+- **Developer label:** Fix Antigravity config clobbering, restore the active-state window, detect the Antigravity CLI
+- **Agent label:** Antigravity hooks no longer overwrite user config, long Codex/VS Code runs stay green, CLI-only installs are detected
+- **Changes:**
+  - `AgentHookInstaller.swift`: `mergeAntigravityHooksConfig` built one document from the IDE config and wrote it to all three locations, destroying user-defined hooks in `~/.gemini/config/hooks.json` and `~/.gemini/hooks.json`. Each location is now merged into its own content; the documented global path is primary and the others are only updated when they already exist. `uninstall` and `checkInstalled` cover all three so we never strip less than we wrote
+  - `AgentTrafficLightState.swift`: restored `runningStaleSeconds` / `activeStaleMs` to 360s from 15s — hook-only providers (Codex, VS Code) write no status file during a tool call, so a 15s window marked running sessions as stopped
+  - `LLMUsageManager.swift`: Antigravity detection now checks `~/.gemini/antigravity-cli` alongside `antigravity-ide`, so CLI-only installs enable the provider instead of staying silently disabled
+  - `ContentView.swift`: extracted `hasActiveMusicSnapshot` as a single computed property — one call site tested `isPlaying` alone while three used the fuller definition, so the agent light blinked in and out of a paused-but-visible music pill
+  - `AgentHookInstaller.swift`: the `PostToolUse` entry now passes `thinking`, matching the state the script derives
+  - `AgentHookInstaller.swift` + `scripts/kannu-agent-status.sh`: added `quota_exceeded` to `STATE_PRIORITY` in both copies, so a stale `stopped` no longer wins the 2s arbitration and discards the "Quota exceeded" label
+  - `KannuHeader.swift`: accessibility label and tooltip for the icon-only refresh button
+
 ### 2026-08-09 - Drop Unavailable chips from the Usage tab
 - **Developer label:** Drop Unavailable chips from the Usage tab
 - **Agent label:** Claude: remove hoverable Unavailable chips; omit failed and fatally unconfigured providers from the card row

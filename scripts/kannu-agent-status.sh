@@ -186,7 +186,7 @@ if status_file.exists():
 # Claude runs the matcher-scoped and generic groups for one event in parallel with no
 # ordering guarantee. If both land within the same instant, keep the more urgent verdict
 # so the winner of the race cannot silently downgrade the light.
-STATE_PRIORITY = {"awaiting_input": 40, "stopped": 30, "executing": 20, "thinking": 10, "idle": 0}
+STATE_PRIORITY = {"quota_exceeded": 50, "awaiting_input": 40, "stopped": 30, "executing": 20, "thinking": 10, "idle": 0}
 if existing_state and existing.get("hook_event") == hook_event:
     existing_ts_ms = existing.get("ts") or 0
     if int(time.time() * 1000) - existing_ts_ms <= 2000:

@@ -139,7 +139,12 @@ struct AgentSessionSnapshot: Equatable {
 }
 
 enum AgentTrafficLightMapper {
-    private static let runningStaleSeconds: TimeInterval = 15
+    /// Generous on purpose. Hook-only providers (Codex, VS Code) write a status file at tool
+    /// boundaries and then nothing for the duration of the call, so a short window marks a
+    /// session that is hardest at work as stopped. Cursor has a live composer status and
+    /// Claude has passive transcript detection to cut short a genuinely dead session; the
+    /// others have only this timer, so it must outlast a long build or test run.
+    private static let runningStaleSeconds: TimeInterval = 360
     private static let abortedIdleSeconds: TimeInterval = 90
     /// Keep yellow visible for the full approval-card window (users often pause).
     private static let awaitingInputStaleMs: Int64 = 300_000
@@ -238,7 +243,7 @@ enum AgentTrafficLightMapper {
         ageMs: Int64,
         collapseMs: Int64,
         inactiveMs: Int64,
-        activeStaleMs: Int64 = 15_000
+        activeStaleMs: Int64 = 360_000
     ) -> (state: AgentTrafficLightState, visible: Bool) {
         switch rawState.lowercased() {
         case "executing" where ageMs <= activeStaleMs:

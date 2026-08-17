@@ -155,7 +155,12 @@ final class AgentHookInstaller: ObservableObject {
                 try Self.stripEntries(configURL: Self.claudeSettingsURL)
                 try Self.removeIfExists(Self.claudeScriptURL)
             case .antigravity:
+                // Install merges into every location that exists, so uninstall has to clear
+                // all of them — stripping only the IDE path left orphaned entries pointing at
+                // a script we just deleted.
                 try Self.stripEntries(configURL: Self.antigravityHooksConfigURL)
+                try? Self.stripEntries(configURL: Self.antigravityConfigHooksURL)
+                try? Self.stripEntries(configURL: Self.antigravityRootHooksURL)
                 try Self.removeIfExists(Self.antigravityScriptURL)
             }
         } catch {
@@ -213,7 +218,10 @@ final class AgentHookInstaller: ObservableObject {
         // state from tool_name as a backstop.
         ("PreToolUse", "ExitPlanMode|AskUserQuestion", "gated", "awaiting_input"),
         ("PreToolUse", nil, "", "executing"),
-        ("PostToolUse", nil, "", "executing"),
+        // `thinking`, matching what the script derives for this event and what
+        // `claudeStyleEvents` passes. The argument is only a fallback for the no-python
+        // branch, but a value the script contradicts is a trap for the next reader.
+        ("PostToolUse", nil, "", "thinking"),
         ("PermissionRequest", nil, "", "awaiting_input"),
         ("Notification", "agent_completed", "completed", "stopped"),
         ("Notification", "permission_prompt|idle_prompt|agent_needs_input", "needs_input", "awaiting_input"),
@@ -431,7 +439,7 @@ final class AgentHookInstaller: ObservableObject {
         # Claude runs the matcher-scoped and generic groups for one event in parallel with no
         # ordering guarantee. If both land within the same instant, keep the more urgent verdict
         # so the winner of the race cannot silently downgrade the light.
-        STATE_PRIORITY = {"awaiting_input": 40, "stopped": 30, "executing": 20, "thinking": 10, "idle": 0}
+        STATE_PRIORITY = {"quota_exceeded": 50, "awaiting_input": 40, "stopped": 30, "executing": 20, "thinking": 10, "idle": 0}
         if existing_state and existing.get("hook_event") == hook_event:
             existing_ts_ms = existing.get("ts") or 0
             if int(time.time() * 1000) - existing_ts_ms <= 2000:
@@ -641,26 +649,47 @@ final class AgentHookInstaller: ObservableObject {
     // MARK: - Antigravity (~/.gemini/antigravity-ide/hooks.json, matcher-group schema)
 
     private static func mergeAntigravityHooksConfig() throws {
-        var config = readJSON(at: antigravityHooksConfigURL) ?? [:]
-        var hooks = config["hooks"] as? [String: Any] ?? [:]
-        stripAntigravityEntries(from: &hooks)
+        // Antigravity reads whichever of these locations exists, so all three may need our
+        // entries — but each must be merged into its OWN content. Building the document from
+        // the IDE config and writing that same document to the other two destroyed whatever
+        // hooks the user had defined in them.
+        // Documented global location first (antigravity.google/docs/hooks lists
+        // ~/.gemini/config/hooks.json), then the IDE-specific and legacy root paths.
+        let targets = [antigravityConfigHooksURL, antigravityHooksConfigURL, antigravityRootHooksURL]
+        var primaryError: Error?
 
-        for (event, state) in antigravityEvents {
-            var groups = hooks[event] as? [[String: Any]] ?? []
-            groups.append([
-                "hooks": [[
-                    "type": "command",
-                    "command": "\(antigravityScriptURL.path) \(state) antigravity \(event)",
-                    "timeout": 10
-                ]]
-            ])
-            hooks[event] = groups
+        for target in targets {
+            // The documented path is authoritative and always written. The others are only
+            // updated when they already exist — creating them would scatter config the user
+            // never asked for, and uninstall only strips what it finds.
+            let isPrimary = target == antigravityConfigHooksURL
+            guard isPrimary || FileManager.default.fileExists(atPath: target.path) else { continue }
+
+            var config = readJSON(at: target) ?? [:]
+            var hooks = config["hooks"] as? [String: Any] ?? [:]
+            stripAntigravityEntries(from: &hooks)
+
+            for (event, state) in antigravityEvents {
+                var groups = hooks[event] as? [[String: Any]] ?? []
+                groups.append([
+                    "hooks": [[
+                        "type": "command",
+                        "command": "\(antigravityScriptURL.path) \(state) antigravity \(event)",
+                        "timeout": 10
+                    ]]
+                ])
+                hooks[event] = groups
+            }
+
+            config["hooks"] = hooks
+            do {
+                try writeJSON(config, to: target)
+            } catch {
+                if isPrimary { primaryError = error }
+            }
         }
 
-        config["hooks"] = hooks
-        try writeJSON(config, to: antigravityHooksConfigURL)
-        try? writeJSON(config, to: antigravityConfigHooksURL)
-        try? writeJSON(config, to: antigravityRootHooksURL)
+        if let primaryError { throw primaryError }
     }
 
     private static func stripAntigravityEntries(from hooks: inout [String: Any]) {
@@ -761,14 +790,19 @@ final class AgentHookInstaller: ObservableObject {
                 }
             }
         case .antigravity:
-            guard FileManager.default.fileExists(atPath: antigravityScriptURL.path),
-                  let config = readJSON(at: antigravityHooksConfigURL),
-                  let hooks = config["hooks"] as? [String: Any] else { return false }
-            return antigravityEvents.allSatisfy { event, _ in
-                guard let groups = hooks[event] as? [[String: Any]] else { return false }
-                return groups.contains { group in
-                    guard let handlers = group["hooks"] as? [[String: Any]] else { return false }
-                    return handlers.contains { (($0["command"] as? String)?.contains(scriptName)) == true }
+            guard FileManager.default.fileExists(atPath: antigravityScriptURL.path) else { return false }
+            // Installed if ANY supported location carries our entries — Antigravity reads
+            // whichever exists, and older installs seeded only the IDE path.
+            let configs = [antigravityConfigHooksURL, antigravityHooksConfigURL, antigravityRootHooksURL]
+            return configs.contains { url in
+                guard let config = readJSON(at: url),
+                      let hooks = config["hooks"] as? [String: Any] else { return false }
+                return antigravityEvents.allSatisfy { event, _ in
+                    guard let groups = hooks[event] as? [[String: Any]] else { return false }
+                    return groups.contains { group in
+                        guard let handlers = group["hooks"] as? [[String: Any]] else { return false }
+                        return handlers.contains { (($0["command"] as? String)?.contains(scriptName)) == true }
+                    }
                 }
             }
         }

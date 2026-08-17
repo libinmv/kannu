@@ -40,7 +40,13 @@ final class LLMUsageManager: ObservableObject {
         // Antigravity detection runs independently each launch so existing installs
         // that already have llmProviderDefaultsConfigured=true pick it up automatically.
         if !ud.bool(forKey: "antigravityProviderDefaultsConfigured") {
-            ud.set(fm.fileExists(atPath: home.appendingPathComponent(".gemini/antigravity-ide").path), forKey: "enableAntigravityProvider")
+            // Both distributions, not just the IDE: the CLI keeps its state under
+            // ~/.gemini/antigravity-cli, so checking only the IDE directory left every
+            // CLI-only user with the provider silently disabled.
+            let antigravityInstalled = ["antigravity-ide", "antigravity-cli"].contains { dir in
+                fm.fileExists(atPath: home.appendingPathComponent(".gemini/\(dir)").path)
+            }
+            ud.set(antigravityInstalled, forKey: "enableAntigravityProvider")
             ud.set(true, forKey: "antigravityProviderDefaultsConfigured")
         }
     }

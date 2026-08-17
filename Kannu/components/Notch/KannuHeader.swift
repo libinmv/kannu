@@ -137,6 +137,10 @@ struct KannuHeader: View {
                         }
                         .buttonStyle(PlainButtonStyle())
                         .disabled(llmUsageManager.isRefreshing)
+                        // Icon-only, so VoiceOver would otherwise announce the SF Symbol name
+                        // rather than what the control does.
+                        .accessibilityLabel("Refresh usage")
+                        .help("Refresh usage")
                     }
 
                     if Defaults[.enableTimerFeature] && timerDisplayMode == .popover {
