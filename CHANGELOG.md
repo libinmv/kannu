@@ -4,6 +4,15 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-18 - Address the second CodeRabbit review
+- **Developer label:** Antigravity uninstall schema, restored signing team, migration coverage
+- **Agent label:** Uninstall actually removes Antigravity hooks; release signing identity restored
+- **Changes:**
+  - `stripEntries` routed only `~/.gemini/antigravity-ide/hooks.json` through the matcher-group stripper; the other two Antigravity locations fell to `stripCursorEntries`, which reads a top-level `command` and matches nothing in a group-shaped entry. Uninstall deleted the script but left live entries in `~/.gemini/config/hooks.json` — the primary path install always writes — so Antigravity ran a command whose script was gone and `checkInstalled` still reported it installed. All three now use the same stripper `stripAntigravityEntries` already used at install time
+  - Removed the recursive re-strip inside `stripEntries`; `uninstall(.antigravity)` already visits all three explicitly
+  - Restored `DEVELOPMENT_TEAM` in `project.pbxproj`: Debug `3Z7WX43G8Q`, Release `S2WWHQQH2V`. A local Xcode rewrite had set both to a third team — Release controls distribution signing and the Sparkle update chain
+  - The hook event-argument migration inspected only the IDE config, which install touches only when it already exists, so a fresh install was never migrated. It now checks all three locations, matching `checkInstalled(.antigravity)`
+
 ### 2026-08-18 - Notch skin leak, hook status-file races, Claude quota hardening
 - **Developer label:** Layout-only header spacer, locked+atomic hook status writes, read-only Claude credentials
 - **Agent label:** Skins cover the whole notch, the traffic light stops losing its urgent state, and usage limits stop 429ing
@@ -49,7 +58,7 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 - **Changes:**
   - `ConditionalPulseModifier` (`AgentTrafficLightLiveActivity.swift`) widened from 1.0→1.15 scale / 1.0→0.75 opacity to 1.0→1.3 scale / 1.0→0.5 opacity, and sped up from 0.8s to 0.7s per cycle — reported as too subtle to read as "breathing" at these icon sizes
   - Added a 4-second "attention window" after a session completes: both `singleAgentRow`'s red dot and `multiAgentRow`'s icon now keep pulsing at full brightness for those 4 seconds instead of dropping straight to the static dimmed/settled state — completion was previously a silent instant dim, easy to miss if you weren't already looking at the notch. Red/yellow/green semantics are unchanged (red still means done, green still means running) per explicit confirmation — this is about making the completion *moment* noticeable, not changing what the colors mean
-  - Root cause found (separately, awaiting user confirmation) for "only one of two active agents shows in the closed notch": a provider whose hook payload doesn't resolve a real conversation ID falls back to the literal ID `"default"`, which `CursorAgentStatusMonitor`/`AgentTrafficLightMapper.isSimulationConversationID` treats as a simulation/test session and silently deletes — so that provider's session never reaches the display list. Not yet fixed pending confirmation that `~/.kannu/agent-status/antigravity-*.json` is actually named with a `default` ID.
+  - Known limitation, not addressed here: a provider whose hook payload carries no resolvable conversation ID falls back to the literal ID `"default"`, which `AgentTrafficLightMapper.isSimulationConversationID` treats as a test session and drops. That session never reaches the display list, so with two agents running only one appears in the closed notch
 
 ### 2026-08-09 - Always surface Agent Status on closed-notch hover when an agent is active
 - **Developer label:** Always surface Agent Status on closed-notch hover when an agent is active

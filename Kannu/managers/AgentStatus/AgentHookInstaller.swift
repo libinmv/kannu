@@ -869,20 +869,33 @@ final class AgentHookInstaller: ObservableObject {
         }
     }
 
+    /// Configs whose entries are matcher groups (`{"hooks": [{"command": …}]}`) rather than
+    /// Cursor's flat `{"command": …}`. Routing has to match what `merge…HooksConfig` wrote:
+    /// `mergeAntigravityHooksConfig` writes group-shaped entries to *all three* Antigravity
+    /// locations, so sending two of them to `stripCursorEntries` — which looks for a top-level
+    /// `command` — matched nothing and left live entries behind in `~/.gemini/config/hooks.json`,
+    /// the primary path install always writes. Antigravity then ran a command whose script had
+    /// just been deleted, and `checkInstalled` still reported it installed.
+    private static var matcherGroupConfigs: Set<URL> {
+        [
+            codexHooksConfigURL,
+            claudeSettingsURL,
+            antigravityHooksConfigURL,
+            antigravityConfigHooksURL,
+            antigravityRootHooksURL
+        ]
+    }
+
     private static func stripEntries(configURL: URL) throws {
         guard var config = readJSON(at: configURL),
               var hooks = config["hooks"] as? [String: Any] else { return }
-        if configURL == codexHooksConfigURL || configURL == claudeSettingsURL || configURL == antigravityHooksConfigURL {
+        if matcherGroupConfigs.contains(configURL) {
             stripCodexEntries(from: &hooks)
         } else {
             stripCursorEntries(from: &hooks)
         }
         config["hooks"] = hooks
         try writeJSON(config, to: configURL)
-        if configURL == antigravityHooksConfigURL {
-            try? stripEntries(configURL: antigravityConfigHooksURL)
-            try? stripEntries(configURL: antigravityRootHooksURL)
-        }
     }
 
     // MARK: - Legacy migration
@@ -968,7 +981,11 @@ final class AgentHookInstaller: ObservableObject {
     private func migrateClaudeStyleHookEventArgumentIfNeeded() {
         for provider in [AgentHookProvider.vscode, .codex, .claude, .antigravity] {
             guard Self.checkInstalled(provider) else { continue }
-            let configURL: URL
+            // Plural: Antigravity's entries can live in any of three files, and install only
+            // touches the two non-primary ones when they already exist. Inspecting the IDE
+            // path alone meant a fresh install — which seeds `~/.gemini/config/hooks.json`
+            // and nothing else — read as "nothing to migrate" and was skipped forever.
+            let configURLs: [URL]
             switch provider {
             case .vscode:
                 guard let config = Self.readJSON(at: Self.vscodeHookFileURL),
@@ -985,25 +1002,32 @@ final class AgentHookInstaller: ObservableObject {
                 install(provider)
                 continue
             case .codex:
-                configURL = Self.codexHooksConfigURL
+                configURLs = [Self.codexHooksConfigURL]
             case .claude:
-                configURL = Self.claudeSettingsURL
+                configURLs = [Self.claudeSettingsURL]
             case .antigravity:
-                configURL = Self.antigravityHooksConfigURL
+                // Same set `checkInstalled(.antigravity)` accepts.
+                configURLs = [
+                    Self.antigravityConfigHooksURL,
+                    Self.antigravityHooksConfigURL,
+                    Self.antigravityRootHooksURL
+                ]
             default:
                 continue
             }
 
-            guard let config = Self.readJSON(at: configURL),
-                  let hooks = config["hooks"] as? [String: Any] else { continue }
-            let needsEventArg = hooks.contains { _, value in
-                guard let groups = value as? [[String: Any]] else { return false }
-                return groups.contains { group in
-                    guard let handlers = group["hooks"] as? [[String: Any]] else { return false }
-                    return handlers.contains { handler in
-                        let command = handler["command"] as? String ?? ""
-                        guard command.contains(Self.scriptName) else { return false }
-                        return command.split(separator: " ").count < 4
+            let needsEventArg = configURLs.contains { configURL in
+                guard let config = Self.readJSON(at: configURL),
+                      let hooks = config["hooks"] as? [String: Any] else { return false }
+                return hooks.contains { _, value in
+                    guard let groups = value as? [[String: Any]] else { return false }
+                    return groups.contains { group in
+                        guard let handlers = group["hooks"] as? [[String: Any]] else { return false }
+                        return handlers.contains { handler in
+                            let command = handler["command"] as? String ?? ""
+                            guard command.contains(Self.scriptName) else { return false }
+                            return command.split(separator: " ").count < 4
+                        }
                     }
                 }
             }

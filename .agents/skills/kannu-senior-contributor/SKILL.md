@@ -55,7 +55,7 @@ Do all four artifacts together as one deliverable, since they're derived from th
 
 **CHANGELOG.md entry** (add under ## [Unreleased]):
 ### Developer label: <label>
-### Agent label: <label>
+### Agent label: <label>   <!-- omit this heading entirely for human-authored work -->
 - Changes:
   - ...
 
