@@ -31,8 +31,11 @@ enum KeychainReader {
     }
 
     /// True when the item is present but macOS blocked the read pending user approval.
+    /// `errSecAuthFailed` is deliberately excluded: it means the item itself is broken
+    /// (wrong ACL, corrupted entry), and offering an "approve access" button for it gives
+    /// the user a control that cannot help.
     static func needsUserApproval(_ status: OSStatus) -> Bool {
-        status == errSecInteractionNotAllowed || status == errSecUserCanceled || status == errSecAuthFailed
+        status == errSecInteractionNotAllowed || status == errSecUserCanceled
     }
 
     @discardableResult

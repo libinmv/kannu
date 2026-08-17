@@ -46,7 +46,9 @@ enum QuotaAction: Equatable {
     case grantClaudeKeychainAccess
     var buttonTitle: String {
         switch self {
-        case .grantClaudeKeychainAccess: return "Allow keychain access…"
+        // Says what approving buys, not what it costs. Plan tier already shows without it;
+        // the keychain read is only needed for live 5h/7d limits.
+        case .grantClaudeKeychainAccess: return "Show usage limits…"
         }
     }
 }
@@ -68,6 +70,9 @@ struct UsageSnapshot: Equatable {
     var billedCostOnly: Bool = false
     /// Account plan/tier label (e.g. "Pro", "Max") shown next to the provider name.
     var accountTier: String? = nil
+    /// Short account-status note (e.g. "Out of extra credits"). Distinct from `quotaError`:
+    /// this is a fact about the account, not a failure to fetch anything.
+    var accountNote: String? = nil
 }
 
 struct QuotaFetchResult: Equatable {

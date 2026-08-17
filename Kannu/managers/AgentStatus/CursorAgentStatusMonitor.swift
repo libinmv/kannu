@@ -225,18 +225,33 @@ final class CursorAgentStatusMonitor: ObservableObject {
             // minutes, and `resolveHookState` then ages it out of its active state and dims the
             // session while it is hardest at work. Passive detection can still see the truth
             // (process alive, tool in flight), and a live process beats a stale timestamp.
+            //
+            // Names ride along here too: Claude's hook stdin carries no title, so a hook file
+            // shadows a passive session that HAS the transcript-derived chat name and the
+            // cwd-derived project. Without inheriting them, every hook-tracked Claude session
+            // rendered as "Untitled chat" — the regression the user reported.
             hookSessions = hookSessions.map { session in
                 guard session.provider.lowercased() == "claude",
-                      session.hasActiveRawState,
-                      !session.displayState.isActiveRun,
-                      let passive = passiveByConversationID[session.conversationID],
-                      passive.displayState.isActiveRun
+                      let passive = passiveByConversationID[session.conversationID]
                 else { return session }
-                return session.withDisplayState(
-                    passive.displayState,
-                    visible: true,
-                    updatedAt: max(session.updatedAt, passive.updatedAt)
-                )
+
+                var repaired = session
+                if session.hasActiveRawState,
+                   !session.displayState.isActiveRun,
+                   passive.displayState.isActiveRun {
+                    repaired = repaired.withDisplayState(
+                        passive.displayState,
+                        visible: true,
+                        updatedAt: max(session.updatedAt, passive.updatedAt)
+                    )
+                }
+                if repaired.chatName?.isEmpty != false, let name = passive.chatName {
+                    repaired = repaired.replacingChatName(name)
+                }
+                if repaired.projectName?.isEmpty != false, let project = passive.projectName {
+                    repaired = repaired.replacingProjectName(project)
+                }
+                return repaired
             }
 
             let hookConversationIDs = Set(hookSessions.map(\.conversationID))
@@ -642,11 +657,19 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 continue
             }
 
-            if !hasHookSessionBacking(
+            // Cursor's backing check consults live app state and is cheap to trust. For
+            // claude/codex the "backing" is the same transcript listing that feeds chat-name
+            // lookup — deleting on a miss welded "no name yet" to "delete the session": a
+            // brand-new session (no JSONL yet), a >30-min approval wait (quiet transcript),
+            // or the per-scan session cap all destroyed hook files written seconds earlier.
+            // Their freshness is already enforced by the staleMs check above.
+            let providerKey = provider.lowercased()
+            if providerKey == "cursor",
+               !hasHookSessionBacking(
                 conversationID: conversationID,
                 provider: provider,
                 staleMinutes: staleMinutes
-            ) {
+               ) {
                 try? FileManager.default.removeItem(at: file)
                 continue
             }
@@ -1356,8 +1379,12 @@ final class CursorAgentStatusMonitor: ObservableObject {
                         // so the session stays in the list as a dim card rather than vanishing.
                         resolved = lifecycle.visible ? lifecycle : (.inactive, true)
                     case .unknown:
-                        rawState = "idle"
-                        resolved = (.inactive, true)
+                        // Unreadable tail on a live process — e.g. a single tool result larger
+                        // than the 16 KB read window, or a torn read while the CLI writes. A
+                        // running process is far more likely working than idle, and "idle" here
+                        // dims (or with the stopped-indicator on, reddens) an active session.
+                        rawState = "thinking"
+                        resolved = (.thinking, true)
                     }
                 }
             } else {
@@ -1446,6 +1473,21 @@ final class CursorAgentStatusMonitor: ObservableObject {
 
 private extension AgentSessionStatus {
     func replacingChatName(_ chatName: String) -> AgentSessionStatus {
+        AgentSessionStatus(
+            id: id,
+            provider: provider,
+            conversationID: conversationID,
+            chatName: chatName,
+            projectName: projectName,
+            rawState: rawState,
+            displayState: displayState,
+            updatedAt: updatedAt,
+            isVisible: isVisible,
+            executionStartedAt: executionStartedAt
+        )
+    }
+
+    func replacingProjectName(_ projectName: String) -> AgentSessionStatus {
         AgentSessionStatus(
             id: id,
             provider: provider,

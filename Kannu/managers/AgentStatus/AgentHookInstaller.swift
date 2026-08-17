@@ -41,7 +41,7 @@ final class AgentHookInstaller: ObservableObject {
     @Published private(set) var lastError: String?
 
     static let scriptName = "kannu-agent-status.sh"
-    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=24"
+    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=26"
 
     private static var home: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -238,8 +238,27 @@ final class AgentHookInstaller: ObservableObject {
         fi
 
         python3 <<'PY'
-        import json, os, re, time
+        import fcntl, json, os, re, tempfile, time
         from pathlib import Path
+
+        def write_status(path, obj):
+            # Truncate-then-write leaves the file empty for a moment, and Kannu reads it on
+            # every FSEvent — a torn read drops the session card for that scan. Write a temp
+            # file in the same directory and rename it over: on the same filesystem os.replace
+            # is atomic, so a reader sees either the old document or the new one, never half.
+            fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".kannu-", suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w") as fh:
+                    json.dump(obj, fh, separators=(",", ":"))
+                    fh.flush()
+                    os.fsync(fh.fileno())
+                os.replace(tmp, str(path))
+            except Exception:
+                try:
+                    os.unlink(tmp)
+                except Exception:
+                    pass
+                raise
 
         state = os.environ.get("KANNU_STATE", "thinking")
         provider = os.environ.get("KANNU_PROVIDER", "unknown")
@@ -369,11 +388,42 @@ final class AgentHookInstaller: ObservableObject {
         conversation_id = re.sub(r"[^A-Za-z0-9_-]", "", conversation_id) or "default"
         status_file = status_dir / f"{provider}-{conversation_id}.json"
 
+        # Claude runs the matcher-scoped and generic hook groups for one event as separate
+        # processes, in parallel, with no ordering guarantee. The STATE_PRIORITY merge below
+        # compares against what is on disk, so without a lock both processes read the same
+        # pre-race value, each finds nothing to preserve, and whichever writes second wins
+        # outright — the exact downgrade (yellow "needs you" overwritten by green "running")
+        # that the merge exists to prevent. Serialise the whole read-modify-write instead.
+        #
+        # The lock is advisory and per-conversation, held until this process exits, so it
+        # cannot deadlock a hook for a different session. If flock is unavailable or the
+        # wait fails we proceed unlocked: a possible lost update beats a hung hook, which
+        # would stall the agent itself.
+        try:
+            _lock_fh = open(status_dir / f".{provider}-{conversation_id}.lock", "w")
+            fcntl.flock(_lock_fh.fileno(), fcntl.LOCK_EX)
+        except Exception:
+            _lock_fh = None
+
+        # SessionStart also fires for /compact and /resume, which happen mid-conversation —
+        # writing "idle" there dims (or with the stopped-indicator on, reddens) a session that
+        # is actively working. Only a genuine startup should seed the idle card.
+        if hook_event == "SessionStart" and str(data.get("source", "")) in {"compact", "resume"}:
+            print('{"permission":"allow","continue":true}')
+            raise SystemExit(0)
+
         # The session is gone: drop the card outright rather than leaving a terminal state to
         # age out. Passive detection cannot resurrect it because the process has exited too.
         if state == "session_end":
             try:
                 status_file.unlink()
+            except Exception:
+                pass
+            # Otherwise one zero-byte lock file per conversation accumulates forever. Safe to
+            # remove while we hold it: flock lives on the open descriptor, not the directory
+            # entry, and the session is over so nothing else will contend for this one.
+            try:
+                (status_dir / f".{provider}-{conversation_id}.lock").unlink()
             except Exception:
                 pass
             print('{"permission":"allow","continue":true}')
@@ -392,11 +442,16 @@ final class AgentHookInstaller: ObservableObject {
         # ordering guarantee. If both land within the same instant, keep the more urgent verdict
         # so the winner of the race cannot silently downgrade the light.
         STATE_PRIORITY = {"awaiting_input": 40, "stopped": 30, "executing": 20, "thinking": 10, "idle": 0}
+        preserved_ts = None
         if existing_state and existing.get("hook_event") == hook_event:
             existing_ts_ms = existing.get("ts") or 0
             if int(time.time() * 1000) - existing_ts_ms <= 2000:
                 if STATE_PRIORITY.get(existing_state, -1) > STATE_PRIORITY.get(state, -1):
                     state = existing_state
+                    # Keep the original clock. Refreshing ts here made the 2s window
+                    # self-renewing: chained tool calls arriving <2s apart re-latched the
+                    # kept state forever instead of resolving one parallel-group race.
+                    preserved_ts = existing_ts_ms
 
         roots = data.get("workspace_roots")
         project = ""
@@ -404,6 +459,12 @@ final class AgentHookInstaller: ObservableObject {
             root = str(roots[0]).replace("file://", "").rstrip("/")
             if root:
                 project = Path(root).name
+        if not project:
+            # Claude Code sends cwd rather than workspace_roots; without this the card has no
+            # project name until passive transcript detection can supply one.
+            cwd = pick_str(data.get("cwd"))
+            if cwd:
+                project = Path(cwd.replace("file://", "").rstrip("/")).name
         project = pick_str(project, existing.get("project"), existing.get("project_name"), existing.get("workspace_name"))
 
         if hook_event in TITLE_BEARING_EVENTS:
@@ -438,13 +499,13 @@ final class AgentHookInstaller: ObservableObject {
                         existing["name"] = name
                     if project:
                         existing["project"] = project
-                    status_file.write_text(json.dumps(existing, separators=(",", ":")))
+                    write_status(status_file, existing)
                     print('{"permission":"allow","continue":true}')
                     raise SystemExit(0)
 
         payload = {
             "state": state,
-            "ts": int(time.time() * 1000),
+            "ts": preserved_ts or int(time.time() * 1000),
             "provider": provider,
             "hook_event": hook_event,
         }
@@ -452,7 +513,7 @@ final class AgentHookInstaller: ObservableObject {
             payload["name"] = name
         if project:
             payload["project"] = project
-        status_file.write_text(json.dumps(payload, separators=(",", ":")))
+        write_status(status_file, payload)
         print('{"permission":"allow","continue":true}')
         PY
         exit 0

@@ -34,7 +34,6 @@ struct KannuHeader: View {
     @Default(.timerDisplayMode) var timerDisplayMode
     @Default(.showClipboardIcon) var showClipboardIcon
     @Default(.showColorPickerIcon) var showColorPickerIcon
-    @Default(.notchFillColor) private var notchFillColor
     @Default(.clipboardDisplayMode) var clipboardDisplayMode
     @Default(.showBatteryIndicator) var showBatteryIndicator
     @Default(.showBatteryPercentInside) var showBatteryPercentInside
@@ -59,14 +58,16 @@ struct KannuHeader: View {
             .padding(8)
 
             if vm.notchState == .open {
-                let spacerWidth = min(vm.closedNotchSize.width, 300)
-                let spacerHeight = max(24, vm.effectiveClosedNotchHeight)
-                Rectangle()
-                    .fill(enableMinimalisticUI || !selectedScreenHasPhysicalNotch ? .clear : notchFillColor)
-                    .frame(width: spacerWidth, height: spacerHeight)
-                    .mask {
-                        NotchShape()
-                    }
+                // Layout only — this must not paint. The panel background already covers these
+                // bounds with the skin (or the fill colour) and sits strictly behind the header,
+                // so filling here only ever duplicated it. Once skins landed, the duplicate
+                // became wrong: it stamped a flat notchFillColor patch in NotchShape over the
+                // middle of the skin. The mask went with it — masking a clear rect is a no-op.
+                Color.clear
+                    .frame(
+                        width: min(vm.closedNotchSize.width, 300),
+                        height: max(24, vm.effectiveClosedNotchHeight)
+                    )
             }
 
             HStack(spacing: 4) {
@@ -259,10 +260,6 @@ struct KannuHeader: View {
 }
 
 private extension KannuHeader {
-    var selectedScreenHasPhysicalNotch: Bool {
-        NSScreen.screens.first(where: { $0.localizedName == coordinator.selectedScreen })?.safeAreaInsets.top ?? 0 > 0
-    }
-
     var shouldSuppressStatusIndicators: Bool {
         Defaults[.settingsIconInNotch]
             && Defaults[.enableClipboardManager]

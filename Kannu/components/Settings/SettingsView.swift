@@ -6397,7 +6397,7 @@ struct StatsSettings: View {
                 } header: {
                     Text("LLM Providers")
                 } footer: {
-                    Text("Choose which AI providers appear in the Usage tab. Quota requires each CLI to be signed in locally (Claude: ~/.claude/.credentials.json or the \"Claude Code-credentials\" keychain item, Codex: ~/.codex/auth.json, Cursor: signed into the Cursor app). Claude's login lives in the keychain on macOS, so the Usage tab asks for approval once before it can show quota. Full Disk Access is not required for usage monitoring.")
+                    Text("Choose which AI providers appear in the Usage tab. Claude's token counts, plan and credit status are read from local files and need no permission. Its 5-hour and weekly limits come from Anthropic's API and are off by default — use the gauge button on the Claude card in the Usage tab to turn them on, which asks for keychain approval once. Codex and Cursor quota require each CLI to be signed in locally (Codex: ~/.codex/auth.json, Cursor: signed into the Cursor app). Full Disk Access is not required for usage monitoring.")
                         .multilineTextAlignment(.trailing)
                         .foregroundStyle(.secondary)
                         .font(.caption)

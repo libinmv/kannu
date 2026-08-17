@@ -2211,11 +2211,18 @@ struct ContentView: View {
             self.revealExpiryTask = nil
 
             // Hovering, an open notch, or anything that blocks auto-close means the user is
-            // still engaged — leave the island out and let hover-exit / notch-close re-arm.
+            // still engaged — leave the island out. Re-arm rather than return bare: hover-exit
+            // and notch-close have their own re-arm paths, but shouldPreventAutoClose (music
+            // playing, a pinned popover) has none, and once the agent stops no further pulse
+            // arrives — a bare return stranded the island revealed forever.
             guard !self.isHovering,
                   self.vm.notchState == .closed,
                   !self.shouldPreventAutoClose()
-            else { return }
+            else {
+                self.revealHoldDeadline = Date().addingTimeInterval(nonNotchRevealHoldSeconds)
+                self.armRevealCountdown()
+                return
+            }
 
             // A pulse may have pushed the deadline out while we slept.
             if let current = self.latestRevealDeadline, current > Date() {
