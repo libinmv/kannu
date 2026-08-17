@@ -4,6 +4,17 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-18 - Notch skin leak, hook status-file races, Claude quota hardening
+- **Developer label:** Layout-only header spacer, locked+atomic hook status writes, read-only Claude credentials
+- **Agent label:** Skins cover the whole notch, the traffic light stops losing its urgent state, and usage limits stop 429ing
+- **Changes:**
+  - Fixed a flat `notchFillColor` patch painted over custom notch skins: the open-notch spacer in `KannuHeader` filled a `NotchShape`-masked rectangle in the middle of the panel, on top of the skin. The panel background already covers those bounds and sits behind the header, so the fill was redundant in every configuration and simply wrong once skins existed — the spacer is now `Color.clear` and purely reserves layout. Dropped the orphaned `notchFillColor` property and `selectedScreenHasPhysicalNotch` helper
+  - Serialised the hook status-file read-modify-write behind a per-conversation `flock`. Claude runs matcher-scoped and generic hook groups as parallel processes, so both read the same pre-race state, the `STATE_PRIORITY` merge found nothing to preserve, and the second writer won outright — a yellow "needs you" was silently overwritten by a green "running". Measured at 11 of 200 parallel rounds before the fix, 0 of 200 after
+  - Hook status files are now written temp-then-`os.replace` instead of truncate-then-write, so Kannu never reads a half-written file. Measured at 14 torn reads in 4825 before, 0 in 9059 after. Hook script v26; `SessionEnd` also removes the lock file
+  - `ClaudeCredentialStore.lookup` cleared the in-flight entry unconditionally after its `await`, which could erase a *successor's* live entry and let a second prompting keychain read start — two stacked approval dialogs. Now identity-checked
+  - Collapsed the 429 path's two cooldown `await`s into one atomic actor call; the gap between them let a concurrent success wipe the backoff just installed and relabel fresh figures as stale
+  - Claude credentials are now read-only. Refreshing the shared rotating refresh token invalidated the token family and blanked the user's `claude` CLI login
+
 ### 2026-08-13 - Address CodeRabbit review on the Antigravity integration
 - **Developer label:** Fix Antigravity config clobbering, restore the active-state window, detect the Antigravity CLI
 - **Agent label:** Antigravity hooks no longer overwrite user config, long Codex/VS Code runs stay green, CLI-only installs are detected

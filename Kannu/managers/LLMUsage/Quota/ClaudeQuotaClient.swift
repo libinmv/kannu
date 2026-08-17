@@ -19,97 +19,156 @@ enum ClaudeCredentialLookup {
     case notSignedIn
 }
 
-/// Caches Claude's OAuth credentials in memory and in a *Kannu-owned* keychain item.
+/// A short-lived, memory-only view of Claude Code's own credentials.
 ///
-/// Claude Code stores its tokens in a keychain item owned by the CLI, so every read from
-/// Kannu triggers the cross-app "wants to use your confidential information" dialog. Once
-/// the user approves that read a single time, the copy kept here means later launches and
-/// background refreshes never prompt again.
+/// Kannu is strictly a *reader* of this credential — it must never refresh it. Claude Code's
+/// refresh tokens are rotating and single-use, so if Kannu spent one, the CLI's copy went
+/// stale, its next refresh got rejected, and the whole token family was invalidated — the
+/// user found their `claude` login wiped (empty accessToken/refreshToken in the keychain).
+/// The CLI rotates tokens on its own schedule and rewrites its keychain item; Kannu just
+/// re-reads. Once the user grants "Always Allow", the non-interactive read never prompts,
+/// so a durable Kannu-owned copy isn't needed — and keeping one is exactly what made a
+/// stale token get used in the first place.
 actor ClaudeCredentialStore {
     static let shared = ClaudeCredentialStore()
 
-    private static let service = "com.kannu.app.llm-credentials"
-    private static let account = "claude-oauth"
-    private static let coder = (encoder: JSONEncoder(), decoder: JSONDecoder()) // camelCase, matching Claude's own payload
+    /// How long a read is trusted before the CLI's item is consulted again. Short, so a CLI
+    /// rotation is picked up on the next poll rather than served stale from memory.
+    private static let cacheTTL: TimeInterval = 60
 
-    private var cached: ClaudeOAuthCredentials?
-    private var readOwnCopy = false
+    private var cached: (creds: ClaudeOAuthCredentials, at: Date)?
+
+    private var lookupInFlight: (interactive: Bool, task: Task<ClaudeCredentialLookup, Never>)?
 
     func get() -> ClaudeOAuthCredentials? {
-        if cached == nil, !readOwnCopy {
-            readOwnCopy = true
-            cached = Self.loadOwnCopy()
+        guard let cached else { return nil }
+        guard Date().timeIntervalSince(cached.at) < Self.cacheTTL else {
+            // Drop the expired entry rather than merely ignoring it, so a dead credential
+            // can't linger in memory for the process lifetime.
+            self.cached = nil
+            return nil
         }
-        return cached
+        return cached.creds
+    }
+
+    /// Runs a credential lookup at most once no matter how many callers arrive together.
+    ///
+    /// Without this, two overlapping interactive lookups both fell through to the prompting
+    /// keychain read and macOS showed the approval dialog twice. Concurrent callers now await
+    /// the same in-flight task; an interactive request never downgrades to a non-interactive
+    /// in-flight result silently — it waits for that one, then runs its own pass if needed.
+    func lookup(
+        interactive: Bool,
+        perform: @escaping @Sendable (Bool) async -> ClaudeCredentialLookup
+    ) async -> ClaudeCredentialLookup {
+        if let inFlight = lookupInFlight {
+            let piggybacked = await inFlight.task.value
+            // A non-interactive caller, or an interactive one whose predecessor could already
+            // prompt, is fully served by the shared result.
+            if inFlight.interactive || !interactive { return piggybacked }
+            // Interactive caller rode a quiet lookup that couldn't prompt — only re-run when
+            // prompting is actually what's missing.
+            if case .needsKeychainPermission = piggybacked {} else { return piggybacked }
+        }
+        let task = Task { await perform(interactive) }
+        lookupInFlight = (interactive, task)
+        let result = await task.value
+        // Identity check, not a bare nil. The actor is released across `await task.value`, so a
+        // caller that piggybacked on this task can resume first, install its own lookup, and be
+        // mid-prompt by the time we get back — clearing unconditionally would erase a live entry
+        // and let the next arrival start a second prompting read, stacking two keychain dialogs.
+        if lookupInFlight?.task == task { lookupInFlight = nil }
+        return result
     }
 
     func set(_ creds: ClaudeOAuthCredentials) {
-        cached = creds
-        readOwnCopy = true
-        guard let data = try? Self.coder.encoder.encode(creds), let json = String(data: data, encoding: .utf8) else { return }
-        KeychainReader.setGenericPassword(json, service: Self.service, account: Self.account)
+        cached = (creds, Date())
+        QuotaDebugLog.log("CredStore", "cached in memory (token len \(creds.accessToken.count), expires in \(Self.expiryDelta(creds)))")
     }
 
-    /// Drops our copy so the next lookup falls back to Claude Code's own credentials.
-    /// Used when the server rejects the token we cached (revoked, rotated by the CLI, signed out).
-    func clear() {
+    /// Forgets the in-memory copy so the next lookup re-reads Claude Code's keychain item —
+    /// e.g. after the server rejects the token, meaning the CLI has probably rotated it.
+    func invalidate() {
         cached = nil
-        readOwnCopy = true
-        KeychainReader.deleteGenericPassword(service: Self.service, account: Self.account)
+        QuotaDebugLog.log("CredStore", "memory cache invalidated")
     }
 
-    private static func loadOwnCopy() -> ClaudeOAuthCredentials? {
-        guard let json = KeychainReader.genericPassword(service: service, account: account) else { return nil }
-        return try? coder.decoder.decode(ClaudeOAuthCredentials.self, from: Data(json.utf8))
+    private static func expiryDelta(_ creds: ClaudeOAuthCredentials) -> String {
+        let mins = (Double(creds.expiresAt) / 1000 - Date().timeIntervalSince1970) / 60
+        return String(format: "%.0fm", mins)
     }
 }
 
-/// Cools down `oauth/usage` calls after a 429 so repeated refreshes — including interactive
-/// ones, which otherwise skip `LLMUsageManager`'s own throttle entirely — don't keep hitting
-/// an endpoint that just told us to back off. Shared across every `ClaudeQuotaClient` value
-/// (the struct is cheap to recreate; this state is what needs to persist).
-actor ClaudeQuotaBackoff {
-    static let shared = ClaudeQuotaBackoff()
+/// Rate-limit state for the quota endpoint, plus the last result worth showing.
+///
+/// `ClaudeQuotaClient` is a struct recreated per call, so the cooldown has to live somewhere
+/// durable. Keeping the last good result here means a 429 leaves the card showing real numbers
+/// instead of replacing them with an error the user can do nothing about.
+actor ClaudeQuotaCooldown {
+    static let shared = ClaudeQuotaCooldown()
 
-    private static let defaultCooldown: TimeInterval = 300 // used when the response has no Retry-After
-    private static let minimumCooldown: TimeInterval = 60
+    /// Kept results older than this are dropped rather than served — "last known usage" that
+    /// is an hour old is worse than an honest error.
+    private static let maxCachedResultAge: TimeInterval = 540
 
-    private var retryAt: Date?
+    private var retryAfter: Date?
+    private var lastGood: (result: QuotaFetchResult, at: Date)?
 
-    /// Seconds left to wait, or `nil` if a call is allowed right now.
-    func secondsUntilAllowed(now: Date) -> TimeInterval? {
-        guard let retryAt, now < retryAt else { return nil }
-        return retryAt.timeIntervalSince(now)
+    /// Atomically answers "may a request proceed, and if not what should the caller show".
+    ///
+    /// One call, not two: checking the cooldown and fetching the cached result as separate
+    /// awaits left a gap where a concurrent `noteSuccess` could clear the cooldown and install
+    /// fresh numbers — which the caller then returned stamped with the rate-limited label.
+    func admitOrCached(now: Date = Date()) -> (admitted: Bool, cached: QuotaFetchResult?, remaining: TimeInterval) {
+        guard let retryAfter, retryAfter > now else { return (true, nil, 0) }
+        let remaining = retryAfter.timeIntervalSince(now)
+        guard let lastGood, now.timeIntervalSince(lastGood.at) < Self.maxCachedResultAge else {
+            return (false, nil, remaining)
+        }
+        var result = lastGood.result
+        result.errorMessage = "Rate-limited — showing last known usage."
+        return (false, result, remaining)
     }
 
-    func recordRateLimited(retryAfterHeader: String?, now: Date) {
-        let requested = retryAfterHeader.flatMap(TimeInterval.init) ?? Self.defaultCooldown
-        retryAt = now.addingTimeInterval(max(requested, Self.minimumCooldown))
+    /// Installs the backoff and returns the cached fallback in one atomic step.
+    ///
+    /// These were two separate `await`s at the call site, which reopened the very gap
+    /// `admitOrCached` was written to close: a concurrent `noteSuccess` landing between them
+    /// wipes the backoff we just installed *and* swaps in fresh numbers that then get labelled
+    /// "showing last known usage" — stale-looking good data, and an immediate re-429 because
+    /// the cooldown is gone. One actor hop, no interleaving.
+    func noteRateLimited(retryAfterSeconds: TimeInterval, now: Date = Date()) -> QuotaFetchResult? {
+        retryAfter = now.addingTimeInterval(retryAfterSeconds)
+        return cachedResult(now: now)
     }
 
-    func clear() {
-        retryAt = nil
+    func noteSuccess(_ result: QuotaFetchResult, now: Date = Date()) {
+        retryAfter = nil
+        lastGood = (result, now)
+    }
+
+    /// Last good result if still fresh, labelled so the card shows its provenance.
+    func cachedResult(now: Date = Date()) -> QuotaFetchResult? {
+        guard let lastGood, now.timeIntervalSince(lastGood.at) < Self.maxCachedResultAge else { return nil }
+        var result = lastGood.result
+        result.errorMessage = "Rate-limited — showing last known usage."
+        return result
     }
 }
 
 struct ClaudeQuotaClient {
     private static let log = os.Logger(subsystem: "com.kannu.app", category: "ClaudeQuota")
+    /// Used when the server rate-limits us without a usable `Retry-After` header.
+    private static let defaultRateLimitCooldown: TimeInterval = 300
     let session: URLSession
     init(session: URLSession = URLSession(configuration: .ephemeral)) { self.session = session }
 
-    private static let clientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-    private static let refreshScope = "user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload"
-    private static let refreshSkewMs: Int64 = 5 * 60 * 1000
     private static let claudeCodeKeychainService = "Claude Code-credentials"
+    /// Used when the installed CLI version can't be read from `~/.claude.json`.
+    private static let fallbackCLIVersion = "2.1.223"
 
     private struct CredentialFile: Decodable, Sendable {
         let claudeAiOauth: ClaudeOAuthCredentials
-    }
-
-    private struct RefreshResponse: Decodable {
-        let accessToken: String
-        let refreshToken: String
-        let expiresIn: Int
     }
 
     private enum ResetsAt: Decodable {
@@ -149,13 +208,26 @@ struct ClaudeQuotaClient {
     /// own keychain item. Background refreshes pass `false` and degrade to an actionable
     /// message; the user pressing "Allow keychain access" passes `true`.
     func fetchLimits(interactive: Bool = false) async -> QuotaFetchResult {
-        if let wait = await ClaudeQuotaBackoff.shared.secondsUntilAllowed(now: Date()) {
-            Self.log.notice("oauth/usage on cooldown after a 429, \(Int(wait))s left")
-            return QuotaFetchResult(errorMessage: "Claude quota API rate-limited — retrying in \(Int(wait))s")
+        // Still rate-limited: don't spend another request confirming it. Show the last real
+        // figures if we have them, so the card degrades to "slightly stale" rather than "error".
+        // A user-initiated attempt goes through regardless — the tap on the fix-it button must
+        // be able to reach the keychain approval below, and one manual request is harmless.
+        if !interactive {
+            let gate = await ClaudeQuotaCooldown.shared.admitOrCached()
+            if !gate.admitted {
+                if let cached = gate.cached { return cached }
+                let minutes = max(1, Int((gate.remaining / 60).rounded(.up)))
+                return QuotaFetchResult(errorMessage: "Claude usage limits rate-limited — retrying in ~\(minutes) min.")
+            }
         }
 
         let creds: ClaudeOAuthCredentials
-        switch await currentCredentials(interactive: interactive) {
+        // Single-flighted: overlapping callers share one lookup instead of racing to the
+        // prompting keychain read (two interactive callers used to mean two system dialogs).
+        let lookup = await ClaudeCredentialStore.shared.lookup(interactive: interactive) { allowPrompt in
+            await self.currentCredentials(interactive: allowPrompt)
+        }
+        switch lookup {
         case .found(let found):
             creds = found
         case .needsKeychainPermission:
@@ -172,35 +244,59 @@ struct ClaudeQuotaClient {
             return QuotaFetchResult(errorMessage: "Claude Code not signed in — run `claude` in a terminal and log in.", isAuthFailure: true)
         }
 
-        guard let token = await validAccessToken(creds) else {
-            Self.log.error("could not obtain valid Claude access token")
-            return QuotaFetchResult(errorMessage: "Claude token refresh failed — sign in again with `claude`.", isAuthFailure: true)
+        // Kannu never refreshes this token — Claude Code's refresh tokens rotate and are
+        // single-use, so spending one here is what used to invalidate the CLI's whole login.
+        // If the token is expired we simply wait: the CLI refreshes on its own schedule and
+        // rewrites its keychain item, and the next poll re-reads it.
+        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+        guard creds.expiresAt > nowMs else {
+            await ClaudeCredentialStore.shared.invalidate()
+            QuotaDebugLog.log("ClaudeQuota", "access token expired \((nowMs - creds.expiresAt) / 60000)m ago — waiting for Claude Code to refresh it")
+            return QuotaFetchResult(errorMessage: "Waiting for Claude Code to refresh its login — use `claude` once if this persists.")
         }
+        let token = creds.accessToken
+
+        // Anthropic rate-limits unknown user agents almost immediately, so the UA must look
+        // like the CLI actually installed on this machine — a pinned literal goes stale.
+        let cliVersion = ClaudeLocalAccountReader.read().cliVersion ?? Self.fallbackCLIVersion
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
-        request.setValue("claude-code/2.1.69", forHTTPHeaderField: "User-Agent")
+        request.setValue("claude-code/\(cliVersion)", forHTTPHeaderField: "User-Agent")
+        QuotaDebugLog.log("ClaudeQuota", "GET oauth/usage (UA claude-code/\(cliVersion), token len \(token.count), expires in \((creds.expiresAt - nowMs) / 60000)m)")
         do {
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 let code = (response as? HTTPURLResponse)?.statusCode ?? -1
                 Self.log.error("oauth/usage HTTP \(code)")
-                if code == 401 || code == 403 {
-                    // Our cached copy is stale (revoked, or the CLI rotated its tokens);
-                    // drop it so the next refresh re-reads Claude Code's own credentials.
-                    await ClaudeCredentialStore.shared.clear()
-                    return QuotaFetchResult(errorMessage: "Claude login expired — it will retry with Claude Code's current login.", isAuthFailure: true)
-                }
-                // 429 = rate-limited, 500+ = server error — transient, NOT an auth failure.
                 if code == 429 {
-                    let retryAfterHeader = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Retry-After")
-                    await ClaudeQuotaBackoff.shared.recordRateLimited(retryAfterHeader: retryAfterHeader, now: Date())
+                    let retryAfter = (response as? HTTPURLResponse)?
+                        .value(forHTTPHeaderField: "Retry-After")
+                        .flatMap(TimeInterval.init)
+                        ?? Self.defaultRateLimitCooldown
+                    let cached = await ClaudeQuotaCooldown.shared.noteRateLimited(retryAfterSeconds: retryAfter)
+                    Self.log.notice("oauth/usage rate limited, backing off \(Int(retryAfter))s")
+                    if let cached { return cached }
+                    let minutes = max(1, Int((retryAfter / 60).rounded(.up)))
+                    return QuotaFetchResult(errorMessage: "Claude usage limits rate-limited — retrying in ~\(minutes) min.")
+                }
+                if code == 401 || code == 403 {
+                    // The CLI has probably rotated the token since we read it. Dropping the
+                    // memory cache makes the next poll re-read the CLI's keychain item — a
+                    // non-interactive read that never prompts once "Always Allow" is granted.
+                    //
+                    // Deliberately NOT flagged `isAuthFailure`: since Kannu stopped refreshing
+                    // tokens, a 401 here is routine CLI rotation, not a sign-out. Marking it
+                    // fatal would banish a working provider to the unavailable chip. Genuine
+                    // "not signed in" is already flagged at the `.notSignedIn` case above.
+                    await ClaudeCredentialStore.shared.invalidate()
+                    QuotaDebugLog.log("ClaudeQuota", "HTTP \(code) — token likely rotated by the CLI; will re-read on next poll")
+                    return QuotaFetchResult(errorMessage: "Claude login was rotated — retrying with Claude Code's current login.")
                 }
                 return QuotaFetchResult(errorMessage: "Claude quota API HTTP \(code)")
             }
-            await ClaudeQuotaBackoff.shared.clear()
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
             let decoded = try decoder.decode(UsageResponse.self, from: data)
@@ -210,7 +306,9 @@ struct ClaudeQuotaClient {
                 return QuotaFetchResult(errorMessage: "Claude quota response missing usage windows")
             }
             let tier = creds.subscriptionType ?? decoded.subscriptionType
-            return QuotaFetchResult(session: sessionLimit, week: weekLimit, accountTier: tier?.capitalized)
+            let result = QuotaFetchResult(session: sessionLimit, week: weekLimit, accountTier: tier?.capitalized)
+            await ClaudeQuotaCooldown.shared.noteSuccess(result)
+            return result
         } catch {
             Self.log.error("oauth/usage failed: \(error.localizedDescription, privacy: .public)")
             return QuotaFetchResult(errorMessage: error.localizedDescription)
@@ -218,29 +316,38 @@ struct ClaudeQuotaClient {
     }
 
     /// Ordered fallback chain — each step is tried only if the previous one came up empty:
-    /// 1. memory / Kannu's own keychain copy (never prompts)
+    /// 1. short-lived memory cache (never prompts; expires so CLI rotations are picked up)
     /// 2. ~/.claude/.credentials.json (never prompts; absent on macOS Claude Code installs)
     /// 3. Claude Code's keychain item without UI (works once "Always Allow" was granted)
     /// 4. Claude Code's keychain item with the system prompt — user-initiated only
     private func currentCredentials(interactive: Bool) async -> ClaudeCredentialLookup {
-        if let cached = await ClaudeCredentialStore.shared.get() { return .found(cached) }
+        if let cached = await ClaudeCredentialStore.shared.get() {
+            QuotaDebugLog.log("ClaudeQuota", "credentials from memory cache")
+            return .found(cached)
+        }
 
         if let fromFile = Self.credentialsFromFile() {
             await ClaudeCredentialStore.shared.set(fromFile)
+            QuotaDebugLog.log("ClaudeQuota", "credentials from ~/.claude/.credentials.json")
             return .found(fromFile)
         }
 
         let quiet = Self.credentialsFromClaudeKeychain(allowInteraction: false)
         if case .found(let creds) = quiet {
             await ClaudeCredentialStore.shared.set(creds)
+            QuotaDebugLog.log("ClaudeQuota", "credentials from CLI keychain (non-interactive)")
             return quiet
         }
-        guard case .needsKeychainPermission = quiet else { return quiet }
+        guard case .needsKeychainPermission = quiet else {
+            QuotaDebugLog.log("ClaudeQuota", "credential lookup: \(quiet)")
+            return quiet
+        }
         guard interactive else { return .needsKeychainPermission }
 
         let prompted = Self.credentialsFromClaudeKeychain(allowInteraction: true)
         if case .found(let creds) = prompted {
             await ClaudeCredentialStore.shared.set(creds) // approve once, never prompt again
+            QuotaDebugLog.log("ClaudeQuota", "credentials from CLI keychain (user approved prompt)")
         }
         return prompted
     }
@@ -263,40 +370,14 @@ struct ClaudeQuotaClient {
     private static func parse(_ data: Data) -> ClaudeOAuthCredentials? {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        return (try? decoder.decode(CredentialFile.self, from: data))?.claudeAiOauth
-    }
-
-    private func validAccessToken(_ creds: ClaudeOAuthCredentials) async -> String? {
-        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
-        guard creds.expiresAt - nowMs <= Self.refreshSkewMs else { return creds.accessToken }
-        var request = URLRequest(url: URL(string: "https://platform.claude.com/v1/oauth/token")!)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let body: [String: Any] = [
-            "grant_type": "refresh_token",
-            "refresh_token": creds.refreshToken,
-            "client_id": Self.clientID,
-            "scope": Self.refreshScope
-        ]
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        guard let (data, response) = try? await session.data(for: request),
-              let http = response as? HTTPURLResponse else {
-            return creds.accessToken // network hiccup: try the existing token rather than failing outright
+        guard let creds = (try? decoder.decode(CredentialFile.self, from: data))?.claudeAiOauth else { return nil }
+        // A blanked-out credential (empty tokens, expiresAt 0) is what an invalidated login
+        // looks like on disk. Treating it as "found" used to send `Authorization: Bearer `
+        // with nothing after it — a guaranteed 401 and, on retry, a 429.
+        guard !creds.accessToken.isEmpty else {
+            QuotaDebugLog.log("ClaudeQuota", "credential parsed but accessToken is empty — treating as signed out")
+            return nil
         }
-        guard (200..<300).contains(http.statusCode) else {
-            if http.statusCode == 400 || http.statusCode == 401 {
-                // Refresh token is dead — most likely our copy went stale after the CLI rotated its own.
-                await ClaudeCredentialStore.shared.clear()
-            }
-            Self.log.error("oauth token refresh HTTP \(http.statusCode)")
-            return creds.accessToken
-        }
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        guard let refreshed = try? decoder.decode(RefreshResponse.self, from: data) else { return creds.accessToken }
-        let expiresAt = nowMs + Int64(refreshed.expiresIn) * 1000
-        let updated = ClaudeOAuthCredentials(accessToken: refreshed.accessToken, refreshToken: refreshed.refreshToken, expiresAt: expiresAt, subscriptionType: creds.subscriptionType)
-        await ClaudeCredentialStore.shared.set(updated)
-        return refreshed.accessToken
+        return creds
     }
 }

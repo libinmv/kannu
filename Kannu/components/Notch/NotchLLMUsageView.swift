@@ -23,6 +23,19 @@ struct NotchLLMUsageView: View {
     @ObservedObject private var manager = LLMUsageManager.shared
     @State private var hoveredUnavailable: ProviderID? = nil
 
+    /// Observed rather than read through `Defaults[...]` so the card redraws the moment the
+    /// toggle below flips.
+    @Default(.enableClaudeUsageLimits) private var claudeUsageLimitsEnabled
+
+    // Live only while the tab is visible. Fires faster than the manager's refresh floor so a
+    // tick landing just inside the floor doesn't stretch the effective cadence.
+    //
+    // `static` for publisher identity: a plain `let` on a struct View is re-evaluated on every
+    // re-render, and `manager` is an @ObservedObject that re-renders this card several times
+    // per refresh — each re-render handed `.onReceive` a brand-new timer whose 30s countdown
+    // restarted from zero, so the poll could starve indefinitely while the tab was open.
+    private static let pollTimer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
+
     private func isEnabled(_ provider: ProviderID) -> Bool { Defaults[provider.enabledKey] }
 
     /// A provider is "active" (shows full card) when:
@@ -42,6 +55,27 @@ struct NotchLLMUsageView: View {
         }
     }
 
+    /// Claude's 5h/7d limits are the one figure that needs the network and a one-time keychain
+    /// approval — everything else on the card is read from local files. The control lives here
+    /// rather than in Settings so the cost is visible exactly where the benefit appears.
+    private var claudeLimitsToggle: some View {
+        Button {
+            claudeUsageLimitsEnabled.toggle()
+            // Skip the refresh floor: the card should reflect the choice immediately.
+            manager.refreshAll(force: true)
+        } label: {
+            Image(systemName: claudeUsageLimitsEnabled
+                  ? "gauge.with.dots.needle.bottom.50percent"
+                  : "gauge.with.dots.needle.bottom.50percent.badge.minus")
+                .font(.caption)
+                .foregroundStyle(claudeUsageLimitsEnabled ? Color.accentColor : .secondary)
+        }
+        .buttonStyle(.plain)
+        .help(claudeUsageLimitsEnabled
+              ? "Hide usage limits. Plan, credits and token counts stay — they're read locally."
+              : "Show 5-hour and weekly usage limits. Asks for keychain approval once.")
+    }
+
     var body: some View {
         let enabled = ProviderID.allCases.filter { isEnabled($0) }
         let active = enabled.filter { isActiveProvider($0) }
@@ -56,7 +90,13 @@ struct NotchLLMUsageView: View {
             }
         }
         .padding(.horizontal, 8)
-        .onAppear { manager.refreshAll(force: true) }
+        // Deliberately not forced: this fires on every open of the tab, and forcing bypasses
+        // the refresh floor entirely — which is how the quota API ends up rate-limiting us.
+        // The Refresh button above still forces, because a user pressing it means it.
+        .onAppear { manager.refreshAll() }
+        // Keep the card current while it stays open; the manager's floor still paces the
+        // actual work, so this can never poll harder than once a minute.
+        .onReceive(Self.pollTimer) { _ in manager.refreshAll() }
     }
 
     @ViewBuilder
@@ -75,6 +115,15 @@ struct NotchLLMUsageView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
+                if provider == .claude {
+                    claudeLimitsToggle
+                }
+            }
+            if case .success(let snap) = manager.results[provider] ?? .loading,
+               let note = snap.accountNote {
+                Text(note)
+                    .font(.caption2)
+                    .foregroundStyle(.orange.opacity(0.9))
             }
             switch manager.results[provider] ?? .loading {
             case .loading:
