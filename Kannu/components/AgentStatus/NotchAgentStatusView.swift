@@ -8,7 +8,8 @@ struct NotchAgentStatusView: View {
     @ObservedObject private var skinManager = NotchSkinManager.shared
     @ObservedObject private var caffeinate = CaffeinateManager.shared
     /// Defaults-backed, not @State: this tab is torn down and rebuilt on every tab switch.
-    @Default(.caffeinateWhileAgentsRun) private var caffeinateArmed
+    @Default(.caffeinateEnabled) private var caffeinateEnabled
+    @Default(.smartCaffeinate) private var smartCaffeinate
     @State private var isSuppressingScrollGesture = false
     @State private var redBlinkStartTimes: [String: Date] = [:]
     private let scrollSuppressionToken = UUID()
@@ -184,31 +185,61 @@ struct NotchAgentStatusView: View {
             .foregroundStyle(.secondary)
     }
 
-    /// Top-right keep-awake control, visible in every panel state. Armed means "hold a
-    /// system-sleep assertion while any agent run is active"; the cup fills and warms only
-    /// while the assertion is actually held, so the icon doubles as live status.
+    /// Top-right caffeinate control, visible in every panel state. Two faces:
+    /// - Smart mode on: a status-only indicator (cup + sparkle) — the Mac stays awake
+    ///   automatically while agents run; clicking opens Settings to change the mode.
+    /// - Smart mode off: the manual switch — on keeps the Mac awake right now, until off.
+    /// In both faces the cup fills and warms only while the assertion is actually held,
+    /// so the icon reports truth, not the switch position.
+    @ViewBuilder
     private var caffeinateRow: some View {
         HStack(spacing: 6) {
             Spacer(minLength: 0)
-            Image(systemName: caffeinate.isKeepingAwake ? "cup.and.saucer.fill" : "cup.and.saucer")
-                .font(.caption)
-                .foregroundStyle(caffeinate.isKeepingAwake ? AnyShapeStyle(Color.orange) : (caffeinateArmed ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary)))
-                .symbolRenderingMode(.hierarchical)
-            Toggle("Keep the Mac awake while agents run", isOn: $caffeinateArmed)
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .labelsHidden()
+            if smartCaffeinate {
+                Button {
+                    SettingsWindowController.shared.showWindow()
+                } label: {
+                    HStack(spacing: 3) {
+                        cupIcon
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 7))
+                            .foregroundStyle(caffeinate.isKeepingAwake ? Color.orange : .secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .help(
+                    caffeinate.isKeepingAwake
+                        ? String(localized: "Keeping the Mac awake — an agent is running. Smart caffeinate is on; click to change in Settings.")
+                        : String(localized: "Smart caffeinate is on — the Mac stays awake automatically while agents run. Click to change in Settings.")
+                )
+                .accessibilityLabel("Smart caffeinate is on")
+            } else {
+                cupIcon
+                Toggle("Keep the Mac awake", isOn: $caffeinateEnabled)
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .labelsHidden()
+                    .help(
+                        caffeinate.isKeepingAwake
+                            ? String(localized: "Keeping the Mac awake — switch off to allow sleep")
+                            : String(localized: "Keep the Mac awake")
+                    )
+                    .accessibilityLabel("Keep the Mac awake")
+            }
         }
         .frame(maxWidth: .infinity)
-        .help(
-            caffeinate.isKeepingAwake
-                ? String(localized: "Keeping the Mac awake — an agent is running")
-                : caffeinateArmed
-                    ? String(localized: "Armed — the Mac will stay awake while agents run")
-                    : String(localized: "Keep the Mac awake while agents run")
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Keep the Mac awake while agents run")
+    }
+
+    private var cupIcon: some View {
+        Image(systemName: caffeinate.isKeepingAwake ? "cup.and.saucer.fill" : "cup.and.saucer")
+            .font(.caption)
+            .foregroundStyle(caffeinate.isKeepingAwake ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+            .symbolRenderingMode(.hierarchical)
+            .help(
+                caffeinate.isKeepingAwake
+                    ? String(localized: "Keeping the Mac awake")
+                    : String(localized: "Caffeinate — keep the Mac awake")
+            )
     }
 
     @ViewBuilder

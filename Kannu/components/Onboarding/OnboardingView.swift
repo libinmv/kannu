@@ -28,6 +28,7 @@ enum OnboardingStep {
     case musicPermission
     case profileSelection
     case trafficLightStyle
+    case caffeinateChoice
     case finished
 }
 
@@ -72,6 +73,16 @@ struct OnboardingView: View {
 
             case .trafficLightStyle:
                 TrafficLightStyleSelectionView(
+                    onContinue: {
+                        withAnimation(.easeInOut(duration: 0.6)) {
+                            step = .caffeinateChoice
+                        }
+                    }
+                )
+                .transition(.opacity)
+
+            case .caffeinateChoice:
+                CaffeinateSelectionView(
                     onContinue: {
                         withAnimation(.easeInOut(duration: 0.6)) {
                             step = .finished

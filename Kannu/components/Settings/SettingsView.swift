@@ -868,6 +868,7 @@ struct SettingsView: View {
 
             // Agent Status
             SettingsSearchEntry(tab: .agentStatus, title: "Enable Cursor Agent Status", keywords: ["agent", "cursor", "status", "traffic", "light", "ai", "notch"], highlightID: SettingsTab.agentStatus.highlightID(for: "Enable Cursor Agent Status")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Smart caffeinate", keywords: ["caffeinate", "awake", "sleep", "smart", "coffee", "keep awake", "assertion", "insomnia"], highlightID: SettingsTab.agentStatus.highlightID(for: "Smart caffeinate")),
             SettingsSearchEntry(tab: .agentStatus, title: "Traffic light style", keywords: ["traffic", "light", "style", "classic", "minimal", "dots", "notch", "agent", "indicator"], highlightID: SettingsTab.agentStatus.highlightID(for: "Traffic light style")),
             SettingsSearchEntry(tab: .agentStatus, title: "Editor Hooks", keywords: ["agent", "cursor", "vscode", "copilot", "codex", "claude", "hook", "install", "integration"], highlightID: SettingsTab.agentStatus.highlightID(for: "Cursor Hook")),
             SettingsSearchEntry(tab: .agentStatus, title: "Mobile notifications", keywords: ["mobile", "push", "ntfy", "pushover", "webhook", "iphone", "android"], highlightID: SettingsTab.agentStatus.highlightID(for: "Mobile notifications")),
@@ -7509,6 +7510,7 @@ struct AgentStatusSettings: View {
     @Default(.agentInactiveDisplaySeconds) var agentInactiveDisplaySeconds
     @Default(.showAgentStoppedIndicator) var showAgentStoppedIndicator
     @Default(.agentTrafficLightStyle) var agentTrafficLightStyle
+    @Default(.smartCaffeinate) var smartCaffeinate
     @Default(.enableAgentStatusMobileNotifications) var enableMobileNotifications
     @Default(.agentStatusNotificationProvider) var notificationProvider
     @Default(.agentStatusNtfyTopic) var ntfyTopic
@@ -7577,6 +7579,20 @@ struct AgentStatusSettings: View {
                     Text("Traffic Light")
                 } footer: {
                     Text("Yellow during approval cards needs the Cursor hook installed below. Transcript-only detection can lag until Cursor writes the tool call.")
+                }
+
+                Section {
+                    Defaults.Toggle(key: .smartCaffeinate) {
+                        Text("Smart caffeinate")
+                    }
+                    .settingsHighlight(id: highlightID("Smart caffeinate"))
+                    Text("Keeps the Mac awake automatically while any agent is running, and lets it sleep when they stop. While this is on, the manual switch in the notch is hidden.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text("Caffeinate")
+                } footer: {
+                    Text("Only system sleep is prevented — the display may still sleep while agents keep running. Closing the lid always sleeps the Mac.")
                 }
 
                 Section {

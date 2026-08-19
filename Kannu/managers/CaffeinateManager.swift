@@ -20,84 +20,116 @@ import Combine
 import Defaults
 import Foundation
 import IOKit.pwr_mgt
+import os
 
-/// Keeps the Mac awake while AI agents are actually working.
+/// Keeps the Mac awake, in one of two user-selectable modes:
 ///
-/// Deliberately auto-scoped rather than a plain caffeinate clone: the assertion is held only
-/// while the toggle is armed AND at least one visible agent session is in an active run
-/// (thinking / executing / awaiting input — the same definition the traffic light uses).
-/// The moment every run stops, the assertion is released, so an armed toggle forgotten for a
-/// week costs nothing. Only *system* sleep is prevented; the display may still sleep — agents
-/// keep running behind a dark screen.
+/// - **Manual** (`caffeinateEnabled`): plain caffeinate — while the notch switch is on, a
+///   system-sleep assertion is held unconditionally until it is switched off or the app quits.
+/// - **Smart** (`smartCaffeinate`): the assertion is held automatically while at least one
+///   visible agent session is in an active run (thinking / executing / awaiting input — the
+///   same definition the traffic light uses) and released the moment every run stops. While
+///   smart mode is on, the manual switch is hidden from the notch and its value is ignored.
+///
+/// Only *idle system* sleep is prevented (same as `caffeinate -i`): the display may still
+/// sleep, and closing the lid still sleeps the machine — assertions never override forced sleep.
+///
+/// Concurrency: all three inputs (two Defaults keys, the agent session list) are treated as
+/// bare wake-up signals; no payload is ever captured. `reconcile()` re-reads every piece of
+/// live state on the main actor at execution time, so a burst of events converges on the
+/// current truth no matter how the queued tasks interleave, and the edge guard in
+/// `setKeepingAwake` makes each pass idempotent. The IOPM calls are synchronous and there is
+/// no suspension point inside a transition, so two transitions can never overlap.
 @MainActor
 final class CaffeinateManager: ObservableObject {
     static let shared = CaffeinateManager()
 
-    /// True while the IOPM assertion is actually held (armed AND an agent run is active).
-    /// The UI uses this to distinguish "holding" from merely "armed".
+    private static let log = os.Logger(subsystem: "com.kannu.app", category: "Caffeinate")
+
+    /// True while the IOPM assertion is actually held. Deliberately reports the assertion
+    /// truth rather than any toggle position: if the create call ever fails, the cup icon
+    /// shows off instead of lying, and the next event retries.
     @Published private(set) var isKeepingAwake = false
 
     private var assertionID: IOPMAssertionID = 0
     private var cancellables: Set<AnyCancellable> = []
 
     private init() {
-        // Both inputs funnel into the same recompute: the user arming/disarming the toggle,
-        // and any change to the session list (state transitions, sessions appearing/expiring).
-        Defaults.publisher(.caffeinateWhileAgentsRun, options: [])
+        Defaults.publisher(.caffeinateEnabled, options: [])
             .sink { [weak self] _ in
-                Task { @MainActor in self?.reevaluate() }
+                Task { @MainActor in self?.reconcile(trigger: "manual toggle") }
+            }
+            .store(in: &cancellables)
+
+        Defaults.publisher(.smartCaffeinate, options: [])
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.reconcile(trigger: "smart toggle") }
             }
             .store(in: &cancellables)
 
         CursorAgentStatusMonitor.shared.$sessions
-            .sink { [weak self] sessions in
-                Task { @MainActor in self?.reevaluate(sessions: sessions) }
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.reconcile(trigger: "sessions") }
             }
             .store(in: &cancellables)
 
-        reevaluate()
+        Self.log.notice("init: manual=\(Defaults[.caffeinateEnabled]) smart=\(Defaults[.smartCaffeinate])")
+        reconcile(trigger: "init")
     }
 
     deinit {
-        // Actor isolation doesn't apply in deinit; release the raw assertion directly.
+        // The singleton never deinits in practice; belt-and-braces. The OS also releases
+        // assertions automatically when the process exits.
         if assertionID != 0 {
             IOPMAssertionRelease(assertionID)
         }
     }
 
-    private func reevaluate(sessions: [AgentSessionStatus]? = nil) {
-        let current = sessions ?? CursorAgentStatusMonitor.shared.sessions
-        let anyActiveRun = current.contains {
-            $0.isVisible && !AgentTrafficLightMapper.isSimulationSession($0) && $0.displayState.isActiveRun
+    private func reconcile(trigger: String) {
+        let smart = Defaults[.smartCaffeinate]
+        let shouldHold: Bool
+        if smart {
+            shouldHold = CursorAgentStatusMonitor.shared.sessions.contains {
+                $0.isVisible && !AgentTrafficLightMapper.isSimulationSession($0) && $0.displayState.isActiveRun
+            }
+        } else {
+            shouldHold = Defaults[.caffeinateEnabled]
         }
-        setKeepingAwake(Defaults[.caffeinateWhileAgentsRun] && anyActiveRun)
+        // Log before the edge guard so a wrong read is never silent.
+        if shouldHold != isKeepingAwake {
+            Self.log.notice("reconcile(\(trigger, privacy: .public)): smart=\(smart) → shouldHold=\(shouldHold)")
+        }
+        setKeepingAwake(shouldHold, smart: smart)
     }
 
-    private func setKeepingAwake(_ shouldHold: Bool) {
+    private func setKeepingAwake(_ shouldHold: Bool, smart: Bool) {
         guard shouldHold != isKeepingAwake else { return }
 
         if shouldHold {
             var id: IOPMAssertionID = 0
+            let reason = smart
+                ? "Kannu — keeping the Mac awake while AI agents run"
+                : "Kannu — keeping the Mac awake"
             let result = IOPMAssertionCreateWithName(
                 kIOPMAssertionTypePreventUserIdleSystemSleep as CFString,
                 IOPMAssertionLevel(kIOPMAssertionLevelOn),
-                "Kannu — keeping the Mac awake while AI agents run" as CFString,
+                reason as CFString,
                 &id
             )
             guard result == kIOReturnSuccess else {
-                print("CaffeinateManager: ❌ failed to create sleep assertion (\(result))")
+                Self.log.error("failed to create sleep assertion (\(result))")
                 return
             }
             assertionID = id
             isKeepingAwake = true
-            print("CaffeinateManager: ☕ holding system-sleep assertion")
+            Self.log.notice("☕ holding system-sleep assertion (\(smart ? "smart" : "manual", privacy: .public))")
         } else {
             if assertionID != 0 {
                 IOPMAssertionRelease(assertionID)
                 assertionID = 0
             }
             isKeepingAwake = false
-            print("CaffeinateManager: 💤 released system-sleep assertion")
+            Self.log.notice("💤 released system-sleep assertion")
         }
     }
 }

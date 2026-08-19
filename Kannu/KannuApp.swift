@@ -618,8 +618,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         LockScreenLiveActivityWindowManager.shared.configure(viewModel: vm)
         LockScreenManager.shared.configure(viewModel: vm)
-        // Spin up the keep-awake watcher at launch: the assertion must track agent runs even
-        // if the notch is never opened this session.
+        // Spin up the caffeinate manager at launch: a toggle left on must take effect
+        // immediately, even if the notch is never opened this session.
         _ = CaffeinateManager.shared
         extensionXPCServiceHost.start()
         extensionRPCServer.start()

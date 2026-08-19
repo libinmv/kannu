@@ -4,6 +4,16 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-20 - Smart caffeinate and manual caffeinate modes
+- **Developer label:** Two-mode caffeinate (smart auto-scoped / manual), adaptive notch control, onboarding choice
+- **Agent label:** Choose between a manual keep-awake switch and automatic keep-awake while agents run
+- **Changes:**
+  - `CaffeinateManager` now has two modes. **Manual** (`caffeinateEnabled`): the notch switch holds a system-sleep assertion unconditionally while on. **Smart** (`smartCaffeinate`, Settings › Agent Status): the assertion is held automatically while any visible agent session is in an active run and released when every run stops; the manual switch is hidden from the notch and replaced by a cup+sparkle indicator that opens Settings when clicked
+  - Race-hardening: all three inputs (both Defaults keys and the agent session list) are treated as bare wake-up signals with no captured payloads — `reconcile()` re-reads live state on the main actor at execution time, so any burst of toggles or session events converges on the truth regardless of task ordering, and the edge-guarded synchronous IOPM transitions can never interleave
+  - Replaced `print` with `os.Logger` (subsystem `com.kannu.app`, category `Caffeinate`) — the previous logging was unobservable in `open`-launched apps, which made a launch issue undiagnosable
+  - Tooltips on the cup icon in every state; onboarding gains a "Keep the Mac awake?" step (smart recommended vs manual) after the traffic-light style choice
+  - Diagnosed during testing (fix tracked separately): `AppDelegate` initializes `BluetoothAudioManager` synchronously before `applicationDidFinishLaunching`, and its `IOBluetoothHostController` access blocks the main thread on a TCC permission round-trip — a launch with no cached Bluetooth TCC decision freezes until the dialog is answered, and bare-executable launches abort with a TCC violation
+
 ### 2026-08-20 - Caffeinate toggle in the agent panel
 - **Developer label:** Auto-scoped keep-awake via IOPM assertion, toggle in the Agent Status panel
 - **Agent label:** The Mac stays awake while agents run — and only while they run
