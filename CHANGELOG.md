@@ -4,6 +4,15 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-20 - Caffeinate toggle in the agent panel
+- **Developer label:** Auto-scoped keep-awake via IOPM assertion, toggle in the Agent Status panel
+- **Agent label:** The Mac stays awake while agents run — and only while they run
+- **Changes:**
+  - New `CaffeinateManager`: when armed, holds a `PreventUserIdleSystemSleep` assertion while at least one visible agent session is in an active run (thinking / executing / awaiting input — the same definition the traffic light uses) and releases it the moment every run stops. Set-and-forget: an armed toggle with no agents running costs nothing. System sleep only — the display may still sleep; agents keep running behind a dark screen
+  - Toggle lives at the top-right of the open-notch Agent Status panel, visible in every panel state. The coffee-cup icon doubles as live status: filled and warm only while the assertion is actually held, outline when merely armed or off
+  - The header-less fallback path of the chat list (sessions but no primary) now carries the same "Recent chats" header as the normal path
+  - Verified end to end with `pmset -g assertions`: assertion appears while armed with a live agent, disappears on disarm/agent-stop, no leak after quit
+
 ### 2026-08-19 - Notch traffic light: no logo, Classic and Minimal styles
 - **Developer label:** Remove the provider logo from the closed notch, add a Classic/Minimal traffic light style
 - **Agent label:** The notch stops blinking its logo at you, and the light can be one dot instead of three

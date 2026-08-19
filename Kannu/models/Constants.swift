@@ -1240,6 +1240,9 @@ extension Defaults.Keys {
     /// Closed-notch traffic light shape. Defaults to `.classic` so existing installs keep the
     /// three-dot look they already have — only fresh installs are asked to choose in onboarding.
     static let agentTrafficLightStyle = Key<AgentTrafficLightStyle>("agentTrafficLightStyle", default: .classic)
+    /// Armed = hold a system-sleep assertion, but only while an agent run is actually active.
+    /// Safe to persist: with no agents running the assertion is released, so nothing drains.
+    static let caffeinateWhileAgentsRun = Key<Bool>("caffeinateWhileAgentsRun", default: false)
 
     // MARK: Agent Status Mobile Notifications
     static let enableAgentStatusMobileNotifications = Key<Bool>("enableAgentStatusMobileNotifications", default: false)

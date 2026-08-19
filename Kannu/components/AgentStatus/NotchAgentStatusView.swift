@@ -1,10 +1,14 @@
 import Foundation
+import Defaults
 import SwiftUI
 
 struct NotchAgentStatusView: View {
     @EnvironmentObject private var vm: KannuViewModel
     @ObservedObject private var monitor = CursorAgentStatusMonitor.shared
     @ObservedObject private var skinManager = NotchSkinManager.shared
+    @ObservedObject private var caffeinate = CaffeinateManager.shared
+    /// Defaults-backed, not @State: this tab is torn down and rebuilt on every tab switch.
+    @Default(.caffeinateWhileAgentsRun) private var caffeinateArmed
     @State private var isSuppressingScrollGesture = false
     @State private var redBlinkStartTimes: [String: Date] = [:]
     private let scrollSuppressionToken = UUID()
@@ -94,6 +98,8 @@ struct NotchAgentStatusView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+                caffeinateRow
+
                 if let primary = primarySession {
                     primaryCard(primary)
                 } else if dedupedSessions.isEmpty {
@@ -101,13 +107,14 @@ struct NotchAgentStatusView: View {
                 }
 
                 if !recentChats.isEmpty {
-                    Text("Recent chats")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                    sectionHeader("Recent chats")
                     ForEach(recentChats) { session in
                         sessionRow(session)
                     }
                 } else if !allSessions.isEmpty, primarySession == nil {
+                    // Same header as above: these ARE the recent chats when nothing is
+                    // primary — rendering them headerless made the two paths look unrelated.
+                    sectionHeader("Recent chats")
                     ForEach(allSessions) { session in
                         sessionRow(session)
                     }
@@ -169,6 +176,39 @@ struct NotchAgentStatusView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16)
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+    }
+
+    /// Top-right keep-awake control, visible in every panel state. Armed means "hold a
+    /// system-sleep assertion while any agent run is active"; the cup fills and warms only
+    /// while the assertion is actually held, so the icon doubles as live status.
+    private var caffeinateRow: some View {
+        HStack(spacing: 6) {
+            Spacer(minLength: 0)
+            Image(systemName: caffeinate.isKeepingAwake ? "cup.and.saucer.fill" : "cup.and.saucer")
+                .font(.caption)
+                .foregroundStyle(caffeinate.isKeepingAwake ? AnyShapeStyle(Color.orange) : (caffeinateArmed ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary)))
+                .symbolRenderingMode(.hierarchical)
+            Toggle("Keep the Mac awake while agents run", isOn: $caffeinateArmed)
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .labelsHidden()
+        }
+        .frame(maxWidth: .infinity)
+        .help(
+            caffeinate.isKeepingAwake
+                ? String(localized: "Keeping the Mac awake — an agent is running")
+                : caffeinateArmed
+                    ? String(localized: "Armed — the Mac will stay awake while agents run")
+                    : String(localized: "Keep the Mac awake while agents run")
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Keep the Mac awake while agents run")
     }
 
     @ViewBuilder
