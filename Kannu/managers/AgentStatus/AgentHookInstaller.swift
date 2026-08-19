@@ -45,7 +45,7 @@ final class AgentHookInstaller: ObservableObject {
     @Published private(set) var lastError: String?
 
     static let scriptName = "kannu-agent-status.sh"
-    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=26"
+    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=27"
 
     private static var home: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -113,7 +113,11 @@ final class AgentHookInstaller: ObservableObject {
     func install(_ provider: AgentHookProvider) {
         lastError = nil
         do {
-            try FileManager.default.createDirectory(at: Self.statusDirectory, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                at: Self.statusDirectory,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
             switch provider {
             case .cursor:
                 try Self.writeScript(to: Self.cursorScriptURL)
@@ -262,7 +266,9 @@ final class AgentHookInstaller: ObservableObject {
         export KANNU_HOOK_EVENT="${3:-unknown}"
         export KANNU_HOOK_MATCHER="${4:-}"
         export KANNU_STATUS_DIR="$HOME/.kannu/agent-status"
-        mkdir -p "$KANNU_STATUS_DIR"
+        # 700: the files carry session titles and project names, and Kannu trusts their
+        # contents to drive the traffic light — no reason for other users to see them.
+        mkdir -p "$KANNU_STATUS_DIR" && chmod 700 "$KANNU_STATUS_DIR"
         export KANNU_INPUT="$(cat)"
 
         if ! command -v python3 >/dev/null 2>&1; then
@@ -434,6 +440,11 @@ final class AgentHookInstaller: ObservableObject {
             data.get("thread_id"),
         )
         conversation_id = re.sub(r"[^A-Za-z0-9_-]", "", conversation_id) or "default"
+        # Cap the id: session ids are UUID-sized in practice, and an oversized hostile id
+        # would push the status/lock paths past NAME_MAX — the resulting os.replace failure
+        # kills the hook before it prints its allow JSON, which for permission-shaped hooks
+        # is undefined behaviour in the host tool.
+        conversation_id = conversation_id[:64]
         status_file = status_dir / f"{provider}-{conversation_id}.json"
 
         # Claude runs the matcher-scoped and generic hook groups for one event as separate
@@ -587,7 +598,7 @@ final class AgentHookInstaller: ObservableObject {
     // MARK: - Cursor (~/.cursor/hooks.json, flat entries)
 
     private static func mergeCursorHooksConfig() throws {
-        var config = readJSON(at: cursorHooksConfigURL) ?? [:]
+        var config = try readJSONForMerge(at: cursorHooksConfigURL)
         if config["version"] == nil {
             config["version"] = 1
         }
@@ -636,7 +647,7 @@ final class AgentHookInstaller: ObservableObject {
     // MARK: - Codex (~/.codex/hooks.json, matcher-group schema)
 
     private static func mergeCodexHooksConfig() throws {
-        var config = readJSON(at: codexHooksConfigURL) ?? [:]
+        var config = try readJSONForMerge(at: codexHooksConfigURL)
         var hooks = config["hooks"] as? [String: Any] ?? [:]
         stripCodexEntries(from: &hooks)
 
@@ -676,7 +687,7 @@ final class AgentHookInstaller: ObservableObject {
     // MARK: - Claude Code (~/.claude/settings.json, matcher-group schema)
 
     private static func mergeClaudeHooksConfig() throws {
-        var config = readJSON(at: claudeSettingsURL) ?? [:]
+        var config = try readJSONForMerge(at: claudeSettingsURL)
         var hooks = config["hooks"] as? [String: Any] ?? [:]
         stripClaudeEntries(from: &hooks)
 
@@ -726,7 +737,15 @@ final class AgentHookInstaller: ObservableObject {
             let isPrimary = target == antigravityConfigHooksURL
             guard isPrimary || FileManager.default.fileExists(atPath: target.path) else { continue }
 
-            var config = readJSON(at: target) ?? [:]
+            // Match the write-side policy below: a broken non-primary file is skipped
+            // (never overwritten), only a broken primary aborts the install.
+            var config: [String: Any]
+            do {
+                config = try readJSONForMerge(at: target)
+            } catch {
+                if isPrimary { primaryError = error }
+                continue
+            }
             var hooks = config["hooks"] as? [String: Any] ?? [:]
             stripAntigravityEntries(from: &hooks)
 
@@ -1040,7 +1059,11 @@ final class AgentHookInstaller: ObservableObject {
     private func migrateLegacyStatusDirectoryIfNeeded() {
         let legacy = Self.home.appendingPathComponent(".atoll/agent-status", isDirectory: true)
         guard FileManager.default.fileExists(atPath: legacy.path) else { return }
-        try? FileManager.default.createDirectory(at: Self.statusDirectory, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(
+            at: Self.statusDirectory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
         guard let files = try? FileManager.default.contentsOfDirectory(at: legacy, includingPropertiesForKeys: nil) else { return }
         for file in files where file.pathExtension == "json" {
             let destination = Self.statusDirectory.appendingPathComponent(file.lastPathComponent)
@@ -1083,6 +1106,24 @@ final class AgentHookInstaller: ObservableObject {
     }
 
     // MARK: - JSON helpers
+
+    /// Read a config that is about to be merged into and REWRITTEN. `readJSON`'s nil
+    /// collapses "file absent" and "file present but unparseable" into one case, and the
+    /// merge functions' `?? [:]` then rebuilt the document from scratch — silently
+    /// destroying every user-defined hook (and for `~/.claude/settings.json`, the user's
+    /// whole settings file) over one stray trailing comma. Absent stays mergeable;
+    /// unparseable-but-present must abort the install with a visible error instead.
+    private static func readJSONForMerge(at url: URL) throws -> [String: Any] {
+        guard FileManager.default.fileExists(atPath: url.path) else { return [:] }
+        guard let json = readJSON(at: url) else {
+            throw NSError(
+                domain: "Kannu.AgentHookInstaller", code: 1,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "\(url.lastPathComponent) exists but isn't valid JSON — fix or remove it, then retry (nothing was changed)."]
+            )
+        }
+        return json
+    }
 
     private static func readJSON(at url: URL) -> [String: Any]? {
         guard let data = try? Data(contentsOf: url),

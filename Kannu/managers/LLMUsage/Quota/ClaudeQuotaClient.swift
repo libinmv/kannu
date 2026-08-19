@@ -339,7 +339,16 @@ struct ClaudeQuotaClient {
             return quiet
         }
         guard case .needsKeychainPermission = quiet else {
-            QuotaDebugLog.log("ClaudeQuota", "credential lookup: \(quiet)")
+            // Log a hand-written case name, never the enum: `.found` interpolated here
+            // would dump the whole credentials struct into the log via reflection.
+            let outcome: String
+            switch quiet {
+            case .found: outcome = "found"
+            case .needsKeychainPermission: outcome = "needsKeychainPermission"
+            case .unreadable: outcome = "unreadable"
+            case .notSignedIn: outcome = "notSignedIn"
+            }
+            QuotaDebugLog.log("ClaudeQuota", "credential lookup: \(outcome)")
             return quiet
         }
         guard interactive else { return .needsKeychainPermission }

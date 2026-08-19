@@ -74,12 +74,12 @@ struct UsageSnapshot: Equatable {
     var accountTier: String? = nil
     /// Set when the quota failure is a definitive auth failure (not-signed-in, 401, 403,
     /// expired token) rather than a transient error (429, 500+).
-    /// Used by `isFatallyUnconfigured` to move the card to the unavailable chip.
+    /// Used by `isFatallyUnconfigured` to drop the card from the Usage tab.
     var isAuthFailure: Bool = false
 
     /// True when the provider has nothing useful to show AND the reason is a definitive
     /// auth failure (not signed-in / expired token / 401 / 403) — NOT a transient error
-    /// like 429 or 500. Only those cases move the card to the unavailable chip.
+    /// like 429 or 500. Only those cases drop the card from the Usage tab.
     var isFatallyUnconfigured: Bool {
         let hasNoRealUsage = logsUnavailable
             || (today.totalTokens == 0 && week.totalTokens == 0 && session.totalTokens == 0)
@@ -101,7 +101,7 @@ struct QuotaFetchResult: Equatable {
     var action: QuotaAction? = nil
     /// True for definitive auth failures (not-signed-in, 401, 403, expired refresh token).
     /// False for transient errors (429, 500+, network hiccup) — those should NOT move the
-    /// card to the unavailable chip, since the provider IS configured.
+    /// card from the Usage tab, since the provider IS configured.
     var isAuthFailure: Bool = false
 
     var hasLimits: Bool { session != nil || week != nil }

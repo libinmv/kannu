@@ -57,6 +57,14 @@ final class LLMUsageManager: ObservableObject {
             ud.set(antigravityInstalled, forKey: "enableAntigravityProvider")
             ud.set(true, forKey: "antigravityProviderDefaultsConfigured")
         }
+        // Earlier builds kept a persistent copy of Claude Code's OAuth credentials (access
+        // AND refresh token) in a Kannu-owned keychain item. That store is memory-only now,
+        // but the code that deleted the item went with it — without this, real token
+        // material sits in every upgraded install's keychain forever with no owner.
+        if !ud.bool(forKey: "legacyClaudeCredentialCopyRemoved") {
+            _ = KeychainReader.deleteGenericPassword(service: "com.kannu.app.llm-credentials", account: "claude-oauth")
+            ud.set(true, forKey: "legacyClaudeCredentialCopyRemoved")
+        }
     }
 
     private static let allProviders: [UsageProvider] = [AntigravityUsageProvider(), ClaudeUsageProvider(), CodexUsageProvider(), CursorUsageProvider()]
@@ -70,6 +78,16 @@ final class LLMUsageManager: ObservableObject {
     /// steps that may show a system prompt (e.g. approving a cross-app keychain read).
     /// Automatic and timer-driven refreshes must leave it false so nothing blocks on a dialog.
     func refreshAll(force: Bool = false, interactive: Bool = false) {
+        refreshAll(force: force, interactive: interactive, drainingParkedRequest: false)
+    }
+
+    /// `drainingParkedRequest` is true only for the re-entry that drains `pendingForcedRefresh`.
+    /// That request was parked *because* a refresh was already in flight, and `lastRefresh` is
+    /// stamped at refresh start — so by the time it drains, the elapsed time is almost always
+    /// under the interactive floor and the parked intent would be silently dropped, which is
+    /// the exact loss the parking exists to prevent. It already waited out a full refresh;
+    /// letting it through adds at most one request per genuine user action.
+    private func refreshAll(force: Bool, interactive: Bool, drainingParkedRequest: Bool) {
         let allEnabled = enabledProviders
         let localProviders = allEnabled.filter { $0.isLocalFileProvider }
         let networkProviders = allEnabled.filter { !$0.isLocalFileProvider }
@@ -82,7 +100,10 @@ final class LLMUsageManager: ObservableObject {
         // rate-limited, so they refresh on every open and never gate on `isRefreshing`.
         if !localProviders.isEmpty {
             for provider in localProviders {
-                if case .success = results[provider.id] ?? .loading { continue }
+                // Keep the current card — success or failure — while refreshing; only a
+                // never-fetched provider shows the spinner. Blanking a failure to .loading
+                // every tick made a failure steady state strobe a ProgressView.
+                if results[provider.id] != nil { continue }
                 results[provider.id] = .loading
             }
             Task { await runRefresh(providers: localProviders, interactive: interactive, ownsRefreshFlag: false) }
@@ -107,14 +128,15 @@ final class LLMUsageManager: ObservableObject {
         // A force/interactive refresh may jump the poll interval, but never below the
         // interactive floor — see `minInteractiveRefreshInterval`.
         let requiredInterval = (force || interactive) ? Self.minInteractiveRefreshInterval : Self.minRefreshInterval
-        guard Date().timeIntervalSince(lastRefresh) >= requiredInterval else { return }
+        guard drainingParkedRequest || Date().timeIntervalSince(lastRefresh) >= requiredInterval else { return }
 
         lastRefresh = Date()
         isRefreshing = true
         for provider in networkProviders {
-            // Keep showing the last snapshot while refreshing — blanking every card to a
-            // spinner made each poll/tab-open feel like a full reload.
-            if case .success = results[provider.id] ?? .loading { continue }
+            // Keep showing the last result — success or failure — while refreshing;
+            // blanking every card to a spinner made each poll feel like a full reload,
+            // and blanking a failure made a failing card strobe on every admitted poll.
+            if results[provider.id] != nil { continue }
             results[provider.id] = .loading
         }
         Task { await runRefresh(providers: networkProviders, interactive: interactive, ownsRefreshFlag: true) }
@@ -170,7 +192,7 @@ final class LLMUsageManager: ObservableObject {
         if let pending = pendingForcedRefresh {
             pendingForcedRefresh = nil
             Task { @MainActor in
-                self.refreshAll(force: pending.force, interactive: pending.interactive)
+                self.refreshAll(force: pending.force, interactive: pending.interactive, drainingParkedRequest: true)
             }
         }
     }

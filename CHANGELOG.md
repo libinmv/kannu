@@ -4,6 +4,18 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-19 - Full review pass: security hardening and refresh-seam fixes
+- **Developer label:** Hook script v27, fail-loud config merges, legacy credential cleanup, drain floor bypass
+- **Agent label:** Verified every PR claim end to end; fixed what the security and race audits confirmed
+- **Changes:**
+  - A forced refresh parked while another refresh was in flight was silently dropped on drain: `lastRefresh` is stamped at refresh start, so the drained request always re-entered the 10s interactive floor it could not pass — the limits toggle or Refresh press looked dead for up to 3 minutes. The drain now bypasses the floor; it already waited out a full refresh, so this adds at most one request per genuine user action
+  - Cards no longer blank to a spinner when the previous result was a failure — an always-visible provider in a failure steady state (Antigravity with no sessions in 24h) strobed a ProgressView on every 30s poll tick
+  - Installing hooks over a config file that exists but does not parse (stray comma, JSONC comments) used to rebuild the document from scratch, silently destroying every user-defined hook — and for `~/.claude/settings.json`, the user's whole settings file. All four merge paths now abort with a visible error and leave the file untouched
+  - One-time cleanup of the legacy Kannu-owned keychain copy of Claude's OAuth tokens: the persistent copy was replaced by a 60s memory cache, but the deletion code went with it, leaving real token material orphaned in every upgraded install's keychain
+  - Hook script v27: `~/.kannu/agent-status` is created 0700 (the files carry session titles and drive the traffic light), and `conversation_id` is capped at 64 chars after sanitisation — an oversized hostile id pushed the status/lock paths past NAME_MAX and killed the hook before it printed its allow response
+  - Resynced `scripts/kannu-agent-status.sh` (installed by `install-cursor-hooks.sh`) from the embedded v27 source — it had drifted to v25, which still carried the unlocked read-modify-write and truncate-write races fixed in v26
+  - Removed dead `hoveredUnavailable` state and corrected comments still describing the removed "unavailable chip"; the debug log now prints a hand-written case name where interpolating the credential enum could have dumped the whole struct via reflection
+
 ### 2026-08-18 - Address the second CodeRabbit review
 - **Developer label:** Antigravity uninstall schema, restored signing team, migration coverage
 - **Agent label:** Uninstall actually removes Antigravity hooks; release signing identity restored

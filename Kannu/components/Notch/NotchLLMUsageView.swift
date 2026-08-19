@@ -21,7 +21,6 @@ import Defaults
 
 struct NotchLLMUsageView: View {
     @ObservedObject private var manager = LLMUsageManager.shared
-    @State private var hoveredUnavailable: ProviderID? = nil
 
     /// Observed rather than read through `Defaults[...]` so the card redraws the moment the
     /// toggle below flips.
@@ -49,7 +48,7 @@ struct NotchLLMUsageView: View {
         case .failure:
             return false   // hard API error
         case .success(let snap) where snap.isFatallyUnconfigured:
-            return false   // signed out / not installed — move to unavailable chip
+            return false   // signed out / not installed — omit the card entirely
         case .loading, .success, .none:
             return true
         }
