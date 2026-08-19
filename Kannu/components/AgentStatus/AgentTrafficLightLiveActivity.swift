@@ -1,17 +1,64 @@
 import Defaults
 import SwiftUI
 
+/// The three-dot (or single-dot) traffic light itself, independent of any live state.
+///
+/// Shared by the notch indicator and by the Settings / onboarding pickers so a preview can
+/// never drift from what the notch actually draws.
+struct AgentTrafficLightDots: View {
+    let style: AgentTrafficLightStyle
+    let state: AgentTrafficLightState
+    /// Whether the lit dot should breathe. Previews pass false; the live indicator decides
+    /// per-state (red only inside its completion window, yellow/green for as long as they're lit).
+    var isPulsing: Bool = false
+    var dotSize: CGFloat = 10
+    var spacing: CGFloat = 6
+
+    /// The one colour the current state lights up, or nil when nothing is lit (`.inactive`).
+    /// The three `shows…TrafficLight` booleans are mutually exclusive by construction.
+    private var litColor: Color? {
+        if state.showsRedTrafficLight { return .red }
+        if state.showsYellowTrafficLight { return .yellow }
+        if state.showsGreenTrafficLight { return .green }
+        return nil
+    }
+
+    var body: some View {
+        HStack(spacing: spacing) {
+            switch style {
+            case .classic:
+                dot(.red, isActive: state.showsRedTrafficLight)
+                dot(.yellow, isActive: state.showsYellowTrafficLight)
+                dot(.green, isActive: state.showsGreenTrafficLight)
+            case .minimal:
+                // Nothing is lit when inactive, and the indicator is hidden in that case
+                // anyway — draw nothing rather than inventing a colour.
+                if let litColor {
+                    dot(litColor, isActive: true)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func dot(_ color: Color, isActive: Bool) -> some View {
+        Circle()
+            .fill(color.opacity(isActive ? 1.0 : 0.2))
+            .frame(width: dotSize, height: dotSize)
+            .modifier(ConditionalPulseModifier(isEnabled: isActive && isPulsing))
+    }
+}
+
 struct AgentTrafficLightIndicator: View {
     @ObservedObject var agentStatusMonitor = CursorAgentStatusMonitor.shared
     @Default(.showAgentStoppedIndicator) private var showAgentStoppedIndicator
-    /// Keyed by session ID — records when a session first became non-active (stopped/inactive).
-    /// Used to drive the 30-second "linger then disappear" window in multi-agent mode.
+    @Default(.agentTrafficLightStyle) private var trafficLightStyle
+    /// Keyed by session ID — records when a session first became non-active (stopped/inactive),
+    /// so a just-finished run can pulse red briefly before settling.
     @State private var completionTimestamps: [String: Date] = [:]
 
-    private static let completionWindow: TimeInterval = 30
-    /// How long a just-finished session keeps pulsing at full brightness before settling into
-    /// the dim, static linger state. Without this, completion was a silent drop straight to
-    /// 35% opacity — easy to miss entirely if you weren't already looking.
+    /// How long a just-finished session keeps pulsing before settling into the static lit dot.
+    /// Without this, completion was a silent switch to a static red — easy to miss entirely.
     private static let attentionWindow: TimeInterval = 4
 
     private func isRecentlyCompleted(_ sessionID: String, at now: Date) -> Bool {
@@ -38,27 +85,22 @@ struct AgentTrafficLightIndicator: View {
             .sorted { $0.updatedAt > $1.updatedAt }
     }
 
-    /// Sessions to render: active ones + recently-stopped ones still within the 30-second linger window.
-    private func displaySessions(at now: Date) -> [AgentSessionStatus] {
-        visibleSessions.filter { session in
-            if session.displayState.isActiveRun { return true }
-            guard let ts = completionTimestamps[session.id] else { return false }
-            return now.timeIntervalSince(ts) < Self.completionWindow
-        }
-    }
-
     var body: some View {
-        // TimelineView ticks every second so the 30-second linger window is evaluated
-        // continuously. In single-agent mode the overhead is negligible.
+        // The notch shows exactly ONE light regardless of how many agents are running: the
+        // highest-priority state across all of them (stopped > awaiting input > executing >
+        // thinking), with the most recently updated chat breaking ties. There is deliberately
+        // no per-agent row — the earlier one rendered provider logos instead of lights, and
+        // pulsed those logos, which read as the notch blinking at you.
+        //
+        // TimelineView ticks every second purely so the completion window above is re-evaluated.
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            let toDisplay = displaySessions(at: context.date)
-            if toDisplay.count >= 2 {
-                multiAgentRow(toDisplay, now: context.date)
-            } else {
-                singleAgentRow(now: context.date)
-            }
+            AgentTrafficLightDots(
+                style: trafficLightStyle,
+                state: activeState,
+                isPulsing: shouldPulse(at: context.date)
+            )
         }
-        // Track when sessions transition out of an active run so we can start their linger clocks.
+        // Track when sessions leave an active run so the completion pulse has a start time.
         .onChange(of: visibleSessions) { _, newSessions in
             let now = Date()
             // Drop timestamps for sessions that have left the visible list entirely.
@@ -69,79 +111,20 @@ struct AgentTrafficLightIndicator: View {
                     // Back to active — clear any stale completion stamp.
                     completionTimestamps.removeValue(forKey: session.id)
                 } else if completionTimestamps[session.id] == nil {
-                    // First time we see this session as non-active; start the linger clock.
                     completionTimestamps[session.id] = now
                 }
             }
         }
     }
 
-    // MARK: - Single agent
-
-    @ViewBuilder
-    private func singleAgentRow(now: Date) -> some View {
-        // Red already means "done" here (unchanged) — what was missing was any transition
-        // moment: it used to jump straight to a static dot with no pulse at all. Give it a
-        // few seconds of pulsing right after completion so finishing is noticeable, then let
-        // it settle to the existing static red.
-        let justCompleted = primarySession.map { isRecentlyCompleted($0.id, at: now) } ?? false
-        HStack(spacing: 6) {
-            if let primarySession {
-                AgentProviderIconView(source: .init(rawProvider: primarySession.provider), size: 14)
-                Text(primarySession.providerLabel)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-            }
-            trafficLightCircle(
-                color: .red,
-                isActive: activeState.showsRedTrafficLight,
-                shouldPulse: activeState.showsRedTrafficLight && justCompleted
-            )
-            trafficLightCircle(
-                color: .yellow,
-                isActive: activeState.showsYellowTrafficLight,
-                shouldPulse: activeState.showsYellowTrafficLight
-            )
-            trafficLightCircle(
-                color: .green,
-                isActive: activeState.showsGreenTrafficLight,
-                shouldPulse: activeState.showsGreenTrafficLight
-            )
+    /// Yellow and green breathe for as long as they are lit — they mean "something is happening".
+    /// Red means finished, so it pulses only for `attentionWindow` after the run actually ends
+    /// and then holds steady; otherwise a finished agent would blink indefinitely.
+    private func shouldPulse(at now: Date) -> Bool {
+        if activeState.showsRedTrafficLight {
+            return primarySession.map { isRecentlyCompleted($0.id, at: now) } ?? false
         }
-    }
-
-    // MARK: - Multi-agent: icon-only, equally divided across the notch width
-
-    @ViewBuilder
-    private func multiAgentRow(_ sessions: [AgentSessionStatus], now: Date) -> some View {
-        HStack(spacing: 0) {
-            ForEach(sessions) { session in
-                let isActive = session.displayState.isActiveRun
-                let justCompleted = !isActive && isRecentlyCompleted(session.id, at: now)
-                // Active, or just finished: full brightness + pulse, so completion actually
-                // gets noticed. Only settles to dimmed/static once the attention window passes.
-                let isAttentionGrabbing = isActive || justCompleted
-                AgentProviderIconView(source: .init(rawProvider: session.provider), size: 14)
-                    .opacity(isAttentionGrabbing ? 1.0 : 0.35)
-                    .modifier(ConditionalPulseModifier(isEnabled: isAttentionGrabbing))
-                    // Each icon takes an equal slice of the available notch width.
-                    .frame(maxWidth: .infinity)
-                    .transition(.opacity.combined(with: .scale(scale: 0.75)))
-            }
-        }
-        // Animate icons in/out as sessions appear and expire.
-        .animation(.easeInOut(duration: 0.3), value: sessions.map(\.id))
-    }
-
-    // MARK: - Helpers
-
-    @ViewBuilder
-    private func trafficLightCircle(color: Color, isActive: Bool, shouldPulse: Bool) -> some View {
-        Circle()
-            .fill(color.opacity(isActive ? 1.0 : 0.2))
-            .frame(width: 10, height: 10)
-            .modifier(ConditionalPulseModifier(isEnabled: isActive && shouldPulse))
+        return activeState.showsYellowTrafficLight || activeState.showsGreenTrafficLight
     }
 }
 

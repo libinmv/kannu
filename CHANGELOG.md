@@ -4,6 +4,16 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-19 - Notch traffic light: no logo, Classic and Minimal styles
+- **Developer label:** Remove the provider logo from the closed notch, add a Classic/Minimal traffic light style
+- **Agent label:** The notch stops blinking its logo at you, and the light can be one dot instead of three
+- **Changes:**
+  - Removed the provider logo (and the provider name beside it) from the closed-notch traffic light. In the two-or-more-agent path the logo carried the attention pulse, so a running agent's icon breathed 1.0→1.3 scale continuously for the whole run — the blinking that was reported. Only the state dot animates now
+  - The closed notch now always shows exactly **one** light, whatever the agent count. The old multi-agent row rendered a provider icon per session and no lights at all; it is deleted, along with the 30-second linger window that only existed to decide which icons stayed on screen. The state shown is the highest-priority one across all sessions (stopped › awaiting input › executing › thinking), most recently updated chat breaking ties — the precedence that already drove the light
+  - New **Classic** / **Minimal** styles: Classic keeps the three dots with the inactive two dimmed; Minimal draws only the dot that is lit, and nothing at all when idle. Selectable in Settings › Agent Status › Traffic Light (with a live preview) and offered as a step during first-run onboarding. Defaults to Classic, so existing installs see no change beyond the logo going away
+  - Pulse semantics are unchanged: yellow and green breathe while lit, red pulses for 4 seconds after a run completes and then holds steady
+  - Extracted `AgentTrafficLightDots` — the notch, the Settings preview and the onboarding cards all render through the same view, so a preview cannot drift from what the notch actually draws
+
 ### 2026-08-19 - Full review pass: security hardening and refresh-seam fixes
 - **Developer label:** Hook script v27, fail-loud config merges, legacy credential cleanup, drain floor bypass
 - **Agent label:** Verified every PR claim end to end; fixed what the security and race audits confirmed

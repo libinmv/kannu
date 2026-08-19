@@ -868,6 +868,7 @@ struct SettingsView: View {
 
             // Agent Status
             SettingsSearchEntry(tab: .agentStatus, title: "Enable Cursor Agent Status", keywords: ["agent", "cursor", "status", "traffic", "light", "ai", "notch"], highlightID: SettingsTab.agentStatus.highlightID(for: "Enable Cursor Agent Status")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Traffic light style", keywords: ["traffic", "light", "style", "classic", "minimal", "dots", "notch", "agent", "indicator"], highlightID: SettingsTab.agentStatus.highlightID(for: "Traffic light style")),
             SettingsSearchEntry(tab: .agentStatus, title: "Editor Hooks", keywords: ["agent", "cursor", "vscode", "copilot", "codex", "claude", "hook", "install", "integration"], highlightID: SettingsTab.agentStatus.highlightID(for: "Cursor Hook")),
             SettingsSearchEntry(tab: .agentStatus, title: "Mobile notifications", keywords: ["mobile", "push", "ntfy", "pushover", "webhook", "iphone", "android"], highlightID: SettingsTab.agentStatus.highlightID(for: "Mobile notifications")),
             SettingsSearchEntry(tab: .agentStatus, title: "Send test notification", keywords: ["test", "mobile", "push", "notification"], highlightID: SettingsTab.agentStatus.highlightID(for: "Send test notification")),
@@ -7507,6 +7508,7 @@ struct AgentStatusSettings: View {
     @Default(.agentStoppedCollapseSeconds) var agentStoppedCollapseSeconds
     @Default(.agentInactiveDisplaySeconds) var agentInactiveDisplaySeconds
     @Default(.showAgentStoppedIndicator) var showAgentStoppedIndicator
+    @Default(.agentTrafficLightStyle) var agentTrafficLightStyle
     @Default(.enableAgentStatusMobileNotifications) var enableMobileNotifications
     @Default(.agentStatusNotificationProvider) var notificationProvider
     @Default(.agentStatusNtfyTopic) var ntfyTopic
@@ -7544,6 +7546,24 @@ struct AgentStatusSettings: View {
                 }
 
                 Section {
+                    Picker("Traffic light style", selection: $agentTrafficLightStyle) {
+                        ForEach(AgentTrafficLightStyle.allCases) { style in
+                            Text(style.localizedName).tag(style)
+                        }
+                    }
+                    .settingsHighlight(id: highlightID("Traffic light style"))
+                    Text(agentTrafficLightStyle.description)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    // Live preview using the same view the notch draws, so this can't drift.
+                    HStack(spacing: 10) {
+                        Text("Preview")
+                        Spacer()
+                        AgentTrafficLightDots(
+                            style: agentTrafficLightStyle,
+                            state: monitor.trafficLightState == .inactive ? .executing : monitor.trafficLightState
+                        )
+                    }
                     legendRow(color: .green, title: String(localized: "Active"), detail: String(localized: "The agent is thinking, planning, executing tools, or otherwise working"))
                     legendRow(color: .yellow, title: String(localized: "Awaiting Input"), detail: String(localized: "The agent needs your approval or a response"))
                     legendRow(color: .red, title: String(localized: "Stopped"), detail: String(localized: "The agent has finished or was aborted"))
