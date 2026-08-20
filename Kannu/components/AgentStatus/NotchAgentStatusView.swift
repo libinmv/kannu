@@ -109,14 +109,10 @@ struct NotchAgentStatusView: View {
                 }
 
                 if !recentChats.isEmpty {
-                    sectionHeader("Recent chats")
                     ForEach(recentChats) { session in
                         sessionRow(session)
                     }
                 } else if !allSessions.isEmpty, primarySession == nil {
-                    // Same header as above: these ARE the recent chats when nothing is
-                    // primary — rendering them headerless made the two paths look unrelated.
-                    sectionHeader("Recent chats")
                     ForEach(allSessions) { session in
                         sessionRow(session)
                     }
@@ -180,12 +176,6 @@ struct NotchAgentStatusView: View {
         .padding(.vertical, 16)
     }
 
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
-    }
-
     /// Top-right caffeinate control, visible in every panel state. Two faces:
     /// - Smart mode on: a status-only indicator (cup + sparkle) — the Mac stays awake
     ///   automatically while agents run; clicking opens Settings to change the mode.
@@ -195,6 +185,14 @@ struct NotchAgentStatusView: View {
     @ViewBuilder
     private var caffeinateRow: some View {
         HStack(spacing: 6) {
+            // The chat-list label lives on this line now — it fills the gap left of the
+            // caffeinate control instead of costing its own row. Hidden in the empty state:
+            // a "Recent chats" heading over the coffee-break message would label nothing.
+            if !allSessions.isEmpty {
+                Text("Recent chats")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
             Spacer(minLength: 0)
             if smartCaffeinate {
                 Button {

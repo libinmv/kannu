@@ -17,6 +17,7 @@ import UniformTypeIdentifiers
 
 /// Groups for organizing settings tabs in the sidebar.
 private enum SettingsTabGroup: String, CaseIterable, Identifiable {
+    case agents
     case core
     case mediaAndDisplay
     case system
@@ -31,6 +32,7 @@ private enum SettingsTabGroup: String, CaseIterable, Identifiable {
     /// Display title for the section header.  `nil` means no visible header.
     var title: String? {
         switch self {
+        case .agents:           return String(localized: "AI Agents")
         case .core:             return nil
         case .mediaAndDisplay:  return String(localized: "Media & Display")
         case .system:           return String(localized: "System")
@@ -62,6 +64,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
     case shortcuts
     case notes
     case agentStatus
+    case llmUsage
     case about
 
     var id: String { rawValue }
@@ -76,7 +79,8 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .clipboard, .screenAssistant, .shelf,
              .downloads, .shortcuts:                                         return .utilities
         case .stats:                                              return .developer
-        case .extensions, .agentStatus:                                      return .integrations
+        case .agentStatus, .llmUsage:                                        return .agents
+        case .extensions:                                                    return .integrations
         case .about:                                                         return .info
         }
     }
@@ -100,7 +104,8 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .shelf: return String(localized: "Shelf")
         case .shortcuts: return String(localized: "Shortcuts")
         case .notes: return String(localized: "Notes")
-        case .agentStatus: return String(localized: "Agent Status")
+        case .agentStatus: return String(localized: "Agents")
+        case .llmUsage: return String(localized: "Usage")
         case .about: return String(localized: "About")
         }
     }
@@ -125,6 +130,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .shortcuts: return "keyboard"
         case .notes: return "note.text"
         case .agentStatus: return "light.beacon.max"
+        case .llmUsage: return "gauge.with.dots.needle.bottom.50percent"
         case .about: return "info.circle"
         }
     }
@@ -149,6 +155,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .shortcuts: return .orange
         case .notes: return Color(red: 0.979, green: 0.716, blue: 0.153, opacity: 1.000)
         case .agentStatus: return .yellow
+        case .llmUsage: return .cyan
         case .about: return .secondary
         }
     }
@@ -304,7 +311,8 @@ private struct SettingsForm<Content: View>: View {
 }
 
 struct SettingsView: View {
-    @State private var selectedTab: SettingsTab = .general
+    // Land on the product's core pane, not a generic one — "Watch Your Agents".
+    @State private var selectedTab: SettingsTab = .agentStatus
     @State private var searchText: String = ""
     @StateObject private var highlightCoordinator = SettingsHighlightCoordinator.shared
     @Default(.enableMinimalisticUI) var enableMinimalisticUI
@@ -491,9 +499,12 @@ struct SettingsView: View {
     }
 
     private var availableTabs: [SettingsTab] {
-        // Ordered to match group layout: core → media & display → system →
+        // Ordered to match group layout: agents → core → media & display → system →
         // productivity → utilities → developer → integrations → info.
         let ordered: [SettingsTab] = [
+            // AI Agents — the product's core, so it leads.
+            .agentStatus,
+            .llmUsage,
             // Core
             .general,
             .appearance,
@@ -518,7 +529,6 @@ struct SettingsView: View {
             .stats,
             // Integrations
             .extensions,
-            .agentStatus,
             // Info
             .about
         ]
@@ -874,10 +884,11 @@ struct SettingsView: View {
 
             // Stats
             SettingsSearchEntry(tab: .stats, title: "Enable system stats monitoring", keywords: ["stats", "monitoring"], highlightID: SettingsTab.stats.highlightID(for: "Enable system stats monitoring")),
-            SettingsSearchEntry(tab: .stats, title: "Enable LLM Usage Monitor", keywords: ["llm", "usage", "ai", "monitor"], highlightID: SettingsTab.stats.highlightID(for: "Enable LLM Usage Monitor")),
-            SettingsSearchEntry(tab: .stats, title: "Claude Provider", keywords: ["llm", "claude", "provider", "toggle"], highlightID: SettingsTab.stats.highlightID(for: "Claude Provider")),
-            SettingsSearchEntry(tab: .stats, title: "Codex Provider", keywords: ["llm", "codex", "provider", "toggle"], highlightID: SettingsTab.stats.highlightID(for: "Codex Provider")),
-            SettingsSearchEntry(tab: .stats, title: "Cursor Provider", keywords: ["llm", "cursor", "provider", "toggle"], highlightID: SettingsTab.stats.highlightID(for: "Cursor Provider")),
+            SettingsSearchEntry(tab: .llmUsage, title: "Enable LLM Usage Monitor", keywords: ["llm", "usage", "ai", "monitor"], highlightID: SettingsTab.llmUsage.highlightID(for: "Enable LLM Usage Monitor")),
+            SettingsSearchEntry(tab: .llmUsage, title: "Claude Provider", keywords: ["llm", "claude", "provider", "toggle"], highlightID: SettingsTab.llmUsage.highlightID(for: "Claude Provider")),
+            SettingsSearchEntry(tab: .llmUsage, title: "Codex Provider", keywords: ["llm", "codex", "provider", "toggle"], highlightID: SettingsTab.llmUsage.highlightID(for: "Codex Provider")),
+            SettingsSearchEntry(tab: .llmUsage, title: "Cursor Provider", keywords: ["llm", "cursor", "provider", "toggle"], highlightID: SettingsTab.llmUsage.highlightID(for: "Cursor Provider")),
+            SettingsSearchEntry(tab: .llmUsage, title: "Antigravity Provider", keywords: ["antigravity", "gemini", "provider", "usage", "sessions"], highlightID: SettingsTab.llmUsage.highlightID(for: "Antigravity Provider")),
             SettingsSearchEntry(tab: .stats, title: "Stop monitoring after closing the notch", keywords: ["stats", "auto stop"], highlightID: SettingsTab.stats.highlightID(for: "Stop monitoring after closing the notch")),
             SettingsSearchEntry(tab: .stats, title: "CPU Usage", keywords: ["cpu", "graph"], highlightID: SettingsTab.stats.highlightID(for: "CPU Usage")),
             SettingsSearchEntry(tab: .stats, title: "Temperature unit", keywords: ["cpu", "temperature", "celsius", "fahrenheit"], highlightID: SettingsTab.stats.highlightID(for: "Temperature unit")),
@@ -897,7 +908,7 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .screenAssistant, title: "Display Mode", keywords: ["screen assistant", "mode"], highlightID: SettingsTab.screenAssistant.highlightID(for: "Display Mode")),
 
             // Agent Status
-            SettingsSearchEntry(tab: .agentStatus, title: "Enable Cursor Agent Status", keywords: ["agent", "cursor", "status", "traffic", "light", "ai", "notch"], highlightID: SettingsTab.agentStatus.highlightID(for: "Enable Cursor Agent Status")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Enable Agent Monitoring", keywords: ["agent", "cursor", "claude", "codex", "status", "traffic", "light", "ai", "notch", "monitoring"], highlightID: SettingsTab.agentStatus.highlightID(for: "Enable Agent Monitoring")),
             SettingsSearchEntry(tab: .agentStatus, title: "Smart caffeinate", keywords: ["caffeinate", "awake", "sleep", "smart", "coffee", "keep awake", "assertion", "insomnia"], highlightID: SettingsDeepLink.smartCaffeinateHighlightID),
             SettingsSearchEntry(tab: .agentStatus, title: "Traffic light style", keywords: ["traffic", "light", "style", "classic", "minimal", "dots", "notch", "agent", "indicator"], highlightID: SettingsTab.agentStatus.highlightID(for: "Traffic light style")),
             SettingsSearchEntry(tab: .agentStatus, title: "Editor Hooks", keywords: ["agent", "cursor", "vscode", "copilot", "codex", "claude", "hook", "install", "integration"], highlightID: SettingsTab.agentStatus.highlightID(for: "Cursor Hook")),
@@ -989,6 +1000,10 @@ struct SettingsView: View {
         case .notes:
             SettingsForm(tab: .notes) {
                 NotesSettingsView()
+            }
+        case .llmUsage:
+            SettingsForm(tab: .llmUsage) {
+                UsageSettings()
             }
         case .about:
             SettingsForm(tab: .about) {
@@ -6349,7 +6364,6 @@ private struct TimerPresetComponentControl: View {
 struct StatsSettings: View {
     @ObservedObject var statsManager = StatsManager.shared
     @Default(.enableStatsFeature) var enableStatsFeature
-    @Default(.enableLLMUsageFeature) var enableLLMUsageFeature
     @Default(.statsStopWhenNotchCloses) var statsStopWhenNotchCloses
     @Default(.statsUpdateInterval) var statsUpdateInterval
     @Default(.showCpuGraph) var showCpuGraph
@@ -6396,44 +6410,13 @@ struct StatsSettings: View {
                     // Note: Smart monitoring will handle starting when switching to stats tab
                 }
 
-                Defaults.Toggle(key: .enableLLMUsageFeature) {
-                    Text("Enable LLM Usage Monitor")
-                }
-                .settingsHighlight(id: highlightID("Enable LLM Usage Monitor"))
-
             } header: {
                 Text("General")
             } footer: {
-                Text("When enabled, the Stats tab will display real-time system performance graphs. This feature requires system permissions and may use additional battery. Enabling LLM Usage Monitor adds a Usage tab that tracks token usage and spend across your configured AI providers.")
+                Text("When enabled, the Stats tab will display real-time system performance graphs. This feature requires system permissions and may use additional battery.")
                     .multilineTextAlignment(.trailing)
                     .foregroundStyle(.secondary)
                     .font(.caption)
-            }
-
-            if enableLLMUsageFeature {
-                Section {
-                    Defaults.Toggle(key: .enableClaudeProvider) {
-                        Text("Claude")
-                    }
-                    .settingsHighlight(id: highlightID("Claude Provider"))
-
-                    Defaults.Toggle(key: .enableCodexProvider) {
-                        Text("Codex")
-                    }
-                    .settingsHighlight(id: highlightID("Codex Provider"))
-
-                    Defaults.Toggle(key: .enableCursorProvider) {
-                        Text("Cursor")
-                    }
-                    .settingsHighlight(id: highlightID("Cursor Provider"))
-                } header: {
-                    Text("LLM Providers")
-                } footer: {
-                    Text("Choose which AI providers appear in the Usage tab. Claude's token counts, plan and credit status are read from local files and need no permission. Its 5-hour and weekly limits come from Anthropic's API and are off by default — use the gauge button on the Claude card in the Usage tab to turn them on, which asks for keychain approval once. Codex and Cursor quota require each CLI to be signed in locally (Codex: ~/.codex/auth.json, Cursor: signed into the Cursor app). Full Disk Access is not required for usage monitoring.")
-                        .multilineTextAlignment(.trailing)
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
             }
 
             if enableStatsFeature {
@@ -7561,9 +7544,9 @@ struct AgentStatusSettings: View {
                 Defaults.Toggle(key: .enableAgentStatusFeature) {
                     Text("Enable Agent Status")
                 }
-                .settingsHighlight(id: highlightID("Enable Cursor Agent Status"))
+                .settingsHighlight(id: highlightID("Enable Agent Monitoring"))
             } header: {
-                Text("Agent Status")
+                Text("Monitoring")
             } footer: {
                 Text("Shows a traffic light in the notch while AI agents run in your editor: green while the agent is working, yellow when it needs your input, and red when it has stopped.")
             }
@@ -7799,7 +7782,7 @@ struct AgentStatusSettings: View {
             webhookURL = SecureSecretsStore.value(for: .webhookURL)
             hookInstaller.refresh()
         }
-        .navigationTitle("Agent Status")
+        .navigationTitle("Agents")
     }
 
     private var detectedProviders: [(source: AgentProviderIconSource, name: String, detected: Bool)] {

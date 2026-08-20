@@ -4,6 +4,15 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-20 - Agents-first settings and a tighter agent panel header
+- **Developer label:** New "AI Agents" sidebar group with Agents + Usage panes; merge the notch panel's header line
+- **Agent label:** Agent settings lead the sidebar, LLM providers get their own Usage pane, and the notch panel saves a line
+- **Changes:**
+  - Settings sidebar now opens with an **AI Agents** group at the top: **Agents** (renamed from "Agent Status"; its first section is now "Monitoring") and a new **Usage** pane. The window also lands on Agents by default — the product's core pane greets the user instead of General
+  - The LLM usage monitor toggle and provider list moved out of the Stats pane (where they hid under Developer) into the new Usage pane, mirroring how the notch already presents Agent Status and Usage as sibling tabs. Added the previously missing Antigravity provider toggle — the Defaults key existed but had no settings row anywhere
+  - Search entries follow their settings: provider searches now land on the Usage pane; the smart-caffeinate deep link is unaffected (highlight ids derive from unchanged case names)
+  - Notch agent panel: the "Recent chats" label moved up onto the caffeinate line — label left, cup right — filling the empty gap and saving a row; the label hides in the empty state where there is nothing to label
+
 ### 2026-08-20 - Fix the launch freeze that made the caffeinate toggle look dead
 - **Developer label:** Move first TCC touches (Bluetooth, ~/Downloads) off the launch path; visible ON states
 - **Agent label:** The app no longer freezes at launch behind permission dialogs, and ON always looks ON
