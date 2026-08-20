@@ -4,6 +4,26 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-20 - Fix the launch freeze that made the caffeinate toggle look dead
+- **Developer label:** Move first TCC touches (Bluetooth, ~/Downloads) off the launch path; visible ON states
+- **Agent label:** The app no longer freezes at launch behind permission dialogs, and ON always looks ON
+- **Changes:**
+  - Root cause of "toggle on but nothing lit": `AppDelegate.init` eagerly builds singletons whose first access to a TCC-protected resource blocks the main thread until the permission dialog is answered — `BluetoothAudioManager.checkInitialDevices()` (Bluetooth) and, once past that, `DownloadManager` enumerating `~/Downloads` (Files & Folders). Every dev rebuild re-asks because the ad-hoc signature changes, so post-rebuild launches froze before `applicationDidFinishLaunching` — `CaffeinateManager` never spun up, and the switch showed ON with no assertion behind it
+  - Both managers now take their first protected-resource touch on a background queue: launch never blocks, the dialog can sit unanswered indefinitely, and each manager finishes its setup (device discovery / folder monitoring) when the permission round-trip resolves. `DownloadManager` gained an explicit warm-up gate because its Defaults subscription fires an initial event that previously started monitoring on the main thread anyway, bypassing the sequencing
+  - The manual caffeinate switch is now tinted orange when on — the default accent at `.mini` size was nearly indistinguishable from off against the dark notch. One colour consistently means "caffeinated": the switch shows intent, the cup still shows assertion truth
+  - The smart indicator's sparkle now stays lit (accent) whenever smart mode is enabled, turning orange while actually holding — an idle smart mode previously looked identical to everything-off
+
+### 2026-08-20 - Caffeinate indicator: working tooltip and a real settings deep-link
+- **Developer label:** Fix nested-.help shadowing, deep-link the smart indicator to its settings row
+- **Agent label:** Hovering the cup explains it, clicking it lands exactly on Smart caffeinate in Settings
+- **Changes:**
+  - The smart-mode indicator's tooltip never showed over the cup glyph itself: `cupIcon` carried its own `.help` inside the Button that also had one, and the innermost tooltip wins for the region it occupies. Split into a bare `cupImage` (used inside the Button) and `cupIcon` (standalone, keeps its tooltip for the manual-mode row) — the Button's "click to change in Settings" text now covers its whole hit area
+  - Clicking the indicator used to open Settings on whichever tab was last viewed: `SettingsView` is built once per app run, so its tab `@State` persists across opens, and `showWindow()` never touched it. New `showWindow(navigatingToAgentStatusHighlight:)` drives the existing search-bar scroll-and-pulse machinery (`SettingsHighlightCoordinator`, now a shared singleton with an external `requestAgentStatusNavigation` entry point) — Settings opens on Agent Status, scrolled to the Smart caffeinate row with the standard 2-second highlight pulse
+  - Tab selection now reacts to navigation requests in one place (a body-level `onReceive`); the search bar's handler no longer sets the tab separately, so in-window search and external deep links cannot drift apart
+  - The highlight id lives in one typed constant (`SettingsDeepLink.smartCaffeinateHighlightID`) used by the settings row, the search index, and the notch button alike — previously the same string literal in three places
+  - Pointing-hand cursor on hover and a VoiceOver hint ("Opens caffeinate settings") on the indicator, per HIG affordance for icon-only controls
+  - Re-audited the whole flow for races: the deep link is a single synchronous main-thread call chain with no suspension points, and repeated rapid clicks only extend the highlight pulse (the coordinator cancels its prior clear-timer before scheduling a new one)
+
 ### 2026-08-20 - Smart caffeinate and manual caffeinate modes
 - **Developer label:** Two-mode caffeinate (smart auto-scoped / manual), adaptive notch control, onboarding choice
 - **Agent label:** Choose between a manual keep-awake switch and automatic keep-awake while agents run

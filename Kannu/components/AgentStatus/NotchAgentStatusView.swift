@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Defaults
 import SwiftUI
@@ -197,13 +198,21 @@ struct NotchAgentStatusView: View {
             Spacer(minLength: 0)
             if smartCaffeinate {
                 Button {
-                    SettingsWindowController.shared.showWindow()
+                    SettingsWindowController.shared.showWindow(
+                        navigatingToAgentStatusHighlight: SettingsDeepLink.smartCaffeinateHighlightID
+                    )
                 } label: {
                     HStack(spacing: 3) {
-                        cupIcon
+                        // Bare image, not `cupIcon` — `cupIcon`'s own .help would sit inside
+                        // this Button's hit area and shadow the Button-level tooltip below
+                        // whenever the pointer is directly over the cup glyph.
+                        cupImage
+                        // The sparkle marks "smart mode is on" — it stays lit whenever the
+                        // mode is enabled, independent of whether an assertion is currently
+                        // held. Before, an idle smart mode looked identical to everything-off.
                         Image(systemName: "sparkles")
                             .font(.system(size: 7))
-                            .foregroundStyle(caffeinate.isKeepingAwake ? Color.orange : .secondary)
+                            .foregroundStyle(caffeinate.isKeepingAwake ? Color.orange : Color.accentColor)
                     }
                 }
                 .buttonStyle(.plain)
@@ -213,12 +222,23 @@ struct NotchAgentStatusView: View {
                         : String(localized: "Smart caffeinate is on — the Mac stays awake automatically while agents run. Click to change in Settings.")
                 )
                 .accessibilityLabel("Smart caffeinate is on")
+                .accessibilityHint("Opens caffeinate settings")
+                .onHover { hovering in
+                    if hovering { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
+                }
             } else {
                 cupIcon
                 Toggle("Keep the Mac awake", isOn: $caffeinateEnabled)
                     .toggleStyle(.switch)
                     .controlSize(.mini)
                     .labelsHidden()
+                    // The default accent tint at .mini size is nearly unreadable against
+                    // the dark notch material — ON and OFF looked the same. Orange matches
+                    // the lit cup, so one colour consistently means "caffeinated". The cup
+                    // itself still shows assertion truth (it can lag the switch by the
+                    // reconcile hop, and stays dark if the assertion ever fails) — the
+                    // switch shows intent, the cup shows reality.
+                    .tint(.orange)
                     .help(
                         caffeinate.isKeepingAwake
                             ? String(localized: "Keeping the Mac awake — switch off to allow sleep")
@@ -230,11 +250,18 @@ struct NotchAgentStatusView: View {
         .frame(maxWidth: .infinity)
     }
 
-    private var cupIcon: some View {
+    /// Bare cup glyph, no tooltip — use inside a container that supplies its own `.help`.
+    private var cupImage: some View {
         Image(systemName: caffeinate.isKeepingAwake ? "cup.and.saucer.fill" : "cup.and.saucer")
             .font(.caption)
             .foregroundStyle(caffeinate.isKeepingAwake ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
             .symbolRenderingMode(.hierarchical)
+    }
+
+    /// Cup glyph with its own tooltip — use standalone (not nested inside another control
+    /// that already has a `.help`, or the two will shadow each other).
+    private var cupIcon: some View {
+        cupImage
             .help(
                 caffeinate.isKeepingAwake
                     ? String(localized: "Keeping the Mac awake")

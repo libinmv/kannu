@@ -167,7 +167,19 @@ private struct SettingsSearchEntry: Identifiable {
     var id: String { "\(tab.rawValue)-\(title)" }
 }
 
+/// Highlight ids that external callers (outside this file) can deep-link to. Typed constants
+/// so the string can never drift from the row's own `.settingsHighlight(id:)` registration.
+enum SettingsDeepLink {
+    static let smartCaffeinateHighlightID = SettingsTab.agentStatus.highlightID(for: "Smart caffeinate")
+}
+
 final class SettingsHighlightCoordinator: ObservableObject {
+    /// `SettingsView` is constructed exactly once for the app's whole life
+    /// (`SettingsWindowController` builds it a single time), so this is reachable from
+    /// outside the file for callers that want to open Settings AND jump to a specific
+    /// row — e.g. a notch control's "click to change in Settings" action.
+    static let shared = SettingsHighlightCoordinator()
+
     struct ScrollRequest: Identifiable, Equatable {
         let id: String
         fileprivate let tab: SettingsTab
@@ -181,6 +193,15 @@ final class SettingsHighlightCoordinator: ObservableObject {
     fileprivate func focus(on entry: SettingsSearchEntry) {
         guard let highlightID = entry.highlightID else { return }
         pendingScrollRequest = ScrollRequest(id: highlightID, tab: entry.tab)
+        activateHighlight(id: highlightID)
+    }
+
+    /// External entry point for deep-linking into the Agent Status tab. Deliberately typed
+    /// with a plain String rather than exposing `SettingsTab`/`SettingsSearchEntry` outward —
+    /// callers outside this file only ever need to name a highlight id, not construct one of
+    /// this file's private navigation types.
+    func requestAgentStatusNavigation(highlightID: String) {
+        pendingScrollRequest = ScrollRequest(id: highlightID, tab: .agentStatus)
         activateHighlight(id: highlightID)
     }
 
@@ -285,7 +306,7 @@ private struct SettingsForm<Content: View>: View {
 struct SettingsView: View {
     @State private var selectedTab: SettingsTab = .general
     @State private var searchText: String = ""
-    @StateObject private var highlightCoordinator = SettingsHighlightCoordinator()
+    @StateObject private var highlightCoordinator = SettingsHighlightCoordinator.shared
     @Default(.enableMinimalisticUI) var enableMinimalisticUI
 
     var body: some View {
@@ -333,6 +354,13 @@ struct SettingsView: View {
         .toolbar(removing: .sidebarToggle)
         .toolbar { toolbarSpacingShim }
         .environmentObject(highlightCoordinator)
+        // The single place tab selection reacts to a navigation request — search-bar picks
+        // and external deep links (the notch caffeinate indicator) both flow through here.
+        // The scroll itself is handled per-tab by SettingsForm once the target tab's form
+        // exists; this only makes sure that tab is frontmost.
+        .onReceive(highlightCoordinator.$pendingScrollRequest.compactMap { $0 }) { request in
+            selectedTab = request.tab
+        }
         .formStyle(.grouped)
         .frame(width: 700)
         .onChange(of: searchText) { _, newValue in
@@ -532,8 +560,10 @@ struct SettingsView: View {
 
     private func handleSearchSuggestionSelection(_ suggestion: SettingsSearchEntry) {
         guard suggestion.tab != .downloads else { return }
+        // Tab selection happens via the body-level onReceive of pendingScrollRequest, the
+        // single switch point shared with external deep links (e.g. the notch caffeinate
+        // indicator) — not here, or the two paths drift.
         highlightCoordinator.focus(on: suggestion)
-        selectedTab = suggestion.tab
     }
 
     private struct SettingsSidebarSearchBar: View {
@@ -868,7 +898,7 @@ struct SettingsView: View {
 
             // Agent Status
             SettingsSearchEntry(tab: .agentStatus, title: "Enable Cursor Agent Status", keywords: ["agent", "cursor", "status", "traffic", "light", "ai", "notch"], highlightID: SettingsTab.agentStatus.highlightID(for: "Enable Cursor Agent Status")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Smart caffeinate", keywords: ["caffeinate", "awake", "sleep", "smart", "coffee", "keep awake", "assertion", "insomnia"], highlightID: SettingsTab.agentStatus.highlightID(for: "Smart caffeinate")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Smart caffeinate", keywords: ["caffeinate", "awake", "sleep", "smart", "coffee", "keep awake", "assertion", "insomnia"], highlightID: SettingsDeepLink.smartCaffeinateHighlightID),
             SettingsSearchEntry(tab: .agentStatus, title: "Traffic light style", keywords: ["traffic", "light", "style", "classic", "minimal", "dots", "notch", "agent", "indicator"], highlightID: SettingsTab.agentStatus.highlightID(for: "Traffic light style")),
             SettingsSearchEntry(tab: .agentStatus, title: "Editor Hooks", keywords: ["agent", "cursor", "vscode", "copilot", "codex", "claude", "hook", "install", "integration"], highlightID: SettingsTab.agentStatus.highlightID(for: "Cursor Hook")),
             SettingsSearchEntry(tab: .agentStatus, title: "Mobile notifications", keywords: ["mobile", "push", "ntfy", "pushover", "webhook", "iphone", "android"], highlightID: SettingsTab.agentStatus.highlightID(for: "Mobile notifications")),
@@ -7585,7 +7615,7 @@ struct AgentStatusSettings: View {
                     Defaults.Toggle(key: .smartCaffeinate) {
                         Text("Smart caffeinate")
                     }
-                    .settingsHighlight(id: highlightID("Smart caffeinate"))
+                    .settingsHighlight(id: SettingsDeepLink.smartCaffeinateHighlightID)
                     Text("Keeps the Mac awake automatically while any agent is running, and lets it sleep when they stop. While this is on, the manual switch in the notch is hidden.")
                         .font(.caption)
                         .foregroundStyle(.secondary)

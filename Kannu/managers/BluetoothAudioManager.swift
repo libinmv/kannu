@@ -105,8 +105,20 @@ class BluetoothAudioManager: ObservableObject {
         setupBluetoothObservers()
         setupAirPodsListeningModeObservers()
         setupAirPodsListeningModeLogObserver()
-        checkInitialDevices()
-        startPollingForChanges()
+        // The first IOBluetooth call from a (re)signed binary blocks on a synchronous TCC
+        // round-trip until the user answers the Bluetooth permission dialog. This init runs
+        // inside AppDelegate.init — before applicationDidFinishLaunching — so taking that
+        // first touch here froze the entire app at launch until the dialog was answered
+        // (and every dev rebuild re-asks, because the ad-hoc code signature changes).
+        // Do the first touch on a background queue instead: launch never blocks, and the
+        // 3-second polling only starts once the permission round-trip has resolved, so the
+        // main-thread timer can't re-freeze the app while the dialog sits unanswered.
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            self?.checkInitialDevices()
+            DispatchQueue.main.async {
+                self?.startPollingForChanges()
+            }
+        }
     }
     
     deinit {
@@ -273,19 +285,22 @@ class BluetoothAudioManager: ObservableObject {
         }
         
         print("🎧 [BluetoothAudioManager] Found \(connectedAudioDevices.count) connected audio devices")
-        
-        connectedDevices = connectedAudioDevices.compactMap { device in
+
+        let devices = connectedAudioDevices.compactMap { device in
             createBluetoothAudioDevice(from: device)
         }
-        
-        // Update connection state
-        isBluetoothAudioConnected = !connectedDevices.isEmpty
-        
-        refreshBatteryLevelsForConnectedDevices()
 
-        if let lastDevice = connectedDevices.last {
-            lastConnectedDevice = lastDevice
-            print("🎧 [BluetoothAudioManager] ✅ Bluetooth audio connected: \(lastDevice.name)")
+        // The IOBluetooth reads above may run on a background queue (first launch touch);
+        // @Published state must still be mutated on the main thread.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.connectedDevices = devices
+            self.isBluetoothAudioConnected = !devices.isEmpty
+            self.refreshBatteryLevelsForConnectedDevices()
+            if let lastDevice = devices.last {
+                self.lastConnectedDevice = lastDevice
+                print("🎧 [BluetoothAudioManager] ✅ Bluetooth audio connected: \(lastDevice.name)")
+            }
         }
     }
     

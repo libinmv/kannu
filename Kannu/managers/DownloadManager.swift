@@ -117,9 +117,30 @@ class DownloadManager {
         FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
     }
 
+    /// Set once the background ~/Downloads permission touch has resolved. Monitoring must
+    /// not open()/scan the folder before this: the Defaults publisher below fires an initial
+    /// event on subscription, which would otherwise start monitoring on the main thread
+    /// while the TCC prompt is still up — re-freezing the launch this gate exists to fix.
+    private var downloadsAccessWarmedUp = false
+
     init() {
-        requestDownloadsPermissionIfNeeded()
-        startMonitoringIfNeeded()
+        // The first touch of ~/Downloads triggers the Files-and-Folders TCC prompt and
+        // blocks until the user answers. Doing it synchronously here froze the whole app
+        // at launch — this init runs inside AppDelegate.init, before
+        // applicationDidFinishLaunching — and every dev rebuild re-asks because the
+        // ad-hoc code signature changes. Touch the folder on a background queue instead,
+        // and only start monitoring (which open()s and scans the same folder) once the
+        // permission round-trip has resolved.
+        let downloadsDirectory = downloadsDirectory
+        DispatchQueue.global(qos: .utility).async {
+            if let downloadsDirectory {
+                _ = try? FileManager.default.contentsOfDirectory(at: downloadsDirectory, includingPropertiesForKeys: nil)
+            }
+            Task { @MainActor [weak self] in
+                self?.downloadsAccessWarmedUp = true
+                self?.startMonitoringIfNeeded()
+            }
+        }
 
         defaultsCancellable = Defaults.publisher(.enableDownloadListener)
             .sink { [weak self] _ in
@@ -131,6 +152,7 @@ class DownloadManager {
     }
 
     private func startMonitoringIfNeeded() {
+        guard downloadsAccessWarmedUp else { return }
         if Defaults[.enableDownloadListener] {
             startMonitoring()
         } else {
@@ -298,11 +320,6 @@ class DownloadManager {
     private func stopProgressPolling() {
         progressTimer?.invalidate()
         progressTimer = nil
-    }
-
-    private func requestDownloadsPermissionIfNeeded() {
-        guard let downloadsDirectory else { return }
-        _ = try? FileManager.default.contentsOfDirectory(at: downloadsDirectory, includingPropertiesForKeys: nil)
     }
 
     private func updateDownloadingState(isActive: Bool) {
