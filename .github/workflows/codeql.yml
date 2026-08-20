@@ -32,24 +32,20 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Select Xcode
+        run: |
+          xcode-select -p
+          xcodebuild -version
+          uname -m
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
 
-          # Uncomment for the broader query suite.
+          # Uncomment to use the broader query suite.
           # queries: security-and-quality
-
-      - name: Select Xcode 26.6
-        run: |
-          sudo xcode-select -s /Applications/Xcode_26.6.app
-          sudo xcodebuild -license accept
-      # Kannu's macOS 26 CI requires the Metal toolchain to be
-      # installed explicitly on the macos-26 runner.
-      - name: Install Metal Toolchain
-        run: |
-          xcodebuild -downloadComponent MetalToolchain
 
       - name: Prepare unsigned build
         run: |
