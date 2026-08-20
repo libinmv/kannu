@@ -422,6 +422,11 @@ struct ContentView: View {
     }
 
     private var shouldExpandPhysicalNotchForAgent: Bool {
+        // `showAgentTrafficLight` implies enableAgentStatusFeature && the monitor's
+        // shouldShowTrafficLight (upstream's conditions) plus the hide-until-hover reveal
+        // window — keeping expansion tied to whether a light is actually being drawn. On
+        // physical-notch screens hide-until-hover never applies, so this is equivalent to
+        // upstream's check there, with one source of truth instead of two.
         isPhysicalNotchScreen
             && vm.notchState == .closed
             && showAgentTrafficLight
