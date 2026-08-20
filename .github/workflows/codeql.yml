@@ -11,7 +11,7 @@ on:
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
-    runs-on: macos-15
+    runs-on: macos-26
 
     permissions:
       security-events: write
@@ -41,6 +41,12 @@ jobs:
           # Uncomment for the broader query suite.
           # queries: security-and-quality
 
+      # Kannu's macOS 26 CI requires the Metal toolchain to be
+      # installed explicitly on the macos-26 runner.
+      - name: Install Metal Toolchain
+        run: |
+          xcodebuild -downloadComponent MetalToolchain
+
       - name: Prepare unsigned build
         run: |
           sudo DevToolsSecurity -enable
@@ -53,20 +59,6 @@ jobs:
               exit 1
             fi
           fi
-
-      - name: Show build architecture
-        run: |
-          echo "Runner architecture:"
-          uname -m
-
-          echo "Xcode version:"
-          xcodebuild -version
-
-          echo "Relevant build settings:"
-          xcodebuild -showBuildSettings \
-            -project Kannu.xcodeproj \
-            -scheme Kannu \
-            | grep -E 'ARCHS|ONLY_ACTIVE_ARCH' || true
 
       - name: Build
         run: |
