@@ -32,11 +32,20 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Select Xcode
+      - name: Check runner and Xcode
         run: |
+          echo "Architecture:"
+          uname -m
+
+          echo
+          echo "Xcode:"
           xcode-select -p
           xcodebuild -version
-          uname -m
+
+          echo
+          echo "Metal toolchain BEFORE CodeQL:"
+          xcrun --find metal
+          xcrun metal -v
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
@@ -44,8 +53,19 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
 
-          # Uncomment to use the broader query suite.
+          # Uncomment for the broader CodeQL query suite:
           # queries: security-and-quality
+
+      - name: Check Metal after CodeQL
+        run: |
+          echo "Xcode after CodeQL init:"
+          xcode-select -p
+          xcodebuild -version
+
+          echo
+          echo "Metal toolchain AFTER CodeQL:"
+          xcrun --find metal
+          xcrun metal -v
 
       - name: Prepare unsigned build
         run: |
