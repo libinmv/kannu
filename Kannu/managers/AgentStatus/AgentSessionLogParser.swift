@@ -18,6 +18,10 @@ enum AgentSessionLogParser {
     private static let trailingByteLimit = 16_000
     private static let maxSessionsPerScan = 24
     private static let pathListCacheTTL: TimeInterval = 2.0
+    /// Escalating tail-read windows for `claudeTailState(at:)` — single records can exceed
+    /// the first window, and a truncated tail must widen rather than report `.unknown`.
+    private static let tailWindowLimits = [16_000, 262_144, 1_048_576]
+    private static var tailResultCache: [String: (mtime: Date, size: Int, result: ClaudeTailResult)] = [:]
 
     private static var cachedPaths: [AgentSessionLogProvider: [URL]] = [:]
     private static var cachedPathsAt: Date?
@@ -293,6 +297,70 @@ enum AgentSessionLogParser {
         case unknown
     }
 
+    /// Tail verdict plus the timestamp of the record that decided it, so callers can age the
+    /// state from when it actually happened rather than from file mtime (which bookkeeping
+    /// writes keep bumping long after the run ended).
+    struct ClaudeTailResult: Equatable {
+        let state: ClaudeTailState
+        let recordTimestamp: Date?
+
+        static let unknown = ClaudeTailResult(state: .unknown, recordTimestamp: nil)
+    }
+
+    /// An Esc interrupt is recorded as a `user` record with this text; the Stop hook does not
+    /// fire for it, so the transcript is the only place the interrupt is visible.
+    /// Variants: "[Request interrupted by user]", "[Request interrupted by user for tool use]".
+    private static let claudeInterruptMarkerPrefix = "[Request interrupted by user"
+
+    private static let recordTimestampFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let recordTimestampFallbackFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    private static func recordTimestamp(from json: [String: Any]) -> Date? {
+        guard let raw = json["timestamp"] as? String else { return nil }
+        return recordTimestampFormatter.date(from: raw)
+            ?? recordTimestampFallbackFormatter.date(from: raw)
+    }
+
+    private static func hasInterruptMarker(_ text: String) -> Bool {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .hasPrefix(claudeInterruptMarkerPrefix)
+    }
+
+    /// The interrupt text can appear as a plain string content, a `text` block, or inside a
+    /// `tool_result` block (interrupt during a tool call) — check all three shapes.
+    static func isClaudeInterruptRecord(_ message: [String: Any]?) -> Bool {
+        guard let message else { return false }
+        if let text = message["content"] as? String {
+            return hasInterruptMarker(text)
+        }
+        guard let blocks = message["content"] as? [[String: Any]] else { return false }
+        for block in blocks {
+            switch block["type"] as? String {
+            case "text":
+                if let text = block["text"] as? String, hasInterruptMarker(text) { return true }
+            case "tool_result":
+                if let text = block["content"] as? String, hasInterruptMarker(text) { return true }
+                if let nested = block["content"] as? [[String: Any]] {
+                    for inner in nested where (inner["type"] as? String) == "text" {
+                        if let text = inner["text"] as? String, hasInterruptMarker(text) { return true }
+                    }
+                }
+            default:
+                continue
+            }
+        }
+        return false
+    }
+
     /// Reads the tail of a Claude JSONL to tell a running tool apart from an idle prompt.
     ///
     /// File mtime alone cannot do this: a long tool writes its `tool_use` record at the start
@@ -302,9 +370,40 @@ enum AgentSessionLogParser {
     /// Deliberately never reports "awaiting approval" — a pending `tool_use` looks the same
     /// whether the tool is running or a permission card is open, and guessing there is what
     /// produced permanent false yellow. Yellow comes from hooks only.
-    static func claudeTailState(at url: URL) -> ClaudeTailState {
-        guard let text = readTrailingLines(at: url) else { return .unknown }
+    ///
+    /// Records can exceed the first read window (real transcript lines reach hundreds of KB),
+    /// which used to truncate the tail into `.unknown`; the window now escalates until it
+    /// produces a verdict or covers the whole file. Results are cached against (mtime, size)
+    /// so the 1 Hz rescan costs a stat, not a read, for quiet sessions.
+    static func claudeTailState(at url: URL) -> ClaudeTailResult {
+        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        let mtime = values?.contentModificationDate
+        let fileSize = values?.fileSize
+        if let mtime, let fileSize,
+           let cached = tailResultCache[url.path],
+           cached.mtime == mtime, cached.size == fileSize {
+            return cached.result
+        }
 
+        var result = ClaudeTailResult.unknown
+        for limit in tailWindowLimits {
+            guard let text = readTrailingLines(at: url, limit: limit) else { break }
+            result = claudeTailState(fromTailText: text)
+            if result.state != .unknown { break }
+            if let fileSize, limit >= fileSize { break }
+        }
+
+        if let mtime, let fileSize {
+            if tailResultCache.count > 2 * maxSessionsPerScan {
+                tailResultCache.removeAll()
+            }
+            tailResultCache[url.path] = (mtime, fileSize, result)
+        }
+        return result
+    }
+
+    /// Pure core of `claudeTailState(at:)` — classifies the newest conversational record.
+    static func claudeTailState(fromTailText text: String) -> ClaudeTailResult {
         for line in text.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
             guard let data = line.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -314,17 +413,26 @@ enum AgentSessionLogParser {
             case "assistant":
                 let message = json["message"] as? [String: Any]
                 let content = message?["content"] as? [[String: Any]] ?? []
+                let timestamp = recordTimestamp(from: json)
                 if content.contains(where: { ($0["type"] as? String) == "tool_use" }) {
-                    return .toolInFlight
+                    return ClaudeTailResult(state: .toolInFlight, recordTimestamp: timestamp)
                 }
                 let stopReason = message?["stop_reason"] as? String
-                if stopReason == "end_turn" || stopReason == "stop_sequence" {
-                    return .turnFinished
+                // nil / "tool_use" / "pause_turn" mean the turn is still open. Any other
+                // value — end_turn, stop_sequence, max_tokens, refusal, future additions —
+                // is terminal: nothing is running.
+                if stopReason == nil || stopReason == "tool_use" || stopReason == "pause_turn" {
+                    return ClaudeTailResult(state: .working, recordTimestamp: timestamp)
                 }
-                // Text or thinking mid-turn (stop_reason "tool_use") — still working.
-                return .working
+                return ClaudeTailResult(state: .turnFinished, recordTimestamp: timestamp)
             case "user":
-                return .working
+                let timestamp = recordTimestamp(from: json)
+                if isClaudeInterruptRecord(json["message"] as? [String: Any]) {
+                    // Esc leaves the session idle at its prompt; without this the trailing
+                    // user record reads as "owes a response" and the light stays green forever.
+                    return ClaudeTailResult(state: .turnFinished, recordTimestamp: timestamp)
+                }
+                return ClaudeTailResult(state: .working, recordTimestamp: timestamp)
             default:
                 // attachment, queue-operation, last-prompt, ai-title, custom-title, mode,
                 // system, pr-link — bookkeeping that says nothing about run state.
@@ -347,11 +455,11 @@ enum AgentSessionLogParser {
         return String(data: data, encoding: .utf8)
     }
 
-    private static func readTrailingLines(at url: URL) -> String? {
+    private static func readTrailingLines(at url: URL, limit: Int = trailingByteLimit) -> String? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         guard let fileSize = try? handle.seekToEnd() else { return nil }
-        let readSize = UInt64(trailingByteLimit)
+        let readSize = UInt64(limit)
         // Short file: read all of it. Returning nil here sent callers to their
         // `?? readLeadingLines` fallback, which reads the *start* of the transcript —
         // the opposite of what a "trailing lines" reader promises.

@@ -270,6 +270,63 @@ enum AgentTrafficLightMapper {
         return (.inactive, false)
     }
 
+    /// A passive `.working` verdict stays green only this long past its last evidence.
+    /// During real work, interim records (tool results, `stop_reason:"tool_use"` text,
+    /// bookkeeping) land far more often than this; long tool runs are exempt entirely
+    /// via `.toolInFlight`. Without the ladder, an interrupted session idling at its
+    /// prompt is green for as long as the process lives.
+    static let passiveWorkingStaleSeconds: TimeInterval = 600
+
+    /// Maps a live Claude process's transcript-tail verdict to a display state.
+    ///
+    /// The tail is consulted before any mtime shortcut: post-turn bookkeeping writes
+    /// (ai-title, custom-title, …) bump mtime after the run ended and must not repaint
+    /// green, and a finished turn is aged from the deciding record's own timestamp so
+    /// those writes cannot re-flash red either.
+    static func passiveClaudeState(
+        tail: AgentSessionLogParser.ClaudeTailResult,
+        jsonlMtime: Date?,
+        fallbackTsMs: Int64,
+        now: Date,
+        collapseMs: Int64,
+        inactiveMs: Int64,
+        recentJsonlThreshold: TimeInterval = 10,
+        workingStaleSeconds: TimeInterval = passiveWorkingStaleSeconds
+    ) -> (rawState: String, state: AgentTrafficLightState, visible: Bool, updatedAtMs: Int64) {
+        let nowMs = Int64(now.timeIntervalSince1970 * 1000)
+        switch tail.state {
+        case .toolInFlight:
+            // A tool may legitimately run for many minutes with zero writes — never age out.
+            return ("executing", .executing, true, fallbackTsMs)
+        case .working:
+            // A response has been owed since the deciding record; newer file writes count
+            // as life signs too. No evidence at all stays green — conservative.
+            let evidence = [tail.recordTimestamp, jsonlMtime].compactMap { $0 }.max()
+            if let evidence, now.timeIntervalSince(evidence) > workingStaleSeconds {
+                return ("idle", .inactive, true, fallbackTsMs)
+            }
+            return ("thinking", .thinking, true, fallbackTsMs)
+        case .turnFinished:
+            let stopMs = tail.recordTimestamp.map { Int64($0.timeIntervalSince1970 * 1000) } ?? fallbackTsMs
+            let lifecycle = resolveHookState(
+                rawState: "stopped",
+                ageMs: nowMs - stopMs,
+                collapseMs: collapseMs,
+                inactiveMs: inactiveMs
+            )
+            // Red flashes and collapses as usual, but the process is still running,
+            // so the session stays in the list as a dim card rather than vanishing.
+            let resolved = lifecycle.visible ? lifecycle : (.inactive, true)
+            return ("stopped", resolved.state, resolved.visible, stopMs)
+        case .unknown:
+            let isWriting = jsonlMtime.map { now.timeIntervalSince($0) < recentJsonlThreshold } ?? false
+            if isWriting {
+                return ("thinking", .thinking, true, fallbackTsMs)
+            }
+            return ("idle", .inactive, true, fallbackTsMs)
+        }
+    }
+
     /// Highest-priority active session drives the traffic light across all projects.
     static func resolveDisplayState(from sessions: [AgentSessionStatus]) -> AgentTrafficLightState {
         let visible = sessions.filter { $0.isVisible && !isSimulationSession($0) }
@@ -307,7 +364,7 @@ enum AgentTrafficLightMapper {
     private static func hasReliableChatName(_ value: String?) -> Bool {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !trimmed.isEmpty else { return false }
-        return !CursorAgentStatusMonitor.looksLikeToolName(trimmed)
+        return !AgentApprovalGatedTools.looksLikeToolName(trimmed)
     }
 
     static func aggregate(_ sessions: [AgentSessionStatus]) -> AgentTrafficLightState {

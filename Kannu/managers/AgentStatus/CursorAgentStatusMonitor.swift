@@ -208,28 +208,59 @@ final class CursorAgentStatusMonitor: ObservableObject {
             now: now
         )
 
-        let passiveClaudeSessions = buildClaudeSessions(
+        let (passiveClaudeSessions, deadPIDConversationIDs) = buildClaudeSessions(
             staleMinutes: staleMinutes,
             collapseSeconds: collapseSeconds,
             inactiveSeconds: inactiveSeconds,
             now: now
         )
-        if !passiveClaudeSessions.isEmpty {
+        if !passiveClaudeSessions.isEmpty || !deadPIDConversationIDs.isEmpty {
             let passiveByConversationID = Dictionary(
                 passiveClaudeSessions.map { ($0.conversationID, $0) },
                 uniquingKeysWith: { first, _ in first }
             )
+            let collapseMs = Int64(collapseSeconds) * 1_000
+            let inactiveMs = Int64(inactiveSeconds) * 1_000
+            let nowMs = Int64(now.timeIntervalSince1970 * 1000)
 
-            // Hooks only fire at tool boundaries. A single long-running tool — a build, a test
-            // suite, an extended turn with no tool calls — leaves the status file untouched for
-            // minutes, and `resolveHookState` then ages it out of its active state and dims the
-            // session while it is hardest at work. Passive detection can still see the truth
-            // (process alive, tool in flight), and a live process beats a stale timestamp.
             hookSessions = hookSessions.map { session in
-                guard session.provider.lowercased() == "claude",
-                      session.hasActiveRawState,
-                      !session.displayState.isActiveRun,
-                      let passive = passiveByConversationID[session.conversationID],
+                guard session.provider.lowercased() == "claude" else { return session }
+                let passive = passiveByConversationID[session.conversationID]
+                let processDead = deadPIDConversationIDs.contains(session.conversationID)
+
+                // Demote: the hook file still claims active work — Stop never fires on a
+                // user interrupt, and SIGKILL/crash skips it entirely — but fresher passive
+                // evidence (a newer transcript record, or a dead process) says otherwise.
+                if session.displayState.isActiveRun {
+                    if let passive, !passive.displayState.isActiveRun,
+                       processDead || passive.updatedAt >= session.updatedAt {
+                        return session.withDisplayState(passive.displayState, visible: passive.isVisible)
+                    }
+                    if passive == nil, processDead {
+                        // Process gone and its session record too old for a passive card:
+                        // age the stop from the hook's own timestamp.
+                        let ageMs = nowMs - Int64(session.updatedAt.timeIntervalSince1970 * 1000)
+                        let lifecycle = AgentTrafficLightMapper.resolveHookState(
+                            rawState: "stopped",
+                            ageMs: ageMs,
+                            collapseMs: collapseMs,
+                            inactiveMs: inactiveMs
+                        )
+                        return session.withDisplayState(lifecycle.state, visible: lifecycle.visible)
+                    }
+                    return session
+                }
+
+                // Hooks only fire at tool boundaries. A single long-running tool — a build, a
+                // test suite, an extended turn with no tool calls — leaves the status file
+                // untouched for minutes, and `resolveHookState` then ages it out of its active
+                // state and dims the session while it is hardest at work. Passive detection can
+                // still see the truth (process alive, tool in flight), and a live process beats
+                // a stale timestamp. Safe against stale tails: passive "thinking" is bounded by
+                // the working-staleness ladder and passive "executing" means a verified
+                // in-flight tool.
+                guard session.hasActiveRawState,
+                      let passive,
                       passive.displayState.isActiveRun
                 else { return session }
                 return session.withDisplayState(
@@ -1133,24 +1164,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
     }
 
     nonisolated static func looksLikeToolName(_ value: String?) -> Bool {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !trimmed.isEmpty else { return false }
-
-        if AgentApprovalGatedTools.requiresUserApproval(trimmed) {
-            return true
-        }
-
-        let lower = trimmed.lowercased()
-        let compact = lower
-            .replacingOccurrences(of: "_", with: "")
-            .replacingOccurrences(of: "-", with: "")
-            .replacingOccurrences(of: " ", with: "")
-        let commonTools: Set<String> = [
-            "shell", "read", "grep", "rg", "edit", "write", "task",
-            "applypatch", "strreplace", "glob", "openresource",
-            "todowrite", "createsubagent", "subagent"
-        ]
-        return commonTools.contains(compact)
+        AgentApprovalGatedTools.looksLikeToolName(value)
     }
 
     private func enrichProjectNamesFromTranscripts(
@@ -1274,13 +1288,13 @@ final class CursorAgentStatusMonitor: ObservableObject {
         collapseSeconds: Int,
         inactiveSeconds: Int,
         now: Date = Date()
-    ) -> [AgentSessionStatus] {
+    ) -> (sessions: [AgentSessionStatus], deadPIDConversationIDs: Set<String>) {
         let sessionsDir = AgentSessionLogParser.claudeSessionsDirectory
         guard FileManager.default.fileExists(atPath: sessionsDir.path),
               let files = try? FileManager.default.contentsOfDirectory(
                 at: sessionsDir,
                 includingPropertiesForKeys: [.contentModificationDateKey]
-              ) else { return [] }
+              ) else { return ([], []) }
 
         let staleMs = Int64(staleMinutes) * 60_000
         let nowMs = Int64(now.timeIntervalSince1970 * 1000)
@@ -1289,6 +1303,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
         let recentJsonlThreshold: TimeInterval = 10  // seconds of silence before we stop assuming "thinking"
 
         var results: [AgentSessionStatus] = []
+        var deadPIDConversationIDs: Set<String> = []
 
         for file in files where file.pathExtension == "json" {
             guard let data = try? Data(contentsOf: file),
@@ -1303,6 +1318,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
             let processAlive = isClaudeProcessAlive(pid: pid, startedAtMs: startedAtMs)
             // Skip stale check for live processes — a session may run for many hours.
             if !processAlive {
+                // Recorded before the stale skip: a long-lived session that was SIGKILLed
+                // has an old startedAt, and the reconciler still needs to know it is dead.
+                deadPIDConversationIDs.insert(sessionId)
                 guard nowMs - startedAtMs <= staleMs else { continue }
             }
 
@@ -1328,38 +1346,25 @@ final class CursorAgentStatusMonitor: ObservableObject {
             // override then force-showed — a live session pinned as red.
             let rawState: String
             let resolved: (state: AgentTrafficLightState, visible: Bool)
+            var updatedAtMs = tsMs
             if processAlive {
-                let isWriting = jsonlMtime.map { now.timeIntervalSince($0) < recentJsonlThreshold } ?? false
-                if isWriting {
-                    rawState = "thinking"
-                    resolved = (.thinking, true)
-                } else {
-                    // Quiet on disk means nothing on its own — a multi-minute tool writes its
-                    // `tool_use` record up front and then stays silent until it returns. Ask the
-                    // transcript what the newest record actually was.
-                    switch jsonlURL.map({ AgentSessionLogParser.claudeTailState(at: $0) }) ?? .unknown {
-                    case .toolInFlight:
-                        rawState = "executing"
-                        resolved = (.executing, true)
-                    case .working:
-                        rawState = "thinking"
-                        resolved = (.thinking, true)
-                    case .turnFinished:
-                        rawState = "stopped"
-                        let lifecycle = AgentTrafficLightMapper.resolveHookState(
-                            rawState: rawState,
-                            ageMs: nowMs - tsMs,
-                            collapseMs: collapseMs,
-                            inactiveMs: inactiveMs
-                        )
-                        // Red flashes and collapses as usual, but the process is still running,
-                        // so the session stays in the list as a dim card rather than vanishing.
-                        resolved = lifecycle.visible ? lifecycle : (.inactive, true)
-                    case .unknown:
-                        rawState = "idle"
-                        resolved = (.inactive, true)
-                    }
-                }
+                // The transcript tail, not mtime, decides — a multi-minute tool writes its
+                // `tool_use` record up front and then stays silent, while post-turn bookkeeping
+                // keeps bumping mtime after the run ended.
+                let tail = jsonlURL.map { AgentSessionLogParser.claudeTailState(at: $0) }
+                    ?? .unknown
+                let passive = AgentTrafficLightMapper.passiveClaudeState(
+                    tail: tail,
+                    jsonlMtime: jsonlMtime,
+                    fallbackTsMs: tsMs,
+                    now: now,
+                    collapseMs: collapseMs,
+                    inactiveMs: inactiveMs,
+                    recentJsonlThreshold: recentJsonlThreshold
+                )
+                rawState = passive.rawState
+                resolved = (passive.state, passive.visible)
+                updatedAtMs = passive.updatedAtMs
             } else {
                 rawState = "stopped"
                 resolved = AgentTrafficLightMapper.resolveHookState(
@@ -1390,13 +1395,13 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 projectName: projectName,
                 rawState: rawState,
                 displayState: resolved.state,
-                updatedAt: Date(timeIntervalSince1970: TimeInterval(tsMs) / 1000),
+                updatedAt: Date(timeIntervalSince1970: TimeInterval(updatedAtMs) / 1000),
                 isVisible: resolved.visible,
                 executionStartedAt: nil
             ))
         }
 
-        return results
+        return (results, deadPIDConversationIDs)
     }
 
     private func claudeJSONLURL(forSessionId sessionId: String) -> URL? {

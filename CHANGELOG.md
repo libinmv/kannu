@@ -4,6 +4,18 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-21 - Fix false-green Claude sessions (interrupts, stale tails, dead processes)
+- **Developer label:** Truthful Claude transcript-tail parsing plus staleness/demotion in the passive-hook merge, with a new KannuTests unit bundle
+- **Agent label:** An interrupted or killed Claude session no longer glows green forever
+- **Changes:**
+  - `AgentSessionLogParser.claudeTailState` now recognises Esc-interrupt records (`[Request interrupted by user…]` as string content, `text` block, or inside a `tool_result`) as `turnFinished` — Claude Code's Stop hook does not fire on user interrupt, so the trailing `user` record used to read as "owes a response" and the light stayed green for as long as the process lived
+  - Any terminal `stop_reason` (`max_tokens`, `refusal`, future values — not just `end_turn`/`stop_sequence`) now ends the turn; only `nil`/`tool_use`/`pause_turn` remain mid-turn
+  - Tail reads escalate 16 KB → 256 KB → 1 MB when the verdict is `.unknown` (real records reach hundreds of KB and used to truncate into unknown), return the deciding record's own timestamp, and are cached against (mtime, size) so the 1 Hz rescan stats instead of reads quiet sessions
+  - New `AgentTrafficLightMapper.passiveClaudeState`: the tail verdict is consulted before the mtime shortcut (post-turn `ai-title`/bookkeeping writes no longer repaint green), a passive `working` verdict ages out after 10 minutes without evidence (`toolInFlight` never ages — long tools stay green), and a finished turn ages from the deciding record's timestamp so bookkeeping writes cannot re-flash red
+  - The hook/passive reconciler gained a demotion arm: a hook file stuck on `executing`/`thinking` (interrupt, SIGKILL, crash — no Stop/SessionEnd ever arrives) is demoted when the passive side has fresher contrary evidence or the PID is dead, including dead sessions too old for a passive card. The existing long-tool resurrection path is unchanged and now safe, since passive green states are verified or bounded
+  - `looksLikeToolName` moved from `CursorAgentStatusMonitor` to `AgentApprovalGatedTools` (pure, Foundation-only) with a forwarding shim, so the mapper and tests don't drag in the monitor
+  - New `KannuTests` unit-test target (scheme `KannuTests`) covering the tail parser (interrupt variants, stop reasons, truncation, window escalation) and the passive-state ladder (29 tests)
+
 ### 2026-08-20 - Project-level ART engineering framework
 - **Developer label:** Add CLAUDE.md with the ART framework and Kannu engineering standards
 - **Agent label:** Claude Code sessions in this repo now start from a shared persona, architecture principles, and repo facts
