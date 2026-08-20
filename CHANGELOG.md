@@ -28,6 +28,13 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
   - Added per-display overrides for notch style and hide-until-hover, keyed by screen name and falling back to the global settings. Notched built-in displays are omitted from the list since their shape is fixed by hardware
   - Hovering the hidden island no longer leaves it out after the pointer leaves; agent activity reveals it for 3s (was 6s), with a 2s heartbeat while a run is in progress so a long silent tool keeps the light lit
   - Fixed `readTrailingLines` returning nil for files smaller than its read window, which silently sent callers to a fallback that read the start of the transcript
+### 2026-08-13 - Homebrew distribution
+- **Developer label:** homebrew distribution
+- **Agent label:** Homebrew tap cask auto-bump on release
+- **Changes:**
+  - Added `scripts/update-homebrew-cask.sh` to regenerate `Casks/kannu.rb` and push to `libinmv/homebrew-kannu`
+  - Extended `.github/workflows/release.yml` to bump the tap cask after each `v*` tag release (skips if `HOMEBREW_TAP_TOKEN` is unset)
+  - Documented `HOMEBREW_TAP_TOKEN` setup in `scripts/RELEASE.md`
 
 ### 2026-07-31 - Fix Sparkle CI appcast signing
 - **Developer label:** Fix Sparkle update export in release workflow
