@@ -32,18 +32,20 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check runner and Xcode
+      - name: Select Xcode 26.6
         run: |
-          echo "Architecture:"
-          uname -m
+          sudo xcode-select -s /Applications/Xcode_26.6.app
 
-          echo
           echo "Xcode:"
           xcode-select -p
           xcodebuild -version
 
-          echo
-          echo "Metal toolchain BEFORE CodeQL:"
+          echo "Architecture:"
+          uname -m
+
+      - name: Check Metal before CodeQL
+        run: |
+          echo "Metal before CodeQL:"
           xcrun --find metal
           xcrun metal -v
 
@@ -53,17 +55,21 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
 
-          # Uncomment for the broader CodeQL query suite:
-          # queries: security-and-quality
-
-      - name: Check Metal after CodeQL
+      - name: Restore Metal Toolchain
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
         run: |
-          echo "Xcode after CodeQL init:"
-          xcode-select -p
+          echo "Xcode:"
           xcodebuild -version
 
-          echo
-          echo "Metal toolchain AFTER CodeQL:"
+          echo "Downloading Metal Toolchain..."
+          xcodebuild -downloadComponent MetalToolchain
+
+      - name: Check Metal after CodeQL
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+        run: |
+          echo "Metal after CodeQL:"
           xcrun --find metal
           xcrun metal -v
 
@@ -81,6 +87,8 @@ jobs:
           fi
 
       - name: Build
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
         run: |
           xcodebuild build \
             -project Kannu.xcodeproj \
