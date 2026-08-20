@@ -4,6 +4,17 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-20 - Click-through from agent chat rows to the hosting app
+- **Developer label:** Session rows open their app: bundle-id activation, project-aware launch, terminal parent-walk, AX window raise
+- **Agent label:** Click a chat in the notch and land in the app — and where possible, the right window
+- **Changes:**
+  - Session rows and the primary card in the notch's agent panel are now clickable when the hosting app can be located, with a pointing-hand cursor and an "Open in <app>" tooltip; rows with nothing to open offer no affordance at all. The notch closes after a successful open
+  - GUI IDE sessions (Cursor / VS Code / Antigravity) activate the running app by bundle id; when the IDE isn't running and the session knows its working directory, it launches the IDE *on that project*
+  - Claude Code sessions walk the agent process's parent chain (same sysctl idiom as `isClaudeProcessAlive`; `kp_eproc.e_ppid` was already in the struct being read) to whatever GUI app actually hosts the terminal — Terminal, iTerm2, Warp, an IDE's integrated terminal, or Claude Desktop's — and activate that. The `com.anthropic.claude` bundle id is deliberately not used: it's the desktop chat app, not Claude Code
+  - When Accessibility is already granted, the specific window whose title matches the session's project is raised before activation; silently skipped otherwise — no prompts, and the existing Settings card remains the place to grant it
+  - `AgentSessionStatus` gained `cwd` and `hostPID` locator fields, threaded through every merge/repair/copy site so they survive the session pipeline. Claude passive sessions attach the pid and cwd that were already parsed and discarded; a dead pid never makes a row clickable
+  - Hook script v28: status files now store the full working directory (`workspace_roots` root or `cwd`), preserving it across events that don't carry one; `scripts/kannu-agent-status.sh` resynced from the embedded source. Verified live: race harness still 0/200 downgrades and 0 torn reads, and this session's own status file gained its cwd on the first post-migration event
+
 ### 2026-08-20 - Agents-first settings and a tighter agent panel header
 - **Developer label:** New "AI Agents" sidebar group with Agents + Usage panes; merge the notch panel's header line
 - **Agent label:** Agent settings lead the sidebar, LLM providers get their own Usage pane, and the notch panel saves a line

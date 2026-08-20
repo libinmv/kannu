@@ -64,7 +64,9 @@ struct AgentProviderIconView: View {
     }
 }
 
-private extension AgentProviderIconSource {
+extension AgentProviderIconSource {
+    // Internal, not private: these lists double as the activation targets for
+    // click-through from the notch's agent panel (AgentSessionOpener).
     var bundleIdentifiers: [String] {
         switch self {
         case .cursor:

@@ -418,7 +418,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
             displayState: winner.displayState,
             updatedAt: winner.updatedAt,
             isVisible: winner.isVisible || loser.isVisible,
-            executionStartedAt: winner.executionStartedAt ?? loser.executionStartedAt
+            executionStartedAt: winner.executionStartedAt ?? loser.executionStartedAt,
+            cwd: winner.cwd ?? loser.cwd,
+            hostPID: winner.hostPID ?? loser.hostPID
         )
     }
 
@@ -471,7 +473,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     displayState: session.displayState,
                     updatedAt: session.updatedAt,
                     isVisible: session.isVisible,
-                    executionStartedAt: session.executionStartedAt
+                    executionStartedAt: session.executionStartedAt,
+                    cwd: session.cwd,
+                    hostPID: session.hostPID
                 )
             } else {
                 candidate = session
@@ -489,7 +493,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     displayState: merged.displayState,
                     updatedAt: max(existing.updatedAt, candidate.updatedAt),
                     isVisible: existing.isVisible || candidate.isVisible,
-                    executionStartedAt: merged.executionStartedAt ?? existing.executionStartedAt ?? candidate.executionStartedAt
+                    executionStartedAt: merged.executionStartedAt ?? existing.executionStartedAt ?? candidate.executionStartedAt,
+                    cwd: existing.cwd ?? candidate.cwd,
+                    hostPID: existing.hostPID ?? candidate.hostPID
                 )
             } else {
                 rolledUp[targetID] = candidate
@@ -568,7 +574,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     displayState: .thinking,
                     updatedAt: session.updatedAt,
                     isVisible: true,
-                    executionStartedAt: session.executionStartedAt
+                    executionStartedAt: session.executionStartedAt,
+                    cwd: session.cwd,
+                    hostPID: session.hostPID
                 )
             }
 
@@ -584,7 +592,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     displayState: .awaitingInput,
                     updatedAt: session.updatedAt,
                     isVisible: true,
-                    executionStartedAt: session.executionStartedAt
+                    executionStartedAt: session.executionStartedAt,
+                    cwd: session.cwd,
+                    hostPID: session.hostPID
                 )
             }
 
@@ -605,7 +615,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     displayState: .stopped,
                     updatedAt: session.updatedAt,
                     isVisible: true,
-                    executionStartedAt: session.executionStartedAt
+                    executionStartedAt: session.executionStartedAt,
+                    cwd: session.cwd,
+                    hostPID: session.hostPID
                 )
             }
 
@@ -677,6 +689,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
             let projectName = normalizedProjectName(
                 json["project"] as? String ?? json["project_name"] as? String ?? json["workspace_name"] as? String
             )
+            let hookCwd = (json["cwd"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             let ageMs = nowMs - tsMs
             let resolved = AgentTrafficLightMapper.resolveHookState(
                 rawState: state,
@@ -696,7 +709,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     displayState: resolved.state,
                     updatedAt: Date(timeIntervalSince1970: TimeInterval(tsMs) / 1000),
                     isVisible: resolved.visible,
-                    executionStartedAt: nil
+                    executionStartedAt: nil,
+                    cwd: hookCwd
                 )
             )
         }
@@ -1213,7 +1227,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 displayState: session.displayState,
                 updatedAt: session.updatedAt,
                 isVisible: session.isVisible,
-                executionStartedAt: session.executionStartedAt
+                executionStartedAt: session.executionStartedAt,
+                cwd: session.cwd,
+                hostPID: session.hostPID
             )
         }
     }
@@ -1272,7 +1288,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 displayState: session.displayState,
                 updatedAt: session.updatedAt,
                 isVisible: session.isVisible,
-                executionStartedAt: executionStartForSession
+                executionStartedAt: executionStartForSession,
+                cwd: session.cwd,
+                hostPID: session.hostPID
             )
         }
     }
@@ -1419,7 +1437,12 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 displayState: resolved.state,
                 updatedAt: Date(timeIntervalSince1970: TimeInterval(tsMs) / 1000),
                 isVisible: resolved.visible,
-                executionStartedAt: nil
+                executionStartedAt: nil,
+                // Click-through locators: the parent chain of this pid leads to the hosting
+                // terminal/IDE, and cwd identifies the project. Only attach the pid while the
+                // process is provably alive — a dead pid must not make the row clickable.
+                cwd: json["cwd"] as? String,
+                hostPID: processAlive ? pid : nil
             ))
         }
 
@@ -1483,7 +1506,9 @@ private extension AgentSessionStatus {
             displayState: displayState,
             updatedAt: updatedAt,
             isVisible: isVisible,
-            executionStartedAt: executionStartedAt
+            executionStartedAt: executionStartedAt,
+            cwd: cwd,
+            hostPID: hostPID
         )
     }
 
@@ -1498,7 +1523,9 @@ private extension AgentSessionStatus {
             displayState: displayState,
             updatedAt: updatedAt,
             isVisible: isVisible,
-            executionStartedAt: executionStartedAt
+            executionStartedAt: executionStartedAt,
+            cwd: cwd,
+            hostPID: hostPID
         )
     }
 }

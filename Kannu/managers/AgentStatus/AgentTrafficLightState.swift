@@ -79,6 +79,13 @@ struct AgentSessionStatus: Identifiable, Equatable {
     let updatedAt: Date
     let isVisible: Bool
     let executionStartedAt: Date?
+    /// Full working directory / workspace root, when the session source knows it. Used by
+    /// click-through to open the right project window; nil is fine — the row just won't
+    /// offer window-level targeting.
+    var cwd: String? = nil
+    /// PID of the agent process itself (Claude passive sessions). The parent chain of this
+    /// PID leads to the hosting terminal or IDE, which is what click-through activates.
+    var hostPID: Int? = nil
 
     /// True when the hook that produced this session reported work in progress, regardless of
     /// what the staleness ladder later concluded about its age.
@@ -100,7 +107,9 @@ struct AgentSessionStatus: Identifiable, Equatable {
             displayState: state,
             updatedAt: updatedAt ?? self.updatedAt,
             isVisible: visible,
-            executionStartedAt: executionStartedAt
+            executionStartedAt: executionStartedAt,
+            cwd: cwd,
+            hostPID: hostPID
         )
     }
 

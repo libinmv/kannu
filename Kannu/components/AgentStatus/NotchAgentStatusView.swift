@@ -103,18 +103,18 @@ struct NotchAgentStatusView: View {
                 caffeinateRow
 
                 if let primary = primarySession {
-                    primaryCard(primary)
+                    clickableSession(primary) { primaryCard(primary) }
                 } else if dedupedSessions.isEmpty {
                     emptyStateView
                 }
 
                 if !recentChats.isEmpty {
                     ForEach(recentChats) { session in
-                        sessionRow(session)
+                        clickableSession(session) { sessionRow(session) }
                     }
                 } else if !allSessions.isEmpty, primarySession == nil {
                     ForEach(allSessions) { session in
-                        sessionRow(session)
+                        clickableSession(session) { sessionRow(session) }
                     }
                 }
             }
@@ -265,6 +265,31 @@ struct NotchAgentStatusView: View {
                     ? String(localized: "Keeping the Mac awake")
                     : String(localized: "Caffeinate — keep the Mac awake")
             )
+    }
+
+    /// Wraps a card/row in a click-through Button when the session's hosting app can be
+    /// located — otherwise returns the content untouched: no hand cursor, no tooltip, no
+    /// dead click. Help text lives on the Button only (a nested .help would shadow it).
+    @ViewBuilder
+    private func clickableSession<Content: View>(_ session: AgentSessionStatus, @ViewBuilder content: () -> Content) -> some View {
+        if let target = AgentSessionOpener.target(for: session) {
+            Button {
+                if AgentSessionOpener.open(session) {
+                    // The user is leaving for the other app; get the notch out of the way.
+                    vm.close()
+                }
+            } label: {
+                content()
+            }
+            .buttonStyle(.plain)
+            .help(String(localized: "Open in \(target.appName)"))
+            .accessibilityHint("Opens \(target.appName)")
+            .onHover { hovering in
+                if hovering { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
+            }
+        } else {
+            content()
+        }
     }
 
     @ViewBuilder

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Installed by Kannu: reports AI agent status for the notch traffic light.
-# KANNU_HOOK_SCRIPT_VERSION=27
+# KANNU_HOOK_SCRIPT_VERSION=28
 # Usage: kannu-agent-status.sh <state> <provider> [hook_event] [matcher_key]
 #        (hook JSON arrives on stdin)
 
@@ -257,17 +257,25 @@ if existing_state and existing.get("hook_event") == hook_event:
 
 roots = data.get("workspace_roots") or data.get("workspacePaths") or data.get("workspace_paths")
 project = ""
+workdir = ""
 if isinstance(roots, list) and roots:
     root = str(roots[0]).replace("file://", "").rstrip("/")
     if root:
         project = Path(root).name
+        workdir = root
 if not project:
     # Claude Code sends cwd rather than workspace_roots; without this the card has no
     # project name until passive transcript detection can supply one.
     cwd = pick_str(data.get("cwd"))
     if cwd:
-        project = Path(cwd.replace("file://", "").rstrip("/")).name
+        cleaned = cwd.replace("file://", "").rstrip("/")
+        project = Path(cleaned).name
+        workdir = cleaned
 project = pick_str(project, existing.get("project"), existing.get("project_name"), existing.get("workspace_name"))
+# Full path, not just the basename: click-through in the notch needs it to open the
+# right project window. Falls back to what an earlier event stored — most hook events
+# carry cwd, but a matcher-only event might not.
+workdir = pick_str(workdir, existing.get("cwd"))
 
 if hook_event in TITLE_BEARING_EVENTS:
     title = pick_str(
@@ -304,6 +312,8 @@ if existing_state == "awaiting_input" and state not in {"awaiting_input", "stopp
                 existing["name"] = name
             if project:
                 existing["project"] = project
+            if workdir:
+                existing["cwd"] = workdir
             write_status(status_file, existing)
             print('{"permission":"allow","continue":true}')
             raise SystemExit(0)
@@ -318,6 +328,8 @@ if name:
     payload["name"] = name
 if project:
     payload["project"] = project
+if workdir:
+    payload["cwd"] = workdir
 write_status(status_file, payload)
 print('{"permission":"allow","continue":true}')
 PY

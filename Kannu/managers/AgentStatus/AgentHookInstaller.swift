@@ -45,7 +45,7 @@ final class AgentHookInstaller: ObservableObject {
     @Published private(set) var lastError: String?
 
     static let scriptName = "kannu-agent-status.sh"
-    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=27"
+    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=28"
 
     private static var home: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -514,17 +514,25 @@ final class AgentHookInstaller: ObservableObject {
 
         roots = data.get("workspace_roots") or data.get("workspacePaths") or data.get("workspace_paths")
         project = ""
+        workdir = ""
         if isinstance(roots, list) and roots:
             root = str(roots[0]).replace("file://", "").rstrip("/")
             if root:
                 project = Path(root).name
+                workdir = root
         if not project:
             # Claude Code sends cwd rather than workspace_roots; without this the card has no
             # project name until passive transcript detection can supply one.
             cwd = pick_str(data.get("cwd"))
             if cwd:
-                project = Path(cwd.replace("file://", "").rstrip("/")).name
+                cleaned = cwd.replace("file://", "").rstrip("/")
+                project = Path(cleaned).name
+                workdir = cleaned
         project = pick_str(project, existing.get("project"), existing.get("project_name"), existing.get("workspace_name"))
+        # Full path, not just the basename: click-through in the notch needs it to open the
+        # right project window. Falls back to what an earlier event stored — most hook events
+        # carry cwd, but a matcher-only event might not.
+        workdir = pick_str(workdir, existing.get("cwd"))
 
         if hook_event in TITLE_BEARING_EVENTS:
             title = pick_str(
@@ -561,6 +569,8 @@ final class AgentHookInstaller: ObservableObject {
                         existing["name"] = name
                     if project:
                         existing["project"] = project
+                    if workdir:
+                        existing["cwd"] = workdir
                     write_status(status_file, existing)
                     print('{"permission":"allow","continue":true}')
                     raise SystemExit(0)
@@ -575,6 +585,8 @@ final class AgentHookInstaller: ObservableObject {
             payload["name"] = name
         if project:
             payload["project"] = project
+        if workdir:
+            payload["cwd"] = workdir
         write_status(status_file, payload)
         print('{"permission":"allow","continue":true}')
         PY
