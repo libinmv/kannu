@@ -418,7 +418,8 @@ struct ContentView: View {
     private var shouldExpandPhysicalNotchForAgent: Bool {
         isPhysicalNotchScreen
             && vm.notchState == .closed
-            && showAgentTrafficLight
+            && enableAgentStatusFeature
+            && agentStatusMonitor.shouldShowTrafficLight
             && !vm.hideOnClosed
     }
 
