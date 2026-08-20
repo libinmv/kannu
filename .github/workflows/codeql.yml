@@ -38,15 +38,13 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
 
-          # Uncomment if you want the broader CodeQL query suite.
+          # Uncomment for the broader query suite.
           # queries: security-and-quality
 
       - name: Prepare unsigned build
         run: |
           sudo DevToolsSecurity -enable
 
-          # The mach-services entitlement causes amfid to kill the
-          # ad-hoc signed app on GitHub-hosted runners.
           if ! plutil_out=$(plutil -remove com.apple.security.mach-services Kannu/Kannu.entitlements 2>&1); then
             if printf '%s' "$plutil_out" | grep -q "No value to remove"; then
               echo "mach-services entitlement already absent, continuing."
@@ -56,12 +54,28 @@ jobs:
             fi
           fi
 
+      - name: Show build architecture
+        run: |
+          echo "Runner architecture:"
+          uname -m
+
+          echo "Xcode version:"
+          xcodebuild -version
+
+          echo "Relevant build settings:"
+          xcodebuild -showBuildSettings \
+            -project Kannu.xcodeproj \
+            -scheme Kannu \
+            | grep -E 'ARCHS|ONLY_ACTIVE_ARCH' || true
+
       - name: Build
         run: |
           xcodebuild build \
             -project Kannu.xcodeproj \
             -scheme Kannu \
             -destination "platform=macOS" \
+            ARCH=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=YES \
