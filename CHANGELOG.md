@@ -4,6 +4,13 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-20 - Project-level ART engineering framework
+- **Developer label:** Add CLAUDE.md with the ART framework and Kannu engineering standards
+- **Agent label:** Claude Code sessions in this repo now start from a shared persona, architecture principles, and repo facts
+- **Changes:**
+  - New repo-root `CLAUDE.md`: the ART breakdown ceremony (Act as / Request / Terms / Relevant skills, shown before any work), skill-loading discipline with explicit honesty clauses (never invent an unlisted skill, zero skills is valid, failed loads are stated), the Senior macOS Swift Architect persona, product context, architecture principles, and audit/UI/debugging/security/testing rules
+  - Ships the executable repo knowledge sessions kept rediscovering: build/run/verify commands (verification vs runnable ad-hoc builds, `open`-only launches, `/usr/bin/log` over the zsh `log` builtin), house conventions (GPL header, `Defaults` key idiom in `Constants.swift`, `String(localized:)`, the `settingsSearchIndex`/`settingsHighlight` pairing, manager singleton shape), and known traps: the building pre-commit hook with its mandatory changelog entry, the `Kannu.debug.dylib` split that breaks binary greps, the stale-build-database false success, eager TCC touches in `AppDelegate.init` freezing launch, `Defaults.publisher`'s initial-fire behaviour, and the embedded-vs-mirrored hook script pairing
+
 ### 2026-08-06 - Fix release version drift
 - **Developer label:** Bump MARKETING_VERSION and CURRENT_PROJECT_VERSION past the shipped tags
 - **Agent label:** Existing installs can see a new release as newer again
