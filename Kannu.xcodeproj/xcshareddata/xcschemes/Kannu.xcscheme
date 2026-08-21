@@ -34,6 +34,16 @@
             skipped = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
+               BlueprintIdentifier = "AA10000000000000000000A0"
+               BuildableName = "KannuTests.xctest"
+               BlueprintName = "KannuTests"
+               ReferencedContainer = "container:Kannu.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
                BlueprintIdentifier = "9CA407B492164F5AEF356E38"
                BuildableName = "KannuUITests.xctest"
                BlueprintName = "KannuUITests"

@@ -86,10 +86,13 @@ final class PassiveClaudeStateTests: XCTestCase {
         XCTAssertEqual(result.state, .thinking)
     }
 
-    func testUnknownWithQuietFileIsDimIdle() {
+    /// An unreadable tail on a live process must not dim the session: the reconciler's
+    /// demote arm acts on passive verdicts, so `.inactive` here would drag a correctly-green
+    /// session dark on a single torn read.
+    func testUnknownWithQuietFileStaysThinking() {
         let result = resolve(tail: Tail(state: .unknown, recordTimestamp: nil), jsonlMtime: now.addingTimeInterval(-60))
-        XCTAssertEqual(result.state, .inactive)
-        XCTAssertEqual(result.rawState, "idle")
+        XCTAssertEqual(result.state, .thinking)
+        XCTAssertEqual(result.rawState, "thinking")
         XCTAssertTrue(result.visible)
     }
 }

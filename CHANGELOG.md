@@ -4,6 +4,16 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-21 - Harden the false-green fix: escalation abort, dead-PID key, unwired tests
+- **Developer label:** continue-on-decode-failure + lossy UTF-8, live-session dead-PID reconciliation, .unknown means working, KannuTests in scheme and CI
+- **Agent label:** A live session can no longer be dimmed by an unreadable transcript read, and the unit tests actually run
+- **Changes:**
+  - The tail-window escalation loop `break`-ed when a read returned nil, abandoning the wider windows — whose byte offsets are independent and would decode fine. Since `readTrailingLines` seeks to an arbitrary offset and decoded strictly, any window boundary landing inside a multi-byte character (em dashes, arrows and emoji are everywhere in transcripts) produced `.unknown`, which is cached against an unchanging (mtime, size). With the new demote arm acting on passive verdicts, that dimmed a correctly-green running session. Now `continue`, plus a lossy decode fallback at all three read sites, matching the fix already on the Antigravity branch so the hunks merge as no-ops
+  - `deadPIDConversationIDs` is keyed by conversation id while `~/.claude/sessions/` is keyed by PID, so `claude --resume` after a crash left the live session permanently marked dead — and `processDead ||` bypasses the reconciler's timestamp guard, flashing red at the moment a prompt is submitted. Live conversation ids are now subtracted from the dead set before it is returned
+  - `passiveClaudeState`'s `.unknown` arm returns thinking unconditionally instead of idle: it is only reached for a live process whose tail could not be parsed even after escalation, and calling that idle is destructive now that the demote arm consumes passive verdicts
+  - The 29 unit tests never ran: `Kannu.xcscheme`'s TestAction listed only `KannuUITests`, and CI ran `xcodebuild build`. `KannuTests` is now in the scheme, and CI gained a test step against the logic-only target
+  - Added a regression test whose fixture deliberately straddles a multi-byte character on the 16 KB window boundary; verified it fails against the pre-fix reader and passes after. Suite is 30 tests, 0 failures
+
 ### 2026-08-21 - Fix false-green Claude sessions (interrupts, stale tails, dead processes)
 - **Developer label:** Truthful Claude transcript-tail parsing plus staleness/demotion in the passive-hook merge, with a new KannuTests unit bundle
 - **Agent label:** An interrupted or killed Claude session no longer glows green forever

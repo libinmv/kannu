@@ -387,7 +387,11 @@ enum AgentSessionLogParser {
 
         var result = ClaudeTailResult.unknown
         for limit in tailWindowLimits {
-            guard let text = readTrailingLines(at: url, limit: limit) else { break }
+            // `continue`, not `break`: each window seeks to a different offset, so a window
+            // that fails to produce text says nothing about the wider ones. Breaking here
+            // abandoned escalation on the first stumble — and the cached `.unknown` that
+            // resulted now demotes a live session via the reconciler's demote arm.
+            guard let text = readTrailingLines(at: url, limit: limit) else { continue }
             result = claudeTailState(fromTailText: text)
             if result.state != .unknown { break }
             if let fileSize, limit >= fileSize { break }
@@ -452,7 +456,7 @@ enum AgentSessionLogParser {
         } else {
             data = handle.readData(ofLength: leadingByteLimit)
         }
-        return String(data: data, encoding: .utf8)
+        return decodeLossy(data)
     }
 
     private static func readTrailingLines(at url: URL, limit: Int = trailingByteLimit) -> String? {
@@ -467,12 +471,21 @@ enum AgentSessionLogParser {
         if #available(macOS 10.15.4, *) {
             try? handle.seek(toOffset: offset)
             let data = (try? handle.readToEnd()) ?? Data()
-            return String(data: data, encoding: .utf8)
+            return decodeLossy(data)
         } else {
             handle.seek(toFileOffset: offset)
             let data = handle.readDataToEndOfFile()
-            return String(data: data, encoding: .utf8)
+            return decodeLossy(data)
         }
+    }
+
+    /// Both readers slice at arbitrary byte offsets, so a window boundary routinely lands
+    /// inside a multi-byte character — transcripts are full of em dashes, arrows and emoji.
+    /// A strict decode returns nil for the *entire* window in that case; dropping the one
+    /// partial codepoint costs a character and keeps every complete record intact.
+    private static func decodeLossy(_ data: Data) -> String? {
+        guard !data.isEmpty else { return nil }
+        return String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
     }
 
     private static func userPromptText(from json: [String: Any], provider: AgentSessionLogProvider) -> String? {

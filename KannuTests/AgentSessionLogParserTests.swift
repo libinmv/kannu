@@ -128,4 +128,38 @@ final class AgentSessionLogParserTests: XCTestCase {
 
         XCTAssertEqual(AgentSessionLogParser.claudeTailState(at: url).state, .turnFinished)
     }
+
+    /// Regression: the 16 KB window boundary lands inside a multi-byte character.
+    ///
+    /// A strict UTF-8 decode returns nil for the whole window in that case, and the
+    /// escalation loop used to `break` — abandoning the wider windows, whose offsets are
+    /// independent and decode fine — and cache `.unknown`. Transcripts are full of em
+    /// dashes, arrows and emoji, so this fires in normal use, and `.unknown` now drags a
+    /// live session dark through the reconciler's demote arm.
+    func testEscalationSurvivesMultibyteWindowBoundary() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("kannu-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("session.jsonl")
+
+        // Build a file where the byte at (fileSize - 16_000) is deliberately a UTF-8
+        // continuation byte, so the first window starts mid-character.
+        let tail = #"{"type":"assistant","timestamp":"2026-08-21T10:00:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"done"}],"stop_reason":"end_turn"}}"# + "\n"
+        let emDash = "—" // 3 bytes: E2 80 94
+        var padding = String(repeating: emDash, count: 12_000) // ~36 KB, well past window 1
+        var data = (padding + "\n" + tail).data(using: .utf8)!
+
+        // Nudge the padding until the window-1 offset lands on a continuation byte (0b10xxxxxx).
+        var attempts = 0
+        while data.count > 16_000, data[data.count - 16_000] & 0xC0 != 0x80, attempts < 3 {
+            padding += emDash
+            data = (padding + "\n" + tail).data(using: .utf8)!
+            attempts += 1
+        }
+        XCTAssertEqual(data[data.count - 16_000] & 0xC0, 0x80, "fixture must straddle a multibyte char")
+
+        try data.write(to: url)
+        XCTAssertEqual(AgentSessionLogParser.claudeTailState(at: url).state, .turnFinished)
+    }
 }

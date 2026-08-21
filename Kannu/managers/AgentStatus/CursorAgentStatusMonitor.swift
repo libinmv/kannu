@@ -1304,6 +1304,11 @@ final class CursorAgentStatusMonitor: ObservableObject {
 
         var results: [AgentSessionStatus] = []
         var deadPIDConversationIDs: Set<String> = []
+        // Session files are keyed by PID, but the dead set is keyed by conversation id —
+        // and `claude --resume` reuses a conversation id under a new PID. Track which ids
+        // have a live process so an orphaned file from a crashed earlier run cannot mark
+        // the live one dead. See the subtraction before `return`.
+        var liveConversationIDs: Set<String> = []
 
         for file in files where file.pathExtension == "json" {
             guard let data = try? Data(contentsOf: file),
@@ -1317,7 +1322,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
 
             let processAlive = isClaudeProcessAlive(pid: pid, startedAtMs: startedAtMs)
             // Skip stale check for live processes — a session may run for many hours.
-            if !processAlive {
+            if processAlive {
+                liveConversationIDs.insert(sessionId)
+            } else {
                 // Recorded before the stale skip: a long-lived session that was SIGKILLed
                 // has an old startedAt, and the reconciler still needs to know it is dead.
                 deadPIDConversationIDs.insert(sessionId)
@@ -1401,7 +1408,11 @@ final class CursorAgentStatusMonitor: ObservableObject {
             ))
         }
 
-        return (results, deadPIDConversationIDs)
+        // A live process for a conversation id always beats a stale orphan file for the same
+        // id. Without this, resuming a crashed session left it permanently "dead", and the
+        // reconciler's `processDead ||` short-circuit bypasses the timestamp guard — flashing
+        // red at the moment the user submits a prompt.
+        return (results, deadPIDConversationIDs.subtracting(liveConversationIDs))
     }
 
     private func claudeJSONLURL(forSessionId sessionId: String) -> URL? {

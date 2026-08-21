@@ -319,11 +319,13 @@ enum AgentTrafficLightMapper {
             let resolved = lifecycle.visible ? lifecycle : (.inactive, true)
             return ("stopped", resolved.state, resolved.visible, stopMs)
         case .unknown:
-            let isWriting = jsonlMtime.map { now.timeIntervalSince($0) < recentJsonlThreshold } ?? false
-            if isWriting {
-                return ("thinking", .thinking, true, fallbackTsMs)
-            }
-            return ("idle", .inactive, true, fallbackTsMs)
+            // The caller only reaches here for a *live* process whose tail could not be
+            // parsed even after the read window escalated — a torn read, or a record wider
+            // than the largest window. A running process is far likelier working than idle,
+            // and calling it idle is actively destructive now that the reconciler's demote
+            // arm acts on passive verdicts: one unreadable tail would dim a correctly-green
+            // session. Fail toward "working" and let the hook state or the next tick correct.
+            return ("thinking", .thinking, true, fallbackTsMs)
         }
     }
 

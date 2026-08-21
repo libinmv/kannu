@@ -74,6 +74,20 @@ jobs:
             CODE_SIGNING_ALLOWED=YES \
             CODE_SIGN_INJECT_BASE_ENTITLEMENTS=YES
 
+      - name: Unit Tests
+        run: |
+          # Logic tests only. The UI test target needs a signed, launchable app bundle and a
+          # real session, so it stays out of CI; KannuTests is a pure logic target and runs
+          # anywhere. Without this step a broken unit test never fails the build.
+          xcodebuild test \
+            -project Kannu.xcodeproj \
+            -scheme KannuTests \
+            -destination "platform=macOS" \
+            -resultBundlePath TestResults.xcresult \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
       - name: Surface Failure Diagnostics
         if: failure()
         run: |
