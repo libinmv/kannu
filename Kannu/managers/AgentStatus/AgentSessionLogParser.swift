@@ -456,7 +456,10 @@ enum AgentSessionLogParser {
         } else {
             data = handle.readData(ofLength: leadingByteLimit)
         }
-        return decodeLossy(data)
+        // Lossy fallback: the byte slice can cut a multibyte character in half, and a strict
+        // decode then nils the ENTIRE read — losing every name and snippet in the file over
+        // one boundary-straddling emoji. Dropping the partial codepoint loses one character.
+        return String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
     }
 
     private static func readTrailingLines(at url: URL, limit: Int = trailingByteLimit) -> String? {
@@ -468,23 +471,17 @@ enum AgentSessionLogParser {
         // `?? readLeadingLines` fallback, which reads the *start* of the transcript —
         // the opposite of what a "trailing lines" reader promises.
         let offset = fileSize > readSize ? fileSize - readSize : 0
+        let data: Data
         if #available(macOS 10.15.4, *) {
             try? handle.seek(toOffset: offset)
-            let data = (try? handle.readToEnd()) ?? Data()
-            return decodeLossy(data)
+            data = (try? handle.readToEnd()) ?? Data()
         } else {
             handle.seek(toFileOffset: offset)
-            let data = handle.readDataToEndOfFile()
-            return decodeLossy(data)
+            data = handle.readDataToEndOfFile()
         }
-    }
-
-    /// Both readers slice at arbitrary byte offsets, so a window boundary routinely lands
-    /// inside a multi-byte character — transcripts are full of em dashes, arrows and emoji.
-    /// A strict decode returns nil for the *entire* window in that case; dropping the one
-    /// partial codepoint costs a character and keeps every complete record intact.
-    private static func decodeLossy(_ data: Data) -> String? {
-        guard !data.isEmpty else { return nil }
+        // Lossy fallback for the same reason as readLeadingLines: a boundary-straddling
+        // multibyte character must cost one codepoint, not the whole tail — this read now
+        // drives run-state detection, where a nil turns a live session into a dim card.
         return String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
     }
 

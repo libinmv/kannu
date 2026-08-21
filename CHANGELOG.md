@@ -4,6 +4,12 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-21 - Match the lossy-decode form to the Antigravity branch
+- **Developer label:** Inline the UTF-8 fallback instead of a helper so the parser file merges cleanly
+- **Agent label:** No behaviour change — removes a merge conflict in the file that carries the false-green fixes
+- **Changes:**
+  - The previous commit added the lossy UTF-8 fallback as a `decodeLossy` helper, which was tidier but textually diverged from the identical fix already on `feat/antigravity-integration` — turning what should have been a no-op merge into a third conflicted file. That file carries both the `continue` escalation fix and the decode fix, so a mis-resolved conflict there could silently reintroduce the dimming bug. Inlined to match the branch verbatim (including the hoisted `let data`); the development-only `limit:` parameter merges cleanly on its own. Verified: parser file no longer conflicts, 30 tests still pass
+
 ### 2026-08-21 - Harden the false-green fix: escalation abort, dead-PID key, unwired tests
 - **Developer label:** continue-on-decode-failure + lossy UTF-8, live-session dead-PID reconciliation, .unknown means working, KannuTests in scheme and CI
 - **Agent label:** A live session can no longer be dimmed by an unreadable transcript read, and the unit tests actually run
