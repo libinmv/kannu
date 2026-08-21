@@ -7515,6 +7515,7 @@ private extension QuickShareProvider {
 
 struct AgentStatusSettings: View {
     @ObservedObject var monitor = CursorAgentStatusMonitor.shared
+    @ObservedObject private var accessibilityPermission = AccessibilityPermissionStore.shared
     @ObservedObject var hookInstaller = AgentHookInstaller.shared
     @ObservedObject private var notificationBridge = AgentStatusNotificationBridge.shared
     @Default(.enableAgentStatusFeature) var enableAgentStatusFeature
@@ -7558,6 +7559,22 @@ struct AgentStatusSettings: View {
                     Text("Detected Editors")
                 } footer: {
                     Text("Kannu watches these editors automatically. Install a hook below for richer status on editors marked as not detected.")
+                }
+
+                // Optional, not required: without it clicking a chat still activates the
+                // right app — it just can't raise the specific window for terminal- and
+                // IDE-hosted sessions. Claude Desktop chats deep-link and don't need it.
+                if !accessibilityPermission.isAuthorized {
+                    Section {
+                        SettingsPermissionCallout(
+                            title: "Accessibility improves click-through",
+                            message: "Clicking a recent chat brings its app forward. With Accessibility access, Kannu can also raise the exact window for sessions running in a terminal or IDE.",
+                            requestAction: { accessibilityPermission.requestAuthorizationPrompt() },
+                            openSettingsAction: { accessibilityPermission.openSystemSettings() }
+                        )
+                    } header: {
+                        Text("Click-through")
+                    }
                 }
 
                 Section {

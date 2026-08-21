@@ -25,20 +25,24 @@ import os
 /// Click-through from an agent session row to the app that hosts it.
 ///
 /// Tiered, degrading gracefully:
-/// 1. Activate the right app. GUI IDE sessions (Cursor / VS Code / Antigravity) activate by
-///    bundle id, or — when not running and the session knows its working directory — launch
-///    the IDE *on that project*. Claude Code sessions walk the agent process's parent chain
-///    to whatever GUI app hosts the terminal (Terminal, iTerm2, Ghostty, Warp, or an IDE's
-///    integrated terminal) and activate that; the `com.anthropic.claude` bundle id is the
-///    desktop chat app, NOT Claude Code, so activating it would focus the wrong thing.
-/// 2. When Accessibility is already granted, additionally raise the specific window whose
+/// 1. Stopped Claude sessions — which have no live host to activate — open through Claude
+///    Desktop's `claude://resume?session=<uuid>` deep link, which shows that exact chat
+///    where it left off without running anything. Live sessions are deliberately never
+///    deep-linked: Desktop imports rather than focuses, spawning a second consumer of a
+///    transcript that already has one (verified against Desktop 2.1.222).
+/// 2. Otherwise activate the right app. GUI IDE sessions (Cursor / VS Code / Antigravity)
+///    activate by bundle id, or — when not running and the session knows its working
+///    directory — launch the IDE *on that project*. Claude Code sessions running in a real
+///    terminal walk the agent process's parent chain to whatever GUI app hosts it (Terminal,
+///    iTerm2, Ghostty, Warp, or an IDE's integrated terminal) and activate that.
+/// 3. When Accessibility is already granted, additionally raise the specific window whose
 ///    title matches the session's project. Silently skipped when not granted — the row's
-///    click still lands in the right app, and the existing Settings card is where users
+///    click still lands in the right app, and the Agents settings callout is where users
 ///    grant AX if they want window-level precision. No prompts from here.
 ///
 /// `target(for:)` is the clickability oracle: nil means the row offers no affordance at all
 /// (no hand cursor, no tooltip, no dead click) — e.g. Codex hook-only sessions carry nothing
-/// that locates a host, and a dead Claude pid must not pretend to be openable.
+/// that locates a host, and a dead Codex pid must not pretend to be openable.
 @MainActor
 enum AgentSessionOpener {
     private static let log = os.Logger(subsystem: "com.kannu.app", category: "SessionOpener")
@@ -52,6 +56,8 @@ enum AgentSessionOpener {
             case ide(running: NSRunningApplication?, appURL: URL?, source: AgentProviderIconSource)
             /// The GUI app hosting a CLI agent's terminal, found via parent-walk.
             case terminalHost(NSRunningApplication)
+            /// A specific Claude Code chat, reachable via Claude Desktop's resume deep link.
+            case claudeDeepLink(url: URL)
         }
     }
 
@@ -69,9 +75,29 @@ enum AgentSessionOpener {
                 return OpenTarget(appName: name, kind: .ide(running: nil, appURL: appURL, source: source))
             }
             return nil
-        case .claude, .codex:
-            // CLI agents: only a live pid gives us a host to activate. The provider bundle
-            // ids intentionally aren't used — they point at unrelated desktop apps.
+        case .claude:
+            // Live session: activate its host. NEVER deep-link a live session — verified
+            // against Claude Desktop 2.1.222: `claude://resume` spawns a fresh
+            // `claude --resume=<id>` host even when the session already has one, creating a
+            // second consumer of the same transcript.
+            if let pid = session.hostPID, let host = terminalHostApplication(agentPID: pid) {
+                return OpenTarget(appName: host.localizedName ?? "Terminal", kind: .terminalHost(host))
+            }
+            // Stopped session: navigable. Claude Desktop imports the on-disk transcript and
+            // shows the chat where it left off; nothing runs until the user types (the
+            // attached host process just idles). Gated on the session actually being
+            // stopped — a *live* session that transiently lacks a pid (hook fired before
+            // the transcript was parsed) must stay inert, not spawn a duplicate consumer.
+            if session.displayState == .inactive,
+               let url = claudeResumeDeepLink(conversationID: session.conversationID),
+               let handler = claudeDesktopAppURL {
+                return OpenTarget(appName: FileManager.default.displayName(atPath: handler.path),
+                                  kind: .claudeDeepLink(url: url))
+            }
+            return nil
+        case .codex:
+            // Codex: only a live pid gives us a host to activate. The provider bundle id
+            // intentionally isn't used — it points at an unrelated desktop app.
             guard let pid = session.hostPID, let host = terminalHostApplication(agentPID: pid) else {
                 return nil
             }
@@ -87,6 +113,11 @@ enum AgentSessionOpener {
         guard let target = target(for: session) else { return false }
 
         switch target.kind {
+        case .claudeDeepLink(let url):
+            log.notice("opening chat via resume deep link (\(url.absoluteString, privacy: .private))")
+            NSWorkspace.shared.open(url)
+            return true
+
         case .terminalHost(let host):
             log.notice("activating terminal host \(host.localizedName ?? "?", privacy: .public) (pid \(host.processIdentifier))")
             raiseMatchingWindow(in: host, session: session)
@@ -114,6 +145,32 @@ enum AgentSessionOpener {
             }
             return true
         }
+    }
+
+    // MARK: - Claude Desktop deep link
+
+    private static let claudeDesktopBundleID = "com.anthropic.claudefordesktop"
+
+    /// The app registered for claude:// links — kept only when it is actually Claude
+    /// Desktop, so a stray handler can't capture stopped-session clicks. Resolved once;
+    /// installing Claude Desktop mid-run is picked up on the next launch.
+    private static let claudeDesktopAppURL: URL? = {
+        guard let probe = URL(string: "claude://resume"),
+              let handler = NSWorkspace.shared.urlForApplication(toOpen: probe),
+              Bundle(url: handler)?.bundleIdentifier == claudeDesktopBundleID else { return nil }
+        return handler
+    }()
+
+    /// `claude://resume?session=<uuid>` — Claude Desktop imports the CLI session's on-disk
+    /// transcript and navigates to it. Strictly UUID-validated before it goes anywhere near
+    /// a URL: a conversation id is data from disk, not something to interpolate blindly.
+    static func claudeResumeDeepLink(conversationID: String) -> URL? {
+        guard UUID(uuidString: conversationID) != nil else { return nil }
+        var components = URLComponents()
+        components.scheme = "claude"
+        components.host = "resume"
+        components.queryItems = [URLQueryItem(name: "session", value: conversationID.lowercased())]
+        return components.url
     }
 
     // MARK: - App resolution

@@ -4,6 +4,15 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-21 - Click-through lands on the exact chat for stopped Claude sessions
+- **Developer label:** claude://resume deep link for stopped sessions + Accessibility callout in Agents settings
+- **Agent label:** Clicking a red Claude chat now opens that exact conversation in Claude Desktop
+- **Changes:**
+  - Stopped Claude sessions were deliberately inert; now they are clickable when Claude Desktop is installed. Clicking opens `claude://resume?session=<uuid>` — Desktop imports the on-disk transcript and shows the chat exactly where it left off. Verified live: the attached host process just idles, no prompt is sent, nothing executes until the user types, and Kannu keeps showing the session as stopped
+  - Live sessions are deliberately never deep-linked. Verified against Claude Desktop 2.1.222: `claude://resume` on a session that already has a running host spawns a second `claude --resume` consumer of the same transcript instead of focusing the existing view; the alternative `claude://code/<id>` route only accepts cloud session ids. So live sessions keep activating their host app, and the deep link is additionally gated on the session's display state being inactive — a live session that transiently lacks a pid stays inert rather than risking a duplicate
+  - The conversation id is strictly UUID-validated before it is placed in a URL, and the claude:// handler is only trusted when it resolves to Claude Desktop's bundle id — a stray scheme handler cannot capture clicks
+  - Window-level raising for terminal- and IDE-hosted sessions silently never ran because Kannu had no Accessibility permission and nothing surfaced that. The Agents settings section now shows the standard permission callout (request + open System Settings) when Accessibility is missing, framed as optional: clicks still land in the right app without it
+
 ### 2026-08-21 - Fix click-through being dead for every hook-tracked Claude session
 - **Developer label:** Reconciler inherits cwd and hostPID from the passive session, not just names
 - **Agent label:** Clicking a Claude chat row actually opens its terminal now
