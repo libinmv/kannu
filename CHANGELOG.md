@@ -4,6 +4,15 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-21 - Fix click-through being dead for every hook-tracked Claude session
+- **Developer label:** Reconciler inherits cwd and hostPID from the passive session, not just names
+- **Agent label:** Clicking a Claude chat row actually opens its terminal now
+- **Changes:**
+  - Click-through never worked for Claude Code in practice. `AgentSessionOpener.target(for:)` needs a live pid to walk to the hosting terminal, `hostPID` is set only on the passive transcript path, and hook status files carry no pid — so when hooks are installed (the normal case) the hook session shadows the passive one, `hostPID` is nil, and the row is silently inert with no cursor or tooltip
+  - The reconciler's inheritance helper carried `chatName` and `projectName` across that shadowing but not the new locator fields. It now carries `cwd` and `hostPID` too, and is renamed `inheritingPassiveData` since it is no longer names-only. Inheriting the pid is safe by construction: the passive path only sets it while the process is provably alive, so a dead session still inherits nil and stays correctly non-clickable
+  - Verified on the live machine rather than synthetically — the previous verification passed while the feature was broken because it exercised a passive-only session. Instrumented the reconciler: with the fix all four displayed Claude sessions carry a real `hostPID`; with it removed, three of four are nil (the fourth being the one session with no hook file). Confirmed those pids resolve through the parent-walk to the hosting app
+  - `docs/REGRESSIONS.md` gains entry 7 for the hook-shadows-passive pattern — three occurrences across two fields, all invisible to tests because the reconciler is not reachable from the logic-only target. Two entries now point at the same refactor
+
 ### 2026-08-21 - Record the recurring regressions and enforce the invariants
 - **Developer label:** docs/REGRESSIONS.md, mirror-drift pre-commit guard, regression-guard tests, CI on development
 - **Agent label:** The rules that keep re-breaking now fail a check instead of relying on memory

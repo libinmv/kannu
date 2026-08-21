@@ -228,13 +228,20 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 let passive = passiveByConversationID[session.conversationID]
                 let processDead = deadPIDConversationIDs.contains(session.conversationID)
 
-                // Claude's hook stdin carries no title, so a hook file shadows a passive
-                // session that HAS the transcript-derived chat name and the cwd-derived
-                // project. Without inheriting them every hook-tracked Claude session rendered
-                // as "Untitled chat". Applied to EVERY exit below, not just the promote path:
-                // the state arms return early, and a session that is demoted or left alone
-                // still needs its name.
-                func inheritingNames(_ candidate: AgentSessionStatus) -> AgentSessionStatus {
+                // A hook file shadows the passive session for the same conversation, and the
+                // hook payload is thinner: no title, no pid. Everything the passive side knows
+                // and the hook side doesn't has to be carried across here, or it is lost for
+                // every hook-tracked Claude session — which is the normal case.
+                //
+                // This has now bitten three times: missing names rendered every session as
+                // "Untitled chat" (twice), and missing locators made click-through silently
+                // inert because `AgentSessionOpener` needs a live pid to find the hosting
+                // terminal. When you add a field to AgentSessionStatus that a passive session
+                // can populate, add it here too. See docs/REGRESSIONS.md entry 7.
+                //
+                // Applied to EVERY exit below, not just the promote path: the state arms
+                // return early, and a demoted or unchanged session still needs this data.
+                func inheritingPassiveData(_ candidate: AgentSessionStatus) -> AgentSessionStatus {
                     guard let passive else { return candidate }
                     var repaired = candidate
                     if repaired.chatName?.isEmpty != false, let name = passive.chatName {
@@ -242,6 +249,15 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     }
                     if repaired.projectName?.isEmpty != false, let project = passive.projectName {
                         repaired = repaired.replacingProjectName(project)
+                    }
+                    if repaired.cwd?.isEmpty != false, let cwd = passive.cwd {
+                        repaired.cwd = cwd
+                    }
+                    // Safe by construction: the passive path only sets hostPID while the
+                    // process is provably alive, so a dead session inherits nil and stays
+                    // correctly non-clickable.
+                    if repaired.hostPID == nil, let hostPID = passive.hostPID {
+                        repaired.hostPID = hostPID
                     }
                     return repaired
                 }
@@ -252,7 +268,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 if session.displayState.isActiveRun {
                     if let passive, !passive.displayState.isActiveRun,
                        processDead || passive.updatedAt >= session.updatedAt {
-                        return inheritingNames(
+                        return inheritingPassiveData(
                             session.withDisplayState(passive.displayState, visible: passive.isVisible)
                         )
                     }
@@ -266,11 +282,11 @@ final class CursorAgentStatusMonitor: ObservableObject {
                             collapseMs: collapseMs,
                             inactiveMs: inactiveMs
                         )
-                        return inheritingNames(
+                        return inheritingPassiveData(
                             session.withDisplayState(lifecycle.state, visible: lifecycle.visible)
                         )
                     }
-                    return inheritingNames(session)
+                    return inheritingPassiveData(session)
                 }
 
                 // Promote: hooks only fire at tool boundaries. A single long-running tool — a
@@ -284,11 +300,11 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 guard session.hasActiveRawState,
                       let passive,
                       passive.displayState.isActiveRun
-                else { return inheritingNames(session) }
+                else { return inheritingPassiveData(session) }
 
                 // `!session.displayState.isActiveRun` is structurally implied here by the
                 // early return above, so the promotion is unconditional.
-                return inheritingNames(
+                return inheritingPassiveData(
                     session.withDisplayState(
                         passive.displayState,
                         visible: true,

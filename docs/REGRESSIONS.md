@@ -170,6 +170,43 @@ cheap and would have caught both occurrences.
 
 ---
 
+## 7. A hook session shadows the passive session — carry everything across
+
+**Rule:** when a hook session and a passive session describe the same conversation, the hook
+one wins the display slot. Anything the passive side knows and the hook payload does not must
+be copied across in the reconciler, or it is lost for every hook-tracked session.
+
+**Broken 3 times, in two different fields.**
+
+| # | Field lost | Symptom | Commits |
+|---|---|---|---|
+| 1-2 | `chatName` / `projectName` | every hook-tracked Claude session rendered "Untitled chat" | `8caf98d` (2026-07-20), `f46a323` (2026-08-18) |
+| 3 | `hostPID` / `cwd` | click-through silently inert — no hand cursor, no tooltip, dead click | shipped in `ff2caab`, fixed here |
+
+**Why it keeps happening:** the hook payload is structurally thinner than the passive
+session — no title, no pid — and the shadowing is invisible at the call site. A field added
+to `AgentSessionStatus` is wired through ~14 construction sites and *still* silently dropped
+here unless the reconciler's inheritance helper is updated too. The third occurrence happened
+in the same helper that had just been written to fix the first two.
+
+**How occurrence 3 evaded verification:** the feature was tested against a passive-only
+session (no hook file), which carries its own `hostPID` and worked correctly. Sessions *with*
+hook files — the normal case — were broken the whole time. Measured on the live machine:
+3 of 4 displayed Claude sessions had `hostPID = nil` before the fix; the fourth was the one
+without a hook file.
+
+**Guard — missing, and this is the same gap as entry 5.** The reconciler is inline in a
+private method of a `@MainActor` singleton the logic-only test target does not compile, so
+none of the three occurrences could have been caught by a test. Lifting it to a pure
+`static func reconcileClaudeSessions(hookSessions:passive:deadPIDs:now:…) -> [AgentSessionStatus]`
+would make all of them testable with the fixture style the rest of the suite already uses.
+**Two entries now point at this one refactor.**
+
+**Until then:** when you add a field to `AgentSessionStatus` that a passive session can
+populate, add it to `inheritingPassiveData` in the same commit.
+
+---
+
 ## Danger zones
 
 Commit counts across all branches (`--follow`, so pre-rename history counts):
