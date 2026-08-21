@@ -4,6 +4,17 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-21 - Record the recurring regressions and enforce the invariants
+- **Developer label:** docs/REGRESSIONS.md, mirror-drift pre-commit guard, regression-guard tests, CI on development
+- **Agent label:** The rules that keep re-breaking now fail a check instead of relying on memory
+- **Changes:**
+  - New `docs/REGRESSIONS.md`: six invariants that have each broken more than once, with the commits that prove it, the structural reason each recurs, and the guard that catches it. Plus a danger-zone map of the four churn hotspots (18/18/17/8 commits) and a merge-hygiene section covering the divergent-branch pattern that made us pay for the same fix twice. Linked from `CLAUDE.md` and `CONTRIBUTING.md`
+  - The hook-script mirror invariant is now enforced by `.githooks/pre-commit`, which compares the `KANNU_HOOK_SCRIPT_VERSION` markers in the embedded and mirrored copies. Prose alone had already failed: `CLAUDE.md` said "never let them drift" and it drifted twice afterwards. Verified in both directions — the guard rejected the live drift, then accepted after resync
+  - Resynced `scripts/kannu-agent-status.sh` on this branch from the embedded source; it had been stale at v23 against an embedded v24. That mirror is what `install-cursor-hooks.sh` hands users
+  - New `KannuTests/RegressionGuardTests.swift` (5 tests): pins the 360s active-staleness window that was once shortened to 15s and broke every hook-only provider mid-tool-call, and pins the tool-name/chat-title sanitation that has regressed five times. Verified the staleness test fails when the constant is set back to 15_000. Suite is now 35 tests
+  - CI now also runs on `development`. It triggered on `main` only, while the branch model routes every PR to `development` — so the build and the unit tests never ran on an actual PR
+  - Corrected two false statements in `CLAUDE.md`: the pre-commit hook does not build the app (it is bash/awk, milliseconds), and CI's branch coverage is now stated explicitly
+
 ### 2026-08-21 - Match the lossy-decode form to the Antigravity branch
 - **Developer label:** Inline the UTF-8 fallback instead of a helper so the parser file merges cleanly
 - **Agent label:** No behaviour change — removes a merge conflict in the file that carries the false-green fixes

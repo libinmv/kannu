@@ -1,11 +1,13 @@
 #!/bin/bash
 # Installed by Kannu: reports AI agent status for the notch traffic light.
-# KANNU_HOOK_SCRIPT_VERSION=23
-# Usage: kannu-agent-status.sh <state> <provider> [hook_event]  (hook JSON arrives on stdin)
+# KANNU_HOOK_SCRIPT_VERSION=24
+# Usage: kannu-agent-status.sh <state> <provider> [hook_event] [matcher_key]
+#        (hook JSON arrives on stdin)
 
 export KANNU_STATE="${1:-thinking}"
 export KANNU_PROVIDER="${2:-unknown}"
 export KANNU_HOOK_EVENT="${3:-unknown}"
+export KANNU_HOOK_MATCHER="${4:-}"
 export KANNU_STATUS_DIR="$HOME/.kannu/agent-status"
 mkdir -p "$KANNU_STATUS_DIR"
 export KANNU_INPUT="$(cat)"
@@ -24,6 +26,7 @@ from pathlib import Path
 state = os.environ.get("KANNU_STATE", "thinking")
 provider = os.environ.get("KANNU_PROVIDER", "unknown")
 hook_event = os.environ.get("KANNU_HOOK_EVENT", "unknown")
+hook_matcher = os.environ.get("KANNU_HOOK_MATCHER", "")
 status_dir = Path(os.environ.get("KANNU_STATUS_DIR", "")).expanduser()
 raw = os.environ.get("KANNU_INPUT", "")
 status_dir.mkdir(parents=True, exist_ok=True)
@@ -78,9 +81,12 @@ if not tool and isinstance(tool_input, dict):
     elif any(key in tool_input for key in ("command", "working_directory", "description")):
         tool = tool or "Shell"
 
-def is_ask_question() -> bool:
+def is_approval_gated_tool() -> bool:
+    # ExitPlanMode means "here is the plan, approve it" — a wait on the user, not work.
+    # Claude fires the matcher-scoped and generic PreToolUse groups in parallel with no
+    # ordering guarantee, so the generic group has to reach the same verdict on its own.
     compact = (tool or "").lower().replace("_", "").replace("-", "")
-    if compact in {"askquestion", "userquestion"}:
+    if compact in {"askquestion", "userquestion", "askuserquestion", "exitplanmode"}:
         return True
     return isinstance(tool_input, dict) and "questions" in tool_input
 
@@ -104,23 +110,32 @@ def looks_gated_payload(name: str, payload) -> bool:
 # - So WebSearch must NOT set awaiting_input on preToolUse (that paints yellow too late).
 # - afterAgentResponse / transcript catch the proposal while the card is open.
 # - AskQuestion still uses preToolUse for yellow (card is the tool itself).
-if hook_event == "afterAgentResponse":
+if hook_matcher:
+    # Matcher-scoped group: the installer already picked the right state for exactly
+    # this case, so trust the argument rather than re-deriving from the event name.
+    pass
+elif hook_event == "afterAgentResponse":
     if looks_gated_payload(tool, tool_input):
         state = "awaiting_input"
 elif hook_event == "afterAgentThought":
     state = "thinking"
 elif hook_event in {"preToolUse", "beforeMCPExecution", "PreToolUse"}:
-    if is_ask_question():
+    if is_approval_gated_tool():
         state = "awaiting_input"
     else:
         # Includes WebSearch/WebFetch/Shell: approval already granted; tool is running.
         state = "executing"
-elif hook_event in {"beforeShellExecution", "PermissionRequest"}:
+elif hook_event in {"beforeShellExecution"}:
+    # Fires for auto-approved commands too, so it means "running", not "waiting".
+    state = "executing"
+elif hook_event in {"PermissionRequest"}:
     state = "awaiting_input"
 elif hook_event in {"postToolUse", "postToolUseFailure", "PostToolUse"}:
     state = "executing"
-elif hook_event in {"stop", "Stop"}:
+elif hook_event in {"stop", "Stop", "StopFailure"}:
     state = "stopped"
+elif hook_event == "SessionEnd":
+    state = "session_end"
 
 conversation_id = pick_str(
     data.get("agentId"),
@@ -136,6 +151,16 @@ conversation_id = pick_str(
 conversation_id = re.sub(r"[^A-Za-z0-9_-]", "", conversation_id) or "default"
 status_file = status_dir / f"{provider}-{conversation_id}.json"
 
+# The session is gone: drop the card outright rather than leaving a terminal state to
+# age out. Passive detection cannot resurrect it because the process has exited too.
+if state == "session_end":
+    try:
+        status_file.unlink()
+    except Exception:
+        pass
+    print('{"permission":"allow","continue":true}')
+    raise SystemExit(0)
+
 existing_state = ""
 existing = {}
 if status_file.exists():
@@ -144,6 +169,16 @@ if status_file.exists():
         existing_state = str(existing.get("state", ""))
     except Exception:
         existing = {}
+
+# Claude runs the matcher-scoped and generic groups for one event in parallel with no
+# ordering guarantee. If both land within the same instant, keep the more urgent verdict
+# so the winner of the race cannot silently downgrade the light.
+STATE_PRIORITY = {"awaiting_input": 40, "stopped": 30, "executing": 20, "thinking": 10, "idle": 0}
+if existing_state and existing.get("hook_event") == hook_event:
+    existing_ts_ms = existing.get("ts") or 0
+    if int(time.time() * 1000) - existing_ts_ms <= 2000:
+        if STATE_PRIORITY.get(existing_state, -1) > STATE_PRIORITY.get(state, -1):
+            state = existing_state
 
 roots = data.get("workspace_roots")
 project = ""
@@ -170,25 +205,30 @@ if hook_event in {"preToolUse", "beforeMCPExecution", "postToolUse", "postToolUs
     if normalize_token(name) == normalize_token(tool):
         name = ""
 
-# Sticky yellow only against reasoning noise during an open approval card.
-# UserPromptSubmit / SessionStart must clear yellow and enter thinking.
+# Sticky yellow holds the light steady against reasoning noise while an approval card
+# is genuinely open. Two rules keep it from latching forever:
+#   - only afterAgentThought is absorbed. beforeSubmitPrompt is Cursor's new-prompt
+#     event, so it must clear yellow rather than renew it.
+#   - the original ts is preserved, so the 5-minute staleness escape can still fire.
+#     Refreshing it here is what let yellow survive an entire thinking phase.
 if existing_state == "awaiting_input" and state not in {"awaiting_input", "stopped"}:
-    if hook_event in {"beforeSubmitPrompt", "afterAgentThought"}:
-        existing["state"] = "awaiting_input"
-        existing["ts"] = int(time.time() * 1000)
-        existing["provider"] = provider
-        if name:
-            existing["name"] = name
-        if project:
-            existing["project"] = project
-        status_file.write_text(json.dumps(existing, separators=(",", ":")))
-        print('{"permission":"allow","continue":true}')
-        raise SystemExit(0)
+    if hook_event == "afterAgentThought":
+        existing_ts = existing.get("ts") or 0
+        if int(time.time() * 1000) - existing_ts <= 300000:
+            existing["provider"] = provider
+            if name:
+                existing["name"] = name
+            if project:
+                existing["project"] = project
+            status_file.write_text(json.dumps(existing, separators=(",", ":")))
+            print('{"permission":"allow","continue":true}')
+            raise SystemExit(0)
 
 payload = {
     "state": state,
     "ts": int(time.time() * 1000),
     "provider": provider,
+    "hook_event": hook_event,
 }
 if name:
     payload["name"] = name

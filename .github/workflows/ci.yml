@@ -4,9 +4,13 @@ on:
   push:
     branches:
       - main
+      - development
   pull_request:
     branches:
       - main
+      # The branch model routes day-to-day PRs here, so gating only on main meant
+      # the build and unit tests never ran on a real PR.
+      - development
 
 jobs:
   build:

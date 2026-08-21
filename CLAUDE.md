@@ -131,9 +131,11 @@ For coding tasks report: what changed, why, files affected, important architectu
 
 ## Known traps (learned the hard way — verify before assuming they changed)
 
-- The **pre-commit hook builds the app** and requires a staged `CHANGELOG.md` entry under `## [Unreleased]` with every source commit. Commits can take many minutes — run them with generous timeouts or in the background.
+- The **pre-commit hook** requires a staged `CHANGELOG.md` entry under `## [Unreleased]` with every source commit, and rejects a hook-script mirror mismatch. It does **not** build — it is bash/awk and runs in milliseconds. (A previous version of this file claimed it builds; that was wrong.)
 - **Debug builds put the real code in `Kannu.app/Contents/MacOS/Kannu.debug.dylib`** — the main binary is a tiny stub, so string-grepping it for new code gives false negatives.
 - A recreated build directory can leave a **stale xcodebuild build database** that reports `BUILD SUCCEEDED` with zero compile tasks. When verifying a build, confirm compile activity (or delete the derivedData path first).
 - **`AppDelegate.init` constructs singletons eagerly, before `applicationDidFinishLaunching`.** A first touch of any TCC-protected resource there (Bluetooth, ~/Downloads, …) blocks the main thread until the permission dialog is answered — and ad-hoc rebuilds change the code signature, so the prompts recur after every rebuild. First touches of protected resources must happen on a background queue.
 - **`Defaults.publisher(...)` without `options: []` fires an initial event on subscription** — any sequencing built on "this only fires on change" silently breaks.
-- `AgentHookInstaller` embeds the hook script (authoritative, versioned via `KANNU_HOOK_SCRIPT_VERSION`); `scripts/kannu-agent-status.sh` is a generated mirror — never let them drift.
+- `AgentHookInstaller` embeds the hook script (authoritative, versioned via `KANNU_HOOK_SCRIPT_VERSION`); `scripts/kannu-agent-status.sh` is a generated mirror — never let them drift. This is now enforced by the pre-commit hook, because the prose version of this rule failed three times.
+- **CI runs on `main` only** (`.github/workflows/ci.yml`) while the branch model routes PRs to `development` — check what actually ran before trusting a green tick.
+- **Recurring regressions and the invariants that prevent them: `docs/REGRESSIONS.md`.** Read it before changing anything under `Kannu/managers/AgentStatus/` — that subsystem has re-broken the same six rules repeatedly.

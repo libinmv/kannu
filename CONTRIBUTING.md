@@ -67,6 +67,13 @@ This enables the repo-managed `pre-commit` hook from `.githooks/`.
 4. Update documentation if your change affects user-facing behavior.
 5. Wait for review and address feedback promptly.
 
+## Before Changing Agent Status Code
+
+The agent-status subsystem (`Kannu/managers/AgentStatus/`) has repeatedly re-broken the same
+invariants. [docs/REGRESSIONS.md](docs/REGRESSIONS.md) records each one with the commits that
+prove it, why it recurs, and the guard that now catches it. Please read it before working in
+that area, and add an entry when you find a bug recurring.
+
 ## Commit Checklist
 
 Before each commit:
