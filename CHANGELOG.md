@@ -4,6 +4,44 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-21 - Record the recurring regressions and enforce the invariants
+- **Developer label:** docs/REGRESSIONS.md, mirror-drift pre-commit guard, regression-guard tests, CI on development
+- **Agent label:** The rules that keep re-breaking now fail a check instead of relying on memory
+- **Changes:**
+  - New `docs/REGRESSIONS.md`: six invariants that have each broken more than once, with the commits that prove it, the structural reason each recurs, and the guard that catches it. Plus a danger-zone map of the four churn hotspots (18/18/17/8 commits) and a merge-hygiene section covering the divergent-branch pattern that made us pay for the same fix twice. Linked from `CLAUDE.md` and `CONTRIBUTING.md`
+  - The hook-script mirror invariant is now enforced by `.githooks/pre-commit`, which compares the `KANNU_HOOK_SCRIPT_VERSION` markers in the embedded and mirrored copies. Prose alone had already failed: `CLAUDE.md` said "never let them drift" and it drifted twice afterwards. Verified in both directions — the guard rejected the live drift, then accepted after resync
+  - Resynced `scripts/kannu-agent-status.sh` on this branch from the embedded source; it had been stale at v23 against an embedded v24. That mirror is what `install-cursor-hooks.sh` hands users
+  - New `KannuTests/RegressionGuardTests.swift` (5 tests): pins the 360s active-staleness window that was once shortened to 15s and broke every hook-only provider mid-tool-call, and pins the tool-name/chat-title sanitation that has regressed five times. Verified the staleness test fails when the constant is set back to 15_000. Suite is now 35 tests
+  - CI now also runs on `development`. It triggered on `main` only, while the branch model routes every PR to `development` — so the build and the unit tests never ran on an actual PR
+  - Corrected two false statements in `CLAUDE.md`: the pre-commit hook does not build the app (it is bash/awk, milliseconds), and CI's branch coverage is now stated explicitly
+
+### 2026-08-21 - Match the lossy-decode form to the Antigravity branch
+- **Developer label:** Inline the UTF-8 fallback instead of a helper so the parser file merges cleanly
+- **Agent label:** No behaviour change — removes a merge conflict in the file that carries the false-green fixes
+- **Changes:**
+  - The previous commit added the lossy UTF-8 fallback as a `decodeLossy` helper, which was tidier but textually diverged from the identical fix already on `feat/antigravity-integration` — turning what should have been a no-op merge into a third conflicted file. That file carries both the `continue` escalation fix and the decode fix, so a mis-resolved conflict there could silently reintroduce the dimming bug. Inlined to match the branch verbatim (including the hoisted `let data`); the development-only `limit:` parameter merges cleanly on its own. Verified: parser file no longer conflicts, 30 tests still pass
+
+### 2026-08-21 - Harden the false-green fix: escalation abort, dead-PID key, unwired tests
+- **Developer label:** continue-on-decode-failure + lossy UTF-8, live-session dead-PID reconciliation, .unknown means working, KannuTests in scheme and CI
+- **Agent label:** A live session can no longer be dimmed by an unreadable transcript read, and the unit tests actually run
+- **Changes:**
+  - The tail-window escalation loop `break`-ed when a read returned nil, abandoning the wider windows — whose byte offsets are independent and would decode fine. Since `readTrailingLines` seeks to an arbitrary offset and decoded strictly, any window boundary landing inside a multi-byte character (em dashes, arrows and emoji are everywhere in transcripts) produced `.unknown`, which is cached against an unchanging (mtime, size). With the new demote arm acting on passive verdicts, that dimmed a correctly-green running session. Now `continue`, plus a lossy decode fallback at all three read sites, matching the fix already on the Antigravity branch so the hunks merge as no-ops
+  - `deadPIDConversationIDs` is keyed by conversation id while `~/.claude/sessions/` is keyed by PID, so `claude --resume` after a crash left the live session permanently marked dead — and `processDead ||` bypasses the reconciler's timestamp guard, flashing red at the moment a prompt is submitted. Live conversation ids are now subtracted from the dead set before it is returned
+  - `passiveClaudeState`'s `.unknown` arm returns thinking unconditionally instead of idle: it is only reached for a live process whose tail could not be parsed even after escalation, and calling that idle is destructive now that the demote arm consumes passive verdicts
+  - The 29 unit tests never ran: `Kannu.xcscheme`'s TestAction listed only `KannuUITests`, and CI ran `xcodebuild build`. `KannuTests` is now in the scheme, and CI gained a test step against the logic-only target
+  - Added a regression test whose fixture deliberately straddles a multi-byte character on the 16 KB window boundary; verified it fails against the pre-fix reader and passes after. Suite is 30 tests, 0 failures
+
+### 2026-08-21 - Fix false-green Claude sessions (interrupts, stale tails, dead processes)
+- **Developer label:** Truthful Claude transcript-tail parsing plus staleness/demotion in the passive-hook merge, with a new KannuTests unit bundle
+- **Agent label:** An interrupted or killed Claude session no longer glows green forever
+- **Changes:**
+  - `AgentSessionLogParser.claudeTailState` now recognises Esc-interrupt records (`[Request interrupted by user…]` as string content, `text` block, or inside a `tool_result`) as `turnFinished` — Claude Code's Stop hook does not fire on user interrupt, so the trailing `user` record used to read as "owes a response" and the light stayed green for as long as the process lived
+  - Any terminal `stop_reason` (`max_tokens`, `refusal`, future values — not just `end_turn`/`stop_sequence`) now ends the turn; only `nil`/`tool_use`/`pause_turn` remain mid-turn
+  - Tail reads escalate 16 KB → 256 KB → 1 MB when the verdict is `.unknown` (real records reach hundreds of KB and used to truncate into unknown), return the deciding record's own timestamp, and are cached against (mtime, size) so the 1 Hz rescan stats instead of reads quiet sessions
+  - New `AgentTrafficLightMapper.passiveClaudeState`: the tail verdict is consulted before the mtime shortcut (post-turn `ai-title`/bookkeeping writes no longer repaint green), a passive `working` verdict ages out after 10 minutes without evidence (`toolInFlight` never ages — long tools stay green), and a finished turn ages from the deciding record's timestamp so bookkeeping writes cannot re-flash red
+  - The hook/passive reconciler gained a demotion arm: a hook file stuck on `executing`/`thinking` (interrupt, SIGKILL, crash — no Stop/SessionEnd ever arrives) is demoted when the passive side has fresher contrary evidence or the PID is dead, including dead sessions too old for a passive card. The existing long-tool resurrection path is unchanged and now safe, since passive green states are verified or bounded
+  - `looksLikeToolName` moved from `CursorAgentStatusMonitor` to `AgentApprovalGatedTools` (pure, Foundation-only) with a forwarding shim, so the mapper and tests don't drag in the monitor
+  - New `KannuTests` unit-test target (scheme `KannuTests`) covering the tail parser (interrupt variants, stop reasons, truncation, window escalation) and the passive-state ladder (29 tests)
 ### 2026-08-20 - Click-through from agent chat rows to the hosting app
 - **Developer label:** Session rows open their app: bundle-id activation, project-aware launch, terminal parent-walk, AX window raise
 - **Agent label:** Click a chat in the notch and land in the app — and where possible, the right window
@@ -62,6 +100,13 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
   - Toggle lives at the top-right of the open-notch Agent Status panel, visible in every panel state. The coffee-cup icon doubles as live status: filled and warm only while the assertion is actually held, outline when merely armed or off
   - The header-less fallback path of the chat list (sessions but no primary) now carries the same "Recent chats" header as the normal path
   - Verified end to end with `pmset -g assertions`: assertion appears while armed with a live agent, disappears on disarm/agent-stop, no leak after quit
+
+### 2026-08-20 - Project-level ART engineering framework
+- **Developer label:** Add CLAUDE.md with the ART framework and Kannu engineering standards
+- **Agent label:** Claude Code sessions in this repo now start from a shared persona, architecture principles, and repo facts
+- **Changes:**
+  - New repo-root `CLAUDE.md`: the ART breakdown ceremony (Act as / Request / Terms / Relevant skills, shown before any work), skill-loading discipline with explicit honesty clauses (never invent an unlisted skill, zero skills is valid, failed loads are stated), the Senior macOS Swift Architect persona, product context, architecture principles, and audit/UI/debugging/security/testing rules
+  - Ships the executable repo knowledge sessions kept rediscovering: build/run/verify commands (verification vs runnable ad-hoc builds, `open`-only launches, `/usr/bin/log` over the zsh `log` builtin), house conventions (GPL header, `Defaults` key idiom in `Constants.swift`, `String(localized:)`, the `settingsSearchIndex`/`settingsHighlight` pairing, manager singleton shape), and known traps: the building pre-commit hook with its mandatory changelog entry, the `Kannu.debug.dylib` split that breaks binary greps, the stale-build-database false success, eager TCC touches in `AppDelegate.init` freezing launch, `Defaults.publisher`'s initial-fire behaviour, and the embedded-vs-mirrored hook script pairing
 
 ### 2026-08-19 - Notch traffic light: no logo, Classic and Minimal styles
 - **Developer label:** Remove the provider logo from the closed notch, add a Classic/Minimal traffic light style
@@ -198,12 +243,6 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
   - Add Antigravity provider detection to `NotchAgentStatusView` empty-state cards and `AgentProviderIconView` (bundle IDs / app paths / `atom` SF Symbol).
   - `KannuApp.swift`: include `(.antigravity, ".gemini")` in the on-launch provider-directory presence scan used for hook setup.
   - `ReadMe.md`: mention Google Antigravity alongside Cursor, Copilot, Codex, and Claude in the agent-status blurb.
-### 2026-08-20 - Project-level ART engineering framework
-- **Developer label:** Add CLAUDE.md with the ART framework and Kannu engineering standards
-- **Agent label:** Claude Code sessions in this repo now start from a shared persona, architecture principles, and repo facts
-- **Changes:**
-  - New repo-root `CLAUDE.md`: the ART breakdown ceremony (Act as / Request / Terms / Relevant skills, shown before any work), skill-loading discipline with explicit honesty clauses (never invent an unlisted skill, zero skills is valid, failed loads are stated), the Senior macOS Swift Architect persona, product context, architecture principles, and audit/UI/debugging/security/testing rules
-  - Ships the executable repo knowledge sessions kept rediscovering: build/run/verify commands (verification vs runnable ad-hoc builds, `open`-only launches, `/usr/bin/log` over the zsh `log` builtin), house conventions (GPL header, `Defaults` key idiom in `Constants.swift`, `String(localized:)`, the `settingsSearchIndex`/`settingsHighlight` pairing, manager singleton shape), and known traps: the building pre-commit hook with its mandatory changelog entry, the `Kannu.debug.dylib` split that breaks binary greps, the stale-build-database false success, eager TCC touches in `AppDelegate.init` freezing launch, `Defaults.publisher`'s initial-fire behaviour, and the embedded-vs-mirrored hook script pairing
 
 ### 2026-08-06 - Fix release version drift
 - **Developer label:** Bump MARKETING_VERSION and CURRENT_PROJECT_VERSION past the shipped tags

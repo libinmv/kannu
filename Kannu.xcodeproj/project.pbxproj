@@ -29,6 +29,9 @@
 		7EF10C122F817ECF004229A0 /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7EF10C112F817ECF004229A0 /* Accelerate.framework */; };
 		7EF19C172F577040005B9929 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 7EF19C162F577040005B9929 /* SwiftTerm */; };
 		A3C83CAF84544DCE386C3BB8 /* KannuUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54078F29304A9DBBEFBDF932 /* KannuUITests.swift */; };
+		AA1000000000000000000004 /* AgentSessionLogParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000002 /* AgentSessionLogParser.swift */; };
+		AA1000000000000000000005 /* AgentTrafficLightState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000003 /* AgentTrafficLightState.swift */; };
+		AA1000000000000000000014 /* AgentApprovalGatedTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000012 /* AgentApprovalGatedTools.swift */; };
 		F910B9C812C7AEFE2293F7D2 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4A9C58195E197C19F691DA62 /* Cocoa.framework */; };
 /* End PBXBuildFile section */
 
@@ -60,6 +63,10 @@
 		7EE1D73E2E6B1E1200997219 /* IOKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOKit.framework; path = System/Library/Frameworks/IOKit.framework; sourceTree = SDKROOT; };
 		7EF10C112F817ECF004229A0 /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
 		A058D80A7EF44593B0F24EB7 /* KannuUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KannuUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA1000000000000000000001 /* KannuTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KannuTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA1000000000000000000002 /* AgentSessionLogParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentSessionLogParser.swift; path = Kannu/managers/AgentStatus/AgentSessionLogParser.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000003 /* AgentTrafficLightState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentTrafficLightState.swift; path = Kannu/managers/AgentStatus/AgentTrafficLightState.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000012 /* AgentApprovalGatedTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentApprovalGatedTools.swift; path = Kannu/managers/AgentStatus/AgentApprovalGatedTools.swift; sourceTree = SOURCE_ROOT; };
 		DAA671E7B1B26733F02166C5 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F4C1DD09EC134302938E84F6 /* MediaRemoteAdapter.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MediaRemoteAdapter.framework; path = Frameworks/MediaRemoteAdapter.framework; sourceTree = SOURCE_ROOT; };
 		F54406E72CD4987A00C7AFD9 /* Kannu.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Kannu.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -113,6 +120,11 @@
 			path = Kannu;
 			sourceTree = "<group>";
 		};
+		AA1000000000000000000006 /* KannuTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = KannuTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -142,6 +154,13 @@
 				7E6118152E24071E0050006C /* Sparkle in Frameworks */,
 				7E288D122F1659EF0020C117 /* AtollExtensionKit in Frameworks */,
 				7E6118142E24071E0050006C /* LaunchAtLogin in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA1000000000000000000008 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -210,6 +229,7 @@
 				F54406E92CD4987A00C7AFD9 /* Kannu */,
 				F54406E82CD4987A00C7AFD9 /* Products */,
 				BF9102C8771E45168EF97D18 /* KannuUITests */,
+				AA1000000000000000000006 /* KannuTests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -218,6 +238,7 @@
 			children = (
 				F54406E72CD4987A00C7AFD9 /* Kannu.app */,
 				A058D80A7EF44593B0F24EB7 /* KannuUITests.xctest */,
+				AA1000000000000000000001 /* KannuTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -278,6 +299,26 @@
 			productReference = F54406E72CD4987A00C7AFD9 /* Kannu.app */;
 			productType = "com.apple.product-type.application";
 		};
+		AA10000000000000000000A0 /* KannuTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA10000000000000000000B0 /* Build configuration list for PBXNativeTarget "KannuTests" */;
+			buildPhases = (
+				AA1000000000000000000007 /* Sources */,
+				AA1000000000000000000008 /* Frameworks */,
+				AA1000000000000000000009 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA1000000000000000000006 /* KannuTests */,
+			);
+			name = KannuTests;
+			productName = KannuTests;
+			productReference = AA1000000000000000000001 /* KannuTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -329,6 +370,7 @@
 			targets = (
 				F54406E62CD4987A00C7AFD9 /* Kannu */,
 				9CA407B492164F5AEF356E38 /* KannuUITests */,
+				AA10000000000000000000A0 /* KannuTests */,
 			);
 		};
 /* End PBXProject section */
@@ -352,6 +394,13 @@
 				7E9911B02EFD7D1B002EDFD5 /* Reindeer.json in Resources */,
 				7E8840D72E9A346700C5CB8C /* Dog waiting.json in Resources */,
 				7E8840DB2E9A347800C5CB8C /* Orange Cat Peeping.json in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA1000000000000000000009 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -391,6 +440,16 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA1000000000000000000007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA1000000000000000000004 /* AgentSessionLogParser.swift in Sources */,
+				AA1000000000000000000005 /* AgentTrafficLightState.swift in Sources */,
+				AA1000000000000000000014 /* AgentApprovalGatedTools.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -714,6 +773,36 @@
 			};
 			name = Release;
 		};
+		AA10000000000000000000C0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kannu.KannuTests;
+				PRODUCT_MODULE_NAME = KannuTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		AA10000000000000000000D0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEAD_CODE_STRIPPING = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kannu.KannuTests;
+				PRODUCT_MODULE_NAME = KannuTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -740,6 +829,15 @@
 			buildConfigurations = (
 				F54406F72CD4987B00C7AFD9 /* Debug */,
 				F54406F82CD4987B00C7AFD9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA10000000000000000000B0 /* Build configuration list for PBXNativeTarget "KannuTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA10000000000000000000C0 /* Debug */,
+				AA10000000000000000000D0 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

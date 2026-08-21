@@ -5,6 +5,33 @@ if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
   exit 0
 fi
 
+# --- Hook-script mirror drift -------------------------------------------------
+# AgentHookInstaller.swift embeds the authoritative hook script;
+# scripts/kannu-agent-status.sh is a generated mirror that install-cursor-hooks.sh
+# copies to users. They have silently drifted three times (see docs/REGRESSIONS.md),
+# and users on the mirror ran without fixes that shipped in the embedded copy.
+# Prose alone did not hold this invariant, so it is checked here.
+installer_script="Kannu/managers/AgentStatus/AgentHookInstaller.swift"
+mirror_script="scripts/kannu-agent-status.sh"
+if [[ -f "${installer_script}" && -f "${mirror_script}" ]]; then
+  installer_version="$(grep -o 'KANNU_HOOK_SCRIPT_VERSION=[0-9]*' "${installer_script}" | head -1 || true)"
+  mirror_version="$(grep -o 'KANNU_HOOK_SCRIPT_VERSION=[0-9]*' "${mirror_script}" | head -1 || true)"
+  if [[ -n "${installer_version}" && "${installer_version}" != "${mirror_version}" ]]; then
+    cat <<EOF
+ERROR: Hook script mirror is out of sync.
+
+  embedded (authoritative): ${installer_version}  in ${installer_script}
+  mirror:                   ${mirror_version:-<none>}  in ${mirror_script}
+
+The mirror is what scripts/install-cursor-hooks.sh gives users. Regenerate it from
+the embedded copy so both carry the same version, then re-stage it.
+See docs/REGRESSIONS.md for why this check exists.
+EOF
+    exit 1
+  fi
+fi
+# ------------------------------------------------------------------------------
+
 staged_files="$(git diff --cached --name-only --diff-filter=ACMR)"
 if [[ -z "${staged_files}" ]]; then
   exit 0
