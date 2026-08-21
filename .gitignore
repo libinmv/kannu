@@ -167,3 +167,6 @@ local env
 
 
 *.env
+
+# Coverage counters dropped in the repo root by instrumented builds
+*.profraw

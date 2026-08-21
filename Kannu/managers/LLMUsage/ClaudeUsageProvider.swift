@@ -1,3 +1,4 @@
+import Defaults
 import Foundation
 
 struct ClaudeUsageProvider: UsageProvider {
@@ -25,6 +26,31 @@ struct ClaudeUsageProvider: UsageProvider {
             snapshot.logsUnavailable = true
         }
 
+        // Read plan details off disk first. This needs no keychain, no network and can't be
+        // rate-limited, so the tier badge renders even when the quota call below fails or the
+        // user hasn't approved keychain access.
+        let localAccount = ClaudeLocalAccountReader.read()
+        snapshot.accountTier = localAccount.tier
+        snapshot.accountNote = localAccount.note
+
+        // Claude Code usage is covered by a subscription, so per-token pricing estimates are
+        // meaningless here — show token counts, never dollars. This describes the billing
+        // model itself, so it must be set before any early return below.
+        snapshot.billedCostOnly = true
+
+        // Everything above came off disk. The limits below are the only part that needs the
+        // network and a keychain approval, so they're opt-in — with this off there is no
+        // request, no prompt, and nothing that can be rate-limited.
+        guard Defaults[.enableClaudeUsageLimits] else {
+            // With limits off AND no local logs the snapshot is entirely empty — returning it
+            // as a success would let the manager's keep-last-good logic get overwritten by
+            // nothing. Throw so a populated card is preserved instead.
+            if snapshot.logsUnavailable {
+                throw UsageError.notConfigured("No Claude Code usage logs found at ~/.claude/projects.")
+            }
+            return snapshot
+        }
+
         let quota = await quotaClient.fetchLimits(interactive: interactive)
         snapshot.sessionLimit = quota.session
         snapshot.weekLimit = quota.week
@@ -32,10 +58,11 @@ struct ClaudeUsageProvider: UsageProvider {
         // exist left the card showing a bare "quota unavailable" with no way to act on it.
         snapshot.quotaError = quota.errorMessage
         snapshot.quotaAction = quota.action
-        snapshot.accountTier = quota.accountTier
-        // Subscription usage isn't billed per-token; show token counts but never
-        // pricing-table cost estimates (parity with how Cursor shows billed spend only).
-        snapshot.billedCostOnly = true
+        snapshot.isAuthFailure = quota.isAuthFailure
+        // Only let the API override the local answer when it actually returned one.
+        // `billedCostOnly` is set earlier, above the opt-in guard: it describes the billing
+        // model itself, so it must hold even when the limits fetch is skipped entirely.
+        if let apiTier = quota.accountTier { snapshot.accountTier = apiTier }
 
         // Even with neither logs nor quota, return the snapshot rather than throwing: the
         // card can then render the reason plus its fix-it button instead of a dead end.

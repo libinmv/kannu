@@ -228,13 +228,49 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 let passive = passiveByConversationID[session.conversationID]
                 let processDead = deadPIDConversationIDs.contains(session.conversationID)
 
+                // A hook file shadows the passive session for the same conversation, and the
+                // hook payload is thinner: no title, no pid. Everything the passive side knows
+                // and the hook side doesn't has to be carried across here, or it is lost for
+                // every hook-tracked Claude session — which is the normal case.
+                //
+                // This has now bitten three times: missing names rendered every session as
+                // "Untitled chat" (twice), and missing locators made click-through silently
+                // inert because `AgentSessionOpener` needs a live pid to find the hosting
+                // terminal. When you add a field to AgentSessionStatus that a passive session
+                // can populate, add it here too. See docs/REGRESSIONS.md entry 7.
+                //
+                // Applied to EVERY exit below, not just the promote path: the state arms
+                // return early, and a demoted or unchanged session still needs this data.
+                func inheritingPassiveData(_ candidate: AgentSessionStatus) -> AgentSessionStatus {
+                    guard let passive else { return candidate }
+                    var repaired = candidate
+                    if repaired.chatName?.isEmpty != false, let name = passive.chatName {
+                        repaired = repaired.replacingChatName(name)
+                    }
+                    if repaired.projectName?.isEmpty != false, let project = passive.projectName {
+                        repaired = repaired.replacingProjectName(project)
+                    }
+                    if repaired.cwd?.isEmpty != false, let cwd = passive.cwd {
+                        repaired.cwd = cwd
+                    }
+                    // Safe by construction: the passive path only sets hostPID while the
+                    // process is provably alive, so a dead session inherits nil and stays
+                    // correctly non-clickable.
+                    if repaired.hostPID == nil, let hostPID = passive.hostPID {
+                        repaired.hostPID = hostPID
+                    }
+                    return repaired
+                }
+
                 // Demote: the hook file still claims active work — Stop never fires on a
                 // user interrupt, and SIGKILL/crash skips it entirely — but fresher passive
                 // evidence (a newer transcript record, or a dead process) says otherwise.
                 if session.displayState.isActiveRun {
                     if let passive, !passive.displayState.isActiveRun,
                        processDead || passive.updatedAt >= session.updatedAt {
-                        return session.withDisplayState(passive.displayState, visible: passive.isVisible)
+                        return inheritingPassiveData(
+                            session.withDisplayState(passive.displayState, visible: passive.isVisible)
+                        )
                     }
                     if passive == nil, processDead {
                         // Process gone and its session record too old for a passive card:
@@ -246,27 +282,34 @@ final class CursorAgentStatusMonitor: ObservableObject {
                             collapseMs: collapseMs,
                             inactiveMs: inactiveMs
                         )
-                        return session.withDisplayState(lifecycle.state, visible: lifecycle.visible)
+                        return inheritingPassiveData(
+                            session.withDisplayState(lifecycle.state, visible: lifecycle.visible)
+                        )
                     }
-                    return session
+                    return inheritingPassiveData(session)
                 }
 
-                // Hooks only fire at tool boundaries. A single long-running tool — a build, a
-                // test suite, an extended turn with no tool calls — leaves the status file
-                // untouched for minutes, and `resolveHookState` then ages it out of its active
-                // state and dims the session while it is hardest at work. Passive detection can
-                // still see the truth (process alive, tool in flight), and a live process beats
-                // a stale timestamp. Safe against stale tails: passive "thinking" is bounded by
-                // the working-staleness ladder and passive "executing" means a verified
-                // in-flight tool.
+                // Promote: hooks only fire at tool boundaries. A single long-running tool — a
+                // build, a test suite, an extended turn with no tool calls — leaves the status
+                // file untouched for minutes, and `resolveHookState` then ages it out of its
+                // active state and dims the session while it is hardest at work. Passive
+                // detection can still see the truth (process alive, tool in flight), and a live
+                // process beats a stale timestamp. Safe against stale tails: passive "thinking"
+                // is bounded by the working-staleness ladder and passive "executing" means a
+                // verified in-flight tool.
                 guard session.hasActiveRawState,
                       let passive,
                       passive.displayState.isActiveRun
-                else { return session }
-                return session.withDisplayState(
-                    passive.displayState,
-                    visible: true,
-                    updatedAt: max(session.updatedAt, passive.updatedAt)
+                else { return inheritingPassiveData(session) }
+
+                // `!session.displayState.isActiveRun` is structurally implied here by the
+                // early return above, so the promotion is unconditional.
+                return inheritingPassiveData(
+                    session.withDisplayState(
+                        passive.displayState,
+                        visible: true,
+                        updatedAt: max(session.updatedAt, passive.updatedAt)
+                    )
                 )
             }
 
@@ -434,7 +477,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
             displayState: winner.displayState,
             updatedAt: winner.updatedAt,
             isVisible: winner.isVisible || loser.isVisible,
-            executionStartedAt: winner.executionStartedAt ?? loser.executionStartedAt
+            executionStartedAt: winner.executionStartedAt ?? loser.executionStartedAt,
+            cwd: winner.cwd ?? loser.cwd,
+            hostPID: winner.hostPID ?? loser.hostPID
         )
     }
 
@@ -487,7 +532,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     displayState: session.displayState,
                     updatedAt: session.updatedAt,
                     isVisible: session.isVisible,
-                    executionStartedAt: session.executionStartedAt
+                    executionStartedAt: session.executionStartedAt,
+                    cwd: session.cwd,
+                    hostPID: session.hostPID
                 )
             } else {
                 candidate = session
@@ -505,7 +552,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     displayState: merged.displayState,
                     updatedAt: max(existing.updatedAt, candidate.updatedAt),
                     isVisible: existing.isVisible || candidate.isVisible,
-                    executionStartedAt: merged.executionStartedAt ?? existing.executionStartedAt ?? candidate.executionStartedAt
+                    executionStartedAt: merged.executionStartedAt ?? existing.executionStartedAt ?? candidate.executionStartedAt,
+                    cwd: existing.cwd ?? candidate.cwd,
+                    hostPID: existing.hostPID ?? candidate.hostPID
                 )
             } else {
                 rolledUp[targetID] = candidate
@@ -584,7 +633,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     displayState: .thinking,
                     updatedAt: session.updatedAt,
                     isVisible: true,
-                    executionStartedAt: session.executionStartedAt
+                    executionStartedAt: session.executionStartedAt,
+                    cwd: session.cwd,
+                    hostPID: session.hostPID
                 )
             }
 
@@ -600,7 +651,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     displayState: .awaitingInput,
                     updatedAt: session.updatedAt,
                     isVisible: true,
-                    executionStartedAt: session.executionStartedAt
+                    executionStartedAt: session.executionStartedAt,
+                    cwd: session.cwd,
+                    hostPID: session.hostPID
                 )
             }
 
@@ -621,7 +674,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     displayState: .stopped,
                     updatedAt: session.updatedAt,
                     isVisible: true,
-                    executionStartedAt: session.executionStartedAt
+                    executionStartedAt: session.executionStartedAt,
+                    cwd: session.cwd,
+                    hostPID: session.hostPID
                 )
             }
 
@@ -673,11 +728,19 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 continue
             }
 
-            if !hasHookSessionBacking(
+            // Cursor's backing check consults live app state and is cheap to trust. For
+            // claude/codex the "backing" is the same transcript listing that feeds chat-name
+            // lookup — deleting on a miss welded "no name yet" to "delete the session": a
+            // brand-new session (no JSONL yet), a >30-min approval wait (quiet transcript),
+            // or the per-scan session cap all destroyed hook files written seconds earlier.
+            // Their freshness is already enforced by the staleMs check above.
+            let providerKey = provider.lowercased()
+            if providerKey == "cursor",
+               !hasHookSessionBacking(
                 conversationID: conversationID,
                 provider: provider,
                 staleMinutes: staleMinutes
-            ) {
+               ) {
                 try? FileManager.default.removeItem(at: file)
                 continue
             }
@@ -685,6 +748,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
             let projectName = normalizedProjectName(
                 json["project"] as? String ?? json["project_name"] as? String ?? json["workspace_name"] as? String
             )
+            let hookCwd = (json["cwd"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             let ageMs = nowMs - tsMs
             let resolved = AgentTrafficLightMapper.resolveHookState(
                 rawState: state,
@@ -704,7 +768,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     displayState: resolved.state,
                     updatedAt: Date(timeIntervalSince1970: TimeInterval(tsMs) / 1000),
                     isVisible: resolved.visible,
-                    executionStartedAt: nil
+                    executionStartedAt: nil,
+                    cwd: hookCwd
                 )
             )
         }
@@ -1204,7 +1269,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 displayState: session.displayState,
                 updatedAt: session.updatedAt,
                 isVisible: session.isVisible,
-                executionStartedAt: session.executionStartedAt
+                executionStartedAt: session.executionStartedAt,
+                cwd: session.cwd,
+                hostPID: session.hostPID
             )
         }
     }
@@ -1263,7 +1330,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 displayState: session.displayState,
                 updatedAt: session.updatedAt,
                 isVisible: session.isVisible,
-                executionStartedAt: executionStartForSession
+                executionStartedAt: executionStartForSession,
+                cwd: session.cwd,
+                hostPID: session.hostPID
             )
         }
     }
@@ -1404,7 +1473,12 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 displayState: resolved.state,
                 updatedAt: Date(timeIntervalSince1970: TimeInterval(updatedAtMs) / 1000),
                 isVisible: resolved.visible,
-                executionStartedAt: nil
+                executionStartedAt: nil,
+                // Click-through locators: the parent chain of this pid leads to the hosting
+                // terminal/IDE, and cwd identifies the project. Only attach the pid while the
+                // process is provably alive — a dead pid must not make the row clickable.
+                cwd: json["cwd"] as? String,
+                hostPID: processAlive ? pid : nil
             ))
         }
 
@@ -1472,7 +1546,26 @@ private extension AgentSessionStatus {
             displayState: displayState,
             updatedAt: updatedAt,
             isVisible: isVisible,
-            executionStartedAt: executionStartedAt
+            executionStartedAt: executionStartedAt,
+            cwd: cwd,
+            hostPID: hostPID
+        )
+    }
+
+    func replacingProjectName(_ projectName: String) -> AgentSessionStatus {
+        AgentSessionStatus(
+            id: id,
+            provider: provider,
+            conversationID: conversationID,
+            chatName: chatName,
+            projectName: projectName,
+            rawState: rawState,
+            displayState: displayState,
+            updatedAt: updatedAt,
+            isVisible: isVisible,
+            executionStartedAt: executionStartedAt,
+            cwd: cwd,
+            hostPID: hostPID
         )
     }
 }

@@ -349,11 +349,17 @@ struct ContentView: View {
             && !idleScheduleManager.isActive
     }
 
-    private var isClosedMusicPairingEligible: Bool {
+    /// "There is music worth showing" — playing, or paused with metadata still on screen.
+    /// Single definition on purpose: this was inlined at three call sites and a fourth used
+    /// `isPlaying` alone, which silently disagreed whenever playback was paused.
+    private var hasActiveMusicSnapshot: Bool {
         let hasMusicMetadata = !musicManager.songTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !musicManager.artistName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let hasActiveMusicSnapshot = musicManager.isPlaying || (!musicManager.isPlayerIdle && hasMusicMetadata)
-        return closedMusicPairingEligible(hasActiveMusicSnapshot: hasActiveMusicSnapshot)
+        return musicManager.isPlaying || (!musicManager.isPlayerIdle && hasMusicMetadata)
+    }
+
+    private var isClosedMusicPairingEligible: Bool {
+        closedMusicPairingEligible(hasActiveMusicSnapshot: hasActiveMusicSnapshot)
     }
 
     private var closedLiveActivitySwapTransition: AnyTransition {
@@ -416,10 +422,14 @@ struct ContentView: View {
     }
 
     private var shouldExpandPhysicalNotchForAgent: Bool {
+        // `showAgentTrafficLight` implies enableAgentStatusFeature && the monitor's
+        // shouldShowTrafficLight (upstream's conditions) plus the hide-until-hover reveal
+        // window — keeping expansion tied to whether a light is actually being drawn. On
+        // physical-notch screens hide-until-hover never applies, so this is equivalent to
+        // upstream's check there, with one source of truth instead of two.
         isPhysicalNotchScreen
             && vm.notchState == .closed
-            && enableAgentStatusFeature
-            && agentStatusMonitor.shouldShowTrafficLight
+            && showAgentTrafficLight
             && !vm.hideOnClosed
     }
 
@@ -474,8 +484,10 @@ struct ContentView: View {
         guard enableAgentStatusFeature, agentStatusMonitor.shouldShowTrafficLight else { return false }
         guard hideUntilHoverAppliesHere else { return true }
         // While a music pill is already on screen the light is drawn inside it, so keep it
-        // steady rather than blinking a dot in and out of a persistent container.
-        if closedMusicPairingEligible(hasActiveMusicSnapshot: musicManager.isPlaying) { return true }
+        // steady rather than blinking a dot in and out of a persistent container. Uses the
+        // shared snapshot — testing `isPlaying` alone missed the paused-but-still-shown pill,
+        // which is exactly when the blink was visible.
+        if isClosedMusicPairingEligible { return true }
         return agentLightDeadline != nil || isHovering
     }
 
@@ -558,10 +570,7 @@ struct ContentView: View {
         if idlePreviewManager.isActive { return false }
         if idleScheduleManager.isActive { return false }
 
-        let hasMusicMetadata = !musicManager.songTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !musicManager.artistName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let hasActiveMusicSnapshot = musicManager.isPlaying || (!musicManager.isPlayerIdle && hasMusicMetadata)
-        if closedMusicPairingEligible(hasActiveMusicSnapshot: hasActiveMusicSnapshot) { return false }
+        if isClosedMusicPairingEligible { return false }
 
         if isSneakPeekVisibleOnCurrentScreen && Defaults[.inlineHUD] { return false }
         if capsLockManager.isCapsLockActive && Defaults[.enableCapsLockIndicator] && !lockScreenManager.isLocked { return false }
@@ -2212,11 +2221,18 @@ struct ContentView: View {
             self.revealExpiryTask = nil
 
             // Hovering, an open notch, or anything that blocks auto-close means the user is
-            // still engaged — leave the island out and let hover-exit / notch-close re-arm.
+            // still engaged — leave the island out. Re-arm rather than return bare: hover-exit
+            // and notch-close have their own re-arm paths, but shouldPreventAutoClose (music
+            // playing, a pinned popover) has none, and once the agent stops no further pulse
+            // arrives — a bare return stranded the island revealed forever.
             guard !self.isHovering,
                   self.vm.notchState == .closed,
                   !self.shouldPreventAutoClose()
-            else { return }
+            else {
+                self.revealHoldDeadline = Date().addingTimeInterval(nonNotchRevealHoldSeconds)
+                self.armRevealCountdown()
+                return
+            }
 
             // A pulse may have pushed the deadline out while we slept.
             if let current = self.latestRevealDeadline, current > Date() {
@@ -2387,8 +2403,11 @@ struct ContentView: View {
                         }
                     } else if self.enableAgentStatusFeature
                         && self.agentStatusMonitor.shouldShowTrafficLight
-                        && !self.isClosedMusicPairingEligible
-                        && self.coordinator.currentView == .home {
+                        && !self.isClosedMusicPairingEligible {
+                        // Previously gated to `currentView == .home` only, so hovering while on
+                        // Notes/Stats/etc. never surfaced active agent work. Requested change:
+                        // always jump to Agent Status on hover when an agent is actually active,
+                        // regardless of whichever tab was last open.
                         withAnimation(.smooth) {
                             self.coordinator.currentView = .agentStatus
                         }

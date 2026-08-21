@@ -537,7 +537,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// state change observed during that pass can call straight back in here — resizing a window
     /// from inside its own layout is what AppKit aborts on.
     private var isApplyingWindowResize = false
-    private var pendingWindowResize: (size: CGSize, force: Bool)?
+    private var pendingWindowResize: (size: CGSize, animated: Bool, force: Bool)?
 
     private func resizeWindows(to size: CGSize, animated: Bool, force: Bool) {
         guard size.width > 0, size.height > 0 else { return }
@@ -545,12 +545,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Already inside a resize: remember the newest request and let the outer call drain it
         // once the layout pass has finished.
         if isApplyingWindowResize {
-            pendingWindowResize = (size, force)
+            pendingWindowResize = (size, animated, force)
             return
         }
 
         isApplyingWindowResize = true
         var resizedWindows: [NSWindow] = []
+        // The drain must run on EVERY exit path — an early return that skipped it stranded a
+        // re-entrant request until some unrelated future resize happened to flush it.
+        defer {
+            // displayIfNeeded drives a layout pass, which is exactly where a SwiftUI state
+            // change can call back into resizeWindows — so it must run while the guard is
+            // still up, routing that re-entry onto the deferred path instead of recursing.
+            resizedWindows.forEach { $0.displayIfNeeded() }
+            isApplyingWindowResize = false
+
+            if let pending = pendingWindowResize {
+                pendingWindowResize = nil
+                // A runloop source, so this lands outside the current CATransaction commit
+                // rather than re-entering it.
+                RunLoop.main.perform(inModes: [.common]) { [weak self] in
+                    self?.resizeWindows(to: pending.size, animated: pending.animated, force: pending.force)
+                }
+            }
+        }
 
         if Defaults[.showOnAllDisplays] {
             for (screen, window) in windows {
@@ -562,27 +580,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         } else if let window {
             let screen = window.screen ?? NSScreen.screens.first { $0.frame.intersects(window.frame) } ?? NSScreen.main ?? NSScreen.screens.first
-            guard let screen else {
-                isApplyingWindowResize = false
-                return
-            }
+            guard let screen else { return }
             let screenSize = adjustedSizeForScreen(size, screen: screen)
             if force || window.frame.size != screenSize {
                 resizeWindow(window, on: screen, to: screenSize)
                 resizedWindows.append(window)
-            }
-        }
-
-        isApplyingWindowResize = false
-        // Display only after the flag clears, so any relayout it triggers takes the deferred path.
-        resizedWindows.forEach { $0.displayIfNeeded() }
-
-        if let pending = pendingWindowResize {
-            pendingWindowResize = nil
-            // A runloop source, so this lands outside the current CATransaction commit rather
-            // than re-entering it.
-            RunLoop.main.perform(inModes: [.common]) { [weak self] in
-                self?.resizeWindows(to: pending.size, animated: animated, force: pending.force)
             }
         }
     }
@@ -616,6 +618,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         LockScreenLiveActivityWindowManager.shared.configure(viewModel: vm)
         LockScreenManager.shared.configure(viewModel: vm)
+        // Spin up the caffeinate manager at launch: a toggle left on must take effect
+        // immediately, even if the notch is never opened this session.
+        _ = CaffeinateManager.shared
         extensionXPCServiceHost.start()
         extensionRPCServer.start()
         SparkleUpdaterController.shared.configure()
@@ -827,6 +832,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     (.vscode, ".copilot"),
                     (.codex, ".codex"),
                     (.claude, ".claude"),
+                    (.antigravity, ".gemini"),
                 ].compactMap { provider, dir in
                     FileManager.default.fileExists(atPath: home.appendingPathComponent(dir).path) ? provider : nil
                 }

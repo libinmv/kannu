@@ -31,6 +31,7 @@ struct CodexUsageProvider: UsageProvider {
         snapshot.weekLimit = quota.week
         snapshot.quotaError = quota.errorMessage
         snapshot.accountTier = quota.accountTier
+        snapshot.isAuthFailure = quota.isAuthFailure
 
         if snapshot.logsUnavailable && !quota.hasLimits {
             throw UsageError.notConfigured("Sign in to Codex locally (~/.codex/auth.json) to show quota.")

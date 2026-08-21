@@ -1162,6 +1162,11 @@ extension Defaults.Keys {
     static let enableClaudeProvider = Key<Bool>("enableClaudeProvider", default: false)
     static let enableCodexProvider = Key<Bool>("enableCodexProvider", default: false)
     static let enableCursorProvider = Key<Bool>("enableCursorProvider", default: false)
+    static let enableAntigravityProvider = Key<Bool>("enableAntigravityProvider", default: false)
+    /// Live 5h/7d limits are the only Claude figure that needs the network, and reaching it
+    /// costs a one-time keychain approval. Off by default so the usage card is purely local —
+    /// tier, credits and token counts all come off disk and nothing can rate-limit or prompt.
+    static let enableClaudeUsageLimits = Key<Bool>("enableClaudeUsageLimits", default: false)
     static let llmProviderDefaultsConfigured = Key<Bool>("llmProviderDefaultsConfigured", default: false)
     static let autoStartStatsMonitoring = Key<Bool>("autoStartStatsMonitoring", default: false)
     static let statsStopWhenNotchCloses = Key<Bool>("statsStopWhenNotchCloses", default: true)
@@ -1232,6 +1237,14 @@ extension Defaults.Keys {
     static let agentInactiveDisplaySeconds = Key<Int>("agentInactiveDisplaySeconds", default: 5)
     static let agentHooksAutoInstallAttempted = Key<Bool>("agentHooksAutoInstallAttempted", default: false)
     static let showAgentStoppedIndicator = Key<Bool>("showAgentStoppedIndicator", default: false)
+    /// Closed-notch traffic light shape. Defaults to `.classic` so existing installs keep the
+    /// three-dot look they already have — only fresh installs are asked to choose in onboarding.
+    static let agentTrafficLightStyle = Key<AgentTrafficLightStyle>("agentTrafficLightStyle", default: .classic)
+    /// Manual caffeinate: while on, Kannu holds a system-sleep assertion unconditionally.
+    static let caffeinateEnabled = Key<Bool>("caffeinateEnabled", default: false)
+    /// Smart caffeinate: keep the Mac awake automatically while any agent run is active.
+    /// While on, the manual switch is hidden from the notch panel and its value is ignored.
+    static let smartCaffeinate = Key<Bool>("smartCaffeinate", default: false)
 
     // MARK: Agent Status Mobile Notifications
     static let enableAgentStatusMobileNotifications = Key<Bool>("enableAgentStatusMobileNotifications", default: false)

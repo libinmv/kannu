@@ -2,13 +2,14 @@ import Foundation
 import Defaults
 
 enum ProviderID: String, CaseIterable, Identifiable {
-    case claude, codex, cursor
+    case claude, codex, cursor, antigravity
     var id: String { rawValue }
     var displayName: String {
         switch self {
         case .claude: return "Claude"
         case .codex: return "Codex"
         case .cursor: return "Cursor"
+        case .antigravity: return "Antigravity"
         }
     }
     var enabledKey: Defaults.Key<Bool> {
@@ -16,6 +17,7 @@ enum ProviderID: String, CaseIterable, Identifiable {
         case .claude: return .enableClaudeProvider
         case .codex: return .enableCodexProvider
         case .cursor: return .enableCursorProvider
+        case .antigravity: return .enableAntigravityProvider
         }
     }
 }
@@ -46,7 +48,9 @@ enum QuotaAction: Equatable {
     case grantClaudeKeychainAccess
     var buttonTitle: String {
         switch self {
-        case .grantClaudeKeychainAccess: return "Allow keychain access…"
+        // Says what approving buys, not what it costs. Plan tier already shows without it;
+        // the keychain read is only needed for live 5h/7d limits.
+        case .grantClaudeKeychainAccess: return "Show usage limits…"
         }
     }
 }
@@ -68,6 +72,24 @@ struct UsageSnapshot: Equatable {
     var billedCostOnly: Bool = false
     /// Account plan/tier label (e.g. "Pro", "Max") shown next to the provider name.
     var accountTier: String? = nil
+    /// Set when the quota failure is a definitive auth failure (not-signed-in, 401, 403,
+    /// expired token) rather than a transient error (429, 500+).
+    /// Used by `isFatallyUnconfigured` to drop the card from the Usage tab.
+    var isAuthFailure: Bool = false
+
+    /// True when the provider has nothing useful to show AND the reason is a definitive
+    /// auth failure (not signed-in / expired token / 401 / 403) — NOT a transient error
+    /// like 429 or 500. Only those cases drop the card from the Usage tab.
+    var isFatallyUnconfigured: Bool {
+        let hasNoRealUsage = logsUnavailable
+            || (today.totalTokens == 0 && week.totalTokens == 0 && session.totalTokens == 0)
+        let hasNoQuota = sessionLimit == nil && weekLimit == nil
+        return hasNoRealUsage && hasNoQuota && isAuthFailure
+    }
+
+    /// Short account-status note (e.g. "Out of extra credits"). Distinct from `quotaError`:
+    /// this is a fact about the account, not a failure to fetch anything.
+    var accountNote: String? = nil
 }
 
 struct QuotaFetchResult: Equatable {
@@ -77,6 +99,10 @@ struct QuotaFetchResult: Equatable {
     var accountTier: String? = nil
     var errorMessage: String?
     var action: QuotaAction? = nil
+    /// True for definitive auth failures (not-signed-in, 401, 403, expired refresh token).
+    /// False for transient errors (429, 500+, network hiccup) — those should NOT move the
+    /// card from the Usage tab, since the provider IS configured.
+    var isAuthFailure: Bool = false
 
     var hasLimits: Bool { session != nil || week != nil }
 }
@@ -89,12 +115,16 @@ enum UsageResult {
 
 protocol UsageProvider {
     var id: ProviderID { get }
+    /// True for providers that read local files (near-instant, no network).
+    /// These bypass the 60-second shared throttle and refresh on every panel open.
+    var isLocalFileProvider: Bool { get }
     /// `interactive` is true only for a refresh the user explicitly asked for; providers may
     /// then take steps that can show a system dialog (e.g. a cross-app keychain read).
     func fetchSnapshot(now: Date, interactive: Bool) async throws -> UsageSnapshot
 }
 
 extension UsageProvider {
+    var isLocalFileProvider: Bool { false }
     func fetchSnapshot(now: Date) async throws -> UsageSnapshot {
         try await fetchSnapshot(now: now, interactive: false)
     }

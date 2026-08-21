@@ -55,6 +55,14 @@ class KannuWindow: NSPanel {
         level = .mainMenu + 3
         hasShadow = false
 
+        // The notch is drawn as an always-dark glass panel (black background, .white-opacity
+        // fills expecting a dark backdrop), but nothing here pinned dark appearance — SwiftUI's
+        // dynamic colors (.secondary, .primary) were resolving against whatever the *system*
+        // appearance happened to be. In Light Mode that resolves near-black, rendered onto the
+        // hardcoded-black background: invisible text. Force dark appearance explicitly so the
+        // notch always renders correctly regardless of the system's light/dark setting.
+        appearance = NSAppearance(named: .darkAqua)
+
         ScreenCaptureVisibilityManager.shared.register(self, scope: .entireInterface)
     }
     

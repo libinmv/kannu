@@ -34,7 +34,7 @@ struct CodexQuotaClient {
     func fetchLimits() async -> QuotaFetchResult {
         guard let creds = loadCredentials() else {
             Self.log.notice("no credentials: auth.json/Keychain missing or unparseable")
-            return QuotaFetchResult(errorMessage: "Codex not signed in")
+            return QuotaFetchResult(errorMessage: "Codex not signed in", isAuthFailure: true)
         }
         var request = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/wham/usage")!)
         request.setValue("Bearer \(creds.accessToken)", forHTTPHeaderField: "Authorization")
@@ -48,7 +48,9 @@ struct CodexQuotaClient {
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 let code = (response as? HTTPURLResponse)?.statusCode ?? -1
                 Self.log.error("wham/usage HTTP \(code) — \(code == 401 || code == 403 ? "auth/credential" : "request") failure")
-                return QuotaFetchResult(errorMessage: "Codex quota API HTTP \(code)")
+                let isAuth = code == 401 || code == 403
+                // 429 = rate-limited, 500+ = server error — transient, not a configuration problem.
+                return QuotaFetchResult(errorMessage: "Codex quota API HTTP \(code)", isAuthFailure: isAuth)
             }
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase

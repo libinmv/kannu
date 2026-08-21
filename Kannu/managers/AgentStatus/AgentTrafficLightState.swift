@@ -79,6 +79,13 @@ struct AgentSessionStatus: Identifiable, Equatable {
     let updatedAt: Date
     let isVisible: Bool
     let executionStartedAt: Date?
+    /// Full working directory / workspace root, when the session source knows it. Used by
+    /// click-through to open the right project window; nil is fine — the row just won't
+    /// offer window-level targeting.
+    var cwd: String? = nil
+    /// PID of the agent process itself (Claude passive sessions). The parent chain of this
+    /// PID leads to the hosting terminal or IDE, which is what click-through activates.
+    var hostPID: Int? = nil
 
     /// True when the hook that produced this session reported work in progress, regardless of
     /// what the staleness ladder later concluded about its age.
@@ -100,7 +107,9 @@ struct AgentSessionStatus: Identifiable, Equatable {
             displayState: state,
             updatedAt: updatedAt ?? self.updatedAt,
             isVisible: visible,
-            executionStartedAt: executionStartedAt
+            executionStartedAt: executionStartedAt,
+            cwd: cwd,
+            hostPID: hostPID
         )
     }
 
@@ -110,6 +119,7 @@ struct AgentSessionStatus: Identifiable, Equatable {
         case "vscode": return "VS Code"
         case "codex": return "Codex"
         case "claude": return "Claude"
+        case "antigravity": return "Antigravity"
         default: return provider.capitalized
         }
     }
@@ -138,6 +148,11 @@ struct AgentSessionSnapshot: Equatable {
 }
 
 enum AgentTrafficLightMapper {
+    /// Generous on purpose. Hook-only providers (Codex, VS Code) write a status file at tool
+    /// boundaries and then nothing for the duration of the call, so a short window marks a
+    /// session that is hardest at work as stopped. Cursor has a live composer status and
+    /// Claude has passive transcript detection to cut short a genuinely dead session; the
+    /// others have only this timer, so it must outlast a long build or test run.
     private static let runningStaleSeconds: TimeInterval = 360
     private static let abortedIdleSeconds: TimeInterval = 90
     /// Keep yellow visible for the full approval-card window (users often pause).

@@ -114,6 +114,15 @@ class SettingsWindowController: NSWindowController {
         }
     }
     
+    /// Opens (or fronts) the window and navigates to the Agent Status tab, scrolling to and
+    /// pulsing the given row. The coordinator's subscribers are guaranteed to exist by the
+    /// time this runs: SettingsView is built once in init, long before any caller can reach
+    /// this method, so the request is never dropped.
+    func showWindow(navigatingToAgentStatusHighlight highlightID: String) {
+        showWindow()
+        SettingsHighlightCoordinator.shared.requestAgentStatusNavigation(highlightID: highlightID)
+    }
+
     private func centerWindowOnActiveScreen() {
         guard let window else { return }
 
