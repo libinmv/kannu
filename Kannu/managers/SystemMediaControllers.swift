@@ -99,6 +99,7 @@ final class SystemVolumeController {
 
     func adjust(by delta: Float) {
         guard delta != 0 else { return }
+        refreshDeviceIfNeeded()
         if isMuted {
             setMuted(false)
         }
@@ -108,6 +109,7 @@ final class SystemVolumeController {
     }
 
     func toggleMute() {
+        refreshDeviceIfNeeded()
         setMuted(!isMuted)
     }
 
@@ -210,6 +212,7 @@ final class SystemVolumeController {
         }
         if status != noErr {
             NSLog("⚠️ Failed to install default device listener: \(status)")
+            return // leave listenersInstalled false so a later attempt can retry
         }
         listenersInstalled = true
     }
@@ -230,6 +233,19 @@ final class SystemVolumeController {
                 self?.notifyCurrentState()
             }
         }
+    }
+
+    /// Re-syncs device + elements + listeners if the default output changed and
+    /// the device-change listener missed it (failed registration, route churn,
+    /// wake races). One HAL property read when nothing changed — cheap enough
+    /// to run on every media-key press so reads/writes never hit a stale device.
+    private func refreshDeviceIfNeeded() {
+        let resolved = resolveDefaultDevice()
+        guard resolved != 0, resolved != currentDeviceID else { return }
+        NSLog("⚠️ Default output device changed without listener callback; re-syncing")
+        currentDeviceID = resolved
+        refreshPropertyElements()
+        installVolumeListeners(for: resolved)
     }
 
     private func handleDefaultDeviceChanged() {

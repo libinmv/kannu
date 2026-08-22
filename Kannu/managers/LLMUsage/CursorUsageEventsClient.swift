@@ -29,6 +29,14 @@ struct CursorUsageEventsClient {
         let pageSize = 500
         let maxPages = 8
 
+        // Diagnostics for the zero-usable-events case (key names only, never values).
+        var totalEvents = 0
+        var rejectedNoTimestamp = 0
+        var rejectedStale = 0
+        var rejectedZeroTokens = 0
+        var firstEventKeys: [String] = []
+        var firstTokenKeys: [String] = []
+
         while page <= maxPages {
             let body: [String: Any] = [
                 "startDate": "\(startMs)",
@@ -66,24 +74,33 @@ struct CursorUsageEventsClient {
             if events.isEmpty { break }
 
             for event in events {
-                guard let timestamp = parseEventTimestamp(event["timestamp"]) else { continue }
-                guard timestamp >= weekStart else { continue }
+                totalEvents += 1
+                if firstEventKeys.isEmpty {
+                    firstEventKeys = event.keys.sorted()
+                    firstTokenKeys = (CursorUsageEventDecoder.tokenUsageDict(in: event)?.keys.sorted()) ?? []
+                }
+                guard let timestamp = parseEventTimestamp(event["timestamp"]) else {
+                    rejectedNoTimestamp += 1
+                    continue
+                }
+                guard timestamp >= weekStart else {
+                    rejectedStale += 1
+                    continue
+                }
 
                 let model = (event["model"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
                     .nonEmpty ?? "unknown"
-                let tokenUsage = event["tokenUsage"] as? [String: Any] ?? [:]
-                let input = Int(CursorAPIHelpers.parseDouble(tokenUsage["inputTokens"]) ?? 0)
-                let output = Int(CursorAPIHelpers.parseDouble(tokenUsage["outputTokens"]) ?? 0)
-                let cacheWrite = Int(CursorAPIHelpers.parseDouble(tokenUsage["cacheWriteTokens"]) ?? 0)
-                let cacheRead = Int(CursorAPIHelpers.parseDouble(tokenUsage["cacheReadTokens"]) ?? 0)
-                let totalInput = input + cacheWrite + cacheRead
-                guard totalInput + output > 0 else { continue }
+                let counts = CursorUsageEventDecoder.tokenCounts(in: event)
+                guard !counts.isEmpty else {
+                    rejectedZeroTokens += 1
+                    continue
+                }
 
-                let costUSD = eventCostUSD(event: event, model: model, tokenUsage: tokenUsage)
+                let costUSD = eventCostUSD(event: event, model: model, counts: counts)
 
                 func addTokens(_ totals: inout UsageTotals) {
-                    totals.inputTokens += totalInput
-                    totals.outputTokens += output
+                    totals.inputTokens += counts.totalInput
+                    totals.outputTokens += counts.output
                 }
 
                 func addCost(_ totals: inout UsageTotals) {
@@ -115,8 +132,17 @@ struct CursorUsageEventsClient {
             page += 1
         }
 
-        guard snapshot.week.totalTokens > 0 || snapshot.week.costUSD > 0 else {
-            return nil
+        // A fetched-and-parsed week with zero usage is a valid "0 tokens" result,
+        // not a failure — returning nil here made light-usage weeks render as
+        // "Token totals unavailable". Log enough (key names only, never values)
+        // to diagnose a future Cursor schema change, which would also land here.
+        if snapshot.week.totalTokens == 0 && snapshot.week.costUSD == 0 {
+            Self.log.notice("""
+            usage-events: \(totalEvents) events, 0 usable this week \
+            (noTimestamp=\(rejectedNoTimestamp) stale=\(rejectedStale) zeroTokens=\(rejectedZeroTokens)) \
+            eventKeys=\(firstEventKeys.joined(separator: ","), privacy: .public) \
+            tokenKeys=\(firstTokenKeys.joined(separator: ","), privacy: .public)
+            """)
         }
 
         snapshot.models = perModel
@@ -128,7 +154,7 @@ struct CursorUsageEventsClient {
     private func eventCostUSD(
         event: [String: Any],
         model: String,
-        tokenUsage: [String: Any]
+        counts: CursorUsageEventDecoder.TokenCounts
     ) -> Double? {
         guard Self.isUsageBasedEvent(event) else { return nil }
 
@@ -138,20 +164,17 @@ struct CursorUsageEventsClient {
         if let cents = CursorAPIHelpers.parseDouble(event["chargedCents"]) {
             return cents / 100
         }
-        if let cents = CursorAPIHelpers.parseDouble(tokenUsage["totalCents"]) {
+        if let usage = CursorUsageEventDecoder.tokenUsageDict(in: event),
+           let cents = CursorAPIHelpers.parseDouble(usage["totalCents"]) {
             return cents / 100
         }
 
-        let input = Int(CursorAPIHelpers.parseDouble(tokenUsage["inputTokens"]) ?? 0)
-        let output = Int(CursorAPIHelpers.parseDouble(tokenUsage["outputTokens"]) ?? 0)
-        let cacheWrite = Int(CursorAPIHelpers.parseDouble(tokenUsage["cacheWriteTokens"]) ?? 0)
-        let cacheRead = Int(CursorAPIHelpers.parseDouble(tokenUsage["cacheReadTokens"]) ?? 0)
         guard let rates = ModelPricingManager.shared.getPricing(for: model) else {
             return nil
         }
-        let billablePromptTokens = Double(input + cacheWrite)
-            + (Double(cacheRead) * Self.cacheReadPromptDiscount)
-        return (billablePromptTokens * rates.prompt) + (Double(output) * rates.completion)
+        let billablePromptTokens = Double(counts.input + counts.cacheWrite)
+            + (Double(counts.cacheRead) * Self.cacheReadPromptDiscount)
+        return (billablePromptTokens * rates.prompt) + (Double(counts.output) * rates.completion)
     }
 
     private static func isUsageBasedEvent(_ event: [String: Any]) -> Bool {

@@ -261,6 +261,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Restore Lunar's native OSD if integration was active
         LunarManager.shared.appWillTerminate()
+
+        // Resume the SIGSTOPed OSDUIHelper so the native HUD works after we quit
+        SystemOSDManager.restoreSystemHUDForTermination()
     }
     
     @objc func onScreenLocked(_: Notification) {

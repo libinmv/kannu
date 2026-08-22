@@ -170,19 +170,35 @@ final class MediaKeyInterceptor {
         isTapEnabled = false
     }
 
-    private func updateTapState() {
-        guard let tap = eventTap else { return }
-        let shouldEnable = configuration.interceptVolume
+    private var configurationWantsTap: Bool {
+        configuration.interceptVolume
             || configuration.interceptBrightness
             || configuration.interceptCommandModifiedBrightness
             || configuration.observeBrightnessKeys
-        if shouldEnable != isTapEnabled {
+    }
+
+    private func updateTapState() {
+        guard let tap = eventTap else { return }
+        // Compare against the tap's real state, not our flag — macOS can disable the
+        // tap behind our back (timeout), leaving isTapEnabled stale.
+        let shouldEnable = configurationWantsTap
+        if CGEvent.tapIsEnabled(tap: tap) != shouldEnable {
             CGEvent.tapEnable(tap: tap, enable: shouldEnable)
-            isTapEnabled = shouldEnable
         }
+        isTapEnabled = shouldEnable
     }
 
     private func handleEvent(cgEvent: CGEvent, type: CGEventType) -> Unmanaged<CGEvent>? {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let tap = eventTap, configurationWantsTap {
+                CGEvent.tapEnable(tap: tap, enable: true)
+                isTapEnabled = true
+                NSLog("⚠️ Media key tap disabled by %@ — re-enabled",
+                      type == .tapDisabledByTimeout ? "timeout" : "user input")
+            }
+            return Unmanaged.passUnretained(cgEvent)
+        }
+
         guard let systemDefinedType = systemDefinedEventType,
               type == systemDefinedType,
               let nsEvent = NSEvent(cgEvent: cgEvent),

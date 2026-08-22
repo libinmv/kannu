@@ -92,6 +92,33 @@ class SystemOSDManager {
         }
     }
     
+    /// Synchronous restore for applicationWillTerminate: SIGCONT the helper we
+    /// SIGSTOPed so the native HUD works again after Kannu quits. The async
+    /// enableSystemHUD() path detaches Tasks with sleeps that die with the
+    /// process, so it cannot be used at termination. SIGCONT (rather than
+    /// kill + kickstart) resumes the exact frozen process with no launchd
+    /// churn during app teardown.
+    public static func restoreSystemHUDForTermination() {
+        let wasActive = suppressionState.withLock { state -> Bool in
+            let active = state.active
+            state.active = false
+            return active
+        }
+        guard wasActive else { return }
+        stopSuppressionWatcher()
+
+        let resume = Process()
+        resume.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+        resume.arguments = ["-CONT", "OSDUIHelper"]
+        resume.standardError = Pipe() // silence "no such process" stderr
+        do {
+            try resume.run()
+            resume.waitUntilExit()
+        } catch {
+            NSLog("❌ Failed to resume OSDUIHelper at termination: \(error)")
+        }
+    }
+
     private static func enableSystemHUDAsync() async {
         do {
             // First, stop any existing OSDUIHelper process
@@ -259,7 +286,10 @@ class SystemOSDManager {
                 let currentPID = osduiHelperPID()
                 let lastPID = suppressionState.withLock { $0.lastSuspendedPID }
 
-                if let pid = currentPID, pid != lastPID {
+                // Re-STOP on a new PID, and also when the same PID was resumed
+                // behind our back (e.g. an external SIGCONT) — PID comparison
+                // alone would miss that for the rest of the session.
+                if let pid = currentPID, pid != lastPID || isPIDStopped(pid) == false {
                     suspendOSDUIHelper()
                     suppressionState.withLock { $0.lastSuspendedPID = pid }
                 }
@@ -283,6 +313,18 @@ class SystemOSDManager {
             return prior
         }
         previous?.cancel()
+    }
+
+    // sys/proc.h run states (not exported to Swift): SIDL=1 SRUN=2 SSLEEP=3 SSTOP=4 SZOMB=5
+    private static let procStatusStopped: UInt32 = 4
+
+    /// Whether the process is currently SIGSTOPed; nil if it no longer exists.
+    /// One syscall — no subprocess spawn per watcher tick.
+    private static func isPIDStopped(_ pid: Int32) -> Bool? {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+        return info.pbi_status == procStatusStopped
     }
 
     /// Returns the newest OSDUIHelper PID, or nil if none.

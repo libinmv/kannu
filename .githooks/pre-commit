@@ -83,7 +83,10 @@ unreleased_section="$(printf '%s\n' "${changelog_content}" | awk '
   in_section { print }
 ')"
 
-if [[ -z "${unreleased_section//[[:space:]]/}" ]]; then
+# Use grep, not "${var//[[:space:]]/}": that expansion is superlinear in bash 3.2
+# (macOS's /bin/bash) and the Unreleased section is already ~78 KB, which made this
+# check run for many minutes and effectively blocked every commit.
+if ! grep -q '[^[:space:]]' <<< "${unreleased_section}"; then
   echo "ERROR: CHANGELOG.md must include a populated ## [Unreleased] section."
   exit 1
 fi
@@ -96,7 +99,7 @@ latest_entry="$(printf '%s\n' "${unreleased_section}" | awk '
   found { print }
 ')"
 
-if [[ -z "${latest_entry//[[:space:]]/}" ]]; then
+if ! grep -q '[^[:space:]]' <<< "${latest_entry}"; then
   echo "ERROR: Add a latest entry heading under ## [Unreleased] (### YYYY-MM-DD - ...)."
   exit 1
 fi

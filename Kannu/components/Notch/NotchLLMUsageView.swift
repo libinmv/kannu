@@ -187,7 +187,7 @@ struct NotchLLMUsageView: View {
                 // Other providers (e.g. Cursor, Codex) keep them.
                 if provider != .claude {
                     if snap.logsUnavailable {
-                        Text("Token totals unavailable (no local logs)").font(.caption2).foregroundStyle(.secondary)
+                        Text("Token totals unavailable").font(.caption2).foregroundStyle(.secondary)
                     } else {
                         VStack(alignment: .leading, spacing: 2) {
                             window("Today", snap.today, compact: true, showCost: false)
