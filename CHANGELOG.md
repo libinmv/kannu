@@ -4,6 +4,18 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-23 - Suppress the macOS 26 system HUD the only way that still works
+- **Developer label:** Control Center OSD reality check: version-gate the OSDUIHelper machinery, make the media key tap self-healing and provable, hide Kannu's HUD when interception is not live
+- **Agent label:** No more two HUDs at once, and no more pointless background polling on macOS 26
+- **Changes:**
+  - macOS 26 moved the volume/brightness OSD out of `OSDUIHelper` and into Control Center — confirmed live, it is drawn from subsystem `com.apple.controlcenter`, category `system-banners`, via `showOSD:` (58 volume and 23 brightness OSDs logged in two hours on a machine where `OSDUIHelper` was not even running). Kannu's entire suppression layer was SIGSTOPing a process that no longer draws anything. Control Center cannot be suspended — it is the menu bar — so **media key interception is now the only mechanism that suppresses the system HUD**, on every macOS version
+  - `SystemOSDManager` no longer kickstarts `OSDUIHelper`, polls `pgrep` every 150 ms, or spawns `killall` per volume change on macOS 26+. It had been *starting* a process that was not running purely so it could freeze it. A helper that happens to be alive is still SIGSTOPed opportunistically, and `restoreSystemHUDForTermination()` is unchanged. This removes a permanent background poll and its subprocess churn from every Tahoe user's battery
+  - The media key tap had no retry path: if it failed to create (no Accessibility) it was never attempted again, and `SettingsView` handled permission being *lost* but never *granted* — so granting Accessibility only took effect after restarting Kannu. `start()` now rebuilds a tap that exists but is dead, a low-frequency health check rebuilds on any Accessibility trust transition, and the Settings granted-branch re-arms it immediately
+  - Added a proof-of-life signal: `hasObservedMediaKey` is set only when the tap actually delivers a media key. Per the documented silent-disable race, a re-signed binary launched through Launch Services can hold a tap that is non-nil and reports enabled yet never fires, with no callback for it — so a non-nil tap is not evidence of anything
+  - Kannu now stands down instead of stacking: when volume interception is not provably live, macOS is handling the key and drawing its own HUD, so Kannu no longer draws a second HUD showing the same number. It recovers by itself, since an intercepted key sets the proof before the HUD path runs. Brightness gets the same treatment but only where interception was intended — observe-only and third-party DDC modes hand the key to macOS by design and keep their HUD
+  - Accessibility callout copy rewritten; it described a bezel that no longer exists on macOS 26
+  - Not shipped, documented instead: `defaults write com.apple.controlcenter EnableSystemBanners -bool false` reverts macOS globally to the pre-Tahoe OSD path, but it changes a system-wide setting and is reported to stop working on macOS 27
+
 ### 2026-08-23 - Fix Cursor zero-usage weeks, stale-device volume HUD, and bezel-suppression gaps
 - **Developer label:** Cursor zero-usage week is a valid snapshot + silent-branch instrumentation; volume device re-resolution per key press; CGEvent tap self-heal, SIGCONT-aware OSD watcher, HUD restore on quit
 - **Agent label:** Cursor no longer says "Token totals unavailable" after a quiet week, the volume HUD can't display a stale device's level, and the native macOS bezel stays suppressed while Kannu runs — and comes back when it quits

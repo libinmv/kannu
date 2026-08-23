@@ -91,19 +91,59 @@ final class MediaKeyInterceptor {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var isTapEnabled = false
+    /// Set the first time the tap actually delivers a media key. A non-nil tap is not
+    /// a healthy tap: a re-signed binary launched through Launch Services can hold a
+    /// tap that reports enabled yet never fires, and macOS raises no callback for it.
+    /// Only a delivered key proves interception is really happening.
+    private(set) var hasObservedMediaKey = false
+    private var lastKnownTrust = false
+    private var healthTimer: Timer?
 #if canImport(ApplicationServices)
     private var didRequestAccessibilityPrompt = false
 #endif
     private let systemDefinedEventType = CGEventType(rawValue: NX_SYSDEFINED_EVENT_TYPE)
     private let eventTapLocations: [CGEventTapLocation] = [.cghidEventTap, .cgSessionEventTap]
 
+    private var currentTrust: Bool {
+#if canImport(ApplicationServices)
+        AXIsProcessTrusted()
+#else
+        true
+#endif
+    }
+
+    /// Permission granted, tap created and tap enabled. Necessary, not sufficient.
+    var isInterceptionAvailable: Bool {
+        guard let tap = eventTap, currentTrust else { return false }
+        return CGEvent.tapIsEnabled(tap: tap)
+    }
+
+    /// True only when volume keys are provably being swallowed before macOS sees them.
+    /// When this is false macOS handles the keys itself and draws its own HUD, so Kannu
+    /// must not draw a second one on top.
+    var isVolumeInterceptionEffective: Bool {
+        configuration.interceptVolume && hasObservedMediaKey && isInterceptionAvailable
+    }
+
+    /// Brightness equivalent. Only meaningful when brightness interception is intended —
+    /// observe-only and DDC modes pass the key through to macOS by design.
+    var isBrightnessInterceptionEffective: Bool {
+        configuration.interceptBrightness && hasObservedMediaKey && isInterceptionAvailable
+    }
+
     private init() {}
 
     @discardableResult
     func start() -> Bool {
-        guard eventTap == nil else {
-            updateTapState()
-            return true
+        if let tap = eventTap {
+            // A tap that exists but is dead (permission revoked, binary re-signed)
+            // must be rebuilt — re-enabling a dead tap does nothing.
+            if !configurationWantsTap || CGEvent.tapIsEnabled(tap: tap) {
+                updateTapState()
+                return true
+            }
+            NSLog("⚠️ Media key tap exists but is not enabled — rebuilding")
+            teardownTap()
         }
 
 #if canImport(ApplicationServices)
@@ -153,11 +193,18 @@ final class MediaKeyInterceptor {
         }
         CGEvent.tapEnable(tap: tap, enable: true)
         isTapEnabled = true
+        lastKnownTrust = currentTrust
+        startHealthMonitor()
         NSLog("✅ Media key event tap installed (HID)")
         return true
     }
 
     func stop() {
+        stopHealthMonitor()
+        teardownTap()
+    }
+
+    private func teardownTap() {
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
             CFMachPortInvalidate(tap)
@@ -168,6 +215,41 @@ final class MediaKeyInterceptor {
         eventTap = nil
         runLoopSource = nil
         isTapEnabled = false
+    }
+
+    private func startHealthMonitor() {
+        guard healthTimer == nil else { return }
+        // Cheap local checks. This is what makes granting Accessibility while Kannu is
+        // running take effect: previously the tap was created once and never retried,
+        // so a grant only applied after a restart.
+        let timer = Timer(timeInterval: 10, repeats: true) { [weak self] _ in
+            self?.verifyTapHealth()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        healthTimer = timer
+    }
+
+    private func stopHealthMonitor() {
+        healthTimer?.invalidate()
+        healthTimer = nil
+    }
+
+    private func verifyTapHealth() {
+        guard configurationWantsTap else { return }
+        let trusted = currentTrust
+        if trusted != lastKnownTrust {
+            lastKnownTrust = trusted
+            NSLog("ℹ️ Accessibility %@ — rebuilding media key tap", trusted ? "granted" : "revoked")
+            teardownTap()
+            hasObservedMediaKey = false
+            _ = start()
+            return
+        }
+        guard trusted, let tap = eventTap else { return }
+        if !CGEvent.tapIsEnabled(tap: tap) {
+            CGEvent.tapEnable(tap: tap, enable: true)
+            isTapEnabled = true
+        }
     }
 
     private var configurationWantsTap: Bool {
@@ -213,6 +295,19 @@ final class MediaKeyInterceptor {
         let isRepeat = (keyFlags & 0x0001) == 1
         let step = step(for: nsEvent)
         let modifiers = nsEvent.modifierFlags
+
+        // Proof of life: the tap is genuinely delivering media keys. Until this is set
+        // we must assume macOS is still handling them (and drawing its own HUD).
+        switch Int32(keyCode) {
+        case NX_KEYTYPE_SOUND_UP, NX_KEYTYPE_SOUND_DOWN, NX_KEYTYPE_MUTE,
+             NX_KEYTYPE_BRIGHTNESS_UP, NX_KEYTYPE_BRIGHTNESS_DOWN:
+            if !hasObservedMediaKey {
+                hasObservedMediaKey = true
+                NSLog("✅ Media key interception confirmed live")
+            }
+        default:
+            break
+        }
 
         guard keyState else {
             // Swallow key-up events only when intercepting, otherwise let them pass through

@@ -2704,7 +2704,7 @@ struct HUD: View {
             if !hasAccessibilityPermission && !enableThirdPartyDDCIntegration {
                 Section {
                     SettingsPermissionCallout(
-                        message: "Accessibility permission lets Dynamic Island replace the native volume, brightness, and keyboard HUDs.",
+                        message: "Without Accessibility permission macOS handles the volume and brightness keys itself and shows its own HUD, so Kannu hides its own to avoid two HUDs stacking. Granting it lets Kannu replace them.",
                         requestAction: { accessibilityPermission.requestAuthorizationPrompt() },
                         openSettingsAction: { accessibilityPermission.openSystemSettings() }
                     )
@@ -2827,6 +2827,10 @@ struct HUD: View {
         .onChange(of: accessibilityPermission.isAuthorized) { _, granted in
             if !granted {
                 enableSystemHUD = false
+            } else {
+                // Without this the tap was created once at launch and never retried, so
+                // granting Accessibility only took effect after restarting Kannu.
+                MediaKeyInterceptor.shared.start()
             }
         }
     }

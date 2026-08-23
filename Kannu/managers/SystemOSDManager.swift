@@ -40,6 +40,20 @@ class SystemOSDManager {
         qos: .userInitiated
     )
 
+    /// macOS 26 moved the volume/brightness OSD out of OSDUIHelper and into Control
+    /// Center — it is drawn from subsystem `com.apple.controlcenter`, category
+    /// `system-banners`, via `showOSD:`. On those releases OSDUIHelper is usually not
+    /// even running, so kickstarting it and then SIGSTOPing it every 150 ms burns
+    /// subprocesses and battery for no effect. Control Center itself cannot be
+    /// suspended — it is the menu bar — so media-key interception is the only
+    /// mechanism that suppresses the OSD there.
+    private static var osdHelperDrawsSystemHUD: Bool {
+        if #available(macOS 26, *) {
+            return false
+        }
+        return true
+    }
+
     /// Call once at startup to register sleep/wake observers.
     /// Safe to call multiple times — observers are registered only once.
     private static let sleepWakeSetupOnce: Void = {
@@ -73,7 +87,7 @@ class SystemOSDManager {
         suppressionState.withLock { $0.systemSleeping = false }
         // If suppression was still active when we went to sleep, restart the watcher.
         let active = suppressionState.withLock { $0.active }
-        if active {
+        if active, osdHelperDrawsSystemHUD {
             // Reset the last-suspended PID so the watcher immediately re-suspends
             // the fresh OSDUIHelper that launchd may have spawned during wake.
             suppressionState.withLock { $0.lastSuspendedPID = -1 }
@@ -176,6 +190,18 @@ class SystemOSDManager {
         // Ensure sleep/wake observers are registered.
         _ = sleepWakeSetupOnce
         suppressionState.withLock { $0.active = true }
+        guard osdHelperDrawsSystemHUD else {
+            NSLog("ℹ️ macOS 26+: the system HUD is drawn by Control Center, not OSDUIHelper — "
+                + "relying on media key interception instead of process suppression")
+            // Opportunistic only: freeze a helper that happens to be running (some
+            // other OSD may still use it), but never start one and never poll for it.
+            osdSuppressionQueue.async {
+                if osduiHelperPID() != nil {
+                    suspendOSDUIHelper()
+                }
+            }
+            return
+        }
         Task.detached(priority: .background) {
             await disableSystemHUDAsync()
         }
@@ -188,6 +214,7 @@ class SystemOSDManager {
     /// on the event tap or main thread are never blocked.
     /// No-op unless suppression is active.
     public static func suppressNativeOSDNow() {
+        guard osdHelperDrawsSystemHUD else { return }
         let active = suppressionState.withLock { $0.active }
         guard active else { return }
         osdSuppressionQueue.async {
