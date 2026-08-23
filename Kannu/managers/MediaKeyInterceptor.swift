@@ -182,7 +182,9 @@ final class MediaKeyInterceptor {
                 NSLog("⚠️ Accessibility permission missing; grant access in System Settings › Privacy & Security › Accessibility")
             }
 #endif
-            NSLog("❌ Failed to create media key event tap")
+            NSLog("❌ Failed to create media key event tap — waiting for Accessibility; will retry automatically")
+            lastKnownTrust = currentTrust
+            startHealthMonitor()
             return false
         }
 
@@ -245,7 +247,13 @@ final class MediaKeyInterceptor {
             _ = start()
             return
         }
-        guard trusted, let tap = eventTap else { return }
+        guard trusted else { return }
+        guard let tap = eventTap else {
+            // Trusted but the tap never got created (transient tapCreate failure,
+            // silent-disable race) — keep retrying until it exists.
+            _ = start()
+            return
+        }
         if !CGEvent.tapIsEnabled(tap: tap) {
             CGEvent.tapEnable(tap: tap, enable: true)
             isTapEnabled = true

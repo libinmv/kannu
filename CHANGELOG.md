@@ -4,6 +4,13 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-23 - Granting Accessibility now takes effect without restarting Kannu
+- **Developer label:** Arm the media-key-tap health monitor on failed creation too, and retry creation while trusted with no tap
+- **Agent label:** The first-run path — grant Accessibility while Kannu is running — now works
+- **Changes:**
+  - The health monitor added earlier today was only started after a *successful* tap creation, so the case it most needed to cover — the tap failing to create at launch because Accessibility isn't granted yet, which is every first-run user — left no retry armed. Granting permission while the app ran was noticed by nothing (the Settings granted-branch only fires with that pane open), so the grant silently required a restart. `start()` now arms the monitor on the failure path as well, and logs "waiting for Accessibility; will retry automatically" so the log tells the story: waiting → granted → rebuilding → confirmed live
+  - `verifyTapHealth` also retries creation when trusted but no tap exists — covering a transient `tapCreate` failure or the silent-disable race, which a trust-transition check alone would never catch
+
 ### 2026-08-23 - Suppress the macOS 26 system HUD the only way that still works
 - **Developer label:** Control Center OSD reality check: version-gate the OSDUIHelper machinery, make the media key tap self-healing and provable, hide Kannu's HUD when interception is not live
 - **Agent label:** No more two HUDs at once, and no more pointless background polling on macOS 26
