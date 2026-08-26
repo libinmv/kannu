@@ -37,7 +37,7 @@ struct TrafficLightStyleSelectionView: View {
                 .fontWeight(.bold)
                 .padding(.top, 24)
 
-            Text("Kannu shows a light in the notch while your AI agents work — green while running, yellow when one needs you, red when it finishes. Choose how it looks. You can change this later in settings.")
+            Text("Kannu shows a light in the notch while your AI agents work: green while running, yellow when one needs you, red when it finishes. Choose how it looks. You can change this later in settings.")
                 .multilineTextAlignment(.center)
                 .font(.body)
                 .foregroundColor(.secondary)

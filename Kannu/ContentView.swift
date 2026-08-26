@@ -83,11 +83,11 @@ struct ContentView: View {
     @Default(.enableExtensionLiveActivities) var enableExtensionLiveActivities
     @Default(.showStandardMediaControls) var showStandardMediaControls
     @Default(.externalDisplayStyle) var externalDisplayStyle
-    @Default(.hideNonNotchUntilHover) var hideNonNotchUntilHover
+    @Default(.alwaysShowOnNonNotchDisplays) var alwaysShowOnNonNotchDisplays
     // Observed so SwiftUI invalidates when a per-display override changes. The resolvers in
     // matters.swift read Defaults directly, which is not an observable dependency on its own.
     @Default(.displayStyleOverrides) var displayStyleOverrides
-    @Default(.hideUntilHoverOverrides) var hideUntilHoverOverrides
+    @Default(.alwaysShowOverrides) var alwaysShowOverrides
     
     // Battery settings reactivity
     @Default(.showPowerStatusNotifications) var showPowerStatusNotifications
@@ -470,8 +470,8 @@ struct ContentView: View {
     /// Whether hide-until-hover applies to *this* screen. Displays with a physical notch are
     /// never affected, so all the time-boxing below leaves them on their existing behaviour.
     private var hideUntilHoverAppliesHere: Bool {
-        let resolved = hideUntilHoverOverrides[currentScreenName] ?? hideNonNotchUntilHover
-        return resolved && isNonNotchScreen
+        let alwaysShow = alwaysShowOverrides[currentScreenName] ?? alwaysShowOnNonNotchDisplays
+        return !alwaysShow && isNonNotchScreen
     }
 
     /// The traffic light, time-boxed when hide-until-hover is on.
@@ -482,7 +482,9 @@ struct ContentView: View {
     /// activity, or while the pointer is on the island. Everywhere else the raw value stands.
     private var showAgentTrafficLight: Bool {
         guard enableAgentStatusFeature, agentStatusMonitor.shouldShowTrafficLight else { return false }
-        guard hideUntilHoverAppliesHere else { return true }
+        // Notched displays used to show the light for as long as a session existed; they now
+        // share the same activity-refreshed window so the band collapses between events.
+        guard hideUntilHoverAppliesHere || isPhysicalNotchScreen else { return true }
         // While a music pill is already on screen the light is drawn inside it, so keep it
         // steady rather than blinking a dot in and out of a persistent container. Uses the
         // shared snapshot — testing `isPlaying` alone missed the paused-but-still-shown pill,
@@ -947,7 +949,7 @@ struct ContentView: View {
             .onChange(of: agentStatusMonitor.activityPulse) { _, _ in
                 noteAgentActivityPulse()
             }
-            .onChange(of: hideNonNotchUntilHover) { _, _ in
+            .onChange(of: alwaysShowOnNonNotchDisplays) { _, _ in
                 clearRevealState()
             }
             .onChange(of: externalDisplayStyle) { _, _ in
@@ -963,7 +965,11 @@ struct ContentView: View {
                     hideMusicControlWindow()
                 } else {
                     if hideUntilHoverAppliesHere && isRevealHoldActive {
-                        revealHoldDeadline = Date().addingTimeInterval(nonNotchRevealHoldSeconds)
+                        revealHoldDeadline = Date().addingTimeInterval(notchRevealHoldSeconds)
+                        armRevealCountdown()
+                    } else if isPhysicalNotchScreen, agentLightDeadline != nil {
+                        // Closing the notch must not strand the band on a stale deadline.
+                        agentLightDeadline = Date().addingTimeInterval(notchRevealHoldSeconds)
                         armRevealCountdown()
                     }
                     releaseMusicControlWindowUpdates(after: musicControlResumeDelay)
@@ -2185,10 +2191,15 @@ struct ContentView: View {
     /// An agent did something: pull the island back into view and relight the traffic light,
     /// each for its own window. Only meaningful when the island is hidden by default.
     private func noteAgentActivityPulse() {
-        guard hideUntilHoverAppliesHere, enableAgentStatusFeature else { return }
+        guard hideUntilHoverAppliesHere || isPhysicalNotchScreen, enableAgentStatusFeature else { return }
+        // Strict collapse: the running-agent heartbeat keeps other consumers informed but
+        // must not hold the band on screen; only real transitions refresh the window.
+        if agentStatusMonitor.lastPulseWasHeartbeat && !physicalNotchAgentBandFollowsHeartbeat {
+            return
+        }
         let now = Date()
-        let lightDeadline = now.addingTimeInterval(agentTrafficLightHoverModeWindowSeconds)
-        let holdDeadline = now.addingTimeInterval(nonNotchRevealHoldSeconds)
+        let lightDeadline = now.addingTimeInterval(notchRevealHoldSeconds)
+        let holdDeadline = now.addingTimeInterval(notchRevealHoldSeconds)
 
         // Only animate when the island is actually coming back on screen. Repeat pulses during
         // a long run just extend the deadlines and must not restage the slide. Both deadlines
@@ -2229,7 +2240,7 @@ struct ContentView: View {
                   self.vm.notchState == .closed,
                   !self.shouldPreventAutoClose()
             else {
-                self.revealHoldDeadline = Date().addingTimeInterval(nonNotchRevealHoldSeconds)
+                self.revealHoldDeadline = Date().addingTimeInterval(notchRevealHoldSeconds)
                 self.armRevealCountdown()
                 return
             }
@@ -2425,10 +2436,12 @@ struct ContentView: View {
                         self.isHovering = false
                     }
 
-                    // A plain hover earns no lingering: once the pointer leaves, the island
-                    // goes straight back. Only an agent update holds it out, and if one is
-                    // still running its deadline simply resumes here.
+                    // A short linger after the pointer leaves keeps a brief slip off the
+                    // edge from yanking the island away mid-glance.
                     if self.hideUntilHoverAppliesHere {
+                        self.revealHoldDeadline = Date().addingTimeInterval(notchRevealHoldSeconds)
+                        self.armRevealCountdown()
+                    } else if self.isPhysicalNotchScreen, self.agentLightDeadline != nil {
                         self.armRevealCountdown()
                     }
 

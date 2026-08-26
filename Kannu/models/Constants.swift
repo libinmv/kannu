@@ -916,6 +916,11 @@ extension Defaults.Keys {
     )
     static let hideNonNotchUntilHover = Key<Bool>("hideNonNotchUntilHover", default: false)
 
+    /// Non-notch displays hide the notch UI by default and reveal it on hover, like the
+    /// auto-hiding menu bar. This is the opt-out: true keeps the notch always visible.
+    /// Replaces the inverted `hideNonNotchUntilHover`, which is retained only for migration.
+    static let alwaysShowOnNonNotchDisplays = Key<Bool>("alwaysShowOnNonNotchDisplays", default: false)
+
     /// Per-display overrides, keyed by `NSScreen.localizedName` (the identifier the rest of the
     /// app already uses for screens). A screen with no entry follows the global setting above,
     /// so these stay empty until the user deliberately customises a display.
@@ -927,6 +932,13 @@ extension Defaults.Keys {
         "hideUntilHoverOverrides",
         default: [:]
     )
+    /// Per-display "always show" overrides in the new polarity; same keying as above.
+    /// Replaces the inverted `hideUntilHoverOverrides`, retained only for migration.
+    static let alwaysShowOverrides = Key<[String: Bool]>(
+        "alwaysShowOverrides",
+        default: [:]
+    )
+    static let didMigrateNonNotchAlwaysShow = Key<Bool>("didMigrateNonNotchAlwaysShow", default: false)
 
     /// Whether this Mac's own display has a notch. Cached because the built-in screen is absent
     /// from `NSScreen.screens` in clamshell mode — without a remembered answer, a setup run with
@@ -1429,6 +1441,21 @@ extension Defaults.Keys {
         }
 
         normalizeMusicAuxControls()
+    }
+
+    static func migrateNonNotchAlwaysShow() {
+        guard Defaults[.didMigrateNonNotchAlwaysShow] == false else { return }
+
+        // Only a user who explicitly touched the legacy key keeps their choice (inverted
+        // into the new polarity). Everyone else gets the new default: hidden until hover.
+        if UserDefaults.standard.object(forKey: "hideNonNotchUntilHover") != nil {
+            Defaults[.alwaysShowOnNonNotchDisplays] = !Defaults[.hideNonNotchUntilHover]
+        }
+        let legacyOverrides = Defaults[.hideUntilHoverOverrides]
+        if !legacyOverrides.isEmpty {
+            Defaults[.alwaysShowOverrides] = legacyOverrides.mapValues { !$0 }
+        }
+        Defaults[.didMigrateNonNotchAlwaysShow] = true
     }
 
     static func migrateCapsLockTintMode() {

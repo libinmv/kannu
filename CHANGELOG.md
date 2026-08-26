@@ -4,6 +4,18 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-26 - Hide-until-hover becomes the default, agent lights auto-collapse, settings polish
+- **Developer label:** Inverted alwaysShowOnNonNotchDisplays polarity with migration; unified 5s reveal window incl. notched-display band; strict heartbeat gating; permission-store activation refresh; native swatch color picker; settings copy pass
+- **Agent label:** The notch stays out of the way until hovered or an agent acts, on every display type, and Settings got a cleanup
+- **Changes:**
+  - Non-notch displays now hide the notch by default and reveal it on hover, like the auto-hiding menu bar. The old opt-in `hideNonNotchUntilHover` is replaced by an opt-out `alwaysShowOnNonNotchDisplays` (plus per-display overrides in the same polarity), with a one-time migration that preserves anyone's explicit legacy choice inverted; users who never touched the setting move to the new default deliberately. Settings toggle reads "Always show on non-notch displays"; the search-index entry follows the exact new title
+  - One shared 5-second reveal window (`notchRevealHoldSeconds`) replaces the two 3-second constants, and hover-out now lingers for that window instead of hiding immediately. This reverts the earlier 6→3s reduction by explicit user decision
+  - Notched displays no longer keep the agent traffic-light band expanded for as long as a session exists: the band shares the same activity-refreshed window, showing ~5s on session changes and state transitions, then collapsing even mid-run (strict mode — the running-agent heartbeat no longer refreshes the window; `physicalNotchAgentBandFollowsHeartbeat` flips it back if wanted). Hover, notch-close and music-pill hosting all re-arm cleanly so no stale deadline can strand the band
+  - `AccessibilityPermissionStore` refreshes on every app activation and also polls after "Open Settings" — previously a grant made directly in System Settings was never noticed (polling ran only for 15s after the in-app prompt), leaving the Agents tab's callout stuck on "Request access". The Agents and Controls panes also refresh on appear
+  - "Customize physical notch width" no longer leaves its sliders editable while the toggle is off doing nothing: dependent controls now disable and dim until the parent is on, the System Settings convention
+  - Removed settings rows that only echoed state shown elsewhere (Agents "Current State" duplicated the live preview above it; Shelf "Currently selected" duplicated the picker), rewrote every user-facing mid-sentence em-dash as a plain sentence, and shortened the long Media/Lock Screen captions to one line each
+  - The color picker rows (notch fill, timer solid, preset accent) now open a native swatch popover: preset grid, screen eyedropper via `NSColorSampler`, and the existing color panel behind a Custom well. No third-party dependency; same row API and the same `Key<Color>` persistence
+
 ### 2026-08-23 - Granting Accessibility now takes effect without restarting Kannu
 - **Developer label:** Arm the media-key-tap health monitor on failed creation too, and retry creation while trusted with no tap
 - **Agent label:** The first-run path — grant Accessibility while Kannu is running — now works

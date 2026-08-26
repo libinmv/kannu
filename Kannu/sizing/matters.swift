@@ -297,13 +297,13 @@ func effectiveDisplayStyle(for screenName: String?) -> ExternalDisplayStyle {
     return Defaults[.externalDisplayStyle]
 }
 
-/// Whether `screenName` should tuck the island away until hovered, preferring a per-display
-/// override over the global choice.
+/// Whether `screenName` should tuck the island away until hovered. Hiding is the default;
+/// `alwaysShowOnNonNotchDisplays` (or a per-display override) opts a screen out of it.
 func effectiveHideUntilHover(for screenName: String?) -> Bool {
-    if let screenName, let override = Defaults[.hideUntilHoverOverrides][screenName] {
-        return override
+    if let screenName, let override = Defaults[.alwaysShowOverrides][screenName] {
+        return !override
     }
-    return Defaults[.hideNonNotchUntilHover]
+    return !Defaults[.alwaysShowOnNonNotchDisplays]
 }
 
 func shouldUseDynamicIslandMode(for screenName: String?) -> Bool {
@@ -343,21 +343,19 @@ let dynamicIslandTopOffset: CGFloat = 6
 /// by the outer frame constraint.
 let dynamicIslandShadowInset: CGFloat = 14
 
-/// How long the island stays revealed on a non-notch display after an agent update
-/// pulls it back into view. Applies to agent activity only — a plain hover does not
-/// start a hold, so moving the pointer away puts the island straight back.
-let nonNotchRevealHoldSeconds: TimeInterval = 3
+/// The one reveal window: how long the island (and the agent traffic light, on every
+/// display type) stays visible after the most recent reason to show it, whether that
+/// reason was a hover ending or agent activity. Was two separate 3-second constants;
+/// unified at 5 by explicit user decision.
+let notchRevealHoldSeconds: TimeInterval = 5
 
-/// How long the agent traffic light stays lit after the most recent agent
-/// activity when hide-until-hover is on. Separate from the reveal hold so the
-/// two can diverge later; displays with a physical notch keep the light
-/// visible for as long as sessions exist and ignore this entirely.
-let agentTrafficLightHoverModeWindowSeconds: TimeInterval = 3
+/// Strict collapse: when false, the running-agent heartbeat does not refresh the reveal
+/// window, so the traffic light shows on state transitions only and goes dark mid-run.
+/// Flip to true to keep the light lit for the whole active run instead.
+let physicalNotchAgentBandFollowsHeartbeat = false
 
-/// How often a still-running agent re-announces itself. A long tool emits no state
-/// change and no new transcript records, so without a heartbeat the window above
-/// would expire mid-run and the light would go dark while work was still going on.
-/// Must stay comfortably under that window.
+/// How often a still-running agent re-announces itself. With strict collapse above this
+/// no longer drives the reveal window; it still feeds other consumers of activityPulse.
 let agentActivityHeartbeatSeconds: TimeInterval = 2
 
 enum MusicPlayerImageSizes {

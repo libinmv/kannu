@@ -18,6 +18,10 @@ final class CursorAgentStatusMonitor: ObservableObject {
     /// `trafficLightState` it also fires on same-state activity (executing → executing), so a
     /// window keyed off it stays open for the whole of a long run rather than expiring mid-way.
     @Published private(set) var activityPulse: Int = 0
+    /// Whether the most recent `activityPulse` bump was the running-agent heartbeat rather
+    /// than a real transition. Read synchronously by the pulse observer (same main-actor
+    /// turn as the publish) to keep heartbeats from refreshing time-boxed reveal windows.
+    private(set) var lastPulseWasHeartbeat = false
 
     private var eventStream: FSEventStreamRef?
     private var statusDirectorySource: DispatchSourceFileSystemObject?
@@ -360,6 +364,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
         let sortedSessions = resolvedSessions.sorted { $0.updatedAt > $1.updatedAt }
         if sessions != sortedSessions {
             sessions = sortedSessions
+            lastPulseWasHeartbeat = false
             activityPulse &+= 1
         }
         hadHookFilesThisCycle = !hookSessions.isEmpty || hadRecentHookFiles(staleMinutes: staleMinutes)
@@ -389,6 +394,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
             return
         }
         lastActivityPulseAt = now
+        lastPulseWasHeartbeat = true
         activityPulse &+= 1
     }
 
@@ -421,6 +427,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
             changed = true
         }
         if changed {
+            lastPulseWasHeartbeat = false
             activityPulse &+= 1
         }
     }

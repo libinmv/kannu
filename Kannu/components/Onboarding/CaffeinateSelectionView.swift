@@ -34,7 +34,7 @@ struct CaffeinateSelectionView: View {
                 .fontWeight(.bold)
                 .padding(.top, 24)
 
-            Text("Long agent runs die if the Mac falls asleep. Choose how Kannu should handle it — you can change this later in settings.")
+            Text("Long agent runs die if the Mac falls asleep. Choose how Kannu should handle it. You can change this later in settings.")
                 .multilineTextAlignment(.center)
                 .font(.body)
                 .foregroundColor(.secondary)
@@ -44,14 +44,14 @@ struct CaffeinateSelectionView: View {
                 CaffeinateOptionCard(
                     icon: "sparkles",
                     title: String(localized: "Smart caffeinate"),
-                    subtitle: String(localized: "Recommended — the Mac stays awake automatically while agents run, and sleeps normally when they stop."),
+                    subtitle: String(localized: "Recommended: the Mac stays awake automatically while agents run, and sleeps normally when they stop."),
                     isSelected: selectedSmart,
                     onTap: { withAnimation(.easeInOut(duration: 0.2)) { selectedSmart = true } }
                 )
                 CaffeinateOptionCard(
                     icon: "switch.2",
                     title: String(localized: "Manual switch"),
-                    subtitle: String(localized: "A switch in the notch's agent panel keeps the Mac awake while it's on — you decide when."),
+                    subtitle: String(localized: "A switch in the notch's agent panel keeps the Mac awake while it's on. You decide when."),
                     isSelected: !selectedSmart,
                     onTap: { withAnimation(.easeInOut(duration: 0.2)) { selectedSmart = false } }
                 )

@@ -32,7 +32,17 @@ final class AccessibilityPermissionStore: ObservableObject {
 
     private var pollingTask: Task<Void, Never>?
 
-    private init() {}
+    private init() {
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshStatus()
+            }
+        }
+    }
 
     deinit {
         pollingTask?.cancel()
@@ -57,6 +67,7 @@ final class AccessibilityPermissionStore: ObservableObject {
             NSWorkspace.shared.open(url)
         }
 #endif
+        beginPollingForStatusChanges()
     }
 
     private func beginPollingForStatusChanges() {

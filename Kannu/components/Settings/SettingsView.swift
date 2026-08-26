@@ -733,7 +733,7 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .general, title: "Enable haptics", keywords: ["haptic", "feedback"], highlightID: SettingsTab.general.highlightID(for: "Enable haptics")),
             SettingsSearchEntry(tab: .general, title: "Open notch on hover", keywords: ["hover to open", "auto open"], highlightID: SettingsTab.general.highlightID(for: "Open notch on hover")),
             SettingsSearchEntry(tab: .general, title: "External display style", keywords: ["dynamic island", "pill", "external display", "non-notch", "floating", "capsule"], highlightID: SettingsTab.general.highlightID(for: "External display style")),
-            SettingsSearchEntry(tab: .general, title: "Hide until hovered", keywords: ["hide", "hover", "external", "non-notch", "auto hide", "slide"], highlightID: SettingsTab.general.highlightID(for: "Hide until hovered")),
+            SettingsSearchEntry(tab: .general, title: "Always show on non-notch displays", keywords: ["always show", "hide", "hover", "external", "non-notch", "auto hide", "slide"], highlightID: SettingsTab.general.highlightID(for: "Always show on non-notch displays")),
             SettingsSearchEntry(tab: .general, title: "Notch display height", keywords: ["display height", "menu bar size"], highlightID: SettingsTab.general.highlightID(for: "Notch display height")),
 
             // Live Activities
@@ -1037,7 +1037,6 @@ struct GeneralSettings: View {
     @Default(.reverseSwipeGestures) var reverseSwipeGestures
     @Default(.reverseScrollGestures) var reverseScrollGestures
     @Default(.externalDisplayStyle) var externalDisplayStyle
-    @Default(.hideNonNotchUntilHover) var hideNonNotchUntilHover
 
     /// `SMAppService.mainApp` registers whatever bundle is currently running, so a build
     /// launched from DerivedData or a build folder pins that path as the login item forever —
@@ -1323,11 +1322,11 @@ struct GeneralSettings: View {
             Text(externalDisplayStyle.description)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Defaults.Toggle(key: .hideNonNotchUntilHover) {
-                Text("Hide until hovered on non-notch displays")
+            Defaults.Toggle(key: .alwaysShowOnNonNotchDisplays) {
+                Text("Always show on non-notch displays")
             }
-            .settingsHighlight(id: highlightID("Hide until hovered"))
-            Text("When enabled, the notch slides up and hides on external (non-notch) displays until you hover over it.")
+            .settingsHighlight(id: highlightID("Always show on non-notch displays"))
+            Text("By default the notch hides on external displays and appears when you hover near the top. Turn this on to keep it visible.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         } header: {
@@ -1360,13 +1359,13 @@ struct GeneralSettings: View {
                             Spacer()
                             Button("Reset") {
                                 Defaults[.displayStyleOverrides].removeValue(forKey: name)
-                                Defaults[.hideUntilHoverOverrides].removeValue(forKey: name)
+                                Defaults[.alwaysShowOverrides].removeValue(forKey: name)
                                 NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
                             }
                             .buttonStyle(.link)
                             .disabled(
                                 Defaults[.displayStyleOverrides][name] == nil
-                                    && Defaults[.hideUntilHoverOverrides][name] == nil
+                                    && Defaults[.alwaysShowOverrides][name] == nil
                             )
                         }
                         Picker("Style", selection: displayStyleBinding(for: name)) {
@@ -1375,7 +1374,7 @@ struct GeneralSettings: View {
                                 Text(style.localizedName).tag(ExternalDisplayStyle?.some(style))
                             }
                         }
-                        Picker("Hide until hovered", selection: hideUntilHoverBinding(for: name)) {
+                        Picker("Always show", selection: alwaysShowBinding(for: name)) {
                             Text("Follow default").tag(Bool?.none)
                             Text("On").tag(Bool?.some(true))
                             Text("Off").tag(Bool?.some(false))
@@ -1407,14 +1406,14 @@ struct GeneralSettings: View {
         )
     }
 
-    private func hideUntilHoverBinding(for name: String) -> Binding<Bool?> {
+    private func alwaysShowBinding(for name: String) -> Binding<Bool?> {
         Binding(
-            get: { Defaults[.hideUntilHoverOverrides][name] },
+            get: { Defaults[.alwaysShowOverrides][name] },
             set: { newValue in
                 if let newValue {
-                    Defaults[.hideUntilHoverOverrides][name] = newValue
+                    Defaults[.alwaysShowOverrides][name] = newValue
                 } else {
-                    Defaults[.hideUntilHoverOverrides].removeValue(forKey: name)
+                    Defaults[.alwaysShowOverrides].removeValue(forKey: name)
                 }
                 // Changes the closed-notch offset, so the window geometry needs re-evaluating.
                 NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
@@ -2133,7 +2132,7 @@ private struct HUDAndOSDSettingsView: View {
                             Toggle("Brightness HUD", isOn: $enableBrightnessHUD)
                             Toggle("Keyboard Backlight HUD", isOn: $enableKeyboardBacklightHUD)
                                 .disabled(enableThirdPartyDDCIntegration)
-                                .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active — brightness keys are handled by the external app." : "")
+                                .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active. Brightness keys are handled by the external app." : "")
                         } header: {
                             Text("Controls")
                         } footer: {
@@ -2254,7 +2253,7 @@ private struct HUDAndOSDSettingsView: View {
                             Toggle("Brightness HUD", isOn: $enableBrightnessHUD)
                             Toggle("Keyboard Backlight HUD", isOn: $enableKeyboardBacklightHUD)
                                 .disabled(enableThirdPartyDDCIntegration)
-                                .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active — brightness keys are handled by the external app." : "")
+                                .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active. Brightness keys are handled by the external app." : "")
                         } header: {
                             Text("Controls")
                         } footer: {
@@ -2305,6 +2304,7 @@ private struct HUDAndOSDSettingsView: View {
         .background(paneBackgroundColor)
         .navigationTitle("Controls")
         .onAppear {
+            accessibilityPermission.refreshStatus()
             if #unavailable(macOS 26.0), verticalHUDMaterial == .liquid {
                 verticalHUDMaterial = .frosted
                 verticalHUDLiquidGlassCustomizationMode = .standard
@@ -2721,7 +2721,7 @@ struct HUD: View {
                     Toggle("Brightness HUD", isOn: $enableBrightnessHUD)
                     Toggle("Keyboard Backlight HUD", isOn: $enableKeyboardBacklightHUD)
                         .disabled(enableThirdPartyDDCIntegration)
-                        .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active \u{2014} brightness keys are handled by the external app." : "")
+                        .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active. Brightness keys are handled by the external app." : "")
                 } header: {
                     Text("Controls")
                 } footer: {
@@ -2905,7 +2905,7 @@ struct Media: View {
                 } else {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(String(localized: "'Now Playing' was the only option on previous versions and works with all media apps."))
-                        Text(String(localized: "Uses macOS Now Playing when the Amazon Music app is the active media source. Playback controls follow the system Now Playing target. Scrubbing the timeline may not work if the Amazon Music app does not support remote seek."))
+                        Text(String(localized: "Uses macOS Now Playing when Amazon Music is the active source. Timeline scrubbing may be unavailable."))
                     }
                     .foregroundStyle(.secondary)
                     .font(.caption)
@@ -2938,7 +2938,7 @@ struct Media: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else if !autoHideInactiveNotchMediaPlayer {
-                    Text("When disabled, the notch music player stays visible with placeholder metadata even when playback is inactive.")
+                    Text("When off, the notch player stays visible with placeholder info while nothing plays.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -3006,7 +3006,7 @@ struct Media: View {
                     Text("Show floating media controls")
                 }
                 .disabled(!coordinator.musicLiveActivityEnabled || standardControlsSuppressed)
-                .help("Displays play/pause and skip buttons beside the notch while music is active. Disabled by default.")
+                .help("Shows play/pause and skip buttons beside the notch while music is active.")
                 Toggle("Enable sneak peek", isOn: $enableSneakPeek)
                 Toggle("Show sneak peek on playback changes", isOn: $showSneakPeekOnTrackChange)
                     .disabled(!enableSneakPeek)
@@ -3018,7 +3018,7 @@ struct Media: View {
                     Text("Show live canvas in Dynamic Island")
                 }
                 .settingsHighlight(id: highlightID("Show live canvas in Dynamic Island"))
-                .help("Replaces the artwork tile with the live canvas when the current app provides one, and reuses that moving canvas for the surrounding lighting effect.")
+                .help("Shows the app's live canvas in place of album art when one is available.")
                 
                 //Parallax Effect Intensity to control how much parallax is wanted
                 Slider(value: $parallaxEffectIntensity, in: 0...12, step: 1.0) {
@@ -3082,7 +3082,7 @@ struct Media: View {
             } header: {
                 Text("Music Visualizer")
             } footer: {
-                Text("When enabled, the music visualizer displays real-time audio spectrum data synced to your music. Requires macOS 14.2+ and uses minimal CPU/GPU resources via the Accelerate framework.")
+                Text("Shows a real-time audio spectrum synced to your music. Requires macOS 14.2 or later.")
             }
 
             Section {
@@ -3141,7 +3141,7 @@ struct Media: View {
                     }
                     .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
                     .settingsHighlight(id: highlightID("Keep album art visible during fullscreen artwork"))
-                    Text("Right-click the album art on the lock screen to set it as the wallpaper. Right-click again or click the background to restore the original wallpaper. If a canvas is available, Kannu can also keep the same album art + player layout on top of the live canvas.")
+                    Text("Right-click the lock screen album art to use it as the wallpaper; right-click again to restore.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -3149,7 +3149,7 @@ struct Media: View {
             } header: {
                 Text("Lock Screen Integration")
             } footer: {
-                Text("These controls mirror the Lock Screen tab so you can tune the media overlay while focusing on playback settings.")
+                Text("These controls mirror the Lock Screen tab.")
             }
             .disabled(!showStandardMediaControls)
             .opacity(showStandardMediaControls ? 1 : 0.5)
@@ -3500,14 +3500,9 @@ struct Shelf: View {
                 if let selectedProvider {
                     HStack {
                         QuickShareProviderIconImage(provider: selectedProvider, size: 16)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Currently selected: \(selectedProvider.id)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text("Files dropped on the shelf will be shared via this service")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
+                        Text("Files dropped on the shelf will be shared via this service")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 4)
                 }
@@ -3627,7 +3622,7 @@ struct LiveActivitiesSettings: View {
                 if !fullDiskAccessPermission.isAuthorized {
                     SettingsPermissionCallout(
                         title: String(localized: "Custom Focus metadata"),
-                        message: String(localized: "Full Disk Access unlocks custom Focus icons, colors, and labels. Standard Focus detection still works without it—grant access only if you need personalized indicators."),
+                        message: String(localized: "Full Disk Access unlocks custom Focus icons, colors, and labels. Standard Focus detection works without it, so grant access only if you want personalized indicators."),
                         icon: "externaldrive.fill",
                         iconColor: .purple,
                         requestButtonTitle: String(localized: "Request Full Disk Access"),
@@ -4440,6 +4435,8 @@ struct Appearance: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .disabled(!customizePhysicalNotchWidth)
+                .opacity(customizePhysicalNotchWidth ? 1 : 0.5)
                 .settingsHighlight(id: highlightID("Closed notch / pill width"))
 
                 Divider().padding(.vertical, 4)
@@ -4456,7 +4453,8 @@ struct Appearance: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .disabled(enableMinimalisticUI)
+                .disabled(enableMinimalisticUI || !customizePhysicalNotchWidth)
+                .opacity(customizePhysicalNotchWidth ? 1 : 0.5)
                 .settingsHighlight(id: highlightID("Expanded notch width"))
 
                 HStack {
@@ -4467,7 +4465,7 @@ struct Appearance: View {
                     Button("Reset Width") {
                         openNotchWidth = recommendedMin
                     }
-                    .disabled(abs(openNotchWidth - recommendedMin) < 0.5)
+                    .disabled(!customizePhysicalNotchWidth || abs(openNotchWidth - recommendedMin) < 0.5)
                     .buttonStyle(.bordered)
                 }
 
@@ -4700,7 +4698,7 @@ struct LockScreenSettings: View {
                     }
                     .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
                     .settingsHighlight(id: highlightID("Keep album art visible during fullscreen artwork"))
-                    Text("Right-click the album art on the lock screen to set it as the wallpaper. Right-click again or click the background to restore the original wallpaper. If a canvas is available, Kannu can also keep the same album art + player layout on top of the live canvas.")
+                    Text("Right-click the lock screen album art to use it as the wallpaper; right-click again to restore.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -7116,7 +7114,7 @@ struct CustomOSDSettings: View {
                     Toggle("Keyboard Backlight OSD", isOn: $enableOSDKeyboardBacklight)
                         .settingsHighlight(id: highlightID("Keyboard Backlight OSD"))
                         .disabled(enableThirdPartyDDCIntegration)
-                        .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active \u{2014} brightness keys are handled by the external app." : "")
+                        .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active. Brightness keys are handled by the external app." : "")
                 } header: {
                     Text("Controls")
                 } footer: {
@@ -7361,14 +7359,113 @@ private struct SettingsColorPickerRow: View {
     let title: String
     @Binding var selection: Color
     var supportsOpacity: Bool = false
+    @State private var showPicker = false
 
     var body: some View {
         HStack {
             Text(title)
             Spacer()
-            ColorWellSwatch(color: $selection, supportsOpacity: supportsOpacity)
+            Button {
+                showPicker.toggle()
+            } label: {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(selection)
+                    .frame(width: 22, height: 14)
+                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(.quaternary, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(title)
+            .popover(isPresented: $showPicker, arrowEdge: .bottom) {
+                SettingsColorPickerPopover(selection: $selection, supportsOpacity: supportsOpacity)
+            }
         }
     }
+}
+
+/// System Settings accent-color style picker: preset swatches for one-click choices, a
+/// native screen eyedropper, and the color panel for everything else. Native APIs only.
+private struct SettingsColorPickerPopover: View {
+    @Binding var selection: Color
+    var supportsOpacity: Bool
+
+    private static let presets: [NSColor] = [
+        .systemRed, .systemOrange, .systemYellow, .systemGreen, .systemMint, .systemTeal,
+        .systemCyan, .systemBlue, .systemIndigo, .systemPurple, .systemPink, .systemBrown,
+        .systemGray, .black, .white, .darkGray,
+    ]
+
+    private let columns = Array(repeating: GridItem(.fixed(20), spacing: 6), count: 8)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            LazyVGrid(columns: columns, spacing: 6) {
+                ForEach(Self.presets.indices, id: \.self) { index in
+                    swatchButton(Self.presets[index])
+                }
+            }
+            Divider()
+            HStack {
+                Button {
+                    sampleFromScreen()
+                } label: {
+                    Label("Pick from screen", systemImage: "eyedropper")
+                }
+                .buttonStyle(.borderless)
+                Spacer()
+                HStack(spacing: 6) {
+                    Text("Custom")
+                        .foregroundStyle(.secondary)
+                    ColorWellSwatch(color: $selection, supportsOpacity: supportsOpacity)
+                }
+            }
+            .font(.caption)
+        }
+        .padding(12)
+    }
+
+    private func swatchButton(_ preset: NSColor) -> some View {
+        Button {
+            selection = Color(nsColor: preset)
+        } label: {
+            Circle()
+                .fill(Color(nsColor: preset))
+                .frame(width: 18, height: 18)
+                .overlay(Circle().strokeBorder(.quaternary, lineWidth: 1))
+                .overlay {
+                    if matchesSelection(preset) {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(preset.isLightSwatch ? Color.black : Color.white)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("Color swatch"))
+    }
+
+    private func matchesSelection(_ preset: NSColor) -> Bool {
+        guard let lhs = NSColor(selection).usingColorSpace(.sRGB),
+              let rhs = preset.usingColorSpace(.sRGB) else { return false }
+        return abs(lhs.redComponent - rhs.redComponent) < 0.01
+            && abs(lhs.greenComponent - rhs.greenComponent) < 0.01
+            && abs(lhs.blueComponent - rhs.blueComponent) < 0.01
+    }
+
+    private func sampleFromScreen() {
+        NSColorSampler().show { picked in
+            guard let picked else { return }
+            selection = Color(nsColor: picked)
+        }
+    }
+}
+
+private extension NSColor {
+    var isLightSwatch: Bool {
+        guard let srgb = usingColorSpace(.sRGB) else { return false }
+        let luminance = 0.299 * srgb.redComponent + 0.587 * srgb.greenComponent + 0.114 * srgb.blueComponent
+        return luminance > 0.7
+    }
+
 }
 
 private struct ColorWellSwatch: NSViewRepresentable {
@@ -7603,12 +7700,6 @@ struct AgentStatusSettings: View {
                     legendRow(color: .green, title: String(localized: "Active"), detail: String(localized: "The agent is thinking, planning, executing tools, or otherwise working"))
                     legendRow(color: .yellow, title: String(localized: "Awaiting Input"), detail: String(localized: "The agent needs your approval or a response"))
                     legendRow(color: .red, title: String(localized: "Stopped"), detail: String(localized: "The agent has finished or was aborted"))
-                    HStack {
-                        Text("Current State")
-                        Spacer()
-                        Text(stateDescription(monitor.trafficLightState))
-                            .foregroundColor(.secondary)
-                    }
                 } header: {
                     Text("Traffic Light")
                 } footer: {
@@ -7626,7 +7717,7 @@ struct AgentStatusSettings: View {
                 } header: {
                     Text("Caffeinate")
                 } footer: {
-                    Text("Only system sleep is prevented — the display may still sleep while agents keep running. Closing the lid always sleeps the Mac.")
+                    Text("Only system sleep is prevented, so the display may still sleep while agents keep running. Closing the lid always sleeps the Mac.")
                 }
 
                 Section {
@@ -7802,6 +7893,7 @@ struct AgentStatusSettings: View {
             pushoverAppToken = SecureSecretsStore.value(for: .pushoverAppToken)
             webhookURL = SecureSecretsStore.value(for: .webhookURL)
             hookInstaller.refresh()
+            accessibilityPermission.refreshStatus()
         }
         .navigationTitle("Agents")
     }
@@ -7855,15 +7947,6 @@ struct AgentStatusSettings: View {
         }
     }
 
-    private func stateDescription(_ state: AgentTrafficLightState) -> String {
-        switch state {
-        case .thinking: return String(localized: "Thinking")
-        case .executing: return String(localized: "Executing")
-        case .awaitingInput: return String(localized: "Awaiting Input")
-        case .stopped: return String(localized: "Stopped")
-        case .inactive: return String(localized: "Inactive")
-        }
-    }
 
     @ViewBuilder
     private func legendRow(color: Color, title: String, detail: String) -> some View {
