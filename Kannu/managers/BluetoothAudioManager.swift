@@ -450,58 +450,6 @@ class BluetoothAudioManager: ObservableObject {
         refreshBatteryLevelsForConnectedDevices()
     }
     
-    /// Handles Bluetooth device connection event (legacy - kept for compatibility)
-    private func handleDeviceConnected(_ notification: Notification) {
-        guard let device = notification.object as? IOBluetoothDevice else {
-            print("🎧 [BluetoothAudioManager] ⚠️ Could not extract device from notification")
-            return
-        }
-        
-        // Only handle audio devices
-        guard isAudioDevice(device) else {
-            print("🎧 [BluetoothAudioManager] Device is not an audio device, ignoring")
-            return
-        }
-        
-        print("🎧 [BluetoothAudioManager] 🎉 Audio device connected: \(device.name ?? "Unknown")")
-        
-        guard let audioDevice = createBluetoothAudioDevice(from: device) else {
-            return
-        }
-        
-        // Add to connected devices list
-        if !connectedDevices.contains(where: { $0.address == audioDevice.address }) {
-            connectedDevices.append(audioDevice)
-        }
-        
-        // Update last connected device
-        lastConnectedDevice = audioDevice
-        isBluetoothAudioConnected = true
-        
-        // Show HUD
-        showDeviceConnectedHUD(audioDevice)
-    }
-    
-    /// Handles Bluetooth device disconnection event
-    private func handleDeviceDisconnected(_ notification: Notification) {
-        guard let device = notification.object as? IOBluetoothDevice else {
-            return
-        }
-        
-        guard isAudioDevice(device) else {
-            return
-        }
-        
-        print("🎧 [BluetoothAudioManager] 👋 Audio device disconnected: \(device.name ?? "Unknown")")
-        
-        // Remove from connected devices
-        let address = device.addressString ?? "Unknown"
-        let removed = connectedDevices.filter { $0.address == address }
-        connectedDevices.removeAll { $0.address == address }
-        removed.forEach { cancelHUDBatteryWait(for: $0) }
-        isBluetoothAudioConnected = !connectedDevices.isEmpty
-    }
-    
     // MARK: - Device Detection Helpers
     
     /// Determines if a Bluetooth device is an audio device

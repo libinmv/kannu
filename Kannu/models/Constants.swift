@@ -413,24 +413,7 @@ enum AgentStatusNotificationProvider: String, CaseIterable, Codable, Defaults.Se
     }
 }
 
-enum ColorPickerDisplayMode: String, CaseIterable, Codable, Defaults.Serializable {
-    case popover = "popover"     // Traditional popover attached to button
-    case panel = "panel"         // Floating panel near notch
-    
-    var displayName: String {
-        switch self {
-        case .popover: return "Popover"
-        case .panel: return "Panel"
-        }
-    }
-    
-    var description: String {
-        switch self {
-        case .popover: return "Shows color picker as a dropdown attached to the color picker button"
-        case .panel: return "Shows color picker in a floating panel near the notch"
-        }
-    }
-}
+
 
 enum ThirdPartyDDCProvider: String, CaseIterable, Codable, Defaults.Serializable, Identifiable {
     case betterDisplay
@@ -692,24 +675,7 @@ enum FocusMonitoringMode: String, CaseIterable, Identifiable, Defaults.Serializa
     }
 }
 
-enum ReminderPresentationStyle: String, CaseIterable, Identifiable, Defaults.Serializable {
-    case ringCountdown = "Ring"
-    case digital = "Digital"
-    case minutes = "Minutes"
 
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-            case .ringCountdown:
-                return String(localized: "Ring")
-            case .digital:
-                return String(localized: "Digital")
-            case .minutes:
-                return String(localized: "Minutes")
-        }
-    }
-}
 
 // AI Model types for screen assistant
 enum AIModelProvider: String, CaseIterable, Identifiable, Defaults.Serializable {
@@ -961,14 +927,10 @@ extension Defaults.Keys {
     static let openNotchWidth = Key<CGFloat>("openNotchWidth", default: 640)
     static let closedNotchWidth = Key<CGFloat>("closedNotchWidth", default: 150)
     static let customizePhysicalNotchWidth = Key<Bool>("customizePhysicalNotchWidth", default: false)
-        //static let openLastTabByDefault = Key<Bool>("openLastTabByDefault", default: false)
     
         // MARK: Appearance
     static let showEmojis = Key<Bool>("showEmojis", default: false)
-        //static let alwaysShowTabs = Key<Bool>("alwaysShowTabs", default: true)
     static let showMirror = Key<Bool>("showMirror", default: false)
-    static let mirrorShape = Key<MirrorShapeEnum>("mirrorShape", default: MirrorShapeEnum.rectangle)
-    static let selectedCameraID = Key<String>("selectedCameraID", default: "")
     static let settingsIconInNotch = Key<Bool>("settingsIconInNotch", default: true)
     static let lightingEffect = Key<Bool>("lightingEffect", default: true)
     static let accentColor = Key<Color>("accentColor", default: Color.blue)
@@ -981,8 +943,6 @@ extension Defaults.Keys {
     static let selectedIdleAnimation = Key<CustomIdleAnimation?>("selectedIdleAnimation", default: nil)
     static let animationTransformOverrides = Key<[String: AnimationTransformConfig]>("animationTransformOverrides", default: [:])
     static let tileShowLabels = Key<Bool>("tileShowLabels", default: false)
-    static let hideCompletedReminders = Key<Bool>("hideCompletedReminders", default: true)
-    static let hideAllDayEvents = Key<Bool>("hideAllDayEvents", default: false)
     static let sliderColor = Key<SliderColorEnum>(
         "sliderUseAlbumArtColor",
         default: SliderColorEnum.albumArt
@@ -992,7 +952,6 @@ extension Defaults.Keys {
     static let visualizerBarCount = Key<Int>("visualizerBarCount", default: 4)
     static let enableWaveformScrubber = Key<Bool>("enableWaveformScrubber", default: true)
     static let colorExtractionMode = Key<ColorExtractionMode>("colorExtractionMode", default: .vibrant)
-    static let customVisualizers = Key<[CustomVisualizer]>("customVisualizers", default: [])
     static let selectedVisualizer = Key<CustomVisualizer?>("selectedVisualizer", default: nil)
     static let customAppIcons = Key<[CustomAppIcon]>("customAppIcons", default: [])
     static let selectedAppIconID = Key<String?>("selectedAppIconID", default: nil)
@@ -1085,8 +1044,6 @@ extension Defaults.Keys {
     static let lockScreenUseArtworkLayoutOverFullscreenCanvas = Key<Bool>("lockScreenShowCenteredAlbumArtOverFullscreenCanvas", default: true)
     static let lockScreenTimerWidgetUsesBlur = Key<Bool>("lockScreenTimerWidgetUsesBlur", default: false)
     static let lockScreenReminderChipStyle = Key<LockScreenReminderChipStyle>("lockScreenReminderChipStyle", default: .eventColor)
-    static let lockScreenReminderWidgetHorizontalAlignment = Key<String>("lockScreenReminderWidgetHorizontalAlignment", default: "center")
-    static let lockScreenReminderWidgetVerticalOffset = Key<Double>("lockScreenReminderWidgetVerticalOffset", default: 0)
         // MARK: Battery
     static let showPowerStatusNotifications = Key<Bool>("showPowerStatusNotifications", default: true)
     static let showBatteryIndicator = Key<Bool>("showBatteryIndicator", default: BatteryActivityManager.shared.hasBattery())
@@ -1117,7 +1074,6 @@ extension Defaults.Keys {
     
         // MARK: Downloads
     static let enableDownloadListener = Key<Bool>("enableDownloadListener", default: true)
-    static let enableSafariDownloads = Key<Bool>("enableSafariDownloads", default: true)
     static let selectedDownloadIndicatorStyle = Key<DownloadIndicatorStyle>("selectedDownloadIndicatorStyle", default: DownloadIndicatorStyle.progress)
     static let selectedDownloadIconStyle = Key<DownloadIconStyle>("selectedDownloadIconStyle", default: DownloadIconStyle.onlyAppIcon)
     
@@ -1142,12 +1098,10 @@ extension Defaults.Keys {
         static let expandedDragDetection = Key<Bool>("expandedDragDetection", default: true)
     
         // MARK: Fullscreen Media Detection
-    static let alwaysHideInFullscreen = Key<Bool>("alwaysHideInFullscreen", default: false)
     
     static let hideNotchOption = Key<HideNotchOption>("hideNotchOption", default: .nowPlayingOnly)
     
     // MARK: Wobble Animation
-    static let enableWobbleAnimation = Key<Bool>("enableWobbleAnimation", default: false)
     
     // MARK: Media Controller
     static let mediaController = Key<MediaControllerType>("mediaController", default: defaultMediaController)
@@ -1180,7 +1134,6 @@ extension Defaults.Keys {
     /// tier, credits and token counts all come off disk and nothing can rate-limit or prompt.
     static let enableClaudeUsageLimits = Key<Bool>("enableClaudeUsageLimits", default: false)
     static let llmProviderDefaultsConfigured = Key<Bool>("llmProviderDefaultsConfigured", default: false)
-    static let autoStartStatsMonitoring = Key<Bool>("autoStartStatsMonitoring", default: false)
     static let statsStopWhenNotchCloses = Key<Bool>("statsStopWhenNotchCloses", default: true)
     static let statsUpdateInterval = Key<Double>("statsUpdateInterval", default: 1.0)
     static let showCpuGraph = Key<Bool>("showCpuGraph", default: false)
@@ -1191,21 +1144,6 @@ extension Defaults.Keys {
     static let cpuTemperatureUnit = Key<LockScreenWeatherTemperatureUnit>("cpuTemperatureUnit", default: .celsius)
     
     // MARK: Terminal Feature
-    static let enableTerminalFeature = Key<Bool>("enableTerminalFeature", default: false)
-    static let terminalShellPath = Key<String>("terminalShellPath", default: "/bin/zsh")
-    static let terminalFontFamily = Key<String>("terminalFontFamily", default: "")
-    static let terminalFontSize = Key<Double>("terminalFontSize", default: 12.0)
-    static let terminalOpacity = Key<Double>("terminalOpacity", default: 1.0)
-    static let terminalMaxHeightFraction = Key<Double>("terminalMaxHeightFraction", default: 0.4)
-    static let terminalCursorStyle = Key<String>("terminalCursorStyle", default: "blinkBlock")
-    static let terminalScrollbackLines = Key<Int>("terminalScrollbackLines", default: 1000)
-    static let terminalOptionAsMeta = Key<Bool>("terminalOptionAsMeta", default: true)
-    static let terminalMouseReporting = Key<Bool>("terminalMouseReporting", default: true)
-    static let terminalBoldAsBright = Key<Bool>("terminalBoldAsBright", default: true)
-    static let terminalBackgroundColor = Key<Color>("terminalBackgroundColor", default: .black)
-    static let terminalForegroundColor = Key<Color>("terminalForegroundColor", default: .white)
-    static let terminalCursorColor = Key<Color>("terminalCursorColor", default: Color(.selectedControlColor))
-    static let terminalStickyMode = Key<Bool>("terminalStickyMode", default: false)
     
     // MARK: Timer Feature
     static let enableTimerFeature = Key<Bool>("enableTimerFeature", default: true)
@@ -1224,16 +1162,9 @@ extension Defaults.Keys {
     
     // MARK: Reminder Live Activity
     static let enableReminderLiveActivity = Key<Bool>("enableReminderLiveActivity", default: false)
-    static let reminderPresentationStyle = Key<ReminderPresentationStyle>("reminderPresentationStyle", default: .ringCountdown)
-    static let reminderLeadTime = Key<Int>("reminderLeadTime", default: 5)
-    static let reminderSneakPeekDuration = Key<Double>("reminderSneakPeekDuration", default: 5)
     static let timerControlWindowEnabled = Key<Bool>("timerControlWindowEnabled", default: true)
     
     // MARK: ColorPicker Feature
-    static let enableColorPickerFeature = Key<Bool>("enableColorPickerFeature", default: false)
-    static let showColorFormats = Key<Bool>("showColorFormats", default: true)
-    static let colorPickerDisplayMode = Key<ColorPickerDisplayMode>("colorPickerDisplayMode", default: .panel)
-    static let colorHistorySize = Key<Int>("colorHistorySize", default: 10)
     static let showColorPickerIcon = Key<Bool>("showColorPickerIcon", default: true)
     
     // MARK: Clipboard Feature
@@ -1371,7 +1302,6 @@ extension Defaults.Keys {
     static let enableScreenRecordingDetection = Key<Bool>("enableScreenRecordingDetection", default: true)
     static let showRecordingIndicator = Key<Bool>("showRecordingIndicator", default: true)
     // Polling removed - now uses event-driven private API detection (CGSIsScreenWatcherPresent)
-    // static let enableScreenRecordingPolling = Key<Bool>("enableScreenRecordingPolling", default: false)
 
     // MARK: Focus / Do Not Disturb Detection
     static let enableDoNotDisturbDetection = Key<Bool>("enableDoNotDisturbDetection", default: true)

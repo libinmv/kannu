@@ -876,7 +876,7 @@ struct ContentView: View {
                 // When sneak peek finishes, check if user is still hovering and open notch if needed
                 if !sneakPeekShowing {
                     runAfter(0.2) {
-                        if isHovering && vm.notchState == .closed && !coordinator.isHoverOpenSuppressed {
+                        if isHovering && vm.notchState == .closed {
                             openNotch()
                         }
                     }
@@ -2127,8 +2127,7 @@ struct ContentView: View {
 
         guard vm.notchState == .closed,
               !isSneakPeekVisibleOnCurrentScreen,
-              Defaults[.openNotchOnHover],
-              !coordinator.isHoverOpenSuppressed else { return }
+              Defaults[.openNotchOnHover] else { return }
 
         agentHoverTask = Task {
             try? await Task.sleep(for: .seconds(Defaults[.minimumHoverDuration]))
@@ -2137,8 +2136,7 @@ struct ContentView: View {
             await MainActor.run {
                 guard self.vm.notchState == .closed,
                       self.isHovering,
-                      !self.isSneakPeekVisibleOnCurrentScreen,
-                      !self.coordinator.isHoverOpenSuppressed else { return }
+                      !self.isSneakPeekVisibleOnCurrentScreen else { return }
                 self.openNotch(focus: focus)
             }
         }
@@ -2344,7 +2342,6 @@ struct ContentView: View {
                 guard let vm, let lockScreenManager else { return }
                 guard !lockScreenManager.isLocked else { return }
                 guard vm.notchState == .closed else { return }
-                guard !self.coordinator.isHoverOpenSuppressed else { return }
                 guard self.isHovering else { return }
                 guard !self.handleClosedMusicWaveformTapIfNeeded() else { return }
                 if Defaults[.enableHaptics] {
@@ -2425,8 +2422,7 @@ struct ContentView: View {
                 await MainActor.run {
                     guard self.vm.notchState == .closed,
                           self.isHovering,
-                          !self.isSneakPeekVisibleOnCurrentScreen,
-                          !self.coordinator.isHoverOpenSuppressed else { return }
+                          !self.isSneakPeekVisibleOnCurrentScreen else { return }
 
                     if shouldFocusTimerTab {
                         withAnimation(.smooth) {
@@ -2474,19 +2470,6 @@ struct ContentView: View {
         }
     }
 
-    private func isPointInsideNotchWindow(_ point: CGPoint) -> Bool {
-        if let appDelegate = AppDelegate.shared {
-            if Defaults[.showOnAllDisplays] {
-                return appDelegate.windows.values.contains(where: { $0.frame.contains(point) })
-            }
-            if let window = appDelegate.window {
-                return window.frame.contains(point)
-            }
-        }
-
-        return NSApp.windows.contains(where: { $0.frame.contains(point) })
-    }
-    
     // Helper function to check if any popovers are active
     private func hasAnyActivePopovers() -> Bool {
      return vm.isBatteryPopoverActive || 

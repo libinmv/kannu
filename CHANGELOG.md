@@ -4,6 +4,17 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-26 - Remove 27 orphaned files, 33 dead settings keys, and two unwired feature stubs
+- **Developer label:** Verified-zero-reference deletions from the dead-code audit; suppressHoverOpen and toggleClipboardPopover archaeology'd and removed; .gitignore covers *.profraw
+- **Agent label:** The codebase no longer carries the removed terminal feature's skeleton or two dozen orphaned views
+- **Changes:**
+  - Deleted 27 Swift files whose every symbol had zero references, re-verified at deletion time: five empty license-header stubs, the dead AppleScript volume reader, the old status-bar menu (plus its four never-invoked @objc partners in AppDelegate), two removed onboarding steps, the superseded MinimalisticMusicView, test/tip/whats-new leftovers, and six orphaned Shelf/LiveActivity components
+  - Deleted 33 dead Defaults keys — including the entire never-shipped terminal feature block (15 keys) with its sizing constants and corner-radius helper — plus 3 commented-out key lines and the enums those keys kept alive (MirrorShapeEnum, ColorPickerDisplayMode, ReminderPresentationStyle). Migration-only legacy keys are intentionally retained
+  - Deleted ~12 dead functions (effectiveHideUntilHover had gone dead again after the polarity change inlined it; isMouseHovering; isPointInsideNotchWindow; two "legacy - kept for compatibility" Bluetooth handlers; deviceHasNotch and the status-bar trio)
+  - Two "dead" clusters turned out to be unwired features and were archaeology'd per instruction before deletion: suppressHoverOpen was built for the terminal notch (sole caller removed with that feature on 2026-07-07) — deleted along with the five permanently-false guards it left in ContentView; toggleClipboardPopover was superseded by ClipboardPanelManager in August 2025 — deleted along with its unreachable onChange in KannuHeader
+  - Deleted 4 dead imagesets (Github, LinkedIn, defaultmusic, logo). chrome.imageset was flagged dead by name-grep but is alive via the generated `Image(.chrome)` symbol — restored, and the build verifies the rest
+  - `.gitignore` now covers `*.profraw`; the stray zero-byte `default.profraw` at the repo root is gone
+
 ### 2026-08-26 - Cut idle wakeups ~90%: gate the hover poll, make Claude detection event-driven, drop the pgrep forks
 - **Developer label:** shouldUseHiddenEdgeHoverPolling gates task lifecycle; Claude dirs join FSEvents watchedPaths with the 1s poll relaxed to a 30s safety net; sysctl replaces pgrep in SystemOSDManager
 - **Agent label:** Kannu idles quietly instead of waking ~38 times a second

@@ -248,23 +248,6 @@ struct KannuHeader: View {
         }
         .foregroundColor(.gray)
         .environmentObject(vm)
-        .onChange(of: coordinator.shouldToggleClipboardPopover) { _, _ in
-            // Only toggle if clipboard is enabled
-            if Defaults[.enableClipboardManager] {
-                switch clipboardDisplayMode {
-                case .panel:
-                    ClipboardPanelManager.shared.toggleClipboardPanel()
-                case .popover:
-                    showClipboardPopover.toggle()
-                case .separateTab:
-                    if coordinator.currentView == .notes {
-                        coordinator.currentView = .home
-                    } else {
-                        coordinator.currentView = .notes
-                    }
-                }
-            }
-        }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ToggleClipboardPopover"))) { _ in
             // Handle keyboard shortcut for popover mode
             if Defaults[.enableClipboardManager] && clipboardDisplayMode == .popover {

@@ -1378,17 +1378,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         audioPlayer.play(fileName: "dynamic", fileExtension: "m4a")
     }
     
-    func deviceHasNotch() -> Bool {
-        if #available(macOS 12.0, *) {
-            for screen in NSScreen.screens {
-                if screen.safeAreaInsets.top > 0 {
-                    return true
-                }
-            }
-        }
-        return false
-    }
-    
     @objc func screenConfigurationDidChange() {
         let currentScreens = NSScreen.screens
 
@@ -1479,21 +1468,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
-    @objc func togglePopover(_ sender: Any?) {
-        if window?.isVisible == true {
-            window?.orderOut(nil)
-        } else {
-            window?.orderFrontRegardless()
-        }
-    }
     
-    @objc func showMenu() {
-        statusItem?.menu?.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
-    }
     
-    @objc func quitAction() {
-        NSApplication.shared.terminate(nil)
-    }
 
     
     
