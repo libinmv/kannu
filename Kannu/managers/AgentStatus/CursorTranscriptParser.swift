@@ -16,6 +16,8 @@ struct TranscriptAnalysis: Equatable {
     let isTurnEndedAtTail: Bool
 }
 
+// Main-actor isolated — see CursorComposerStore for why.
+@MainActor
 enum CursorTranscriptParser {
     /// Keep tails small — only the last few events matter for traffic-light state.
     private static let tailByteLimit = 48_000

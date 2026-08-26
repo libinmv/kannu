@@ -64,13 +64,11 @@ final class CursorAgentStatusMonitor: ObservableObject {
         pollTimer?.invalidate()
         pollTimer = nil
         if let statusDirectorySource {
+            // The cancel handler (fd captured by value) closes the descriptor.
             statusDirectorySource.cancel()
             self.statusDirectorySource = nil
         }
-        if statusDirectoryFD >= 0 {
-            close(statusDirectoryFD)
-            statusDirectoryFD = -1
-        }
+        statusDirectoryFD = -1
         quickRescanTask?.cancel()
         quickRescanTask = nil
         if let eventStream {
@@ -164,11 +162,10 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 self?.scheduleQuickRescan()
             }
         }
-        source.setCancelHandler { [weak self] in
-            if let fd = self?.statusDirectoryFD, fd >= 0 {
-                close(fd)
-                self?.statusDirectoryFD = -1
-            }
+        // fd captured by value — see SystemTimerBridge.startFileMonitor for why closing
+        // via self from an enqueued cancel handler closes the wrong descriptor.
+        source.setCancelHandler {
+            close(fd)
         }
         source.resume()
         statusDirectorySource = source
@@ -715,6 +712,18 @@ final class CursorAgentStatusMonitor: ObservableObject {
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let state = json["state"] as? String else { continue }
 
+            // The agent hook replaces this file atomically (mkstemp + os.replace) and can
+            // do so between our read and a delete decision below. Deleting is only safe if
+            // the file is still the one we judged — otherwise we destroy a status the
+            // agent wrote milliseconds ago and its session vanishes until the next hook
+            // event, potentially minutes away.
+            let mtimeAtRead = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            func removeIfUnchanged() {
+                let mtimeNow = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+                guard mtimeNow == mtimeAtRead else { return }
+                try? FileManager.default.removeItem(at: file)
+            }
+
             var tsMs = (json["ts"] as? NSNumber)?.int64Value ?? 0
             if tsMs <= 0,
                let mtime = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate {
@@ -722,7 +731,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
             }
 
             guard nowMs - tsMs <= staleMs else {
-                try? FileManager.default.removeItem(at: file)
+                removeIfUnchanged()
                 continue
             }
 
@@ -731,7 +740,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 .replacingOccurrences(of: "\(provider)-", with: "")
 
             if AgentTrafficLightMapper.isSimulationConversationID(conversationID) {
-                try? FileManager.default.removeItem(at: file)
+                removeIfUnchanged()
                 continue
             }
 
@@ -748,7 +757,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 provider: provider,
                 staleMinutes: staleMinutes
                ) {
-                try? FileManager.default.removeItem(at: file)
+                removeIfUnchanged()
                 continue
             }
             let chatName = preferredHookChatName(from: json)

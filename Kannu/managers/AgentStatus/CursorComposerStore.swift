@@ -10,6 +10,10 @@ struct ComposerMeta: Equatable {
     let name: String?
 }
 
+// Main-actor isolated: the static caches below are unguarded mutable state, and every
+// caller today is the @MainActor monitor. The annotation turns any future off-main call
+// into a compile error instead of a data race.
+@MainActor
 enum CursorComposerStore {
     private static let globalDBPath: String = {
         FileManager.default.homeDirectoryForCurrentUser

@@ -28,6 +28,10 @@ class SystemOSDManager {
     // process, so we need to re-SIGSTOP every new incarnation.
     private struct SuppressionState {
         var task: Task<Void, Never>?
+        // The kickstart/poll/SIGSTOP bootstrap. Tracked so turning suppression off can
+        // cancel it — an orphaned copy used to SIGSTOP the helper up to ~16s after
+        // enableSystemHUD() had already restored it, leaving the user with no HUD at all.
+        var disableTask: Task<Void, Never>?
         var lastSuspendedPID: Int32 = -1
         // True while suppressing the native OSD (between disable/enableSystemHUD).
         var active = false
@@ -99,7 +103,11 @@ class SystemOSDManager {
 
     /// Re-enables the system HUD by restarting OSDUIHelper
     public static func enableSystemHUD() {
-        suppressionState.withLock { $0.active = false }
+        suppressionState.withLock { state in
+            state.active = false
+            state.disableTask?.cancel()
+            state.disableTask = nil
+        }
         stopSuppressionWatcher()
         Task.detached(priority: .background) {
             await enableSystemHUDAsync()
@@ -116,6 +124,8 @@ class SystemOSDManager {
         let wasActive = suppressionState.withLock { state -> Bool in
             let active = state.active
             state.active = false
+            state.disableTask?.cancel()
+            state.disableTask = nil
             return active
         }
         guard wasActive else { return }
@@ -202,8 +212,12 @@ class SystemOSDManager {
             }
             return
         }
-        Task.detached(priority: .background) {
+        let disableTask = Task.detached(priority: .background) {
             await disableSystemHUDAsync()
+        }
+        suppressionState.withLock { state in
+            state.disableTask?.cancel()
+            state.disableTask = disableTask
         }
         startSuppressionWatcher()
     }
@@ -249,6 +263,7 @@ class SystemOSDManager {
                     }
                 }
 
+                guard suppressionState.withLock({ $0.active }), !Task.isCancelled else { return }
                 suspendOSDUIHelper()
 
                 // Settle, then confirm a process is actually present (and thus

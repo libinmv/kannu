@@ -718,10 +718,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }.store(in: &cancellables)
 
+        // Same willSet deferral as $currentView above: without it the resize reads the
+        // OLD layout's preferredHeight and animates one wrong-height frame.
         coordinator.$notesLayoutState
             .removeDuplicates()
             .sink { [weak self] _ in
-                self?.updateWindowSizeIfNeeded()
+                DispatchQueue.main.async {
+                    self?.updateWindowSizeIfNeeded()
+                }
             }
             .store(in: &cancellables)
         

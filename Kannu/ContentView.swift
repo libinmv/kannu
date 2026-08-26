@@ -2113,6 +2113,7 @@ struct ContentView: View {
         withAnimation(.bouncy.speed(1.2)) {
             isHovering = true
         }
+        cancelRevealCountdown()
 
         if vm.notchState == .closed && Defaults[.enableHaptics] {
             triggerHapticIfAllowed()
@@ -2427,24 +2428,25 @@ struct ContentView: View {
                 }
             }
         } else {
+            withAnimation(.bouncy.speed(1.2)) {
+                isHovering = false
+            }
+
+            // A short linger after the pointer leaves keeps a brief slip off the
+            // edge from yanking the island away mid-glance.
+            if hideUntilHoverAppliesHere {
+                revealHoldDeadline = Date().addingTimeInterval(notchRevealHoldSeconds)
+                armRevealCountdown()
+            } else if isPhysicalNotchScreen, agentLightDeadline != nil {
+                armRevealCountdown()
+            }
+
             hoverTask = Task {
                 try? await Task.sleep(for: .milliseconds(100))
                 guard !Task.isCancelled else { return }
 
                 await MainActor.run {
-                    withAnimation(.bouncy.speed(1.2)) {
-                        self.isHovering = false
-                    }
-
-                    // A short linger after the pointer leaves keeps a brief slip off the
-                    // edge from yanking the island away mid-glance.
-                    if self.hideUntilHoverAppliesHere {
-                        self.revealHoldDeadline = Date().addingTimeInterval(notchRevealHoldSeconds)
-                        self.armRevealCountdown()
-                    } else if self.isPhysicalNotchScreen, self.agentLightDeadline != nil {
-                        self.armRevealCountdown()
-                    }
-
+                    guard !self.isHovering else { return }
                     if self.vm.notchState == .open && !self.shouldPreventAutoClose() {
                         self.vm.close()
                     }
@@ -2753,13 +2755,14 @@ struct ContentView: View {
             guard !Task.isCancelled else { return }
 
             await MainActor.run {
+                guard !Task.isCancelled else { return }
                 if let currentDeadline = musicControlVisibilityDeadline, currentDeadline <= Date() {
                     musicControlVisibilityDeadline = nil
                 }
 
                 enqueueMusicControlWindowSync(forceRefresh: false)
-
-                musicControlHideTask = nil
+                // Deliberately no self-nil: this handle may already point at a
+                // replacement task, and clearing it would orphan that task.
             }
         }
     }
@@ -2795,13 +2798,14 @@ struct ContentView: View {
             guard !Task.isCancelled else { return }
 
             await MainActor.run {
+                guard !Task.isCancelled else { return }
                 if vm.notchState == .closed && !lockScreenManager.isLocked && !isMusicHUDDeferredAfterUnlock {
                     isMusicControlWindowSuppressed = false
                     triggerPendingMusicControlSyncIfNeeded()
                 } else {
                     isMusicControlWindowSuppressed = true
                 }
-                musicControlSuppressionTask = nil
+                // No self-nil — see musicControlHideTask.
             }
         }
     }
@@ -2886,6 +2890,7 @@ struct ContentView: View {
             guard !Task.isCancelled else { return }
 
             await MainActor.run {
+                guard !Task.isCancelled else { return }
                 if shouldShowMusicControlWindow() {
                     logMusicControlEvent("Running floating window sync (force: \(forceRefresh))")
                     syncMusicControlWindow(forceRefresh: forceRefresh)
@@ -2893,8 +2898,7 @@ struct ContentView: View {
                     logMusicControlEvent("Skipping floating window sync (conditions changed)")
                     hideMusicControlWindow()
                 }
-
-                pendingMusicControlTask = nil
+                // No self-nil — see musicControlHideTask.
             }
         }
         #endif

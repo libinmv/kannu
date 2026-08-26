@@ -2,6 +2,8 @@ import Foundation
 import SQLite3
 
 /// Reads Cursor Glass per-agent UI state for chat titles on agent-mode sessions.
+// Main-actor isolated — see CursorComposerStore for why.
+@MainActor
 enum CursorGlassAgentStore {
     private static let globalDBPath: String = {
         FileManager.default.homeDirectoryForCurrentUser

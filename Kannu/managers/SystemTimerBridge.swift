@@ -183,13 +183,11 @@ final class SystemTimerBridge {
             self.ticker?.cancel()
             self.ticker = nil
 
+            // The cancel handler closes the fd; closing it here as well would race the
+            // enqueued handler and double-close a recycled descriptor.
             self.fileMonitor?.cancel()
             self.fileMonitor = nil
-
-            if self.fileDescriptor != -1 {
-                close(self.fileDescriptor)
-                self.fileDescriptor = -1
-            }
+            self.fileDescriptor = -1
 
             self.menuExtra = nil
             self.initialTotalDuration = nil
@@ -399,10 +397,11 @@ final class SystemTimerBridge {
             self?.refreshMetadata()
         }
 
-        source.setCancelHandler { [weak self] in
-            guard let fd = self?.fileDescriptor, fd != -1 else { return }
+        // Capture the fd by value: cancel() only enqueues this handler, so by the time
+        // it runs a replacement watcher may own a recycled descriptor with the same
+        // number. Closing via self would close the new watcher's fd (or a stranger's).
+        source.setCancelHandler {
             close(fd)
-            self?.fileDescriptor = -1
         }
 
         source.resume()

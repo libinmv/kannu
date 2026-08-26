@@ -22,14 +22,12 @@
 
 import AppKit
 import AudioToolbox
+import Defaults
 import CoreAudio
 import simd
 import os.log
 
 private let audioTapLog = OSLog(subsystem: "com.kannu.app", category: "AudioTap")
-
-// Debug: track callback invocations
-private var callbackCount: Int = 0
 
 // CoreAudio fires this on a high-priority background real-time thread.
 let audioIOProc: AudioDeviceIOProc = {
@@ -51,18 +49,6 @@ let audioIOProc: AudioDeviceIOProc = {
 
         // Pass the mono array directly to C++
         scanner.bridge.processBuffer(floatData, count: floatCount)
-        
-        // Debug: log periodically with audio level info
-        callbackCount += 1
-        if callbackCount % 1000 == 0 {
-            // Calculate max absolute value in buffer to check if audio is present
-            var maxVal: Float = 0.0
-            for i in 0..<Int(floatCount) {
-                let absVal = abs(floatData[i])
-                if absVal > maxVal { maxVal = absVal }
-            }
-            os_log(.debug, log: audioTapLog, "🔊 Audio callback fired %d times, buffer size: %d, max amplitude: %f", callbackCount, floatCount, maxVal)
-        }
     }
 
     return noErr
@@ -258,7 +244,6 @@ class AudioTap: NSObject, @unchecked Sendable {
         }
 
         captureIsRunning = true
-        callbackCount = 0
         
         DispatchQueue.main.async { [weak self] in
             self?.updateTimer?.invalidate()
@@ -296,6 +281,9 @@ class AudioTap: NSObject, @unchecked Sendable {
         
         // Debounce: wait 500ms before actually restarting
         let workItem = DispatchWorkItem { [weak self] in
+            // The feature can be switched off between scheduling and firing; restarting
+            // then would rebuild the tap and its 60 Hz timer behind the user's back.
+            guard Defaults[.enableRealTimeWaveform] else { return }
             self?.audioQueue.async {
                 print("🔄 [AudioTap] Restarting capture...")
                 self?.stopCaptureSync()
@@ -309,6 +297,9 @@ class AudioTap: NSObject, @unchecked Sendable {
     }
 
     func stopCapture() {
+        // A debounced restart scheduled before this stop must die with it.
+        pendingRestartWorkItem?.cancel()
+        pendingRestartWorkItem = nil
         audioQueue.sync { [weak self] in
             self?.stopCaptureSync()
         }
