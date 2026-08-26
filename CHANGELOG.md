@@ -4,6 +4,14 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-26 - Extract the Claude reconciler into the tested mapper (the REGRESSIONS.md refactor)
+- **Developer label:** reconcileClaudeSessions moves verbatim to AgentTrafficLightMapper; replacing* builders follow; 8 new ClaudeReconcilerTests
+- **Agent label:** The merge that broke three times is now pinned by tests that fail when a field is dropped
+- **Changes:**
+  - The Claude hook/passive reconciler — inline in a private monitor method and unreachable by the logic test target through all three of its historical regressions — moves verbatim to `AgentTrafficLightMapper.reconcileClaudeSessions(...)` in `AgentTrafficLightState.swift` (Foundation-only, already compiled into KannuTests). The monitor now delegates; the `replacingChatName`/`replacingProjectName` builders move with it. Pure relocation, no behaviour change
+  - 8 new `ClaudeReconcilerTests` pin: the entry-7 field set (all four passive-inherited fields, on both the demote arm and the pass-through arm that lost fields twice), demote-on-dead-PID without passive evidence, no-demote by older passive evidence, long-tool promotion, passive-only append, non-Claude pass-through, and the identity case. The field-set guard was negative-verified: temporarily removing the `hostPID` inheritance fails two tests. Suite is now 48 tests
+  - `docs/REGRESSIONS.md` entry 7's guard status updated to exists; entry 5's name-resolution half is explicitly still open (the resolvers span filesystem/SQLite sources and need a seam first)
+
 ### 2026-08-26 - Remove 27 orphaned files, 33 dead settings keys, and two unwired feature stubs
 - **Developer label:** Verified-zero-reference deletions from the dead-code audit; suppressHoverOpen and toggleClipboardPopover archaeology'd and removed; .gitignore covers *.profraw
 - **Agent label:** The codebase no longer carries the removed terminal feature's skeleton or two dozen orphaned views

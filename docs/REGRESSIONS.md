@@ -195,15 +195,17 @@ hook files — the normal case — were broken the whole time. Measured on the l
 3 of 4 displayed Claude sessions had `hostPID = nil` before the fix; the fourth was the one
 without a hook file.
 
-**Guard — missing, and this is the same gap as entry 5.** The reconciler is inline in a
-private method of a `@MainActor` singleton the logic-only test target does not compile, so
-none of the three occurrences could have been caught by a test. Lifting it to a pure
-`static func reconcileClaudeSessions(hookSessions:passive:deadPIDs:now:…) -> [AgentSessionStatus]`
-would make all of them testable with the fixture style the rest of the suite already uses.
-**Two entries now point at this one refactor.**
+**Guard — exists (2026-08-26).** The reconciler was lifted verbatim into
+`AgentTrafficLightMapper.reconcileClaudeSessions(...)` (pure, Foundation-only, in the logic
+test target). `ClaudeReconcilerTests.testInheritedFieldsCarryAcrossOnDemote` and
+`...OnUnchangedSession` pin all four inherited fields — verified by temporarily dropping the
+`hostPID` inheritance and watching both tests fail. Entry 5's name-resolution half is NOT
+covered by this: the resolvers still span filesystem/SQLite sources inside the monitor and
+remain untestable until they grow a seam.
 
-**Until then:** when you add a field to `AgentSessionStatus` that a passive session can
-populate, add it to `inheritingPassiveData` in the same commit.
+**Still true:** when you add a field to `AgentSessionStatus` that a passive session can
+populate, add it to `inheritingPassiveData` (now in `AgentTrafficLightState.swift`) AND to
+the field assertions in `ClaudeReconcilerTests` in the same commit.
 
 ---
 
