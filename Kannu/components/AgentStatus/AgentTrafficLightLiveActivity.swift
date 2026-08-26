@@ -14,22 +14,23 @@ struct AgentTrafficLightDots: View {
     var dotSize: CGFloat = 10
     var spacing: CGFloat = 6
 
+    @Default(.agentActiveColor) private var activeColor
+    @Default(.agentAwaitingInputColor) private var awaitingColor
+    @Default(.agentStoppedColor) private var stoppedColor
+
     /// The one colour the current state lights up, or nil when nothing is lit (`.inactive`).
     /// The three `shows…TrafficLight` booleans are mutually exclusive by construction.
     private var litColor: Color? {
-        if state.showsRedTrafficLight { return .red }
-        if state.showsYellowTrafficLight { return .yellow }
-        if state.showsGreenTrafficLight { return .green }
-        return nil
+        state.litPalette(active: activeColor, awaiting: awaitingColor, stopped: stoppedColor)?.color
     }
 
     var body: some View {
         HStack(spacing: spacing) {
             switch style {
             case .classic:
-                dot(.red, isActive: state.showsRedTrafficLight)
-                dot(.yellow, isActive: state.showsYellowTrafficLight)
-                dot(.green, isActive: state.showsGreenTrafficLight)
+                dot(stoppedColor.color, isActive: state.showsRedTrafficLight)
+                dot(awaitingColor.color, isActive: state.showsYellowTrafficLight)
+                dot(activeColor.color, isActive: state.showsGreenTrafficLight)
             case .minimal:
                 // Nothing is lit when inactive, and the indicator is hidden in that case
                 // anyway — draw nothing rather than inventing a colour.

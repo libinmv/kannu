@@ -4,6 +4,15 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-27 - Traffic-light state colors become user-selectable from a curated palette
+- **Developer label:** AgentTrafficLightPaletteColor enum (10 hues, ExternalDisplayStyle idiom) + three Key values; palette popover with taken-swatch blocking; all render sites read the palette
+- **Agent label:** Pick your own Active/Awaiting/Stopped colors, and no two states can ever share one
+- **Changes:**
+  - The three agent-state colors are now chosen from a curated 10-hue palette in Settings > Agents > Traffic Light. Deliberately a closed set instead of a free color picker: a swatch already assigned to another state is disabled with a tooltip naming it, so duplicate state colors are impossible by construction. This also makes the lights genuinely distinguishable for red-green colorblind users who move away from the defaults
+  - Defaults reproduce the classic green/yellow/red exactly, including the expanded panel's hand-tuned neon values; non-default hues get saturated neon variants so the glow rendering still reads. The dim state remains a 20% wash of the assigned hue, and the inactive grey stays fixed
+  - Every render site reads the palette through observed settings — the closed-notch dots (both Classic and Minimal styles), the expanded panel's neon badges and state text, the Settings live preview, and the legend rows, which now double as the pickers. A Reset Colors button restores the defaults and disables itself when they're already active
+  - New settings are searchable ("Active color", "Awaiting input color", "Stopped color", "Reset traffic light colors") with scroll-to-highlight
+
 ### 2026-08-26 - Extract the Claude reconciler into the tested mapper (the REGRESSIONS.md refactor)
 - **Developer label:** reconcileClaudeSessions moves verbatim to AgentTrafficLightMapper; replacing* builders follow; 8 new ClaudeReconcilerTests
 - **Agent label:** The merge that broke three times is now pinned by tests that fail when a field is dropped

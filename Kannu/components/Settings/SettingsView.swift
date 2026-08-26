@@ -911,6 +911,10 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .agentStatus, title: "Enable Agent Monitoring", keywords: ["agent", "cursor", "claude", "codex", "status", "traffic", "light", "ai", "notch", "monitoring"], highlightID: SettingsTab.agentStatus.highlightID(for: "Enable Agent Monitoring")),
             SettingsSearchEntry(tab: .agentStatus, title: "Smart caffeinate", keywords: ["caffeinate", "awake", "sleep", "smart", "coffee", "keep awake", "assertion", "insomnia"], highlightID: SettingsDeepLink.smartCaffeinateHighlightID),
             SettingsSearchEntry(tab: .agentStatus, title: "Traffic light style", keywords: ["traffic", "light", "style", "classic", "minimal", "dots", "notch", "agent", "indicator"], highlightID: SettingsTab.agentStatus.highlightID(for: "Traffic light style")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Active color", keywords: ["active", "green", "color", "traffic", "light", "palette", "agent"], highlightID: SettingsTab.agentStatus.highlightID(for: "Active color")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Awaiting input color", keywords: ["awaiting", "yellow", "color", "traffic", "light", "palette", "agent"], highlightID: SettingsTab.agentStatus.highlightID(for: "Awaiting input color")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Stopped color", keywords: ["stopped", "red", "color", "traffic", "light", "palette", "agent"], highlightID: SettingsTab.agentStatus.highlightID(for: "Stopped color")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Reset traffic light colors", keywords: ["reset", "color", "traffic", "light", "default"], highlightID: SettingsTab.agentStatus.highlightID(for: "Reset traffic light colors")),
             SettingsSearchEntry(tab: .agentStatus, title: "Editor Hooks", keywords: ["agent", "cursor", "vscode", "copilot", "codex", "claude", "hook", "install", "integration"], highlightID: SettingsTab.agentStatus.highlightID(for: "Cursor Hook")),
             SettingsSearchEntry(tab: .agentStatus, title: "Mobile notifications", keywords: ["mobile", "push", "ntfy", "pushover", "webhook", "iphone", "android"], highlightID: SettingsTab.agentStatus.highlightID(for: "Mobile notifications")),
             SettingsSearchEntry(tab: .agentStatus, title: "Send test notification", keywords: ["test", "mobile", "push", "notification"], highlightID: SettingsTab.agentStatus.highlightID(for: "Send test notification")),
@@ -7625,6 +7629,9 @@ struct AgentStatusSettings: View {
     @Default(.agentInactiveDisplaySeconds) var agentInactiveDisplaySeconds
     @Default(.showAgentStoppedIndicator) var showAgentStoppedIndicator
     @Default(.agentTrafficLightStyle) var agentTrafficLightStyle
+    @Default(.agentActiveColor) var agentActiveColor
+    @Default(.agentAwaitingInputColor) var agentAwaitingInputColor
+    @Default(.agentStoppedColor) var agentStoppedColor
     @Default(.smartCaffeinate) var smartCaffeinate
     @Default(.enableAgentStatusMobileNotifications) var enableMobileNotifications
     @Default(.agentStatusNotificationProvider) var notificationProvider
@@ -7697,9 +7704,36 @@ struct AgentStatusSettings: View {
                             state: monitor.trafficLightState == .inactive ? .executing : monitor.trafficLightState
                         )
                     }
-                    legendRow(color: .green, title: String(localized: "Active"), detail: String(localized: "The agent is thinking, planning, executing tools, or otherwise working"))
-                    legendRow(color: .yellow, title: String(localized: "Awaiting Input"), detail: String(localized: "The agent needs your approval or a response"))
-                    legendRow(color: .red, title: String(localized: "Stopped"), detail: String(localized: "The agent has finished or was aborted"))
+                    stateColorRow(
+                        key: .agentActiveColor,
+                        title: String(localized: "Active"),
+                        detail: String(localized: "The agent is thinking, planning, executing tools, or otherwise working"),
+                        highlightTitle: "Active color"
+                    )
+                    stateColorRow(
+                        key: .agentAwaitingInputColor,
+                        title: String(localized: "Awaiting Input"),
+                        detail: String(localized: "The agent needs your approval or a response"),
+                        highlightTitle: "Awaiting input color"
+                    )
+                    stateColorRow(
+                        key: .agentStoppedColor,
+                        title: String(localized: "Stopped"),
+                        detail: String(localized: "The agent has finished or was aborted"),
+                        highlightTitle: "Stopped color"
+                    )
+                    Button("Reset Colors") {
+                        Defaults[.agentActiveColor] = .green
+                        Defaults[.agentAwaitingInputColor] = .yellow
+                        Defaults[.agentStoppedColor] = .red
+                    }
+                    .buttonStyle(.link)
+                    .disabled(
+                        agentActiveColor == .green
+                            && agentAwaitingInputColor == .yellow
+                            && agentStoppedColor == .red
+                    )
+                    .settingsHighlight(id: highlightID("Reset traffic light colors"))
                 } header: {
                     Text("Traffic Light")
                 } footer: {
@@ -7949,17 +7983,108 @@ struct AgentStatusSettings: View {
 
 
     @ViewBuilder
-    private func legendRow(color: Color, title: String, detail: String) -> some View {
-        HStack(spacing: 10) {
+    /// Legend row plus the palette picker for that state's color. The popover offers only
+    /// the curated palette and blocks swatches already used by another state, so two states
+    /// can never share a color.
+    private func stateColorRow(
+        key: Defaults.Key<AgentTrafficLightPaletteColor>,
+        title: String,
+        detail: String,
+        highlightTitle: String
+    ) -> some View {
+        let selection = Defaults[key]
+        let others: [AgentTrafficLightPaletteColor: String] = {
+            var taken: [AgentTrafficLightPaletteColor: String] = [:]
+            let all: [(Defaults.Key<AgentTrafficLightPaletteColor>, String)] = [
+                (.agentActiveColor, String(localized: "Active")),
+                (.agentAwaitingInputColor, String(localized: "Awaiting Input")),
+                (.agentStoppedColor, String(localized: "Stopped")),
+            ]
+            for (otherKey, name) in all where otherKey != key {
+                taken[Defaults[otherKey]] = name
+            }
+            return taken
+        }()
+        return HStack(spacing: 10) {
             Circle()
-                .fill(color)
+                .fill(selection.color)
                 .frame(width: 10, height: 10)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                 Text(detail)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            AgentPaletteSwatchButton(key: key, takenByOthers: others)
+        }
+        .settingsHighlight(id: highlightID(highlightTitle))
+    }
+}
+
+/// The swatch button + popover for one traffic-light state. Palette-only by design: no
+/// eyedropper, no custom well — the closed set is what makes duplicate colors impossible.
+private struct AgentPaletteSwatchButton: View {
+    let key: Defaults.Key<AgentTrafficLightPaletteColor>
+    let takenByOthers: [AgentTrafficLightPaletteColor: String]
+    @State private var showPicker = false
+
+    var body: some View {
+        Button {
+            showPicker.toggle()
+        } label: {
+            Circle()
+                .fill(Defaults[key].color)
+                .frame(width: 16, height: 16)
+                .overlay(Circle().strokeBorder(.quaternary, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showPicker, arrowEdge: .bottom) {
+            AgentPalettePopover(key: key, takenByOthers: takenByOthers)
+        }
+    }
+}
+
+private struct AgentPalettePopover: View {
+    let key: Defaults.Key<AgentTrafficLightPaletteColor>
+    let takenByOthers: [AgentTrafficLightPaletteColor: String]
+    @Environment(\.dismiss) private var dismiss
+
+    private let columns = Array(repeating: GridItem(.fixed(22), spacing: 6), count: 5)
+
+    var body: some View {
+        LazyVGrid(columns: columns, spacing: 8) {
+            ForEach(AgentTrafficLightPaletteColor.allCases) { option in
+                swatch(option)
             }
         }
+        .padding(12)
+    }
+
+    @ViewBuilder
+    private func swatch(_ option: AgentTrafficLightPaletteColor) -> some View {
+        let takenBy = takenByOthers[option]
+        let isCurrent = Defaults[key] == option
+        Button {
+            Defaults[key] = option
+            dismiss()
+        } label: {
+            Circle()
+                .fill(option.color)
+                .frame(width: 20, height: 20)
+                .overlay(Circle().strokeBorder(.quaternary, lineWidth: 1))
+                .overlay {
+                    if isCurrent {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                }
+                .opacity(takenBy == nil || isCurrent ? 1 : 0.3)
+        }
+        .buttonStyle(.plain)
+        .disabled(takenBy != nil)
+        .help(takenBy.map { String(localized: "Used by \($0)") } ?? option.localizedName)
+        .accessibilityLabel(Text(option.localizedName))
     }
 }

@@ -11,6 +11,9 @@ struct NotchAgentStatusView: View {
     /// Defaults-backed, not @State: this tab is torn down and rebuilt on every tab switch.
     @Default(.caffeinateEnabled) private var caffeinateEnabled
     @Default(.smartCaffeinate) private var smartCaffeinate
+    @Default(.agentActiveColor) private var activePaletteColor
+    @Default(.agentAwaitingInputColor) private var awaitingPaletteColor
+    @Default(.agentStoppedColor) private var stoppedPaletteColor
     @State private var isSuppressingScrollGesture = false
     @State private var redBlinkStartTimes: [String: Date] = [:]
     private let scrollSuppressionToken = UUID()
@@ -396,10 +399,11 @@ struct NotchAgentStatusView: View {
         return String(format: "%02d:%02d", minutes, seconds)
     }
 
-    // Saturated neon palette — brighter than the system colors so the dots read as "lit" rather than flat fills.
-    private static let neonRed = Color(red: 1.0, green: 0.06, blue: 0.16)
-    private static let neonYellow = Color(red: 1.0, green: 0.86, blue: 0.0)
-    private static let neonGreen = Color(red: 0.12, green: 1.0, blue: 0.35)
+    // Neon variants come from the user's palette choices; the defaults reproduce the
+    // hand-tuned values this panel always used (see AgentTrafficLightPaletteColor.neonColor).
+    private var neonRed: Color { stoppedPaletteColor.neonColor }
+    private var neonYellow: Color { awaitingPaletteColor.neonColor }
+    private var neonGreen: Color { activePaletteColor.neonColor }
 
     @ViewBuilder
     private func stateBadge(_ state: AgentTrafficLightState, sessionId: String, large: Bool) -> some View {
@@ -414,13 +418,13 @@ struct NotchAgentStatusView: View {
                 TimelineView(.periodic(from: .now, by: 0.1)) { context in
                     let elapsed = context.date.timeIntervalSince(blinkStart ?? .now)
                     let pulse = (sin(elapsed * .pi * 4) + 1) / 2 // smooth 0...1 pulse, ~2 blinks/sec
-                    neonDot(Self.neonRed, size: dotSize, opacity: 0.35 + pulse * 0.65, glowRadius: 2 + pulse * (large ? 7 : 5))
+                    neonDot(neonRed, size: dotSize, opacity: 0.35 + pulse * 0.65, glowRadius: 2 + pulse * (large ? 7 : 5))
                 }
             } else {
-                neonDot(Self.neonRed, size: dotSize, opacity: state.showsRedTrafficLight ? 1 : 0.2, glowRadius: state.showsRedTrafficLight ? (large ? 5 : 3.5) : 0)
+                neonDot(neonRed, size: dotSize, opacity: state.showsRedTrafficLight ? 1 : 0.2, glowRadius: state.showsRedTrafficLight ? (large ? 5 : 3.5) : 0)
             }
-            neonDot(Self.neonYellow, size: dotSize, opacity: state.showsYellowTrafficLight ? 1 : 0.2, glowRadius: state.showsYellowTrafficLight ? (large ? 5 : 3.5) : 0)
-            neonDot(Self.neonGreen, size: dotSize, opacity: state.showsGreenTrafficLight ? 1 : 0.2, glowRadius: state.showsGreenTrafficLight ? (large ? 5 : 3.5) : 0)
+            neonDot(neonYellow, size: dotSize, opacity: state.showsYellowTrafficLight ? 1 : 0.2, glowRadius: state.showsYellowTrafficLight ? (large ? 5 : 3.5) : 0)
+            neonDot(neonGreen, size: dotSize, opacity: state.showsGreenTrafficLight ? 1 : 0.2, glowRadius: state.showsGreenTrafficLight ? (large ? 5 : 3.5) : 0)
         }
         .frame(width: width, height: height)
         .onChange(of: state.showsRedTrafficLight) { _, isRed in
@@ -440,9 +444,9 @@ struct NotchAgentStatusView: View {
 
     private func stateColor(_ state: AgentTrafficLightState) -> Color {
         switch state {
-        case .executing, .thinking: return Self.neonGreen
-        case .awaitingInput: return Self.neonYellow
-        case .stopped: return Self.neonRed
+        case .executing, .thinking: return neonGreen
+        case .awaitingInput: return neonYellow
+        case .stopped: return neonRed
         case .inactive: return .secondary
         }
     }

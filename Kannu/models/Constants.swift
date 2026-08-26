@@ -1183,6 +1183,11 @@ extension Defaults.Keys {
     /// Closed-notch traffic light shape. Defaults to `.classic` so existing installs keep the
     /// three-dot look they already have — only fresh installs are asked to choose in onboarding.
     static let agentTrafficLightStyle = Key<AgentTrafficLightStyle>("agentTrafficLightStyle", default: .classic)
+    /// Traffic-light state colors, chosen from the curated palette. Defaults reproduce the
+    /// classic green/yellow/red exactly; the Settings picker prevents two states sharing one.
+    static let agentActiveColor = Key<AgentTrafficLightPaletteColor>("agentActiveColor", default: .green)
+    static let agentAwaitingInputColor = Key<AgentTrafficLightPaletteColor>("agentAwaitingInputColor", default: .yellow)
+    static let agentStoppedColor = Key<AgentTrafficLightPaletteColor>("agentStoppedColor", default: .red)
     /// Manual caffeinate: while on, Kannu holds a system-sleep assertion unconditionally.
     static let caffeinateEnabled = Key<Bool>("caffeinateEnabled", default: false)
     /// Smart caffeinate: keep the Mac awake automatically while any agent run is active.
