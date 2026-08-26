@@ -872,6 +872,7 @@ struct ContentView: View {
                 }
             }
             .onChange(of: coordinator.sneakPeek.show) { _, sneakPeekShowing in
+                syncHiddenEdgeHoverPolling()
                 // When sneak peek finishes, check if user is still hovering and open notch if needed
                 if !sneakPeekShowing {
                     runAfter(0.2) {
@@ -948,12 +949,15 @@ struct ContentView: View {
             }
             .onChange(of: agentStatusMonitor.activityPulse) { _, _ in
                 noteAgentActivityPulse()
+                syncHiddenEdgeHoverPolling()
             }
             .onChange(of: alwaysShowOnNonNotchDisplays) { _, _ in
                 clearRevealState()
+                syncHiddenEdgeHoverPolling()
             }
             .onChange(of: externalDisplayStyle) { _, _ in
                 clearRevealState()
+                syncHiddenEdgeHoverPolling()
             }
             .onChange(of: vm.notchState) { _, state in
                 if state == .open {
@@ -975,6 +979,7 @@ struct ContentView: View {
                     releaseMusicControlWindowUpdates(after: musicControlResumeDelay)
                     enqueueMusicControlWindowSync(forceRefresh: true, delay: 0.05)
                 }
+                syncHiddenEdgeHoverPolling()
             }
             .onChange(of: musicControlWindowEnabled) { _, enabled in
                 if enabled {
@@ -1010,6 +1015,7 @@ struct ContentView: View {
                 }
             }
             .onChange(of: lockScreenManager.isLocked) { _, locked in
+                syncHiddenEdgeHoverPolling()
                 if locked {
                     suppressMusicControlWindowUpdates()
                     cancelMusicControlWindowSync()
@@ -2256,6 +2262,8 @@ struct ContentView: View {
                 self.revealHoldDeadline = nil
                 self.agentLightDeadline = nil
             }
+            // Deadlines clearing can flip shouldUseHiddenEdgeHoverPolling true again.
+            self.syncHiddenEdgeHoverPolling()
         }
     }
 
@@ -2295,19 +2303,30 @@ struct ContentView: View {
     private func startHiddenEdgeHoverPolling() {
         guard hiddenEdgeHoverPollingTask == nil else { return }
 
+        guard shouldUseHiddenEdgeHoverPolling else { return }
         hiddenEdgeHoverPollingTask = Task { @MainActor in
-            while !Task.isCancelled {
-                if self.shouldUseHiddenEdgeHoverPolling {
-                    let hovering = self.hiddenHoverActivationContainsMouse()
-                    if hovering != self.isHovering {
-                        self.handleHover(hovering)
-                    }
+            while !Task.isCancelled, self.shouldUseHiddenEdgeHoverPolling {
+                let hovering = self.hiddenHoverActivationContainsMouse()
+                if hovering != self.isHovering {
+                    self.handleHover(hovering)
                 }
 
                 try? await Task.sleep(for: .milliseconds(50))
             }
 
             self.hiddenEdgeHoverPollingTask = nil
+        }
+    }
+
+    /// Restarts or stops the hidden-edge poll as its precondition changes; called from
+    /// the onChange hooks of everything shouldUseHiddenEdgeHoverPolling depends on.
+    private func syncHiddenEdgeHoverPolling() {
+        if shouldUseHiddenEdgeHoverPolling {
+            if hiddenEdgeHoverPollingTask == nil {
+                startHiddenEdgeHoverPolling()
+            }
+        } else {
+            stopHiddenEdgeHoverPolling()
         }
     }
 

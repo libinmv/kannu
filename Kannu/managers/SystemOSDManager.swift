@@ -369,27 +369,34 @@ class SystemOSDManager {
         return info.pbi_status == procStatusStopped
     }
 
-    /// Returns the newest OSDUIHelper PID, or nil if none.
+    /// Returns the newest OSDUIHelper PID, or nil if none. In-process sysctl walk —
+    /// the previous pgrep subprocess cost a fork/exec per 150 ms watcher tick.
     private static func osduiHelperPID() -> Int32? {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-        task.arguments = ["-n", "OSDUIHelper"]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = Pipe() // silence "No matching processes..." stderr
-        do {
-            try task.run()
-            task.waitUntilExit()
-            // pgrep exits 1 when no process found — check status to avoid
-            // parsing an empty string as a valid PID.
-            guard task.terminationStatus == 0 else { return nil }
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let trimmed = String(data: data, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return Int32(trimmed)
-        } catch {
-            return nil
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
+        var size = 0
+        guard sysctl(&mib, UInt32(mib.count), nil, &size, nil, 0) == 0, size > 0 else { return nil }
+        // Headroom for processes spawned between the two calls.
+        size += MemoryLayout<kinfo_proc>.stride * 16
+        var procs = [kinfo_proc](repeating: kinfo_proc(), count: size / MemoryLayout<kinfo_proc>.stride)
+        guard sysctl(&mib, UInt32(mib.count), &procs, &size, nil, 0) == 0 else { return nil }
+        let count = size / MemoryLayout<kinfo_proc>.stride
+
+        var newestPID: Int32?
+        var newestStart: (Int, Int32) = (0, 0)
+        for index in 0..<count {
+            var proc = procs[index]
+            let name = withUnsafeBytes(of: &proc.kp_proc.p_comm) { raw in
+                String(decoding: raw.prefix(while: { $0 != 0 }), as: UTF8.self)
+            }
+            guard name == "OSDUIHelper" else { continue }
+            let start = (proc.kp_proc.p_starttime.tv_sec, proc.kp_proc.p_starttime.tv_usec)
+            if newestPID == nil || start.0 > newestStart.0
+                || (start.0 == newestStart.0 && start.1 > newestStart.1) {
+                newestPID = proc.kp_proc.p_pid
+                newestStart = start
+            }
         }
+        return newestPID
     }
 
     /// Sends SIGSTOP to all OSDUIHelper processes. Idempotent.
@@ -408,25 +415,7 @@ class SystemOSDManager {
 
     /// Check if OSDUIHelper is currently running
     public static func isOSDUIHelperRunning() -> Bool {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-        task.arguments = ["OSDUIHelper"]
-        
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = Pipe() // silence "No matching processes..." stderr
-        
-        do {
-            try task.run()
-            task.waitUntilExit()
-            
-            guard task.terminationStatus == 0 else { return false }
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return !output.isEmpty
-        } catch {
-            return false
-        }
+        osduiHelperPID() != nil
     }
     
     /// Async version of status checking to avoid main thread blocking

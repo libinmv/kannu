@@ -4,6 +4,14 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-26 - Cut idle wakeups ~90%: gate the hover poll, make Claude detection event-driven, drop the pgrep forks
+- **Developer label:** shouldUseHiddenEdgeHoverPolling gates task lifecycle; Claude dirs join FSEvents watchedPaths with the 1s poll relaxed to a 30s safety net; sysctl replaces pgrep in SystemOSDManager
+- **Agent label:** Kannu idles quietly instead of waking ~38 times a second
+- **Changes:**
+  - The 20Hz hidden-edge hover poll ran for the app's lifetime with its condition checked inside the loop, waking every 50ms per display even when nothing was hidden. The condition now gates the task itself: it starts only when polling applies, exits when it stops applying, and every dependency's onChange re-syncs it (notch state, sneak peek, agent pulses, lock state, the always-show settings, and reveal-deadline expiry)
+  - Claude's passive session detection was the stated reason the agent monitor rescanned every second on the main actor (directory scans, JSON parses, sysctl per session, transcript tail reads). The Claude projects and sessions directories now join the existing FSEvents stream, whose callback already invalidates the right caches, so detection is event-driven; the timer relaxes to a 30-second safety net. Trade-off, documented: an agent process that dies without leaving any filesystem trace now takes up to 30s to dim (the dead-PID reconciler runs on every rescan, whatever triggers one). Also stopped forcing `forceRefresh` on the rescan path, which had defeated the 1.5s transcript cache every second while Cursor ran
+  - `SystemOSDManager`'s watcher forked `/usr/bin/pgrep` 6.7 times per second on macOS 15 and earlier (the process the doc comment itself apologized for). PID lookup is now an in-process `sysctl(KERN_PROC_ALL)` walk, verified live against real processes; `isOSDUIHelperRunning` reuses it
+
 ### 2026-08-26 - Fix nine race conditions and the hover livelock (full-repo concurrency audit)
 - **Developer label:** Queue-confine SystemVolumeController state; cancel the orphaned OSD disable task; kill AudioTap resurrection; fd-by-value cancel handlers x2; stale-task handle clobbers x3; TOCTOU hook-file deletes; willSet deferral; RT-thread counter removed; hover-exit livelock
 - **Agent label:** The island can no longer stick revealed, HUD suppression can no longer strand a frozen helper, and every audited data race is closed

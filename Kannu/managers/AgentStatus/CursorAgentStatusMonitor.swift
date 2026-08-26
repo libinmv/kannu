@@ -47,10 +47,11 @@ final class CursorAgentStatusMonitor: ObservableObject {
         isRunning = true
         installWatchers()
         scheduleRescan(delay: 0)
-        // Background poll; hook directory watcher handles near-real-time updates for hook-based
-        // providers, but Claude's passive session detection has no filesystem watcher, so this
-        // interval is also its detection latency ceiling.
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        // Slow safety net only: hook files and Claude transcript/session dirs are all under
+        // FSEvents or the kqueue watcher, so changes rescan event-driven. This interval is the
+        // ceiling for changes with no filesystem trace (chiefly: an agent process dying without
+        // writing anything) — the dead-PID reconciler runs on every rescan, whatever triggers it.
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.scheduleRescan(delay: 0)
             }
@@ -97,9 +98,14 @@ final class CursorAgentStatusMonitor: ObservableObject {
             withIntermediateDirectories: true
         )
         // Only watch hook status + transcript roots. Avoid Cursor's huge Application Support trees.
+        // The Claude dirs make passive session detection event-driven: transcripts and session
+        // PID files change on every turn, so the FSEvents callback (which already invalidates
+        // both path caches) covers what the old 1-second poll existed for.
         watchedPaths = [
             CursorTranscriptParser.projectsDirectory.path,
-            AgentHookInstaller.statusDirectory.path
+            AgentHookInstaller.statusDirectory.path,
+            AgentSessionLogParser.claudeProjectsDirectory.path,
+            AgentSessionLogParser.claudeSessionsDirectory.path
         ]
 
         installStatusDirectoryWatcher()
@@ -331,7 +337,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
             let retainedTranscriptSessions = sessions.filter { !hookConversationIDs.contains($0.conversationID) }
             transcriptSessions = retainedTranscriptSessions
         } else if isCursorRunning() {
-            transcriptAnalysis = cachedTranscriptAnalysis(maxAgeMinutes: staleMinutes, now: now, forceRefresh: true)
+            transcriptAnalysis = cachedTranscriptAnalysis(maxAgeMinutes: staleMinutes, now: now, forceRefresh: false)
             transcriptSessions = buildTranscriptSessions(
                 analysisBySession: transcriptAnalysis,
                 staleMinutes: staleMinutes,
