@@ -4,6 +4,12 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-27 - Shorten the idle-red toggle caption
+- **Developer label:** One-line caption swap under showAgentStoppedIndicator
+- **Agent label:** Nine words instead of a paragraph
+- **Changes:**
+  - The caption under "Show a red light when no agents are running" now reads "When off, the light hides once agents go quiet."
+
 ### 2026-08-27 - Agents pane polish: idle-red toggle clarified, swatch reactivity fixed, neutral footer
 - **Developer label:** showAgentStoppedIndicator relabeled with caption + search entry; AgentPaletteSwatchButton/Popover observe their runtime key via Default(key); product-specific footer replaced
 - **Agent label:** The confusing toggle explains itself, picked colors reflect on both sides instantly, and the footer stops name-dropping one product

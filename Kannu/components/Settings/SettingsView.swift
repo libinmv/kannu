@@ -7760,7 +7760,7 @@ struct AgentStatusSettings: View {
                         Text("Show a red light when no agents are running")
                     }
                     .settingsHighlight(id: highlightID("Show a red light when no agents are running"))
-                    Text("Without this, the traffic light disappears entirely once every agent has been inactive for a while.")
+                    Text("When off, the light hides once agents go quiet.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
