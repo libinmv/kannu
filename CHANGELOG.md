@@ -4,6 +4,14 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-27 - Agents pane polish: idle-red toggle clarified, swatch reactivity fixed, neutral footer
+- **Developer label:** showAgentStoppedIndicator relabeled with caption + search entry; AgentPaletteSwatchButton/Popover observe their runtime key via Default(key); product-specific footer replaced
+- **Agent label:** The confusing toggle explains itself, picked colors reflect on both sides instantly, and the footer stops name-dropping one product
+- **Changes:**
+  - "Keep red light visible when idle" is now "Show a red light when no agents are running" with a one-line caption explaining the alternative (the indicator disappearing entirely once agents age out) — the behavior itself is unchanged, and it finally has a settings-search entry
+  - Fixed the color rows so a newly picked color shows on the left legend dot AND the right swatch in the same instant: the swatch button and popover read their key unobserved, and since their other inputs don't change when their own key does, SwiftUI could skip the re-render and leave the right side stale. Both now observe the runtime key directly
+  - The Traffic Light footer no longer over-explains via one product's mechanics; it reads "The yellow light is most reliable when hooks are installed."
+
 ### 2026-08-27 - Caffeinate hardened: exhaustive regression tests, pipeline shape, docs
 - **Developer label:** caffeinateTransition + hasCaffeinateWorthySession extracted pure; manager becomes decision→transition→command; 10 tests incl. the exhaustive 16-row decision matrix; docs/CAFFEINATE.md
 - **Agent label:** The whole feature now reads as a table a debugger can check at a glance, and every row is pinned by a test

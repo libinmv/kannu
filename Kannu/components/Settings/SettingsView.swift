@@ -914,6 +914,7 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .agentStatus, title: "Active color", keywords: ["active", "green", "color", "traffic", "light", "palette", "agent"], highlightID: SettingsTab.agentStatus.highlightID(for: "Active color")),
             SettingsSearchEntry(tab: .agentStatus, title: "Awaiting input color", keywords: ["awaiting", "yellow", "color", "traffic", "light", "palette", "agent"], highlightID: SettingsTab.agentStatus.highlightID(for: "Awaiting input color")),
             SettingsSearchEntry(tab: .agentStatus, title: "Stopped color", keywords: ["stopped", "red", "color", "traffic", "light", "palette", "agent"], highlightID: SettingsTab.agentStatus.highlightID(for: "Stopped color")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Show a red light when no agents are running", keywords: ["red", "light", "idle", "no agents", "stopped", "indicator", "always"], highlightID: SettingsTab.agentStatus.highlightID(for: "Show a red light when no agents are running")),
             SettingsSearchEntry(tab: .agentStatus, title: "Reset traffic light colors", keywords: ["reset", "color", "traffic", "light", "default"], highlightID: SettingsTab.agentStatus.highlightID(for: "Reset traffic light colors")),
             SettingsSearchEntry(tab: .agentStatus, title: "Editor Hooks", keywords: ["agent", "cursor", "vscode", "copilot", "codex", "claude", "hook", "install", "integration"], highlightID: SettingsTab.agentStatus.highlightID(for: "Cursor Hook")),
             SettingsSearchEntry(tab: .agentStatus, title: "Mobile notifications", keywords: ["mobile", "push", "ntfy", "pushover", "webhook", "iphone", "android"], highlightID: SettingsTab.agentStatus.highlightID(for: "Mobile notifications")),
@@ -7737,7 +7738,7 @@ struct AgentStatusSettings: View {
                 } header: {
                     Text("Traffic Light")
                 } footer: {
-                    Text("Yellow during approval cards needs the Cursor hook installed below. Transcript-only detection can lag until Cursor writes the tool call.")
+                    Text("The yellow light is most reliable when hooks are installed.")
                 }
 
                 Section {
@@ -7756,9 +7757,12 @@ struct AgentStatusSettings: View {
 
                 Section {
                     Defaults.Toggle(key: .showAgentStoppedIndicator) {
-                        Text("Keep red light visible when idle")
+                        Text("Show a red light when no agents are running")
                     }
-                    .settingsHighlight(id: highlightID("Keep red light visible when idle"))
+                    .settingsHighlight(id: highlightID("Show a red light when no agents are running"))
+                    Text("Without this, the traffic light disappears entirely once every agent has been inactive for a while.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
 
                     HStack {
                         Text("Hide indicator after agent stops for")
@@ -8027,14 +8031,24 @@ struct AgentStatusSettings: View {
 private struct AgentPaletteSwatchButton: View {
     let key: Defaults.Key<AgentTrafficLightPaletteColor>
     let takenByOthers: [AgentTrafficLightPaletteColor: String]
+    // Observed via the runtime key so the swatch recolors in the same transaction as the
+    // selection write — the struct's other inputs don't change when its own key does, so
+    // without this SwiftUI may skip the re-render and show a stale color.
+    @Default private var selection: AgentTrafficLightPaletteColor
     @State private var showPicker = false
+
+    init(key: Defaults.Key<AgentTrafficLightPaletteColor>, takenByOthers: [AgentTrafficLightPaletteColor: String]) {
+        self.key = key
+        self.takenByOthers = takenByOthers
+        self._selection = Default(key)
+    }
 
     var body: some View {
         Button {
             showPicker.toggle()
         } label: {
             Circle()
-                .fill(Defaults[key].color)
+                .fill(selection.color)
                 .frame(width: 16, height: 16)
                 .overlay(Circle().strokeBorder(.quaternary, lineWidth: 1))
         }
@@ -8048,7 +8062,14 @@ private struct AgentPaletteSwatchButton: View {
 private struct AgentPalettePopover: View {
     let key: Defaults.Key<AgentTrafficLightPaletteColor>
     let takenByOthers: [AgentTrafficLightPaletteColor: String]
+    @Default private var selection: AgentTrafficLightPaletteColor
     @Environment(\.dismiss) private var dismiss
+
+    init(key: Defaults.Key<AgentTrafficLightPaletteColor>, takenByOthers: [AgentTrafficLightPaletteColor: String]) {
+        self.key = key
+        self.takenByOthers = takenByOthers
+        self._selection = Default(key)
+    }
 
     private let columns = Array(repeating: GridItem(.fixed(22), spacing: 6), count: 5)
 
@@ -8064,9 +8085,9 @@ private struct AgentPalettePopover: View {
     @ViewBuilder
     private func swatch(_ option: AgentTrafficLightPaletteColor) -> some View {
         let takenBy = takenByOthers[option]
-        let isCurrent = Defaults[key] == option
+        let isCurrent = selection == option
         Button {
-            Defaults[key] = option
+            selection = option
             dismiss()
         } label: {
             Circle()
