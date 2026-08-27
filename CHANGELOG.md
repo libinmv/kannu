@@ -4,6 +4,12 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-27 - Record the sign-last install trap
+- **Developer label:** CLAUDE.md: test builds with CODE_SIGNING_ALLOWED=NO stomp the identity-signed product
+- **Agent label:** The install pipeline signs last, or TCC grants silently die again
+- **Changes:**
+  - Found while proving grant durability: running the unit tests (which build with signing disabled) after the identity-signed build overwrites the product with an unsigned one, so installing afterward ships an ad-hoc app and every TCC grant misses again. The recipe now says: signed build last, verify `codesign -dr-` shows `certificate leaf` before copying
+
 ### 2026-08-27 - Crafted palette values for the traffic-light colors
 - **Developer label:** Tailwind-derived 400/500 hexes replace plain system colors in AgentTrafficLightPaletteColor; enum cases and stored selections unchanged
 - **Agent label:** The swatches stop looking flat on the dark notch
