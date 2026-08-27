@@ -4,6 +4,18 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-27 - Caffeinate audit: mechanism confirmed solid, four flow defects fixed
+- **Developer label:** Feature-off override + enableAgentStatusFeature subscription; bounded retry on assertion-create failure; mode-tracked assertion reason; onboarding seed; pure shouldKeepAwake + 4 tests
+- **Agent label:** Caffeinate can no longer strand itself behind hidden controls, lie about its mode, or die silently on a failed assertion
+- **Changes:**
+  - Audit verdict first: the core was verified live and is sound. Native IOPM assertion (never a caffeinate subprocess, so quit/crash/SIGKILL always release via powerd), correct `options: []` semantics confirmed against the pinned Defaults 9.0.3 source, race-free reconcile, launch re-arm working, and only idle system sleep prevented exactly as the settings copy states
+  - Fixed the stranding trap: `reconcile` consulted `smartCaffeinate` without asking whether the agent feature was on. Disabling `enableAgentStatusFeature` with smart stale-on made both modes dead while hiding every caffeinate control (settings section and notch tab are both feature-gated) — no UI path out. The decision now releases whenever the feature is off, and the manager subscribes to the feature key so the flip applies immediately
+  - Fixed the terminal failure path: a failed `IOPMAssertionCreateWithName` in manual mode had no event source to retry (the doc comment claimed otherwise) — switch ON, Mac sleeps, forever. Failure now arms one bounded 5s retry that re-runs a full reconcile; any real event cancels it
+  - Fixed the stale diagnostic: flipping manual↔smart while held short-circuited at the edge guard, leaving the assertion carrying the other mode's reason string in `pmset -g assertions`. The held mode is tracked and the assertion refreshes on a mode flip
+  - Onboarding's caffeinate step now seeds its selection from the stored value instead of always pre-selecting Smart (the `@Default` wrapper was declared but never read)
+  - The arbitration is now a pure `AgentTrafficLightMapper.shouldKeepAwake(...)` pinned by 4 new tests (feature-off override, smart-wins, manual-honored, all-off). Suite is 52 tests
+  - Documented, unchanged by design: the manual flag stays live-but-hidden while smart is on and re-arms when smart turns off; release latency is bounded by the 30s rescan; `awaitingInput` holds the Mac awake within its 5-minute window and an in-flight tool holds it for the process lifetime
+
 ### 2026-08-27 - Traffic-light state colors become user-selectable from a curated palette
 - **Developer label:** AgentTrafficLightPaletteColor enum (10 hues, ExternalDisplayStyle idiom) + three Key values; palette popover with taken-swatch blocking; all render sites read the palette
 - **Agent label:** Pick your own Active/Awaiting/Stopped colors, and no two states can ever share one

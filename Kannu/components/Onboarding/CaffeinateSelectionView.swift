@@ -24,8 +24,9 @@ import SwiftUI
 struct CaffeinateSelectionView: View {
     let onContinue: () -> Void
 
-    @Default(.smartCaffeinate) var smartCaffeinate
-    @State private var selectedSmart: Bool = true
+    // Seeded from the stored choice so re-entering onboarding shows what is actually set,
+    // not a hardcoded pre-selection.
+    @State private var selectedSmart: Bool = Defaults[.smartCaffeinate]
 
     var body: some View {
         VStack(spacing: 20) {
@@ -61,7 +62,7 @@ struct CaffeinateSelectionView: View {
             Spacer()
 
             Button("Continue") {
-                smartCaffeinate = selectedSmart
+                Defaults[.smartCaffeinate] = selectedSmart
                 onContinue()
             }
             .buttonStyle(.borderedProminent)

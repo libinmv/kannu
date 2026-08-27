@@ -52,6 +52,13 @@ final class CaffeinateManager: ObservableObject {
     @Published private(set) var isKeepingAwake = false
 
     private var assertionID: IOPMAssertionID = 0
+    /// Which mode's reason string the held assertion carries; nil when not held. Tracked so a
+    /// manual↔smart flip while held refreshes the assertion instead of leaving `pmset -g
+    /// assertions` reporting the wrong mode.
+    private var heldModeIsSmart: Bool?
+    /// One bounded retry after a failed assertion create. Manual mode has no other event
+    /// source, so without this a rare IOPM failure left the switch ON with no assertion forever.
+    private var retryTask: Task<Void, Never>?
     private var cancellables: Set<AnyCancellable> = []
 
     private init() {
@@ -64,6 +71,14 @@ final class CaffeinateManager: ObservableObject {
         Defaults.publisher(.smartCaffeinate, options: [])
             .sink { [weak self] _ in
                 Task { @MainActor in self?.reconcile(trigger: "smart toggle") }
+            }
+            .store(in: &cancellables)
+
+        // Every caffeinate control lives inside the agent feature's UI; when the feature goes
+        // off, holding an assertion with zero visible controls would strand the user.
+        Defaults.publisher(.enableAgentStatusFeature, options: [])
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.reconcile(trigger: "feature toggle") }
             }
             .store(in: &cancellables)
 
@@ -86,23 +101,36 @@ final class CaffeinateManager: ObservableObject {
     }
 
     private func reconcile(trigger: String) {
+        retryTask?.cancel()
+        retryTask = nil
+
         let smart = Defaults[.smartCaffeinate]
-        let shouldHold: Bool
-        if smart {
-            shouldHold = CursorAgentStatusMonitor.shared.sessions.contains {
-                $0.isVisible && !AgentTrafficLightMapper.isSimulationSession($0) && $0.displayState.isActiveRun
-            }
-        } else {
-            shouldHold = Defaults[.caffeinateEnabled]
+        let featureEnabled = Defaults[.enableAgentStatusFeature]
+        let hasActiveVisibleSession = CursorAgentStatusMonitor.shared.sessions.contains {
+            $0.isVisible && !AgentTrafficLightMapper.isSimulationSession($0) && $0.displayState.isActiveRun
         }
+        let shouldHold = AgentTrafficLightMapper.shouldKeepAwake(
+            smartEnabled: smart,
+            manualEnabled: Defaults[.caffeinateEnabled],
+            featureEnabled: featureEnabled,
+            hasActiveVisibleSession: hasActiveVisibleSession
+        )
         // Log before the edge guard so a wrong read is never silent.
         if shouldHold != isKeepingAwake {
-            Self.log.notice("reconcile(\(trigger, privacy: .public)): smart=\(smart) → shouldHold=\(shouldHold)")
+            Self.log.notice("reconcile(\(trigger, privacy: .public)): smart=\(smart) feature=\(featureEnabled) → shouldHold=\(shouldHold)")
         }
-        setKeepingAwake(shouldHold, smart: smart)
+        setKeepingAwake(shouldHold, smart: smart && featureEnabled)
     }
 
     private func setKeepingAwake(_ shouldHold: Bool, smart: Bool) {
+        // A manual↔smart flip while held would otherwise short-circuit at the edge guard and
+        // leave the assertion carrying the old mode's reason string; refresh it so pmset
+        // diagnostics report the mode actually in force. The recreate gap is microseconds —
+        // far below powerd's decision timescale.
+        if shouldHold, isKeepingAwake, heldModeIsSmart != smart {
+            releaseAssertion()
+        }
+
         guard shouldHold != isKeepingAwake else { return }
 
         if shouldHold {
@@ -117,19 +145,40 @@ final class CaffeinateManager: ObservableObject {
                 &id
             )
             guard result == kIOReturnSuccess else {
-                Self.log.error("failed to create sleep assertion (\(result))")
+                Self.log.error("failed to create sleep assertion (\(result)); retrying in 5s")
+                scheduleRetry()
                 return
             }
             assertionID = id
+            heldModeIsSmart = smart
             isKeepingAwake = true
             Self.log.notice("☕ holding system-sleep assertion (\(smart ? "smart" : "manual", privacy: .public))")
         } else {
-            if assertionID != 0 {
-                IOPMAssertionRelease(assertionID)
-                assertionID = 0
-            }
+            releaseAssertion()
             isKeepingAwake = false
             Self.log.notice("💤 released system-sleep assertion")
+        }
+    }
+
+    private func releaseAssertion() {
+        if assertionID != 0 {
+            IOPMAssertionRelease(assertionID)
+            assertionID = 0
+        }
+        heldModeIsSmart = nil
+    }
+
+    /// Manual mode has no periodic event source, so a failed create must arm its own retry —
+    /// otherwise the switch shows ON while the Mac can sleep, forever. One bounded attempt;
+    /// each retry runs a full reconcile so it re-reads the current truth rather than blindly
+    /// re-creating, and any real event cancels it first.
+    private func scheduleRetry() {
+        retryTask?.cancel()
+        retryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            self?.retryTask = nil
+            self?.reconcile(trigger: "retry")
         }
     }
 }

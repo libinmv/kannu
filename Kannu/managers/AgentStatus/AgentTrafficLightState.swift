@@ -148,6 +148,21 @@ struct AgentSessionSnapshot: Equatable {
 }
 
 enum AgentTrafficLightMapper {
+    /// The caffeinate arbitration, pure so it is testable: smart wins outright when the agent
+    /// feature is on; manual is honored only with smart off; and with the agent feature off —
+    /// which hides every caffeinate control — nothing may hold the Mac awake, or the user is
+    /// stranded with an assertion they cannot see or clear.
+    static func shouldKeepAwake(
+        smartEnabled: Bool,
+        manualEnabled: Bool,
+        featureEnabled: Bool,
+        hasActiveVisibleSession: Bool
+    ) -> Bool {
+        guard featureEnabled else { return false }
+        if smartEnabled { return hasActiveVisibleSession }
+        return manualEnabled
+    }
+
     /// Merges Claude hook sessions with passive transcript/PID evidence. Pure — lives here
     /// (Foundation-only, compiled into the logic test target) because this exact logic has
     /// regressed repeatedly while it was unreachable by tests: docs/REGRESSIONS.md entries
