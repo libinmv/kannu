@@ -4,6 +4,12 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-27 - Crafted palette values for the traffic-light colors
+- **Developer label:** Tailwind-derived 400/500 hexes replace plain system colors in AgentTrafficLightPaletteColor; enum cases and stored selections unchanged
+- **Agent label:** The swatches stop looking flat on the dark notch
+- **Changes:**
+  - The 10 palette hues now use hand-picked Tailwind-derived values chosen for vivid rendering on the dark notch and mutual distinctness at dot size (e.g. a deeper go-green, an icy mint, a cyan-leaning teal). Raw values and names are untouched, so saved selections keep working with zero migration; the three defaults' hand-tuned neon panel values are preserved exactly
+
 ### 2026-08-27 - Document the stable dev-signing identity that keeps TCC grants alive
 - **Developer label:** CLAUDE.md dev-build recipe prefers CODE_SIGN_IDENTITY="Kannu Dev" over ad-hoc
 - **Agent label:** Grant Accessibility once instead of after every rebuild

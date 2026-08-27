@@ -54,19 +54,21 @@ enum AgentTrafficLightPaletteColor: String, CaseIterable, Defaults.Serializable,
         }
     }
 
-    /// Standard rendering: the closed-notch dots, legend rows, and swatches.
+    /// Standard rendering: the closed-notch dots, legend rows, and swatches. Hand-picked
+    /// Tailwind-derived values (mostly the 400/500 shades), chosen per hue for pop on the
+    /// dark notch and for mutual distinctness at 10pt dot size.
     var color: Color {
         switch self {
-        case .green: return .green
-        case .mint: return .mint
-        case .teal: return .teal
-        case .blue: return .blue
-        case .indigo: return .indigo
-        case .purple: return .purple
-        case .pink: return .pink
-        case .red: return .red
-        case .orange: return .orange
-        case .yellow: return .yellow
+        case .green: return Color(red: 0.133, green: 0.773, blue: 0.369)   // #22C55E
+        case .mint: return Color(red: 0.369, green: 0.918, blue: 0.831)    // #5EEAD4
+        case .teal: return Color(red: 0.024, green: 0.714, blue: 0.831)    // #06B6D4
+        case .blue: return Color(red: 0.231, green: 0.510, blue: 0.965)    // #3B82F6
+        case .indigo: return Color(red: 0.506, green: 0.549, blue: 0.973)  // #818CF8
+        case .purple: return Color(red: 0.659, green: 0.333, blue: 0.969)  // #A855F7
+        case .pink: return Color(red: 0.925, green: 0.282, blue: 0.600)    // #EC4899
+        case .red: return Color(red: 0.937, green: 0.267, blue: 0.267)     // #EF4444
+        case .orange: return Color(red: 0.976, green: 0.451, blue: 0.086)  // #F97316
+        case .yellow: return Color(red: 0.980, green: 0.800, blue: 0.082)  // #FACC15
         }
     }
 
@@ -75,16 +77,17 @@ enum AgentTrafficLightPaletteColor: String, CaseIterable, Defaults.Serializable,
     /// enough to carry the glow shadows on the dark panel background.
     var neonColor: Color {
         switch self {
+        // The three defaults keep the panel's original hand-tuned values.
         case .green: return Color(red: 0.12, green: 1.0, blue: 0.35)
         case .yellow: return Color(red: 1.0, green: 0.86, blue: 0.0)
         case .red: return Color(red: 1.0, green: 0.06, blue: 0.16)
-        case .mint: return Color(red: 0.2, green: 1.0, blue: 0.8)
-        case .teal: return Color(red: 0.0, green: 0.9, blue: 1.0)
-        case .blue: return Color(red: 0.2, green: 0.55, blue: 1.0)
-        case .indigo: return Color(red: 0.45, green: 0.45, blue: 1.0)
-        case .purple: return Color(red: 0.75, green: 0.35, blue: 1.0)
-        case .pink: return Color(red: 1.0, green: 0.3, blue: 0.7)
-        case .orange: return Color(red: 1.0, green: 0.58, blue: 0.1)
+        case .mint: return Color(red: 0.486, green: 1.0, blue: 0.898)      // #7CFFE5
+        case .teal: return Color(red: 0.0, green: 0.851, blue: 1.0)        // #00D9FF
+        case .blue: return Color(red: 0.278, green: 0.584, blue: 1.0)      // #4795FF
+        case .indigo: return Color(red: 0.545, green: 0.545, blue: 1.0)    // #8B8BFF
+        case .purple: return Color(red: 0.761, green: 0.373, blue: 1.0)    // #C25FFF
+        case .pink: return Color(red: 1.0, green: 0.341, blue: 0.682)      // #FF57AE
+        case .orange: return Color(red: 1.0, green: 0.549, blue: 0.102)    // #FF8C1A
         }
     }
 }
