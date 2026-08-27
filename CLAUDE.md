@@ -117,7 +117,7 @@ For coding tasks report: what changed, why, files affected, important architectu
 ## Build, run, verify
 
 - Verification build (no signing): `xcodebuild -project Kannu.xcodeproj -scheme Kannu -configuration Debug CODE_SIGNING_ALLOWED=NO build`
-- Runnable dev build (dev machines have no signing identities — build ad-hoc): add `CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM="" CODE_SIGN_STYLE=Manual` and a `-derivedDataPath`, then launch the produced `.app` with `open`. Never launch the bare executable — it aborts with a TCC violation outside a proper launch context.
+- Runnable dev build: prefer the stable local identity `CODE_SIGN_IDENTITY="Kannu Dev"` (a self-signed code-signing cert in the login keychain — check with `security find-identity -v -p codesigning`; create once via Keychain Access › Certificate Assistant, type Code Signing, name `Kannu Dev`). A stable identity keeps TCC grants (Accessibility etc.) valid across rebuilds. If the identity doesn't exist, fall back to ad-hoc: `CODE_SIGN_IDENTITY="-"` — but every ad-hoc rebuild mints a new code identity, so **all TCC grants die on each rebuild** and must be re-granted. Either way add `CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM="" CODE_SIGN_STYLE=Manual` and a `-derivedDataPath`, then launch the produced `.app` with `open`. Never launch the bare executable — it aborts with a TCC violation outside a proper launch context.
 - App logs go through `os.Logger` (subsystem `com.kannu.app`); read them with **`/usr/bin/log show --predicate ...`** — plain `log` is a zsh builtin that silently mangles arguments.
 - Branch model: day-to-day work lands on `development`; `main` is the release branch; PRs target `development`.
 

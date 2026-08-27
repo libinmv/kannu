@@ -4,6 +4,12 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-27 - Document the stable dev-signing identity that keeps TCC grants alive
+- **Developer label:** CLAUDE.md dev-build recipe prefers CODE_SIGN_IDENTITY="Kannu Dev" over ad-hoc
+- **Agent label:** Grant Accessibility once instead of after every rebuild
+- **Changes:**
+  - Root-caused the recurring "Accessibility still shows Request access": ad-hoc dev builds sign with the binary's own hash as their identity, so every rebuild orphans every TCC grant (tccd logs `Failed to match existing code requirement` for Accessibility, Media Library, Documents and Full Disk Access alike). The dev-build recipe now prefers a stable self-signed `Kannu Dev` identity, under which grants survive rebuilds; ad-hoc remains the documented fallback with its cost spelled out
+
 ### 2026-08-27 - Shorten the idle-red toggle caption
 - **Developer label:** One-line caption swap under showAgentStoppedIndicator
 - **Agent label:** Nine words instead of a paragraph
