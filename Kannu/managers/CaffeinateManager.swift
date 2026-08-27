@@ -22,24 +22,24 @@ import Foundation
 import IOKit.pwr_mgt
 import os
 
-/// Keeps the Mac awake, in one of two user-selectable modes:
+/// Keeps the Mac awake. Deliberately a three-stage pipeline so a debugger can read it in one
+/// pass — full behavior tables, debug commands, and design rationale in docs/CAFFEINATE.md:
 ///
-/// - **Manual** (`caffeinateEnabled`): plain caffeinate — while the notch switch is on, a
-///   system-sleep assertion is held unconditionally until it is switched off or the app quits.
-/// - **Smart** (`smartCaffeinate`): the assertion is held automatically while at least one
-///   visible agent session is in an active run (thinking / executing / awaiting input — the
-///   same definition the traffic light uses) and released the moment every run stops. While
-///   smart mode is on, the manual switch is hidden from the notch and its value is ignored.
+/// 1. **Decision** (pure): `AgentTrafficLightMapper.shouldKeepAwake` — feature off → never;
+///    smart on → hold while a caffeinate-worthy session runs; else manual toggle verbatim.
+/// 2. **Transition** (pure): `AgentTrafficLightMapper.caffeinateTransition` — compares intent
+///    to the held state and yields exactly one of none / create / release / refresh.
+/// 3. **Command**: the switch in `apply(_:smart:)` — each arm is one or two IOPM syscalls.
+///
+/// Stages 1 and 2 are Foundation-only and pinned by `CaffeinateDecisionTests`.
 ///
 /// Only *idle system* sleep is prevented (same as `caffeinate -i`): the display may still
-/// sleep, and closing the lid still sleeps the machine — assertions never override forced sleep.
+/// sleep, and closing the lid still sleeps the machine. There is deliberately no quit handler:
+/// powerd reclaims a process's assertions on any exit, including crash and SIGKILL.
 ///
-/// Concurrency: all three inputs (two Defaults keys, the agent session list) are treated as
-/// bare wake-up signals; no payload is ever captured. `reconcile()` re-reads every piece of
-/// live state on the main actor at execution time, so a burst of events converges on the
-/// current truth no matter how the queued tasks interleave, and the edge guard in
-/// `setKeepingAwake` makes each pass idempotent. The IOPM calls are synchronous and there is
-/// no suspension point inside a transition, so two transitions can never overlap.
+/// Concurrency: all inputs are bare wake-up signals; `reconcile()` re-reads everything on the
+/// main actor at execution time, the IOPM calls are synchronous, and there is no suspension
+/// point inside a transition — bursts converge, transitions never overlap.
 @MainActor
 final class CaffeinateManager: ObservableObject {
     static let shared = CaffeinateManager()
@@ -106,58 +106,69 @@ final class CaffeinateManager: ObservableObject {
 
         let smart = Defaults[.smartCaffeinate]
         let featureEnabled = Defaults[.enableAgentStatusFeature]
-        let hasActiveVisibleSession = CursorAgentStatusMonitor.shared.sessions.contains {
-            $0.isVisible && !AgentTrafficLightMapper.isSimulationSession($0) && $0.displayState.isActiveRun
-        }
         let shouldHold = AgentTrafficLightMapper.shouldKeepAwake(
             smartEnabled: smart,
             manualEnabled: Defaults[.caffeinateEnabled],
             featureEnabled: featureEnabled,
-            hasActiveVisibleSession: hasActiveVisibleSession
+            hasActiveVisibleSession: AgentTrafficLightMapper.hasCaffeinateWorthySession(
+                CursorAgentStatusMonitor.shared.sessions
+            )
         )
-        // Log before the edge guard so a wrong read is never silent.
-        if shouldHold != isKeepingAwake {
-            Self.log.notice("reconcile(\(trigger, privacy: .public)): smart=\(smart) feature=\(featureEnabled) → shouldHold=\(shouldHold)")
+        let smartNow = smart && featureEnabled
+        let transition = AgentTrafficLightMapper.caffeinateTransition(
+            isHeld: isKeepingAwake,
+            heldModeIsSmart: heldModeIsSmart,
+            shouldHold: shouldHold,
+            smartNow: smartNow
+        )
+        if transition != .none {
+            Self.log.notice("reconcile(\(trigger, privacy: .public)): smart=\(smart) feature=\(featureEnabled) shouldHold=\(shouldHold) → \(String(describing: transition), privacy: .public)")
         }
-        setKeepingAwake(shouldHold, smart: smart && featureEnabled)
+        apply(transition, smart: smartNow)
     }
 
-    private func setKeepingAwake(_ shouldHold: Bool, smart: Bool) {
-        // A manual↔smart flip while held would otherwise short-circuit at the edge guard and
-        // leave the assertion carrying the old mode's reason string; refresh it so pmset
-        // diagnostics report the mode actually in force. The recreate gap is microseconds —
-        // far below powerd's decision timescale.
-        if shouldHold, isKeepingAwake, heldModeIsSmart != smart {
-            releaseAssertion()
-        }
-
-        guard shouldHold != isKeepingAwake else { return }
-
-        if shouldHold {
-            var id: IOPMAssertionID = 0
-            let reason = smart
-                ? "Kannu — keeping the Mac awake while AI agents run"
-                : "Kannu — keeping the Mac awake"
-            let result = IOPMAssertionCreateWithName(
-                kIOPMAssertionTypePreventUserIdleSystemSleep as CFString,
-                IOPMAssertionLevel(kIOPMAssertionLevelOn),
-                reason as CFString,
-                &id
-            )
-            guard result == kIOReturnSuccess else {
-                Self.log.error("failed to create sleep assertion (\(result)); retrying in 5s")
-                scheduleRetry()
-                return
-            }
-            assertionID = id
-            heldModeIsSmart = smart
-            isKeepingAwake = true
-            Self.log.notice("☕ holding system-sleep assertion (\(smart ? "smart" : "manual", privacy: .public))")
-        } else {
+    /// Stage 3: execute exactly the transition the pure table chose. Each arm is one or two
+    /// IOPM commands — nothing here decides anything.
+    private func apply(_ transition: AgentTrafficLightMapper.CaffeinateTransition, smart: Bool) {
+        switch transition {
+        case .none:
+            return
+        case .create:
+            createAssertion(smart: smart)
+        case .release:
             releaseAssertion()
             isKeepingAwake = false
             Self.log.notice("💤 released system-sleep assertion")
+        case .refresh:
+            // Mode flipped while held: recreate so the reason string in `pmset -g assertions`
+            // reports the mode actually in force. The gap is microseconds — far below powerd's
+            // decision timescale.
+            releaseAssertion()
+            createAssertion(smart: smart)
         }
+    }
+
+    private func createAssertion(smart: Bool) {
+        var id: IOPMAssertionID = 0
+        let reason = smart
+            ? "Kannu — keeping the Mac awake while AI agents run"
+            : "Kannu — keeping the Mac awake"
+        let result = IOPMAssertionCreateWithName(
+            kIOPMAssertionTypePreventUserIdleSystemSleep as CFString,
+            IOPMAssertionLevel(kIOPMAssertionLevelOn),
+            reason as CFString,
+            &id
+        )
+        guard result == kIOReturnSuccess else {
+            Self.log.error("failed to create sleep assertion (\(result)); retrying in 5s")
+            isKeepingAwake = false
+            scheduleRetry()
+            return
+        }
+        assertionID = id
+        heldModeIsSmart = smart
+        isKeepingAwake = true
+        Self.log.notice("☕ holding system-sleep assertion (\(smart ? "smart" : "manual", privacy: .public))")
     }
 
     private func releaseAssertion() {

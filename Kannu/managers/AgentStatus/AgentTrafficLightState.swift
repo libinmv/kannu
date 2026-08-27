@@ -163,6 +163,44 @@ enum AgentTrafficLightMapper {
         return manualEnabled
     }
 
+    /// The single IOPM action a caffeinate reconcile pass must perform, as an explicit table.
+    /// Pinned row-for-row by CaffeinateDecisionTests and documented in docs/CAFFEINATE.md —
+    /// keep all three in sync.
+    enum CaffeinateTransition: Equatable {
+        /// Assertion state already matches intent — do nothing.
+        case none
+        /// Not held but should be — one IOPMAssertionCreate.
+        case create
+        /// Held but should not be — one IOPMAssertionRelease.
+        case release
+        /// Held, but under the other mode's reason string — release then create, so
+        /// `pmset -g assertions` reports the mode actually in force.
+        case refresh
+    }
+
+    static func caffeinateTransition(
+        isHeld: Bool,
+        heldModeIsSmart: Bool?,
+        shouldHold: Bool,
+        smartNow: Bool
+    ) -> CaffeinateTransition {
+        switch (isHeld, shouldHold) {
+        case (false, true): return .create
+        case (true, false): return .release
+        case (false, false): return .none
+        case (true, true):
+            return heldModeIsSmart == smartNow ? .none : .refresh
+        }
+    }
+
+    /// Whether any session justifies smart caffeinate holding the Mac awake: visible, not a
+    /// simulation, and in an active run — the same definition the traffic light uses.
+    static func hasCaffeinateWorthySession(_ sessions: [AgentSessionStatus]) -> Bool {
+        sessions.contains {
+            $0.isVisible && !isSimulationSession($0) && $0.displayState.isActiveRun
+        }
+    }
+
     /// Merges Claude hook sessions with passive transcript/PID evidence. Pure — lives here
     /// (Foundation-only, compiled into the logic test target) because this exact logic has
     /// regressed repeatedly while it was unreachable by tests: docs/REGRESSIONS.md entries

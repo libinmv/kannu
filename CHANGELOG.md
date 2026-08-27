@@ -4,6 +4,14 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-27 - Caffeinate hardened: exhaustive regression tests, pipeline shape, docs
+- **Developer label:** caffeinateTransition + hasCaffeinateWorthySession extracted pure; manager becomes decision→transition→command; 10 tests incl. the exhaustive 16-row decision matrix; docs/CAFFEINATE.md
+- **Agent label:** The whole feature now reads as a table a debugger can check at a glance, and every row is pinned by a test
+- **Changes:**
+  - `CaffeinateManager` is restructured into an explicit three-stage pipeline with no behavior change: a pure decision (`shouldKeepAwake`), a pure transition table (`caffeinateTransition` — none/create/release/refresh), and a command stage where each switch arm is one or two IOPM calls. The session-activity predicate is extracted as `hasCaffeinateWorthySession`. Everything except the syscalls themselves is now Foundation-only and tested
+  - `CaffeinateDecisionTests` grows to 10 tests: the exhaustive 16-combination decision matrix (any future arbitration edit changes an explicit row), the full transition table including both refresh directions and the unknown-held-mode case, and session-predicate fixtures (invisible, simulation IDs, stopped-only, mixed lists, empty). Negative-verified: flipping the refresh row breaks 3 assertions. Suite is 58 tests
+  - New `docs/CAFFEINATE.md`: the two tables verbatim, the exact log-stream and pmset debug commands (including the em-dash grep gotcha in the assertion names), and the deliberate non-behaviors — display sleep untouched, no quit handler because powerd reclaims assertions on any exit, no subprocess ever. The manager's header comment now points there instead of restating prose
+
 ### 2026-08-27 - Caffeinate audit: mechanism confirmed solid, four flow defects fixed
 - **Developer label:** Feature-off override + enableAgentStatusFeature subscription; bounded retry on assertion-create failure; mode-tracked assertion reason; onboarding seed; pure shouldKeepAwake + 4 tests
 - **Agent label:** Caffeinate can no longer strand itself behind hidden controls, lie about its mode, or die silently on a failed assertion
