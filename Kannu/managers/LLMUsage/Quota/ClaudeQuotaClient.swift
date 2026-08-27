@@ -194,14 +194,32 @@ struct ClaudeQuotaClient {
     }
 
     private struct Window: Decodable {
-        let utilization: Double
-        let resetsAt: ResetsAt
+        // Optional-tolerant on purpose: the endpoint is undocumented and has omitted
+        // `resets_at` for idle windows. A strict field here made ONE missing key throw the
+        // whole response away and kill BOTH gauges — presenting as "session limit missing".
+        let utilization: Double?
+        let resetsAt: ResetsAt?
     }
 
     private struct UsageResponse: Decodable {
         let fiveHour: Window?
         let sevenDay: Window?
         let subscriptionType: String? // only sent by some accounts; used when the stored credentials omit the tier
+
+        private enum CodingKeys: String, CodingKey { case fiveHour, sevenDay, subscriptionType }
+
+        init(from decoder: Decoder) throws {
+            // Each window decodes independently so a malformed one degrades that gauge only.
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            fiveHour = try? container.decodeIfPresent(Window.self, forKey: .fiveHour)
+            sevenDay = try? container.decodeIfPresent(Window.self, forKey: .sevenDay)
+            subscriptionType = try? container.decodeIfPresent(String.self, forKey: .subscriptionType)
+        }
+    }
+
+    private static func limit(from window: Window?) -> UsageLimit? {
+        guard let window, let utilization = window.utilization else { return nil }
+        return UsageLimit(used: utilization, limit: 100, resetsAt: window.resetsAt?.date)
     }
 
     /// `interactive` gates the one step that can show a system dialog: reading Claude Code's
@@ -271,6 +289,7 @@ struct ClaudeQuotaClient {
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 let code = (response as? HTTPURLResponse)?.statusCode ?? -1
                 Self.log.error("oauth/usage HTTP \(code)")
+                QuotaDebugLog.log("ClaudeQuota", "HTTP \(code)")
                 if code == 429 {
                     let retryAfter = (response as? HTTPURLResponse)?
                         .value(forHTTPHeaderField: "Retry-After")
@@ -300,17 +319,19 @@ struct ClaudeQuotaClient {
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
             let decoded = try decoder.decode(UsageResponse.self, from: data)
-            let sessionLimit = decoded.fiveHour.map { UsageLimit(used: $0.utilization, limit: 100, resetsAt: $0.resetsAt.date) }
-            let weekLimit = decoded.sevenDay.map { UsageLimit(used: $0.utilization, limit: 100, resetsAt: $0.resetsAt.date) }
+            let sessionLimit = Self.limit(from: decoded.fiveHour)
+            let weekLimit = Self.limit(from: decoded.sevenDay)
             if sessionLimit == nil && weekLimit == nil {
                 return QuotaFetchResult(errorMessage: "Claude quota response missing usage windows")
             }
             let tier = creds.subscriptionType ?? decoded.subscriptionType
             let result = QuotaFetchResult(session: sessionLimit, week: weekLimit, accountTier: tier?.capitalized)
+            QuotaDebugLog.log("ClaudeQuota", "200 ok — session=\(sessionLimit.map { String(format: "%.0f%%", $0.used) } ?? "nil") week=\(weekLimit.map { String(format: "%.0f%%", $0.used) } ?? "nil")")
             await ClaudeQuotaCooldown.shared.noteSuccess(result)
             return result
         } catch {
             Self.log.error("oauth/usage failed: \(error.localizedDescription, privacy: .public)")
+            QuotaDebugLog.log("ClaudeQuota", "request/decode failed: \(error.localizedDescription)")
             return QuotaFetchResult(errorMessage: error.localizedDescription)
         }
     }

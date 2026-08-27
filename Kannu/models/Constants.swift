@@ -1130,9 +1130,10 @@ extension Defaults.Keys {
     static let enableCursorProvider = Key<Bool>("enableCursorProvider", default: false)
     static let enableAntigravityProvider = Key<Bool>("enableAntigravityProvider", default: false)
     /// Live 5h/7d limits are the only Claude figure that needs the network, and reaching it
-    /// costs a one-time keychain approval. Off by default so the usage card is purely local —
-    /// tier, credits and token counts all come off disk and nothing can rate-limit or prompt.
-    static let enableClaudeUsageLimits = Key<Bool>("enableClaudeUsageLimits", default: false)
+    /// costs a one-time keychain approval. On by default: the 5h/7d gauges are the point of
+    /// the card, the fetch is cooldown-protected, and the keychain read stays behind an
+    /// explicit approval button — declining it just leaves the card local-only.
+    static let enableClaudeUsageLimits = Key<Bool>("enableClaudeUsageLimits", default: true)
     static let llmProviderDefaultsConfigured = Key<Bool>("llmProviderDefaultsConfigured", default: false)
     static let statsStopWhenNotchCloses = Key<Bool>("statsStopWhenNotchCloses", default: true)
     static let statsUpdateInterval = Key<Double>("statsUpdateInterval", default: 1.0)

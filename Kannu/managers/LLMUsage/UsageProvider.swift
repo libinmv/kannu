@@ -67,6 +67,9 @@ struct UsageSnapshot: Equatable {
     var quotaError: String? = nil
     /// Set when the quota failure has a one-tap fix the user can trigger.
     var quotaAction: QuotaAction? = nil
+    /// Locally reconstructed current 5-hour block (Claude): tokens + reset time, shown when
+    /// the server-side limit gauge is unavailable. Never a percentage — no local denominator.
+    var localSessionBlock: ClaudeSessionBlocks.CurrentBlock? = nil
     var logsUnavailable: Bool = false
     /// Show only provider-billed spend; never display pricing-table estimates.
     var billedCostOnly: Bool = false
@@ -81,6 +84,9 @@ struct UsageSnapshot: Equatable {
     /// auth failure (not signed-in / expired token / 401 / 403) — NOT a transient error
     /// like 429 or 500. Only those cases drop the card from the Usage tab.
     var isFatallyUnconfigured: Bool {
+        // A card carrying a fix-it button or an explanatory quota message must stay visible:
+        // hiding it strands the user with no path to recovery.
+        if quotaAction != nil || quotaError != nil { return false }
         let hasNoRealUsage = logsUnavailable
             || (today.totalTokens == 0 && week.totalTokens == 0 && session.totalTokens == 0)
         let hasNoQuota = sessionLimit == nil && weekLimit == nil

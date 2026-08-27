@@ -50,6 +50,7 @@ struct JSONLUsageParser {
         var snapshot = UsageSnapshot()
         var perModel: [String: UsageTotals] = [:]
         var seen = Set<String>()
+        var blockRecords: [(timestamp: Date, tokens: Int)] = []
         let cal = Calendar.current
         let sessionStart = now.addingTimeInterval(-5 * 3600)
         let weekStart = now.addingTimeInterval(-7 * 86400)
@@ -75,11 +76,13 @@ struct JSONLUsageParser {
                 var mt = perModel[rec.model] ?? UsageTotals()
                 add(&mt)
                 perModel[rec.model] = mt
+                blockRecords.append((rec.timestamp, rec.inputTokens + rec.outputTokens))
             }
         }
         snapshot.models = perModel
             .map { ModelUsage(model: $0.key, totals: $0.value) }
             .sorted { $0.totals.costUSD > $1.totals.costUSD }
+        snapshot.localSessionBlock = ClaudeSessionBlocks.currentBlock(records: blockRecords, now: now)
         snapshot.lastUpdated = now
         return snapshot
     }

@@ -128,7 +128,9 @@ final class LLMUsageManager: ObservableObject {
         // A force/interactive refresh may jump the poll interval, but never below the
         // interactive floor — see `minInteractiveRefreshInterval`.
         let requiredInterval = (force || interactive) ? Self.minInteractiveRefreshInterval : Self.minRefreshInterval
-        guard drainingParkedRequest || Date().timeIntervalSince(lastRefresh) >= requiredInterval else { return }
+        // interactive always passes: it is a deliberate user tap on a fix-it control, and
+        // silently dropping it inside the floor made the approval button appear dead.
+        guard drainingParkedRequest || interactive || Date().timeIntervalSince(lastRefresh) >= requiredInterval else { return }
 
         lastRefresh = Date()
         isRefreshing = true

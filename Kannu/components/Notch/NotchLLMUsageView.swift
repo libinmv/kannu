@@ -60,8 +60,9 @@ struct NotchLLMUsageView: View {
     private var claudeLimitsToggle: some View {
         Button {
             claudeUsageLimitsEnabled.toggle()
-            // Skip the refresh floor: the card should reflect the choice immediately.
-            manager.refreshAll(force: true)
+            // Skip the refresh floor, and allow the keychain prompt when enabling — without
+            // interactive the enable could only ever produce the "needs approval" message.
+            manager.refreshAll(force: true, interactive: claudeUsageLimitsEnabled)
         } label: {
             Image(systemName: claudeUsageLimitsEnabled
                   ? "gauge.with.dots.needle.bottom.50percent"
@@ -173,14 +174,19 @@ struct NotchLLMUsageView: View {
                     window("Week", snap.week, showCost: showEstimatedCost)
                     window("Session", snap.session, showCost: showEstimatedCost)
                 }
+                localSessionRow(snap)
                 if let quotaError = snap.quotaError {
                     Text(quotaError).font(.caption2).foregroundStyle(.orange).lineLimit(4)
-                } else {
+                } else if snap.localSessionBlock == nil {
                     Text("quota unavailable").font(.caption2).foregroundStyle(.secondary.opacity(0.7))
                 }
                 quotaActionButton(snap.quotaAction)
             } else {
-                if let limit = snap.sessionLimit { quotaGauge("Session", limit) }
+                if let limit = snap.sessionLimit {
+                    quotaGauge("Session", limit)
+                } else {
+                    localSessionRow(snap)
+                }
                 if let limit = snap.weekLimit { quotaGauge("Week", limit) }
                 // Claude's Session/Week quota gauges above already cover this ground —
                 // the compact Today/Week token counts were redundant for Claude specifically.
@@ -228,7 +234,6 @@ struct NotchLLMUsageView: View {
                     .background(.white.opacity(0.12), in: Capsule())
             }
             .buttonStyle(.plain)
-            .disabled(manager.isRefreshing)
         }
     }
 
@@ -244,6 +249,36 @@ struct NotchLLMUsageView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+        }
+    }
+
+    /// Locally reconstructed 5-hour block: tokens spent + reset countdown. Labeled local and
+    /// never a percentage — the plan's budget only exists server-side.
+    @ViewBuilder
+    private func localSessionRow(_ snap: UsageSnapshot) -> some View {
+        if let block = snap.localSessionBlock {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("Session (local)")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 4)
+                Text(compactTokens(block.totalTokens))
+                    .font(.caption2)
+                    .monospacedDigit()
+                if let resets = resetsIn(block.resetsAt) {
+                    Text(resets)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func compactTokens(_ tokens: Int) -> String {
+        switch tokens {
+        case ..<1_000: return "\(tokens) tok"
+        case ..<1_000_000: return String(format: "%.1fK tok", Double(tokens) / 1_000)
+        default: return String(format: "%.1fM tok", Double(tokens) / 1_000_000)
         }
     }
 

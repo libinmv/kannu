@@ -4,6 +4,16 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-27 - Claude session limits actually work now, with a local 5-hour block fallback
+- **Developer label:** enableClaudeUsageLimits defaults on; interactive enable + floor bypass + card-never-vanishes; per-window tolerant decode; ClaudeSessionBlocks (ccusage-style) + Session (local) row; quota-debug gaps closed; 7 tests
+- **Agent label:** The 5h/7d gauges appear by default, the approval button works, and when the server can't be reached you still get tokens-this-block and a reset countdown
+- **Changes:**
+  - Root cause of "session limit detection doesn't work": `enableClaudeUsageLimits` defaulted to false and had never been enabled — the quota client had literally never run (the debug log showed only clean refreshes and nothing else, because the short-circuit logged nothing; it does now). Research verdict recorded: the 5h/7d utilization percentages exist only at the authenticated `/api/oauth/usage` endpoint (statusline stdin, transcripts, telemetry and `~/.claude.json` all verifiably lack them), and the client already sends the right headers including the community-required User-Agent
+  - The enable flow had three traps, all fixed: the gauge toggle refreshed without `interactive` so the keychain prompt could never appear; the "Show usage limits" button press was silently swallowed by the 10-second refresh floor (interactive taps now always pass); and auth-failure states could hide the whole card, stranding the user — a card carrying a fix-it button or an explanatory message now always stays visible
+  - The response decode was all-or-nothing: one omitted `resets_at` (seen on idle windows of this undocumented endpoint) threw the whole response away and killed BOTH gauges. Windows now decode independently and tolerate missing fields, degrading one gauge instead of both
+  - New local fallback, honest by design: `ClaudeSessionBlocks` reconstructs the current 5-hour block from the transcripts Kannu already parses (anchor = first request after the previous block, floored to the hour — the ccusage convention) and the card shows "Session (local)": tokens this block plus the reset countdown, whenever the server gauge is unavailable. Deliberately not a percentage: the plan's budget and Anthropic's weighted utilization only exist server-side, and local sums are documented to diverge
+  - `enableClaudeUsageLimits` now defaults to true — the gauges are the point of the card; the fetch stays cooldown-protected and the keychain read stays behind the explicit approval button. 7 new block-reconstruction tests; suite is 65
+
 ### 2026-08-27 - Record the sign-last install trap
 - **Developer label:** CLAUDE.md: test builds with CODE_SIGNING_ALLOWED=NO stomp the identity-signed product
 - **Agent label:** The install pipeline signs last, or TCC grants silently die again

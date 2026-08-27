@@ -42,6 +42,9 @@ struct ClaudeUsageProvider: UsageProvider {
         // network and a keychain approval, so they're opt-in — with this off there is no
         // request, no prompt, and nothing that can be rate-limited.
         guard Defaults[.enableClaudeUsageLimits] else {
+            // The one silence that cost a debugging session: with the toggle off the manager
+            // logs a clean "refresh ok" and nothing says WHY there are no gauges.
+            QuotaDebugLog.log("ClaudeQuota", "limits toggle off — skipping /oauth/usage entirely")
             // With limits off AND no local logs the snapshot is entirely empty — returning it
             // as a success would let the manager's keep-last-good logic get overwritten by
             // nothing. Throw so a populated card is preserved instead.
