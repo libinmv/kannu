@@ -36,6 +36,10 @@ struct ColorSpectrumPicker: View {
     @State private var hexText: String = ""
     @State private var didSeed = false
 
+    /// Explicit stops rather than a computed stride: the literal arithmetic was ambiguous to
+    /// the compiler CI builds with.
+    private static let hueStops: [Double] = [0, 1.0 / 6, 2.0 / 6, 3.0 / 6, 4.0 / 6, 5.0 / 6, 1]
+
     private let planeHeight: CGFloat = 120
     private let sliderHeight: CGFloat = 14
     private let knobSize: CGFloat = 12
@@ -60,8 +64,8 @@ struct ColorSpectrumPicker: View {
                 knob(at: ColorSpectrumMath.point(
                     saturation: saturation,
                     brightness: brightness,
-                    width: geo.size.width,
-                    height: geo.size.height
+                    width: Double(geo.size.width),
+                    height: Double(geo.size.height)
                 ))
             }
             .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -70,8 +74,8 @@ struct ColorSpectrumPicker: View {
             .gesture(
                 DragGesture(minimumDistance: 0).onChanged { value in
                     let result = ColorSpectrumMath.saturationBrightness(
-                        atX: value.location.x, y: value.location.y,
-                        width: geo.size.width, height: geo.size.height
+                        atX: Double(value.location.x), y: Double(value.location.y),
+                        width: Double(geo.size.width), height: Double(geo.size.height)
                     )
                     saturation = result.saturation
                     brightness = result.brightness
@@ -88,8 +92,7 @@ struct ColorSpectrumPicker: View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 LinearGradient(
-                    colors: stride(from: 0.0, through: 1.0, by: 1.0 / 6.0)
-                        .map { Color(hue: $0, saturation: 1, brightness: 1) },
+                    colors: Self.hueStops.map { Color(hue: $0, saturation: 1, brightness: 1) },
                     startPoint: .leading,
                     endPoint: .trailing
                 )
@@ -101,12 +104,15 @@ struct ColorSpectrumPicker: View {
                     .frame(width: sliderHeight + 4, height: sliderHeight + 4)
                     .overlay(Circle().strokeBorder(.white, lineWidth: 2))
                     .shadow(radius: 1)
-                    .offset(x: ColorSpectrumMath.x(forHue: hue, width: geo.size.width) - (sliderHeight + 4) / 2)
+                    .offset(
+                        x: CGFloat(ColorSpectrumMath.x(forHue: hue, width: Double(geo.size.width)))
+                            - (sliderHeight + 4) / 2
+                    )
             }
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0).onChanged { value in
-                    hue = ColorSpectrumMath.hue(atX: value.location.x, width: geo.size.width)
+                    hue = ColorSpectrumMath.hue(atX: Double(value.location.x), width: Double(geo.size.width))
                     pushColor()
                 }
             )
@@ -132,7 +138,7 @@ struct ColorSpectrumPicker: View {
         Circle()
             .strokeBorder(color.contrastingForeground, lineWidth: 2)
             .frame(width: knobSize, height: knobSize)
-            .offset(x: point.x - knobSize / 2, y: point.y - knobSize / 2)
+            .offset(x: CGFloat(point.x) - knobSize / 2, y: CGFloat(point.y) - knobSize / 2)
     }
 
     private func seedFromBoundColorIfNeeded() {

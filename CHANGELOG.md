@@ -4,6 +4,12 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-29 - Fix the color picker failing to compile on CI's toolchain
+- **Developer label:** Explicit CGFloat/Double conversions in ColorSpectrumPicker; hue stops as a literal array instead of a computed stride
+- **Agent label:** Same behavior, now builds everywhere
+- **Changes:**
+  - The new spectrum picker compiled locally but failed CI with "ambiguous use of operator '/'": it leaned on implicit CGFloat/Double bridging that the newer local toolchain resolves and CI's does not. Every conversion between the pure math layer (Double) and SwiftUI geometry (CGFloat) is now explicit, and the hue gradient uses an explicit stops array rather than a computed stride. No behavior change
+
 ### 2026-08-29 - One shared color layer, with a working in-app gradient picker
 - **Developer label:** New Kannu/components/Color (KannuColorSwatch, KannuColorSwatchGrid, ColorSpectrumPicker, KannuColorPickerButton) + ColorSpectrumMath with 10 tests; both settings and agent pickers rebuilt on it; NSColorPanel path deleted
 - **Agent label:** Custom colors finally work, and every color control in the app is now the same component
