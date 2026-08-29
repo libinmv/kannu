@@ -4,6 +4,14 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-29 - Fix "Show Colors…" doing nothing in the settings color picker
+- **Developer label:** ColorPanelPresenter owns NSColorPanel and NSColorSampler; the popover's hosted NSColorWell is gone
+- **Agent label:** The Custom option now actually opens the full color panel
+- **Changes:**
+  - Regression from the color-picker rebuild: the popover hosted an `NSColorWell`, and macOS's "Show Colors…" opens `NSColorPanel`, which takes key window status and dismisses the transient SwiftUI popover — destroying the hosted well and its target/action, so the panel led nowhere. The popover now shows a plain "Custom…" button that dismisses itself and hands off to a persistent presenter which owns the panel, seeds it with the current color, and writes changes straight back to the setting
+  - Same class of bug fixed pre-emptively for the eyedropper: `NSColorSampler` was created inline and could be released before the user picked, dropping its completion. The presenter holds it for the duration of the pick
+  - `ColorWellSwatch` and `WheelColorWell` are removed — nothing referenced them once the well left the popover
+
 ### 2026-08-29 - Launch at login on by default, and it now stays on
 - **Developer label:** One-time auto-register gated by didAutoEnableLaunchAtLogin; stale-path repair replaces the every-launch unregister/re-register; requiresApproval surfaced in Settings; LoginItemPolicy + 9 tests
 - **Agent label:** Kannu starts itself at login, and switching it off in Settings sticks

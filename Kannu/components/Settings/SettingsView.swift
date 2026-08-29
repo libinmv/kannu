@@ -7407,6 +7407,7 @@ private struct SettingsColorPickerRow: View {
 private struct SettingsColorPickerPopover: View {
     @Binding var selection: Color
     var supportsOpacity: Bool
+    @Environment(\.dismiss) private var dismiss
 
     private static let presets: [NSColor] = [
         .systemRed, .systemOrange, .systemYellow, .systemGreen, .systemMint, .systemTeal,
@@ -7432,11 +7433,19 @@ private struct SettingsColorPickerPopover: View {
                 }
                 .buttonStyle(.borderless)
                 Spacer()
-                HStack(spacing: 6) {
-                    Text("Custom")
-                        .foregroundStyle(.secondary)
-                    ColorWellSwatch(color: $selection, supportsOpacity: supportsOpacity)
+                Button("Custom…") {
+                    // Dismiss first: the color panel takes key window status, which would
+                    // dismiss this popover anyway — and previously took the hosted NSColorWell
+                    // (and its target/action) down with it, so the panel led nowhere.
+                    dismiss()
+                    ColorPanelPresenter.shared.present(
+                        initial: selection,
+                        supportsOpacity: supportsOpacity
+                    ) { picked in
+                        selection = picked
+                    }
                 }
+                .buttonStyle(.borderless)
             }
             .font(.caption)
         }
@@ -7472,9 +7481,8 @@ private struct SettingsColorPickerPopover: View {
     }
 
     private func sampleFromScreen() {
-        NSColorSampler().show { picked in
-            guard let picked else { return }
-            selection = Color(nsColor: picked)
+        ColorPanelPresenter.shared.sampleFromScreen { picked in
+            selection = picked
         }
     }
 }
@@ -7488,47 +7496,46 @@ private extension NSColor {
 
 }
 
-private struct ColorWellSwatch: NSViewRepresentable {
-    @Binding var color: Color
-    var supportsOpacity: Bool
+/// Owns the shared `NSColorPanel` and the screen sampler on behalf of the settings color rows.
+///
+/// Both used to be driven from inside the SwiftUI popover: the panel through a hosted
+/// `NSColorWell`, the sampler through a locally-created `NSColorSampler`. Neither survives the
+/// popover, which is transient — showing the panel makes it key, dismissing the popover and
+/// tearing down whatever it hosted, so "Show Colors…" led to a panel with no target and screen
+/// picks could lose their completion. A persistent owner outlives the popover and keeps both
+/// working.
+private final class ColorPanelPresenter: NSObject {
+    static let shared = ColorPanelPresenter()
 
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    private var onChange: ((Color) -> Void)?
+    /// Held for the duration of a pick: a released sampler can drop its completion handler.
+    private var sampler: NSColorSampler?
 
-    func makeNSView(context: Context) -> WheelColorWell {
-        let well = WheelColorWell(style: .minimal)
-        well.color = NSColor(color)
-        well.isBordered = false
-        well.wantsLayer = true
-        well.layer?.cornerRadius = 4
-        well.layer?.masksToBounds = true
-        well.target = context.coordinator
-        well.action = #selector(Coordinator.colorChanged(_:))
-        return well
+    private override init() { super.init() }
+
+    func present(initial: Color, supportsOpacity: Bool, onChange: @escaping (Color) -> Void) {
+        self.onChange = onChange
+        let panel = NSColorPanel.shared
+        panel.showsAlpha = supportsOpacity
+        panel.mode = .wheel
+        panel.color = NSColor(initial)
+        panel.setTarget(self)
+        panel.setAction(#selector(panelColorChanged(_:)))
+        panel.makeKeyAndOrderFront(nil)
     }
 
-    func updateNSView(_ nsView: WheelColorWell, context: Context) {
-        let new = NSColor(color)
-        if nsView.color != new { nsView.color = new }
-        context.coordinator.parent = self
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: WheelColorWell, context: Context) -> CGSize? {
-        CGSize(width: 22, height: 14)
-    }
-
-    class Coordinator: NSObject {
-        var parent: ColorWellSwatch
-        init(_ parent: ColorWellSwatch) { self.parent = parent }
-        @objc func colorChanged(_ sender: WheelColorWell) {
-            parent.color = Color(sender.color)
+    func sampleFromScreen(onPick: @escaping (Color) -> Void) {
+        let sampler = NSColorSampler()
+        self.sampler = sampler
+        sampler.show { [weak self] picked in
+            self?.sampler = nil
+            guard let picked else { return }
+            onPick(Color(nsColor: picked))
         }
     }
-}
 
-final class WheelColorWell: NSColorWell {
-    override func activate(_ exclusive: Bool) {
-        super.activate(exclusive)
-        NSColorPanel.shared.mode = .wheel
+    @objc private func panelColorChanged(_ sender: NSColorPanel) {
+        onChange?(Color(nsColor: sender.color))
     }
 }
 
