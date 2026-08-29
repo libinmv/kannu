@@ -4,6 +4,15 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-29 - One shared color layer, with a working in-app gradient picker
+- **Developer label:** New Kannu/components/Color (KannuColorSwatch, KannuColorSwatchGrid, ColorSpectrumPicker, KannuColorPickerButton) + ColorSpectrumMath with 10 tests; both settings and agent pickers rebuilt on it; NSColorPanel path deleted
+- **Agent label:** Custom colors finally work, and every color control in the app is now the same component
+- **Changes:**
+  - "Custom…" never worked because it opened `NSColorPanel`, which is unreliable in this accessory (menu-bar) app — the app's own code has warned about exactly that for a while. Custom colors are now picked in-app with a gradient picker: a saturation/brightness plane, a hue slider and a hex field (`#1E90FF` and `#FFF` shorthand both accepted; invalid input reverts instead of applying garbage). No dependency on the system panel remains
+  - The app had two hand-copied swatch-popover implementations — one for the settings color rows, one for the agent traffic-light palette — plus two different luminance formulas deciding the same "is this swatch light?" question. There is now a single shared color layer under `Kannu/components/Color/`, and both pickers are built on it, so circle sizes, borders, checkmarks and contrast can no longer drift apart. The duplicate formula is deleted; contrast comes from the existing `Color.contrastingForeground`
+  - The palette's rule that two agent states can never share a color is now expressed as a `disabledReason` on the shared grid rather than reimplemented per picker, so it is enforced in one place
+  - Drag geometry and hex conversion live in a pure, Foundation-only `ColorSpectrumMath` pinned by 10 tests (edge clamping, plane round-trips, shorthand expansion, rejection of malformed input) — the parts that otherwise fail silently. Suite is 84
+
 ### 2026-08-29 - Fix "Show Colors…" doing nothing in the settings color picker
 - **Developer label:** ColorPanelPresenter owns NSColorPanel and NSColorSampler; the popover's hosted NSColorWell is gone
 - **Agent label:** The Custom option now actually opens the full color panel

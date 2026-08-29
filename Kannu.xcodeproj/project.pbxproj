@@ -35,6 +35,7 @@
 		AA1000000000000000000016 /* CursorUsageEventDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000015 /* CursorUsageEventDecoder.swift */; };
 		AA1000000000000000000018 /* ClaudeSessionBlocks.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000017 /* ClaudeSessionBlocks.swift */; };
 		AA1000000000000000000020 /* LoginItemPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000019 /* LoginItemPolicy.swift */; };
+		AA1000000000000000000022 /* ColorSpectrumMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000021 /* ColorSpectrumMath.swift */; };
 		F910B9C812C7AEFE2293F7D2 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4A9C58195E197C19F691DA62 /* Cocoa.framework */; };
 /* End PBXBuildFile section */
 
@@ -73,6 +74,7 @@
 		AA1000000000000000000015 /* CursorUsageEventDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CursorUsageEventDecoder.swift; path = Kannu/managers/LLMUsage/CursorUsageEventDecoder.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000017 /* ClaudeSessionBlocks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeSessionBlocks.swift; path = Kannu/managers/LLMUsage/ClaudeSessionBlocks.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000019 /* LoginItemPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LoginItemPolicy.swift; path = Kannu/helpers/LoginItemPolicy.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000021 /* ColorSpectrumMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ColorSpectrumMath.swift; path = Kannu/helpers/ColorSpectrumMath.swift; sourceTree = SOURCE_ROOT; };
 		DAA671E7B1B26733F02166C5 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F4C1DD09EC134302938E84F6 /* MediaRemoteAdapter.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MediaRemoteAdapter.framework; path = Frameworks/MediaRemoteAdapter.framework; sourceTree = SOURCE_ROOT; };
 		F54406E72CD4987A00C7AFD9 /* Kannu.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Kannu.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -459,6 +461,7 @@
 				AA1000000000000000000016 /* CursorUsageEventDecoder.swift in Sources */,
 				AA1000000000000000000018 /* ClaudeSessionBlocks.swift in Sources */,
 				AA1000000000000000000020 /* LoginItemPolicy.swift in Sources */,
+				AA1000000000000000000022 /* ColorSpectrumMath.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

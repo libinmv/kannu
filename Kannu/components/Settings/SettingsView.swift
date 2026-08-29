@@ -7379,35 +7379,26 @@ private struct SettingsColorPickerRow: View {
     let title: String
     @Binding var selection: Color
     var supportsOpacity: Bool = false
-    @State private var showPicker = false
 
     var body: some View {
         HStack {
             Text(title)
             Spacer()
-            Button {
-                showPicker.toggle()
-            } label: {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(selection)
-                    .frame(width: 22, height: 14)
-                    .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(.quaternary, lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(title)
-            .popover(isPresented: $showPicker, arrowEdge: .bottom) {
+            KannuColorPickerButton(color: selection, accessibilityLabel: title) {
                 SettingsColorPickerPopover(selection: $selection, supportsOpacity: supportsOpacity)
             }
         }
     }
 }
 
-/// System Settings accent-color style picker: preset swatches for one-click choices, a
-/// native screen eyedropper, and the color panel for everything else. Native APIs only.
+/// Presets + screen sampler, with the gradient picker one click away. The gradient replaced a
+/// "Custom…" button that opened `NSColorPanel`: in this accessory app the panel never reliably
+/// appeared, so custom colours were unreachable.
 private struct SettingsColorPickerPopover: View {
     @Binding var selection: Color
     var supportsOpacity: Bool
-    @Environment(\.dismiss) private var dismiss
+
+    @State private var showsSpectrum = false
 
     private static let presets: [NSColor] = [
         .systemRed, .systemOrange, .systemYellow, .systemGreen, .systemMint, .systemTeal,
@@ -7415,116 +7406,82 @@ private struct SettingsColorPickerPopover: View {
         .systemGray, .black, .white, .darkGray,
     ]
 
-    private let columns = Array(repeating: GridItem(.fixed(20), spacing: 6), count: 8)
+    private var items: [KannuColorSwatchGrid.Item] {
+        Self.presets.enumerated().map { index, preset in
+            KannuColorSwatchGrid.Item(
+                id: "preset-\(index)",
+                color: Color(nsColor: preset),
+                disabledReason: nil,
+                accessibilityLabel: String(localized: "Color swatch")
+            )
+        }
+    }
+
+    private var selectedID: String? {
+        items.first { matches($0.color, selection) }?.id
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            LazyVGrid(columns: columns, spacing: 6) {
-                ForEach(Self.presets.indices, id: \.self) { index in
-                    swatchButton(Self.presets[index])
-                }
-            }
-            Divider()
-            HStack {
-                Button {
-                    sampleFromScreen()
-                } label: {
-                    Label("Pick from screen", systemImage: "eyedropper")
-                }
-                .buttonStyle(.borderless)
-                Spacer()
-                Button("Custom…") {
-                    // Dismiss first: the color panel takes key window status, which would
-                    // dismiss this popover anyway — and previously took the hosted NSColorWell
-                    // (and its target/action) down with it, so the panel led nowhere.
-                    dismiss()
-                    ColorPanelPresenter.shared.present(
-                        initial: selection,
-                        supportsOpacity: supportsOpacity
-                    ) { picked in
-                        selection = picked
+            if showsSpectrum {
+                HStack(spacing: 6) {
+                    Button {
+                        showsSpectrum = false
+                    } label: {
+                        Image(systemName: "chevron.left")
                     }
+                    .buttonStyle(.borderless)
+                    Text("Custom color")
+                        .foregroundStyle(.secondary)
+                    Spacer()
                 }
-                .buttonStyle(.borderless)
+                .font(.caption)
+                ColorSpectrumPicker(color: $selection, supportsOpacity: supportsOpacity)
+                    .frame(width: 220)
+            } else {
+                KannuColorSwatchGrid(
+                    items: items,
+                    selectedID: selectedID,
+                    columns: 8,
+                    swatchSize: 18
+                ) { item in
+                    selection = item.color
+                }
+                Divider()
+                HStack {
+                    Button {
+                        ScreenColorSampler.shared.sample { picked in selection = picked }
+                    } label: {
+                        Label("Pick from screen", systemImage: "eyedropper")
+                    }
+                    .buttonStyle(.borderless)
+                    Spacer()
+                    Button("Custom…") { showsSpectrum = true }
+                        .buttonStyle(.borderless)
+                }
+                .font(.caption)
             }
-            .font(.caption)
         }
         .padding(12)
     }
 
-    private func swatchButton(_ preset: NSColor) -> some View {
-        Button {
-            selection = Color(nsColor: preset)
-        } label: {
-            Circle()
-                .fill(Color(nsColor: preset))
-                .frame(width: 18, height: 18)
-                .overlay(Circle().strokeBorder(.quaternary, lineWidth: 1))
-                .overlay {
-                    if matchesSelection(preset) {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(preset.isLightSwatch ? Color.black : Color.white)
-                    }
-                }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text("Color swatch"))
-    }
-
-    private func matchesSelection(_ preset: NSColor) -> Bool {
-        guard let lhs = NSColor(selection).usingColorSpace(.sRGB),
-              let rhs = preset.usingColorSpace(.sRGB) else { return false }
-        return abs(lhs.redComponent - rhs.redComponent) < 0.01
-            && abs(lhs.greenComponent - rhs.greenComponent) < 0.01
-            && abs(lhs.blueComponent - rhs.blueComponent) < 0.01
-    }
-
-    private func sampleFromScreen() {
-        ColorPanelPresenter.shared.sampleFromScreen { picked in
-            selection = picked
-        }
+    private func matches(_ lhs: Color, _ rhs: Color) -> Bool {
+        guard let a = NSColor(lhs).usingColorSpace(.sRGB),
+              let b = NSColor(rhs).usingColorSpace(.sRGB) else { return false }
+        return abs(a.redComponent - b.redComponent) < 0.01
+            && abs(a.greenComponent - b.greenComponent) < 0.01
+            && abs(a.blueComponent - b.blueComponent) < 0.01
     }
 }
 
-private extension NSColor {
-    var isLightSwatch: Bool {
-        guard let srgb = usingColorSpace(.sRGB) else { return false }
-        let luminance = 0.299 * srgb.redComponent + 0.587 * srgb.greenComponent + 0.114 * srgb.blueComponent
-        return luminance > 0.7
-    }
-
-}
-
-/// Owns the shared `NSColorPanel` and the screen sampler on behalf of the settings color rows.
-///
-/// Both used to be driven from inside the SwiftUI popover: the panel through a hosted
-/// `NSColorWell`, the sampler through a locally-created `NSColorSampler`. Neither survives the
-/// popover, which is transient — showing the panel makes it key, dismissing the popover and
-/// tearing down whatever it hosted, so "Show Colors…" led to a panel with no target and screen
-/// picks could lose their completion. A persistent owner outlives the popover and keeps both
-/// working.
-private final class ColorPanelPresenter: NSObject {
-    static let shared = ColorPanelPresenter()
-
-    private var onChange: ((Color) -> Void)?
-    /// Held for the duration of a pick: a released sampler can drop its completion handler.
+/// Owns the screen sampler so it outlives the popover — a locally-created `NSColorSampler` can be
+/// released before the user finishes picking, silently dropping the result.
+private final class ScreenColorSampler {
+    static let shared = ScreenColorSampler()
     private var sampler: NSColorSampler?
+    private init() {}
 
-    private override init() { super.init() }
-
-    func present(initial: Color, supportsOpacity: Bool, onChange: @escaping (Color) -> Void) {
-        self.onChange = onChange
-        let panel = NSColorPanel.shared
-        panel.showsAlpha = supportsOpacity
-        panel.mode = .wheel
-        panel.color = NSColor(initial)
-        panel.setTarget(self)
-        panel.setAction(#selector(panelColorChanged(_:)))
-        panel.makeKeyAndOrderFront(nil)
-    }
-
-    func sampleFromScreen(onPick: @escaping (Color) -> Void) {
+    func sample(onPick: @escaping (Color) -> Void) {
         let sampler = NSColorSampler()
         self.sampler = sampler
         sampler.show { [weak self] picked in
@@ -7533,11 +7490,8 @@ private final class ColorPanelPresenter: NSObject {
             onPick(Color(nsColor: picked))
         }
     }
-
-    @objc private func panelColorChanged(_ sender: NSColorPanel) {
-        onChange?(Color(nsColor: sender.color))
-    }
 }
+
 
 struct AppIconImage: View {
     let bundleIdentifiers: [String]
@@ -8057,7 +8011,6 @@ private struct AgentPaletteSwatchButton: View {
     // selection write — the struct's other inputs don't change when its own key does, so
     // without this SwiftUI may skip the re-render and show a stale color.
     @Default private var selection: AgentTrafficLightPaletteColor
-    @State private var showPicker = false
 
     init(key: Defaults.Key<AgentTrafficLightPaletteColor>, takenByOthers: [AgentTrafficLightPaletteColor: String]) {
         self.key = key
@@ -8066,21 +8019,18 @@ private struct AgentPaletteSwatchButton: View {
     }
 
     var body: some View {
-        Button {
-            showPicker.toggle()
-        } label: {
-            Circle()
-                .fill(selection.color)
-                .frame(width: 16, height: 16)
-                .overlay(Circle().strokeBorder(.quaternary, lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-        .popover(isPresented: $showPicker, arrowEdge: .bottom) {
+        KannuColorPickerButton(
+            color: selection.color,
+            accessibilityLabel: selection.localizedName
+        ) {
             AgentPalettePopover(key: key, takenByOthers: takenByOthers)
         }
     }
 }
 
+/// The traffic-light palette: a closed set, and a colour already assigned to another state is
+/// unpickable — that is what makes two states sharing a colour impossible. The rule travels as
+/// each item's `disabledReason`, so the shared grid enforces it rather than a local copy.
 private struct AgentPalettePopover: View {
     let key: Defaults.Key<AgentTrafficLightPaletteColor>
     let takenByOthers: [AgentTrafficLightPaletteColor: String]
@@ -8093,41 +8043,28 @@ private struct AgentPalettePopover: View {
         self._selection = Default(key)
     }
 
-    private let columns = Array(repeating: GridItem(.fixed(22), spacing: 6), count: 5)
-
-    var body: some View {
-        LazyVGrid(columns: columns, spacing: 8) {
-            ForEach(AgentTrafficLightPaletteColor.allCases) { option in
-                swatch(option)
-            }
+    private var items: [KannuColorSwatchGrid.Item] {
+        AgentTrafficLightPaletteColor.allCases.map { option in
+            KannuColorSwatchGrid.Item(
+                id: option.rawValue,
+                color: option.color,
+                disabledReason: takenByOthers[option].map { String(localized: "Used by \($0)") },
+                accessibilityLabel: option.localizedName
+            )
         }
-        .padding(12)
     }
 
-    @ViewBuilder
-    private func swatch(_ option: AgentTrafficLightPaletteColor) -> some View {
-        let takenBy = takenByOthers[option]
-        let isCurrent = selection == option
-        Button {
-            selection = option
+    var body: some View {
+        KannuColorSwatchGrid(
+            items: items,
+            selectedID: selection.rawValue,
+            columns: 5,
+            swatchSize: 20
+        ) { item in
+            guard let picked = AgentTrafficLightPaletteColor(rawValue: item.id) else { return }
+            selection = picked
             dismiss()
-        } label: {
-            Circle()
-                .fill(option.color)
-                .frame(width: 20, height: 20)
-                .overlay(Circle().strokeBorder(.quaternary, lineWidth: 1))
-                .overlay {
-                    if isCurrent {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.white)
-                    }
-                }
-                .opacity(takenBy == nil || isCurrent ? 1 : 0.3)
         }
-        .buttonStyle(.plain)
-        .disabled(takenBy != nil)
-        .help(takenBy.map { String(localized: "Used by \($0)") } ?? option.localizedName)
-        .accessibilityLabel(Text(option.localizedName))
+        .padding(12)
     }
 }
