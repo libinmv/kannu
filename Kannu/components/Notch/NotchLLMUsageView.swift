@@ -24,7 +24,7 @@ struct NotchLLMUsageView: View {
 
     /// Observed rather than read through `Defaults[...]` so the card redraws the moment the
     /// toggle below flips.
-    @Default(.enableClaudeUsageLimits) private var claudeUsageLimitsEnabled
+    @Default(.enableClaudeUsageDisplay) private var claudeUsageGaugesEnabled
 
     // Live only while the tab is visible. Fires faster than the manager's refresh floor so a
     // tick landing just inside the floor doesn't stretch the effective cadence.
@@ -59,21 +59,21 @@ struct NotchLLMUsageView: View {
     /// rather than in Settings so the cost is visible exactly where the benefit appears.
     private var claudeLimitsToggle: some View {
         Button {
-            claudeUsageLimitsEnabled.toggle()
-            // Skip the refresh floor, and allow the keychain prompt when enabling — without
-            // interactive the enable could only ever produce the "needs approval" message.
-            manager.refreshAll(force: true, interactive: claudeUsageLimitsEnabled)
+            claudeUsageGaugesEnabled.toggle()
+            // Skip the refresh floor so the gauges appear or vanish on the click, not on the
+            // next poll. Nothing here prompts any more — the numbers come off disk.
+            manager.refreshAll(force: true, interactive: false)
         } label: {
-            Image(systemName: claudeUsageLimitsEnabled
+            Image(systemName: claudeUsageGaugesEnabled
                   ? "gauge.with.dots.needle.bottom.50percent"
                   : "gauge.with.dots.needle.bottom.50percent.badge.minus")
                 .font(.caption)
-                .foregroundStyle(claudeUsageLimitsEnabled ? Color.accentColor : .secondary)
+                .foregroundStyle(claudeUsageGaugesEnabled ? Color.accentColor : .secondary)
         }
         .buttonStyle(.plain)
-        .help(claudeUsageLimitsEnabled
-              ? "Hide usage limits. Plan, credits and token counts stay — they're read locally."
-              : "Show 5-hour and weekly usage limits. Asks for keychain approval once.")
+        .help(claudeUsageGaugesEnabled
+              ? "Hide rate-limit gauges. Plan, credits and token counts stay."
+              : "Show the 5-hour and weekly rate-limit gauges.")
     }
 
     var body: some View {
@@ -163,7 +163,7 @@ struct NotchLLMUsageView: View {
     @ViewBuilder
     private func success(_ snap: UsageSnapshot, provider: ProviderID) -> some View {
         let hasPartialEstimate = snap.today.hasUnpricedModel || snap.week.hasUnpricedModel || snap.session.hasUnpricedModel
-        let showsQuota = snap.sessionLimit != nil || snap.weekLimit != nil
+        let showsQuota = snap.sessionLimit != nil || snap.weekLimit != nil || !snap.extraLimits.isEmpty
         let showEstimatedCost = !snap.billedCostOnly
         VStack(alignment: .leading, spacing: 6) {
             if !showsQuota {
@@ -183,11 +183,16 @@ struct NotchLLMUsageView: View {
                 quotaActionButton(snap.quotaAction)
             } else {
                 if let limit = snap.sessionLimit {
-                    quotaGauge("Session", limit)
+                    quotaGauge(Self.rateLimitLabel(ClaudeUsageSnapshot.fiveHourKey), limit)
                 } else {
                     localSessionRow(snap)
                 }
-                if let limit = snap.weekLimit { quotaGauge("Week", limit) }
+                if let limit = snap.weekLimit {
+                    quotaGauge(Self.rateLimitLabel(ClaudeUsageSnapshot.sevenDayKey), limit)
+                }
+                ForEach(snap.extraLimits, id: \.key) { extra in
+                    quotaGauge(Self.rateLimitLabel(extra.key), extra.limit)
+                }
                 // Claude's Session/Week quota gauges above already cover this ground —
                 // the compact Today/Week token counts were redundant for Claude specifically.
                 // Other providers (e.g. Cursor, Codex) keep them.
@@ -279,6 +284,30 @@ struct NotchLLMUsageView: View {
         case ..<1_000: return "\(tokens) tok"
         case ..<1_000_000: return String(format: "%.1fK tok", Double(tokens) / 1_000)
         default: return String(format: "%.1fM tok", Double(tokens) / 1_000_000)
+        }
+    }
+
+    @ViewBuilder
+    /// Names a rate-limit window for display.
+    ///
+    /// These are usage caps, not the token/cost windows listed below them, so they must not reuse
+    /// "Session" and "Week" — the same two words meaning something else in the same card was the
+    /// original confusion. Windows beyond the two universal ones are named from the provider's own
+    /// key, so a newly added cap renders with a sensible label rather than being dropped.
+    static func rateLimitLabel(_ key: String) -> String {
+        switch key {
+        case ClaudeUsageSnapshot.fiveHourKey:
+            return String(localized: "5-hour session")
+        case ClaudeUsageSnapshot.sevenDayKey:
+            return String(localized: "Weekly (all models)")
+        default:
+            let suffix = key.hasPrefix("seven_day_")
+                ? String(key.dropFirst("seven_day_".count))
+                : key
+            let name = suffix.split(separator: "_").map(\.capitalized).joined(separator: " ")
+            return key.hasPrefix("seven_day")
+                ? String(localized: "Weekly (\(name))")
+                : name
         }
     }
 

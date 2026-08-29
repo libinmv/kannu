@@ -153,6 +153,7 @@ class LockScreenPanelManager {
         LockScreenTimerWidgetManager.shared.notifyMusicPanelFrameChanged(animated: false)
 
         let hosting = NSHostingView(rootView: LockScreenMusicPanel(animator: panelAnimator))
+        hosting.sizingOptions = []
         hosting.frame = NSRect(origin: .zero, size: targetFrame.size)
         hosting.autoresizingMask = [.width, .height]
         window.contentView = hosting

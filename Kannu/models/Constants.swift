@@ -1135,11 +1135,6 @@ extension Defaults.Keys {
     static let enableCodexProvider = Key<Bool>("enableCodexProvider", default: false)
     static let enableCursorProvider = Key<Bool>("enableCursorProvider", default: false)
     static let enableAntigravityProvider = Key<Bool>("enableAntigravityProvider", default: false)
-    /// Live 5h/7d limits are the only Claude figure that needs the network, and reaching it
-    /// costs a one-time keychain approval. On by default: the 5h/7d gauges are the point of
-    /// the card, the fetch is cooldown-protected, and the keychain read stays behind an
-    /// explicit approval button — declining it just leaves the card local-only.
-    static let enableClaudeUsageLimits = Key<Bool>("enableClaudeUsageLimits", default: true)
     static let llmProviderDefaultsConfigured = Key<Bool>("llmProviderDefaultsConfigured", default: false)
     static let statsStopWhenNotchCloses = Key<Bool>("statsStopWhenNotchCloses", default: true)
     static let statsUpdateInterval = Key<Double>("statsUpdateInterval", default: 1.0)
@@ -1200,6 +1195,9 @@ extension Defaults.Keys {
     /// Smart caffeinate: keep the Mac awake automatically while any agent run is active.
     /// While on, the manual switch is hidden from the notch panel and its value is ignored.
     static let smartCaffeinate = Key<Bool>("smartCaffeinate", default: false)
+    /// Show Claude's rate-limit gauges in the Usage tab. Off hides them entirely; nothing is
+    /// read and nothing is rendered.
+    static let enableClaudeUsageDisplay = Key<Bool>("enableClaudeUsageDisplay", default: true)
 
     // MARK: Agent Status Mobile Notifications
     static let enableAgentStatusMobileNotifications = Key<Bool>("enableAgentStatusMobileNotifications", default: false)

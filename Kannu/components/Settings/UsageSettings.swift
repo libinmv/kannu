@@ -70,7 +70,7 @@ struct UsageSettings: View {
                 } header: {
                     Text("Providers")
                 } footer: {
-                    Text("Choose which AI providers appear in the Usage tab. Claude's token counts, plan and credit status are read from local files and need no permission. Its 5-hour and weekly limits come from Anthropic's API and are off by default. Use the gauge button on the Claude card in the Usage tab to turn them on, which asks for keychain approval once. Codex and Cursor quota require each CLI to be signed in locally (Codex: ~/.codex/auth.json, Cursor: signed into the Cursor app). Antigravity session info is read from Kannu's own status files. Full Disk Access is not required for usage monitoring.")
+                    Text("Choose which AI providers appear in the Usage tab. Claude reads everything from local files and needs no permission; the gauge button on its card hides or shows the rate-limit bars. Codex and Cursor need each CLI signed in locally. Full Disk Access is not required.")
                         .multilineTextAlignment(.trailing)
                         .foregroundStyle(.secondary)
                         .font(.caption)

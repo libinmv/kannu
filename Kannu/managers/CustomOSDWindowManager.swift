@@ -134,6 +134,7 @@ final class CustomOSDWindowManager {
     private func createWindow(for type: SneakContentType, screen: NSScreen) -> OSDWindow {
         let osdView = CustomOSDView(type: .constant(type), value: .constant(0), icon: .constant(""))
         let hostingView = NSHostingView(rootView: osdView)
+        hostingView.sizingOptions = []
         
         let frame = calculateFrame(for: screen)
         let window = NSWindow(

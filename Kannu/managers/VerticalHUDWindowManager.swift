@@ -177,6 +177,7 @@ final class VerticalHUDWindowManager {
         let state = VerticalHUDState(type: type, value: 0, icon: "")
         let osdView = VerticalHUDView(state: state)
         let hostingView = NSHostingView(rootView: osdView)
+        hostingView.sizingOptions = []
         
         // Calculate frame
         let screenFrame = screen.frame

@@ -4,11 +4,9 @@ import Foundation
 struct ClaudeUsageProvider: UsageProvider {
     let id: ProviderID = .claude
     let root: URL
-    let quotaClient: ClaudeQuotaClient
 
-    init(root: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects"), quotaClient: ClaudeQuotaClient = ClaudeQuotaClient()) {
+    init(root: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")) {
         self.root = root
-        self.quotaClient = quotaClient
     }
 
     func fetchSnapshot(now: Date, interactive: Bool) async throws -> UsageSnapshot {
@@ -26,50 +24,48 @@ struct ClaudeUsageProvider: UsageProvider {
             snapshot.logsUnavailable = true
         }
 
-        // Read plan details off disk first. This needs no keychain, no network and can't be
-        // rate-limited, so the tier badge renders even when the quota call below fails or the
-        // user hasn't approved keychain access.
+        // Plan details come off disk: ~/.claude.json, no keychain and no network, so the tier
+        // badge renders regardless of what the rate-limit windows below do.
         let localAccount = ClaudeLocalAccountReader.read()
         snapshot.accountTier = localAccount.tier
         snapshot.accountNote = localAccount.note
 
-        // Claude Code usage is covered by a subscription, so per-token pricing estimates are
-        // meaningless here — show token counts, never dollars. This describes the billing
-        // model itself, so it must be set before any early return below.
+        // Rate-limit windows come from Claude itself: it hands rate_limits to the configured
+        // statusLine command, which writes claude-usage.json. No credentials, no keychain, no
+        // API call — the OAuth/keychain path this used to take could not read the credential
+        // format reliably and produced a permanent "credentials unparseable" error.
+        await applyRateLimitWindows(to: &snapshot, now: now)
+        // Claude usage is covered by a subscription, so per-token pricing estimates are
+        // meaningless here — show token counts, never dollars.
         snapshot.billedCostOnly = true
-
-        // Everything above came off disk. The limits below are the only part that needs the
-        // network and a keychain approval, so they're opt-in — with this off there is no
-        // request, no prompt, and nothing that can be rate-limited.
-        guard Defaults[.enableClaudeUsageLimits] else {
-            // The one silence that cost a debugging session: with the toggle off the manager
-            // logs a clean "refresh ok" and nothing says WHY there are no gauges.
-            QuotaDebugLog.log("ClaudeQuota", "limits toggle off — skipping /oauth/usage entirely")
-            // With limits off AND no local logs the snapshot is entirely empty — returning it
-            // as a success would let the manager's keep-last-good logic get overwritten by
-            // nothing. Throw so a populated card is preserved instead.
-            if snapshot.logsUnavailable {
-                throw UsageError.notConfigured("No Claude Code usage logs found at ~/.claude/projects.")
-            }
-            return snapshot
-        }
-
-        let quota = await quotaClient.fetchLimits(interactive: interactive)
-        snapshot.sessionLimit = quota.session
-        snapshot.weekLimit = quota.week
-        // Always surface why quota is missing — hiding it whenever local logs happen to
-        // exist left the card showing a bare "quota unavailable" with no way to act on it.
-        snapshot.quotaError = quota.errorMessage
-        snapshot.quotaAction = quota.action
-        snapshot.isAuthFailure = quota.isAuthFailure
-        // Only let the API override the local answer when it actually returned one.
-        // `billedCostOnly` is set earlier, above the opt-in guard: it describes the billing
-        // model itself, so it must hold even when the limits fetch is skipped entirely.
-        if let apiTier = quota.accountTier { snapshot.accountTier = apiTier }
 
         // Even with neither logs nor quota, return the snapshot rather than throwing: the
         // card can then render the reason plus its fix-it button instead of a dead end.
         return snapshot
+    }
+
+    /// Maps the cached rate-limit windows onto the card's gauges.
+    ///
+    /// Reads `CursorAgentStatusMonitor`'s cache rather than the file: the monitor owns when usage
+    /// is re-read (once per 10 minutes, while an agent is on screen), and a second reader on a
+    /// different cadence would defeat that. Staleness rules live in `ClaudeUsageSnapshot` —
+    /// percentages vanish once a window is past its reset, and the card falls back to token counts
+    /// when nothing usable is cached.
+    @MainActor
+    private func applyRateLimitWindows(to snapshot: inout UsageSnapshot, now: Date) {
+        guard Defaults[.enableClaudeUsageDisplay] else { return }
+        guard let usage = CursorAgentStatusMonitor.shared.claudeUsage else { return }
+
+        for window in usage.displayWindows(now: now) {
+            let limit = UsageLimit(used: window.percent, limit: 100, resetsAt: window.resetsAt)
+            switch window.key {
+            case ClaudeUsageSnapshot.fiveHourKey: snapshot.sessionLimit = limit
+            case ClaudeUsageSnapshot.sevenDayKey: snapshot.weekLimit = limit
+            // A plan may report further weekly windows (per-model, per-surface). Render whatever
+            // arrives instead of hardcoding a list that goes stale the day one is added.
+            default: snapshot.extraLimits.append(NamedLimit(key: window.key, limit: limit))
+            }
+        }
     }
 
     private func jsonlFiles(under dir: URL) -> [URL] {

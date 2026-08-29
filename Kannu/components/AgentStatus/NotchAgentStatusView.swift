@@ -120,6 +120,7 @@ struct NotchAgentStatusView: View {
                         clickableSession(session) { sessionRow(session) }
                     }
                 }
+
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)

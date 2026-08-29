@@ -55,12 +55,22 @@ enum QuotaAction: Equatable {
     }
 }
 
+/// A rate-limit window with no dedicated field on `UsageSnapshot` — a per-model or per-surface
+/// weekly cap that only some plans report. Keyed by the provider's own window name so the view can
+/// label it without the model having to know every name up front.
+struct NamedLimit: Equatable {
+    let key: String
+    let limit: UsageLimit
+}
+
 struct UsageSnapshot: Equatable {
     var session: UsageTotals = .init()
     var today: UsageTotals = .init()
     var week: UsageTotals = .init()
     var sessionLimit: UsageLimit? = nil // 5h window quota
-    var weekLimit: UsageLimit? = nil // 7d window quota
+    var weekLimit: UsageLimit? = nil // 7d all-models window quota
+    /// Additional rate-limit windows beyond the 5h/7d pair, in the order the provider reported them.
+    var extraLimits: [NamedLimit] = []
     var onDemandSpendUSD: Double? = nil // billing-cycle on-demand spend from usage-summary
     var models: [ModelUsage] = []
     var lastUpdated: Date = .distantPast

@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 enum AgentHookProvider: String, CaseIterable, Identifiable {
     case cursor
@@ -43,6 +44,8 @@ final class AgentHookInstaller: ObservableObject {
 
     @Published private(set) var installedProviders: Set<AgentHookProvider> = []
     @Published private(set) var lastError: String?
+
+    private static let logger = os.Logger(subsystem: "com.kannu.app", category: "AgentHookInstaller")
 
     static let scriptName = "kannu-agent-status.sh"
     private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=28"
@@ -95,6 +98,7 @@ final class AgentHookInstaller: ObservableObject {
         migrateClaudeNotificationHooksIfNeeded()
         migrateCursorHookEventArgumentIfNeeded()
         migrateClaudeStyleHookEventArgumentIfNeeded()
+        migrateClaudeUsageStatusLineIfNeeded()
         refresh()
     }
 
@@ -132,12 +136,14 @@ final class AgentHookInstaller: ObservableObject {
             case .claude:
                 try Self.writeScript(to: Self.claudeScriptURL)
                 try Self.mergeClaudeHooksConfig()
+                try Self.installClaudeUsageStatusLine()
             case .antigravity:
                 try Self.writeScript(to: Self.antigravityScriptURL)
                 try Self.mergeAntigravityHooksConfig()
             }
         } catch {
             lastError = "\(provider.displayName): \(error.localizedDescription)"
+            Self.logger.error("hook install failed: \(self.lastError ?? "?", privacy: .public)")
         }
         refresh()
     }
@@ -158,6 +164,7 @@ final class AgentHookInstaller: ObservableObject {
             case .claude:
                 try Self.stripEntries(configURL: Self.claudeSettingsURL)
                 try Self.removeIfExists(Self.claudeScriptURL)
+                try Self.stripClaudeUsageStatusLine()
             case .antigravity:
                 // Install merges into every location that exists, so uninstall has to clear
                 // all of them — stripping only the IDE path left orphaned entries pointing at
@@ -1135,6 +1142,182 @@ final class AgentHookInstaller: ObservableObject {
             )
         }
         return json
+    }
+
+    // MARK: - Claude usage statusline (~/.claude/settings.json "statusLine" key)
+
+    /// Claude Code exposes server-reported 5h/7d subscription usage only to the configured
+    /// statusLine command (stdin JSON, `rate_limits.five_hour` / `rate_limits.seven_day`).
+    /// Kannu installs a statusline script that forwards those values to the shared status
+    /// directory as `claude-usage.json`. Claude supports a single statusLine command, so a
+    /// pre-existing user command is preserved: stored base64 inside the script, chained with
+    /// the same stdin after the usage write, and restored verbatim on uninstall.
+    static let usageScriptName = "kannu-usage-status.sh"
+    static let usageFileName = "claude-usage.json"
+    private static let usageScriptVersionMarker = "KANNU_USAGE_SCRIPT_VERSION=2"
+    private static let usageChainMarkerPrefix = "# KANNU_USAGE_CHAIN_B64="
+
+    static var claudeUsageScriptURL: URL { home.appendingPathComponent(".claude/\(usageScriptName)") }
+
+    static func installClaudeUsageStatusLine() throws {
+        try FileManager.default.createDirectory(at: statusDirectory, withIntermediateDirectories: true)
+
+        var chainCommand: String? = nil
+        let config = readJSON(at: claudeSettingsURL) ?? [:]
+        if let statusLine = config["statusLine"] as? [String: Any],
+           let command = statusLine["command"] as? String,
+           !command.contains(usageScriptName) {
+            chainCommand = command
+        } else if FileManager.default.fileExists(atPath: claudeUsageScriptURL.path),
+                  let existing = try? String(contentsOf: claudeUsageScriptURL, encoding: .utf8) {
+            // Reinstall over our own script: keep the chain it already carries.
+            chainCommand = chainedCommand(fromScript: existing)
+        }
+
+        try writeUsageScript(to: claudeUsageScriptURL, chainCommand: chainCommand)
+
+        var newConfig = readJSON(at: claudeSettingsURL) ?? [:]
+        newConfig["statusLine"] = [
+            "type": "command",
+            "command": claudeUsageScriptURL.path,
+            "padding": 0
+        ]
+        try writeJSON(newConfig, to: claudeSettingsURL)
+    }
+
+    static func stripClaudeUsageStatusLine() throws {
+        let chain: String? = {
+            guard let script = try? String(contentsOf: claudeUsageScriptURL, encoding: .utf8) else { return nil }
+            return chainedCommand(fromScript: script)
+        }()
+
+        if var config = readJSON(at: claudeSettingsURL),
+           let statusLine = config["statusLine"] as? [String: Any],
+           let command = statusLine["command"] as? String,
+           command.contains(usageScriptName) {
+            if let chain {
+                config["statusLine"] = ["type": "command", "command": chain, "padding": 0]
+            } else {
+                config.removeValue(forKey: "statusLine")
+            }
+            try writeJSON(config, to: claudeSettingsURL)
+        }
+        try removeIfExists(claudeUsageScriptURL)
+        try? FileManager.default.removeItem(at: statusDirectory.appendingPathComponent(usageFileName))
+    }
+
+    private static func chainedCommand(fromScript script: String) -> String? {
+        for line in script.split(separator: "\n") where line.hasPrefix(usageChainMarkerPrefix) {
+            let encoded = String(line.dropFirst(usageChainMarkerPrefix.count))
+            guard !encoded.isEmpty,
+                  let data = Data(base64Encoded: encoded),
+                  let command = String(data: data, encoding: .utf8),
+                  !command.isEmpty else { return nil }
+            return command
+        }
+        return nil
+    }
+
+    private static func writeUsageScript(to url: URL, chainCommand: String?) throws {
+        let chainB64 = chainCommand.flatMap { $0.data(using: .utf8)?.base64EncodedString() } ?? ""
+        let script = """
+        #!/bin/bash
+        # Installed by Kannu: forwards Claude Code rate-limit usage to the notch.
+        # \(usageScriptVersionMarker)
+        \(usageChainMarkerPrefix)\(chainB64)
+        # Reads the Claude Code statusLine JSON from stdin, writes rate-limit usage to
+        # the Kannu status directory, then chains the user's original statusLine (if any).
+
+        export KANNU_STATUS_DIR="$HOME/.kannu/agent-status"
+        mkdir -p "$KANNU_STATUS_DIR"
+        export KANNU_INPUT="$(cat)"
+
+        if command -v python3 >/dev/null 2>&1; then
+        python3 <<'PY'
+        import json, os, tempfile, time
+
+        raw = os.environ.get("KANNU_INPUT", "")
+        status_dir = os.environ.get("KANNU_STATUS_DIR", "")
+        try:
+            data = json.loads(raw) if raw.strip() else {}
+        except json.JSONDecodeError:
+            data = {}
+
+        # Every window Claude reports, not a fixed pair: five_hour and seven_day are universal,
+        # but a plan may also carry per-model or per-surface weekly caps. Forwarding whatever
+        # arrives means a newly added window shows up without the script changing again.
+        rl = data.get("rate_limits") or {}
+        windows = []
+        for key, bucket in rl.items():
+            if not isinstance(bucket, dict):
+                continue
+            pct = bucket.get("used_percentage")
+            if pct is None:
+                continue
+            windows.append({"key": key, "pct": pct, "resets_at": bucket.get("resets_at")})
+        if windows and status_dir:
+            record = {
+                "ts": int(time.time() * 1000),
+                "windows": windows,
+                "session_id": data.get("session_id"),
+            }
+            # Atomic same-directory replace so Kannu's watcher sees one complete file.
+            fd, tmp = tempfile.mkstemp(dir=status_dir, prefix=".claude-usage-", suffix=".tmp")
+            with os.fdopen(fd, "w") as f:
+                json.dump(record, f)
+            os.replace(tmp, os.path.join(status_dir, "claude-usage.json"))
+        PY
+        fi
+
+        CHAIN_B64="$(grep -m1 '^\(usageChainMarkerPrefix)' "$0" | cut -d= -f2-)"
+        if [ -n "$CHAIN_B64" ]; then
+          CHAIN_CMD="$(printf '%s' "$CHAIN_B64" | base64 -d 2>/dev/null)"
+          if [ -n "$CHAIN_CMD" ]; then
+            printf '%s' "$KANNU_INPUT" | /bin/bash -c "$CHAIN_CMD"
+            exit 0
+          fi
+        fi
+
+        if command -v python3 >/dev/null 2>&1; then
+        python3 <<'PY'
+        import json, os, datetime
+
+        raw = os.environ.get("KANNU_INPUT", "")
+        try:
+            data = json.loads(raw) if raw.strip() else {}
+        except json.JSONDecodeError:
+            data = {}
+
+        rl = data.get("rate_limits") or {}
+
+        def fmt(window):
+            bucket = rl.get(window) or {}
+            pct = bucket.get("used_percentage")
+            if pct is None:
+                return "-"
+            out = f"{pct:.0f}%"
+            resets = bucket.get("resets_at")
+            if resets:
+                dt = datetime.datetime.fromtimestamp(resets).astimezone()
+                out += dt.strftime("@%H:%M" if dt.date() == datetime.date.today() else "@%a")
+            return out
+
+        model = (data.get("model") or {}).get("display_name") or ""
+        line = f"{model} | 5h {fmt('five_hour')} | 7d {fmt('seven_day')}"
+        print(line.strip(" |"))
+        PY
+        fi
+        """
+        try (script + "\n").write(to: url, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+    }
+
+    /// Installs or refreshes the usage statusline for existing Claude hook installs.
+    private func migrateClaudeUsageStatusLineIfNeeded() {
+        guard FileManager.default.fileExists(atPath: Self.claudeScriptURL.path) else { return }
+        if let content = try? String(contentsOf: Self.claudeUsageScriptURL, encoding: .utf8),
+           content.contains(Self.usageScriptVersionMarker) { return }
+        try? Self.installClaudeUsageStatusLine()
     }
 
     private static func readJSON(at url: URL) -> [String: Any]? {

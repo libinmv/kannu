@@ -61,6 +61,7 @@ final class LocalSendDevicePickerWindowManager {
         
         if let existingWindow = window {
             let hostingView = NSHostingView(rootView: pickerView)
+            hostingView.sizingOptions = []
             applyLocalSendPanelCornerMask(hostingView, radius: cornerRadius)
             existingWindow.contentView = hostingView
             existingWindow.makeKeyAndOrderFront(nil)
@@ -92,6 +93,7 @@ final class LocalSendDevicePickerWindowManager {
             pickerView
                 .background(Color.clear)
         )
+        hostingView.sizingOptions = []
         applyLocalSendPanelCornerMask(hostingView, radius: cornerRadius)
         newWindow.contentView = hostingView
         newWindow.isMovableByWindowBackground = true

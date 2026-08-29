@@ -12,6 +12,10 @@ final class CursorAgentStatusMonitor: ObservableObject {
     @Published private(set) var trafficLightState: AgentTrafficLightState = .inactive
     @Published private(set) var shouldShowTrafficLight = false
     @Published private(set) var sessions: [AgentSessionStatus] = []
+    /// Latest server-reported Claude rate-limit usage, and the only cache of it: the statusline
+    /// hook's `claude-usage.json`, falling back to the desktop app's own history. Refreshed on the
+    /// cadence in `refreshClaudeUsage(now:)`, never on demand. Nil until first observation.
+    @Published private(set) var claudeUsage: ClaudeUsageSnapshot?
 
     /// Bumped whenever an agent actually does something — a traffic light transition or any
     /// change to the session list. Views use it to drive time-boxed reveals; unlike
@@ -37,6 +41,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
     private var cachedTranscriptAnalysisBySession: [String: TranscriptAnalysis] = [:]
     private var cachedTranscriptAnalysisAt: Date?
     private var lastActivityPulseAt: Date?
+    private var lastClaudeUsageReadAt: Date?
     private var lastPublishedTrafficLightState: AgentTrafficLightState?
     private var lastPublishedShouldShowTrafficLight: Bool?
 
@@ -286,7 +291,33 @@ final class CursorAgentStatusMonitor: ObservableObject {
             applyDisplay(from: visibleSessions)
         }
 
+        refreshClaudeUsage(now: now)
         emitActivityHeartbeatIfRunning(now: now)
+    }
+
+    /// Refreshes the cached Claude usage, at most once per `claudeUsageRefreshInterval`.
+    ///
+    /// The statusline hook is authoritative because it reports reset times. The desktop app's own
+    /// history is the fallback for the case the hook cannot cover — a user who runs Claude only in
+    /// the desktop app, where the statusline command never fires.
+    private func refreshClaudeUsage(now: Date) {
+        guard ClaudeUsageSnapshot.shouldRefresh(
+            now: now,
+            lastRead: lastClaudeUsageReadAt,
+            state: trafficLightState,
+            hasSnapshot: claudeUsage != nil
+        ) else { return }
+        lastClaudeUsageReadAt = now
+
+        let url = AgentHookInstaller.statusDirectory
+            .appendingPathComponent(AgentHookInstaller.usageFileName)
+        var snapshot = ClaudeUsageSnapshot.load(from: url)
+        if snapshot == nil || snapshot?.isEmpty(now: now) == true {
+            snapshot = ClaudeDesktopUsageHistory.load() ?? snapshot
+        }
+        if snapshot != claudeUsage {
+            claudeUsage = snapshot
+        }
     }
 
     /// Keeps a still-running agent visible to time-boxed consumers.
