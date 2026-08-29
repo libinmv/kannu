@@ -191,7 +191,7 @@ struct NotchLLMUsageView: View {
                     quotaGauge(Self.rateLimitLabel(ClaudeUsageSnapshot.sevenDayKey), limit)
                 }
                 ForEach(snap.extraLimits, id: \.key) { extra in
-                    quotaGauge(Self.rateLimitLabel(extra.key), extra.limit)
+                    quotaGauge(Self.extraLimitLabel(extra), extra.limit)
                 }
                 // Claude's Session/Week quota gauges above already cover this ground —
                 // the compact Today/Week token counts were redundant for Claude specifically.
@@ -288,6 +288,17 @@ struct NotchLLMUsageView: View {
     }
 
     @ViewBuilder
+    /// Names an extra window, preferring the label its provider supplied.
+    ///
+    /// Per-model weekly windows are named by the server ("Fable"), not by a key we could recognise,
+    /// so a derived name would be a guess where a real one was already sent.
+    static func extraLimitLabel(_ extra: NamedLimit) -> String {
+        if let label = extra.label {
+            return String(localized: "Weekly (\(label))")
+        }
+        return rateLimitLabel(extra.key)
+    }
+
     /// Names a rate-limit window for display.
     ///
     /// These are usage caps, not the token/cost windows listed below them, so they must not reuse

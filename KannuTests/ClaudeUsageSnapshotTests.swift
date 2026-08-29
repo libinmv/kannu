@@ -113,6 +113,44 @@ final class ClaudeUsageSnapshotTests: XCTestCase {
                        ["five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet"])
     }
 
+    // MARK: - Per-model windows
+
+    func testModelScopedWindowKeepsItsServerLabel() {
+        // Per-model weekly windows are named by the server, not by a key we could recognise.
+        let snapshot = ClaudeUsageSnapshot.parse(json: makeWindowJSON(tsMs: 1_788_000_000_000, [
+            ["key": "five_hour", "pct": NSNumber(value: 9)],
+            ["key": "seven_day", "pct": NSNumber(value: 63)],
+            ["key": "model_scoped:Fable", "label": "Fable", "pct": NSNumber(value: 89),
+             "resets_at": NSNumber(value: 1_788_359_400)]
+        ]))
+        let fable = snapshot?.window("model_scoped:Fable")
+        XCTAssertEqual(fable?.percent, 89)
+        XCTAssertEqual(fable?.label, "Fable")
+        XCTAssertEqual(fable?.resetsAt, Date(timeIntervalSince1970: 1_788_359_400))
+        // It sorts after the two universal windows, never before them.
+        XCTAssertEqual(snapshot?.displayWindows(now: now).map(\.key),
+                       ["five_hour", "seven_day", "model_scoped:Fable"])
+    }
+
+    func testLabelIsNilWhenAbsentOrEmpty() {
+        let snapshot = ClaudeUsageSnapshot.parse(json: makeWindowJSON(tsMs: 1_788_000_000_000, [
+            ["key": "five_hour", "pct": NSNumber(value: 9)],
+            ["key": "model_scoped:Blank", "label": "", "pct": NSNumber(value: 12)]
+        ]))
+        XCTAssertNil(snapshot?.window("five_hour")?.label)
+        XCTAssertNil(snapshot?.window("model_scoped:Blank")?.label)
+    }
+
+    func testExpiredModelScopedWindowIsHidden() {
+        let snapshot = ClaudeUsageSnapshot(windows: [
+            .init(key: "five_hour", percent: 9, resetsAt: now.addingTimeInterval(600)),
+            .init(key: "model_scoped:Fable", percent: 89,
+                  resetsAt: now.addingTimeInterval(-1), label: "Fable")
+        ], observedAt: now)
+        XCTAssertEqual(snapshot.displayWindows(now: now).map(\.key), ["five_hour"])
+        XCTAssertFalse(snapshot.isEmpty(now: now))
+    }
+
     // MARK: - Staleness
 
     func testFreshnessBoundary() {

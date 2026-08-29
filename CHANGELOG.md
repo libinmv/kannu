@@ -4,6 +4,28 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-30 - Add the weekly per-model bar (Fable)
+
+- **Developer label:** forward `rate_limits.model_scoped` from the statusline hook; windows carry a server-supplied label
+- **Agent label:** The weekly Fable limit now has its own bar
+- **Changes:**
+  - The per-model weekly window is not a fixed key, which is why widening the key list last time still
+    did not surface it. Claude Code's own statusLine schema (binary 2.1.247) delivers it as
+    `rate_limits.model_scoped`: an array of `{display_name, utilization, resets_at}`, documented as
+    "per-model weekly windows from the server limits[] array" and "additive — present only when the
+    server emits them", with `'Fable'` as the schema's own example label. The earlier search looked at
+    the desktop app bundle, whose fixed key list has no Fable entry and never will
+  - The statusline script (now `KANNU_USAGE_SCRIPT_VERSION=3`) walks that array alongside the fixed
+    windows. It normalises the two differences on the way through — the value is `utilization` rather
+    than `used_percentage`, and `resets_at` is an ISO 8601 string rather than epoch seconds — so Kannu
+    reads one shape. The block is guarded: nothing in this newer, optional field can cost us the
+    universal 5-hour and weekly windows
+  - Windows now carry an optional `label`. Where the server named a window, that name is used;
+    where it did not, the existing key-derived name still applies. So the bar reads "Weekly (Fable)"
+    because the server said Fable, not because Kannu guessed a key
+  - `KannuTests`: label round-trip, ordering after the two universal windows, empty and absent labels,
+    and an expired model-scoped window being hidden. Suite is now 109
+
 ### 2026-08-30 - Correct the usage bars, and stop recomputing them every second
 
 - **Developer label:** open-ended rate-limit windows, desktop-history fallback, cached 10-minute refresh

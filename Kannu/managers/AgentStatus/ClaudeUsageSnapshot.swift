@@ -22,6 +22,10 @@ struct ClaudeUsageSnapshot: Equatable {
         let percent: Double
         /// When the window rolls over. Absent from sources that do not report it.
         let resetsAt: Date?
+        /// The server's own name for this window, when it supplied one. Per-model weekly windows
+        /// arrive labelled (e.g. "Fable") rather than under a key Kannu could name itself; the
+        /// universal windows leave this nil because their names belong to us.
+        var label: String? = nil
     }
 
     let windows: [Window]
@@ -140,7 +144,9 @@ struct ClaudeUsageSnapshot: Equatable {
         return entries.compactMap { entry in
             guard let key = entry["key"] as? String, !key.isEmpty,
                   let percent = (entry["pct"] as? NSNumber)?.doubleValue else { return nil }
-            return Window(key: key, percent: percent, resetsAt: epochDate(entry["resets_at"]))
+            let label = (entry["label"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            return Window(key: key, percent: percent,
+                          resetsAt: epochDate(entry["resets_at"]), label: label)
         }
     }
 

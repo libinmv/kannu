@@ -63,7 +63,9 @@ struct ClaudeUsageProvider: UsageProvider {
             case ClaudeUsageSnapshot.sevenDayKey: snapshot.weekLimit = limit
             // A plan may report further weekly windows (per-model, per-surface). Render whatever
             // arrives instead of hardcoding a list that goes stale the day one is added.
-            default: snapshot.extraLimits.append(NamedLimit(key: window.key, limit: limit))
+            default:
+                snapshot.extraLimits.append(
+                    NamedLimit(key: window.key, limit: limit, label: window.label))
             }
         }
     }

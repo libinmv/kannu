@@ -61,6 +61,8 @@ enum QuotaAction: Equatable {
 struct NamedLimit: Equatable {
     let key: String
     let limit: UsageLimit
+    /// The provider's own name for this window, preferred over anything derived from the key.
+    var label: String? = nil
 }
 
 struct UsageSnapshot: Equatable {

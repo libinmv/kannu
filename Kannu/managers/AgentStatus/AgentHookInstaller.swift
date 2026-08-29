@@ -1154,7 +1154,7 @@ final class AgentHookInstaller: ObservableObject {
     /// the same stdin after the usage write, and restored verbatim on uninstall.
     static let usageScriptName = "kannu-usage-status.sh"
     static let usageFileName = "claude-usage.json"
-    private static let usageScriptVersionMarker = "KANNU_USAGE_SCRIPT_VERSION=2"
+    private static let usageScriptVersionMarker = "KANNU_USAGE_SCRIPT_VERSION=3"
     private static let usageChainMarkerPrefix = "# KANNU_USAGE_CHAIN_B64="
 
     static var claudeUsageScriptURL: URL { home.appendingPathComponent(".claude/\(usageScriptName)") }
@@ -1234,7 +1234,7 @@ final class AgentHookInstaller: ObservableObject {
 
         if command -v python3 >/dev/null 2>&1; then
         python3 <<'PY'
-        import json, os, tempfile, time
+        import datetime, json, os, tempfile, time
 
         raw = os.environ.get("KANNU_INPUT", "")
         status_dir = os.environ.get("KANNU_STATUS_DIR", "")
@@ -1255,6 +1255,35 @@ final class AgentHookInstaller: ObservableObject {
             if pct is None:
                 continue
             windows.append({"key": key, "pct": pct, "resets_at": bucket.get("resets_at")})
+
+        # Per-model weekly windows (e.g. Fable) arrive separately, as an array with a
+        # server-supplied label rather than a fixed key — "additive; present only when the server
+        # emits them". Different field names too: utilization, and an ISO resets_at rather than
+        # epoch seconds, normalised here so Kannu sees one shape. Wrapped so a surprise in this
+        # newer, optional block can never cost us the fixed windows above.
+        try:
+            for bucket in rl.get("model_scoped") or []:
+                if not isinstance(bucket, dict):
+                    continue
+                pct = bucket.get("utilization")
+                name = bucket.get("display_name")
+                if pct is None or not name:
+                    continue
+                resets = None
+                raw = bucket.get("resets_at")
+                if isinstance(raw, (int, float)):
+                    resets = raw
+                elif isinstance(raw, str) and raw:
+                    try:
+                        resets = datetime.datetime.fromisoformat(
+                            raw.replace("Z", "+00:00")).timestamp()
+                    except ValueError:
+                        resets = None
+                windows.append({"key": f"model_scoped:{name}", "label": name,
+                                "pct": pct, "resets_at": resets})
+        except Exception:
+            pass
+
         if windows and status_dir:
             record = {
                 "ts": int(time.time() * 1000),
