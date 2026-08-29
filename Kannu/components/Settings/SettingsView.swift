@@ -10,6 +10,7 @@ import Combine
 import Defaults
 import KeyboardShortcuts
 import LaunchAtLogin
+import ServiceManagement
 import LottieUI
 import SwiftUI
 import SwiftUIIntrospect
@@ -1097,6 +1098,20 @@ struct GeneralSettings: View {
                         Text("Launch at login")
                     }
                     .settingsHighlight(id: highlightID("Launch at login"))
+                    // macOS can accept the registration but park it pending user approval; the
+                    // toggle alone would just read off with no explanation and no way forward.
+                    if SMAppService.mainApp.status == .requiresApproval {
+                        HStack(spacing: 6) {
+                            Text("macOS needs you to approve Kannu in Login Items.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Button("Open Login Items") {
+                                SMAppService.openSystemSettingsLoginItems()
+                            }
+                            .buttonStyle(.link)
+                            .font(.caption)
+                        }
+                    }
                 } else {
                     Toggle(isOn: .constant(false)) {
                         VStack(alignment: .leading, spacing: 2) {

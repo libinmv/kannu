@@ -4,6 +4,15 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-29 - Launch at login on by default, and it now stays on
+- **Developer label:** One-time auto-register gated by didAutoEnableLaunchAtLogin; stale-path repair replaces the every-launch unregister/re-register; requiresApproval surfaced in Settings; LoginItemPolicy + 9 tests
+- **Agent label:** Kannu starts itself at login, and switching it off in Settings sticks
+- **Changes:**
+  - A fresh install in /Applications now registers Kannu as a login item once, on first launch, so an ambient monitor is actually running when you log in. Strictly one-time: `didAutoEnableLaunchAtLogin` guarantees that turning the Settings toggle off keeps it off forever — the app never re-enables behind the user's back
+  - Fixed a real reliability bug: the app unregistered and re-registered the login item on *every* launch, so a single transient `register()` failure silently lost launch-at-login for good (and the teardown was redundant — the package's setter already re-registers). Repair now runs only when the bundle path actually changed, i.e. after a genuine move or reinstall, and never turns a disabled item back on
+  - Registration outcomes were completely invisible. There is now a `LaunchAtLogin` log category recording the auto-enable, the repair and the resulting `SMAppService` status, and the Settings row surfaces the `requiresApproval` case with a button that opens Login Items instead of a toggle that silently reads off
+  - The Settings toggle remains authoritative throughout: it reflects live OS state, not a stored flag. `LoginItemPolicyTests` (9 tests) pins the two rules that matter — never auto-enable twice, never repair an unchanged path. Suite is 74
+
 ### 2026-08-27 - Claude session limits actually work now, with a local 5-hour block fallback
 - **Developer label:** enableClaudeUsageLimits defaults on; interactive enable + floor bypass + card-never-vanishes; per-window tolerant decode; ClaudeSessionBlocks (ccusage-style) + Session (local) row; quota-debug gaps closed; 7 tests
 - **Agent label:** The 5h/7d gauges appear by default, the approval button works, and when the server can't be reached you still get tokens-this-block and a reset countdown

@@ -866,6 +866,12 @@ extension Defaults.Keys {
         // MARK: General
     static let logLevel = Key<LogLevel>("logLevel", default: .none)
     static let menubarIcon = Key<Bool>("menubarIcon", default: true)
+    /// Set the first (and only) time Kannu registers itself as a login item on the user's
+    /// behalf. Its whole job is to guarantee a later opt-out is never overridden.
+    static let didAutoEnableLaunchAtLogin = Key<Bool>("didAutoEnableLaunchAtLogin", default: false)
+    /// Bundle path the login item was last registered from, so the stale-path repair can fire
+    /// only when the app actually moved instead of on every launch.
+    static let lastLoginItemBundlePath = Key<String>("lastLoginItemBundlePath", default: "")
     static let showOnAllDisplays = Key<Bool>("showOnAllDisplays", default: true)
     static let automaticallySwitchDisplay = Key<Bool>("automaticallySwitchDisplay", default: true)
     static let releaseName = Key<String>("releaseName", default: "Fiji")

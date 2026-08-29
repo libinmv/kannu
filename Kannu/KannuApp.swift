@@ -22,6 +22,8 @@ import Combine
 import Defaults
 import KeyboardShortcuts
 import LaunchAtLogin
+import os
+import ServiceManagement
 import SwiftUI
 import SkyLightWindow
 
@@ -226,17 +228,50 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
-    /// `SMAppService.mainApp` pins whichever bundle called `register()`, so enabling "launch at
-    /// login" from a build folder or DerivedData copy leaves the OS relaunching that stale path
-    /// at every login — even after a newer release is installed in /Applications. Re-registering
-    /// from the installed copy repoints the entry at ourselves and clears the ghost.
+    private static let loginItemLog = os.Logger(subsystem: "com.kannu.app", category: "LaunchAtLogin")
+
+    private var isInstalledCopy: Bool {
+        let path = Bundle.main.bundleURL.resolvingSymlinksInPath().path
+        return path.hasPrefix("/Applications/")
+            || path.hasPrefix(NSHomeDirectory() + "/Applications/")
+    }
+
+    /// `SMAppService.mainApp` pins whichever bundle called `register()`, so moving or reinstalling
+    /// the app leaves the OS relaunching the old path. Re-register from the copy running now —
+    /// but only when the path actually changed. The previous version did this teardown on every
+    /// launch, so a single transient failure silently lost launch-at-login for good.
     private func repairLoginItemIfStale() {
         let path = Bundle.main.bundleURL.resolvingSymlinksInPath().path
-        let isInstalled = path.hasPrefix("/Applications/")
-            || path.hasPrefix(NSHomeDirectory() + "/Applications/")
-        guard isInstalled, LaunchAtLogin.isEnabled else { return }
-        LaunchAtLogin.isEnabled = false
+        guard LoginItemPolicy.shouldRepairRegistration(
+            isInstalled: isInstalledCopy,
+            isEnabled: LaunchAtLogin.isEnabled,
+            currentPath: path,
+            lastRegisteredPath: Defaults[.lastLoginItemBundlePath]
+        ) else { return }
+
+        LaunchAtLogin.isEnabled = true // the package's setter re-registers in place
+        Defaults[.lastLoginItemBundlePath] = path
+        Self.loginItemLog.notice("repaired login item registration for \(path, privacy: .public)")
+    }
+
+    /// Registers Kannu at login once on a fresh install, so an ambient monitor is actually
+    /// running when the user logs in. Deliberately one-shot: `didAutoEnableLaunchAtLogin` means
+    /// switching it off in Settings sticks forever — the app never re-enables behind the user.
+    private func autoEnableLaunchAtLoginIfNeeded() {
+        guard LoginItemPolicy.shouldAutoEnable(
+            isInstalled: isInstalledCopy,
+            hasAutoEnabledBefore: Defaults[.didAutoEnableLaunchAtLogin],
+            isCurrentlyRegistered: LaunchAtLogin.isEnabled
+        ) else { return }
+
         LaunchAtLogin.isEnabled = true
+        Defaults[.didAutoEnableLaunchAtLogin] = true
+        let path = Bundle.main.bundleURL.resolvingSymlinksInPath().path
+        Defaults[.lastLoginItemBundlePath] = path
+        // Report what the OS actually did: registration can silently land in .requiresApproval.
+        Self.loginItemLog.notice(
+            "auto-enabled launch at login (status now: \(String(describing: SMAppService.mainApp.status), privacy: .public))"
+        )
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -617,6 +652,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             deliverImmediately: true
         )
 
+        autoEnableLaunchAtLoginIfNeeded()
         repairLoginItemIfStale()
 
         LockScreenLiveActivityWindowManager.shared.configure(viewModel: vm)
