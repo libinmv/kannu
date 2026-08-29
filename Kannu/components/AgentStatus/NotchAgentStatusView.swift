@@ -1,3 +1,4 @@
+import Defaults
 import Foundation
 import SwiftUI
 
@@ -108,6 +109,7 @@ struct NotchAgentStatusView: View {
                         sessionRow(session)
                     }
                 }
+
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)

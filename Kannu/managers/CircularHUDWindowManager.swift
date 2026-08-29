@@ -96,6 +96,7 @@ final class CircularHUDWindowManager {
         
         let osdView = CircularHUDView(type: .constant(type), value: .constant(0), icon: .constant(""))
         let hostingView = NSHostingView(rootView: osdView)
+        hostingView.sizingOptions = []
         
         let screenFrame = screen.frame
         

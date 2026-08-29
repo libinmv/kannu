@@ -1391,6 +1391,7 @@ final class FullScreenArtworkWindowManager: ObservableObject {
             newWindow.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
 
             let newHostingView = NSHostingView(rootView: content)
+            newHostingView.sizingOptions = []
             newHostingView.frame = NSRect(origin: .zero, size: frame.size)
             newHostingView.wantsLayer = true
             newHostingView.layer?.backgroundColor = NSColor.clear.cgColor

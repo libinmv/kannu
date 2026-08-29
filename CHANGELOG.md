@@ -4,6 +4,54 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-30 - Correct the usage bars, and stop recomputing them every second
+
+- **Developer label:** open-ended rate-limit windows, desktop-history fallback, cached 10-minute refresh
+- **Agent label:** The usage bars are named for what they actually measure, and they fill in even without the statusline hook
+- **Changes:**
+  - **The bars were mislabelled.** They read "Session" and "Week" while the same card listed token
+    totals also called "Session" and "Week" — two meanings, same words. They are rate-limit windows,
+    so they now read "5-hour session" and "Weekly (all models)". The token rows are unchanged
+  - **There is no per-model Fable window; the assumption was wrong.** Claude's own bundle carries the
+    full key list — `five_hour`, `seven_day`, `seven_day_opus`, `seven_day_sonnet`,
+    `seven_day_cowork`, `seven_day_oauth_apps`, `seven_day_omelette`, `omelette_promotional` — and
+    Fable usage rolls into `seven_day`. Rather than hardcode a guess, the statusline script (now
+    `KANNU_USAGE_SCRIPT_VERSION=2`) forwards **every** `rate_limits` key, `ClaudeUsageSnapshot`
+    carries them as a list instead of two fixed pairs, and any window beyond the universal two
+    renders as its own gauge labelled from its key. A window Anthropic adds shows up without a code
+    change; previously it was silently dropped
+  - `ClaudeUsageSnapshot.parse` still reads the old flat `five_hour_pct` shape, so the gauges do not
+    blank out between the app upgrading and the next statusline write
+  - **New fallback source: the Claude desktop app's own history.** It records a sample every few
+    minutes into `~/Library/Application Support/Claude/plan-usage-history.json` (30-day retention),
+    which needs no hook and no credentials — so the bars now populate even for someone who only ever
+    runs Claude in the desktop app, where the statusline command may never fire. The hook stays
+    primary because it alone reports reset times. `xu` is excluded deliberately: it tracks
+    extra-usage spend, not a rate limit, and would be a lie as a gauge
+  - **The values are cached instead of recomputed.** `refreshClaudeUsage` ran at the end of every
+    `rescan()` — a file read and JSON parse every second — to feed a published property that, after
+    the agent-card copy was removed, had no consumers at all. It now re-reads at most once per 10
+    minutes and only while an agent is on screen, with one unconditional read so the card is
+    populated when opened cold. `ClaudeUsageProvider` reads that cache rather than the file, so
+    there is one reader on one cadence instead of two on two. The interval matches reality: neither
+    source updates faster than every few minutes
+  - `KannuTests`: 22 tests across `ClaudeUsageSnapshotTests` and new `ClaudeDesktopUsageHistoryTests`
+    — window-list and legacy parsing, malformed entries, display ordering, expired extra windows,
+    short-code mapping, `xu` exclusion, and the refresh-cadence boundaries. Suite is now 57
+
+### 2026-08-29 - Claude 5h/7d usage display in the notch
+- **Developer label:** statusLine-fed rate-limit usage snapshot, gauges under agent cards
+- **Agent label:** The notch now shows Claude Code's real session and weekly usage
+- **Changes:**
+  - New Kannu-managed statusline script `~/.claude/kannu-usage-status.sh` (embedded in `AgentHookInstaller`, mirror in `scripts/`, versioned `KANNU_USAGE_SCRIPT_VERSION=1`): reads Claude Code's statusLine stdin JSON, writes `rate_limits.five_hour`/`seven_day` (`used_percentage` 0-100, `resets_at` epoch seconds — server-reported via `anthropic-ratelimit-unified-*` response headers) atomically to `~/.kannu/agent-status/claude-usage.json`, then chains the user's original statusLine command (preserved base64 in the script, restored verbatim on uninstall)
+  - Installed with the Claude hook (`install(.claude)`), removed on uninstall, and backfilled for existing installs via `migrateClaudeUsageStatusLineIfNeeded`
+  - New pure `ClaudeUsageSnapshot` (parse + staleness rules): fresh under 10 minutes, dimmed with relative age after, and a window whose reset time has passed is hidden (its percentage is stale fiction). `CursorAgentStatusMonitor` publishes it from the existing status-directory watcher — no new watcher
+  - The gauges render in the **Usage tab**: `ClaudeUsageProvider` maps the snapshot onto the existing `sessionLimit`/`weekLimit`, so `NotchLLMUsageView`'s established quota gauges and reset countdowns display it with no new UI. Gated by new `enableClaudeUsageDisplay` default (on) with settings row + search entry. An earlier draft put a second copy under the agent session cards; usage lives on one surface, and that one was below the fold in a scroll view
+  - **The credential path is gone.** `ClaudeUsageProvider` no longer calls `ClaudeQuotaClient`, so there is no keychain read, no OAuth request, and no recurrence of the permanent `Claude login found but unreadable` error the card used to show. Claude Code hands the numbers to the statusline for free; reading credentials to ask a server for what is already on stdin was the wrong trade. `ClaudeQuotaClient`/`KeychainReader` remain on disk, now unreferenced
+  - Fixed a SIGABRT crash while in here: `Kannu-2026-08-29-234024.ips` was an uncaught AppKit exception in `_postWindowNeedsUpdateConstraints`, reached from `NSHostingView.invalidateSafeAreaCornerInsets`. CLAUDE.md documents the cause (`sizingOptions` unset) but the invariant held in only **1 of 25** hosting views; all 16 sites hosted in borderless panels now set `sizingOptions = []`. The five hosting views in normal windows keep content-driven sizing deliberately
+  - `parseHookSessions` GC is safe by construction: `claude-usage.json` has no `state` key, so the session parser skips it before any delete branch
+  - `KannuTests`: `ClaudeUsageSnapshotTests` covering parsing, partial windows, freshness boundary, and expired-window hiding
+
 ### 2026-08-21 - Record the recurring regressions and enforce the invariants
 - **Developer label:** docs/REGRESSIONS.md, mirror-drift pre-commit guard, regression-guard tests, CI on development
 - **Agent label:** The rules that keep re-breaking now fail a check instead of relying on memory

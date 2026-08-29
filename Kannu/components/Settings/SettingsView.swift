@@ -871,6 +871,7 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .agentStatus, title: "Editor Hooks", keywords: ["agent", "cursor", "vscode", "copilot", "codex", "claude", "hook", "install", "integration"], highlightID: SettingsTab.agentStatus.highlightID(for: "Cursor Hook")),
             SettingsSearchEntry(tab: .agentStatus, title: "Mobile notifications", keywords: ["mobile", "push", "ntfy", "pushover", "webhook", "iphone", "android"], highlightID: SettingsTab.agentStatus.highlightID(for: "Mobile notifications")),
             SettingsSearchEntry(tab: .agentStatus, title: "Send test notification", keywords: ["test", "mobile", "push", "notification"], highlightID: SettingsTab.agentStatus.highlightID(for: "Send test notification")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Show Claude usage", keywords: ["claude", "usage", "rate", "limit", "quota", "5h", "7d", "weekly", "session"], highlightID: SettingsTab.agentStatus.highlightID(for: "Show Claude usage")),
         ]
     }
 
@@ -7541,6 +7542,17 @@ struct AgentStatusSettings: View {
                     Text("Detected Editors")
                 } footer: {
                     Text("Kannu watches these editors automatically. Install a hook below for richer status on editors marked as not detected.")
+                }
+
+                Section {
+                    Defaults.Toggle(key: .enableClaudeUsageDisplay) {
+                        Text("Show Claude usage")
+                    }
+                    .settingsHighlight(id: highlightID("Show Claude usage"))
+                } header: {
+                    Text("Claude Usage")
+                } footer: {
+                    Text("Shows Claude Code's server-reported session (5-hour) and weekly (7-day) usage under the agent cards. Requires the Claude Code hook; values update while a Claude Code session is active.")
                 }
 
                 Section {

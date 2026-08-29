@@ -30,6 +30,8 @@ Scan the skill listing provided in the session context and pick the skills relev
 
 Copy each skill name **exactly as listed**, including any namespace prefix. Never manufacture a skill because it sounds useful — **zero skills is valid** if nothing listed is relevant.
 
+**Mandatory skill — `caveman`:** this project always loads the `caveman` skill (installed at `.claude/skills/caveman/`). Include it in **every** ART breakdown's "Relevant skills" line and load it with the other named skills — even when no other skill applies. It sets the response style (terse, full technical substance, code/errors exact); it never replaces the task-relevant skills, it accompanies them.
+
 ### 3. Display the breakdown
 
 Before doing any real work, output exactly:
@@ -40,7 +42,7 @@ ART Breakdown
 - Act as: <persona>
 - Request: <one sentence>
 - Terms: <constraints/output format, or "none specified">
-- Relevant skills: <comma-separated list, or "none — general development">
+- Relevant skills: caveman, <comma-separated list, or just "caveman" when nothing else applies>
 ```
 
 ### 4. Load what you named — as the very next tool call
@@ -59,7 +61,7 @@ ART Breakdown
 - Act as: Senior macOS Swift Architect
 - Request: Detect when Claude Code requires user input and surface it through the existing traffic-light state
 - Terms: Preserve existing architecture and UI; native APIs; low CPU
-- Relevant skills: <exact names from the session's skill listing, or "none — general development">
+- Relevant skills: caveman, <exact names from the session's skill listing, or just "caveman">
 ```
 
 `Loading: <those skills>` — then, and only then, start reading the code.

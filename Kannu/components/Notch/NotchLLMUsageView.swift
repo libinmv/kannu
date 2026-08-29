@@ -81,7 +81,7 @@ struct NotchLLMUsageView: View {
     @ViewBuilder
     private func success(_ snap: UsageSnapshot) -> some View {
         let hasPartialEstimate = snap.today.hasUnpricedModel || snap.week.hasUnpricedModel || snap.session.hasUnpricedModel
-        let showsQuota = snap.sessionLimit != nil || snap.weekLimit != nil
+        let showsQuota = snap.sessionLimit != nil || snap.weekLimit != nil || !snap.extraLimits.isEmpty
         let showEstimatedCost = !snap.billedCostOnly
         VStack(alignment: .leading, spacing: 6) {
             if !showsQuota {
@@ -99,8 +99,15 @@ struct NotchLLMUsageView: View {
                 }
                 quotaActionButton(snap.quotaAction)
             } else {
-                if let limit = snap.sessionLimit { quotaGauge("Session", limit) }
-                if let limit = snap.weekLimit { quotaGauge("Week", limit) }
+                if let limit = snap.sessionLimit {
+                    quotaGauge(Self.rateLimitLabel(ClaudeUsageSnapshot.fiveHourKey), limit)
+                }
+                if let limit = snap.weekLimit {
+                    quotaGauge(Self.rateLimitLabel(ClaudeUsageSnapshot.sevenDayKey), limit)
+                }
+                ForEach(snap.extraLimits, id: \.key) { extra in
+                    quotaGauge(Self.rateLimitLabel(extra.key), extra.limit)
+                }
                 if snap.logsUnavailable {
                     Text("Token totals unavailable (no local logs)").font(.caption2).foregroundStyle(.secondary)
                 } else {
@@ -158,6 +165,30 @@ struct NotchLLMUsageView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+        }
+    }
+
+    @ViewBuilder
+    /// Names a rate-limit window for display.
+    ///
+    /// These are usage caps, not the token/cost windows listed below them, so they must not reuse
+    /// "Session" and "Week" — the same two words meaning something else in the same card was the
+    /// original confusion. Windows beyond the two universal ones are named from the provider's own
+    /// key, so a newly added cap renders with a sensible label rather than being dropped.
+    static func rateLimitLabel(_ key: String) -> String {
+        switch key {
+        case ClaudeUsageSnapshot.fiveHourKey:
+            return String(localized: "5-hour session")
+        case ClaudeUsageSnapshot.sevenDayKey:
+            return String(localized: "Weekly (all models)")
+        default:
+            let suffix = key.hasPrefix("seven_day_")
+                ? String(key.dropFirst("seven_day_".count))
+                : key
+            let name = suffix.split(separator: "_").map(\.capitalized).joined(separator: " ")
+            return key.hasPrefix("seven_day")
+                ? String(localized: "Weekly (\(name))")
+                : name
         }
     }
 

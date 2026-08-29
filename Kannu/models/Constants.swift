@@ -1232,6 +1232,7 @@ extension Defaults.Keys {
     static let agentInactiveDisplaySeconds = Key<Int>("agentInactiveDisplaySeconds", default: 5)
     static let agentHooksAutoInstallAttempted = Key<Bool>("agentHooksAutoInstallAttempted", default: false)
     static let showAgentStoppedIndicator = Key<Bool>("showAgentStoppedIndicator", default: false)
+    static let enableClaudeUsageDisplay = Key<Bool>("enableClaudeUsageDisplay", default: true)
 
     // MARK: Agent Status Mobile Notifications
     static let enableAgentStatusMobileNotifications = Key<Bool>("enableAgentStatusMobileNotifications", default: false)
