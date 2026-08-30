@@ -386,16 +386,25 @@ final class CursorAgentStatusMonitor: ObservableObject {
     /// Runs `/usage` under a pty and waits briefly for the fetch to land, then exits. Best-effort:
     /// any failure just means the file is unchanged and the card keeps its current value.
     private nonisolated static func runUsageFetch(binary: URL) {
-        let process = Process()
-        if binary.lastPathComponent == "env" {
-            process.executableURL = binary
-            process.arguments = ["claude"]
-        } else {
-            process.executableURL = binary
-            process.arguments = []
+        // Claude Code writes the refreshed usage into ~/.claude.json, so that file's fetch stamp is
+        // the completion signal: poll it and stop the moment it advances, rather than always burning
+        // the timeout. A press then costs a few seconds instead of a fixed ceiling.
+        let configURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude.json")
+        func fetchedAtMs() -> Double? {
+            guard let data = try? Data(contentsOf: configURL),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let cache = json["cachedUsageUtilization"] as? [String: Any] else { return nil }
+            return (cache["fetchedAtMs"] as? NSNumber)?.doubleValue
         }
+        let before = fetchedAtMs()
 
-        // A pty makes the CLI start its interactive session so `/usage` is honoured.
+        let process = Process()
+        process.executableURL = binary
+        process.arguments = binary.lastPathComponent == "env" ? ["claude"] : []
+
+        // `/usage` is a slash command, so it needs an interactive session: headless `-p` treats it
+        // as prompt text. A pty gives the CLI the terminal it expects.
         var master: Int32 = 0, slave: Int32 = 0
         guard openpty(&master, &slave, nil, nil, nil) == 0 else { return }
         let masterHandle = FileHandle(fileDescriptor: master, closeOnDealloc: true)
@@ -403,18 +412,30 @@ final class CursorAgentStatusMonitor: ObservableObject {
         process.standardInput = slaveHandle
         process.standardOutput = slaveHandle
         process.standardError = slaveHandle
+        // Drain the pty so the CLI never blocks on a full buffer; the output itself is not needed.
+        masterHandle.readabilityHandler = { _ = $0.availableData }
 
         do { try process.run() } catch { return }
 
-        // Drive the session: run /usage, give the fetch a moment, then quit.
+        // Let the session come up before issuing the command.
+        Thread.sleep(forTimeInterval: 2.5)
         masterHandle.write(Data("/usage\r".utf8))
-        Thread.sleep(forTimeInterval: 6)
-        masterHandle.write(Data("/exit\r".utf8))
 
-        // Hard ceiling so a wedged CLI can never hang the task.
-        let deadline = Date().addingTimeInterval(15)
-        while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.25) }
-        if process.isRunning { process.terminate() }
+        // Stop as soon as the fetch lands; the ceiling is only a backstop for a wedged CLI.
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.25)
+            if let now = fetchedAtMs(), now != before { break }
+            if !process.isRunning { break }
+        }
+
+        if process.isRunning {
+            process.terminate()
+            // terminate() only signals. Reaping here is also what makes any later status read safe:
+            // `terminationStatus` raises an uncatchable ObjC exception on a live process.
+            process.waitUntilExit()
+        }
+        masterHandle.readabilityHandler = nil
         try? masterHandle.close()
     }
 

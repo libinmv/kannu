@@ -4,6 +4,25 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-30 - Make the usage refresh exit on success, and fix a crash it could cause
+
+- **Developer label:** wait for the cache stamp instead of the timeout; reap the process before any terminationStatus read
+- **Agent label:** The refresh button is quicker and no longer able to crash the app
+- **Changes:**
+  - **Crash fix.** `Process.terminationStatus` raises an ObjC exception when the process has not
+    exited, and `terminate()` only sends SIGTERM without waiting — so reading the status on the
+    timeout path aborted the app (`SIGABRT`, `Kannu-2026-08-30-194649.ips`). Swift cannot catch an
+    ObjC exception, so this was fatal every time the fetch hit its ceiling. The process is now reaped
+    with `waitUntilExit()` and no live status read remains anywhere in that path
+  - **Exits on success rather than on timeout.** Claude Code writes the refreshed usage into
+    `~/.claude.json`, so that file's fetch stamp is the completion signal: the spawn now polls it and
+    stops the moment it advances. A press costs a few seconds instead of always burning the full
+    ceiling and dying by signal (`exit=143`). The ceiling remains, purely as a backstop for a wedged
+    CLI
+  - Verified live end to end: a press advanced the fetch stamp and moved the session and weekly
+    figures (9%→19%, 68%→69%) against the server, with no crash, no leaked child process and no
+    stray files
+
 ### 2026-08-30 - Redesign the usage card and add a one-tap CLI usage refresh
 
 - **Developer label:** grouped Session/Weekly sections, severity-driven accents, pty-based /usage refresh button
