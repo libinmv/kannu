@@ -309,9 +309,15 @@ final class CursorAgentStatusMonitor: ObservableObject {
         ) else { return }
         lastClaudeUsageReadAt = now
 
+        // Three sources, best first. The statusline hook is freshest but only writes while a
+        // session drives it; Claude's own cached usage carries real reset times and the per-model
+        // weekly windows nothing else has; the desktop history is percentages with inferred resets.
         let url = AgentHookInstaller.statusDirectory
             .appendingPathComponent(AgentHookInstaller.usageFileName)
         var snapshot = ClaudeUsageSnapshot.load(from: url)
+        if snapshot == nil || snapshot?.isEmpty(now: now) == true {
+            snapshot = ClaudeCachedUsage.load() ?? snapshot
+        }
         if snapshot == nil || snapshot?.isEmpty(now: now) == true {
             snapshot = ClaudeDesktopUsageHistory.load(now: now) ?? snapshot
         }

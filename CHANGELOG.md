@@ -4,6 +4,36 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-30 - Read Claude's own cached usage, including the per-model weekly bars
+
+- **Developer label:** new ClaudeCachedUsage source reading ~/.claude.json cachedUsageUtilization; three-source precedence
+- **Agent label:** The Usage tab can now show the per-model weekly bar Claude Code shows in /usage
+- **Changes:**
+  - Claude Code caches its `/api/oauth/usage` response in `~/.claude.json` under
+    `cachedUsageUtilization`, and that cache is the only local source carrying **per-model weekly
+    windows**. The statusline hook can deliver them as `rate_limits.model_scoped`, but only while a
+    session drives it; the desktop app's history file discards them before writing. Reading the cache
+    needs no credentials and makes no network call
+  - Per-model entries are selected exactly as Claude Code selects them for its own display:
+    `kind == "weekly_scoped"` with a `scope.model.display_name`, rendered under that server-supplied
+    name. The window keeps **its own denominator** — it is never derived from the all-models weekly
+    figure, which it can sit well above or below
+  - Fixed windows here report `utilization`, not `used_percentage`, and `resets_at` is an ISO 8601
+    string with microseconds rather than epoch seconds. Both are handled; an unparseable timestamp
+    costs the countdown, never the bar. `cinder_cove` is carried generically like any other window
+  - The cache is rejected outright when its `accountUuid` does not match the signed-in account,
+    mirroring Claude Code's own guard, so another login's numbers can never be shown
+  - Source precedence is now statusline hook, then this cache, then the desktop history — each
+    falling through when absent or empty. The cache outranks the history because it carries real
+    reset times where the history forces them to be inferred from rollovers
+  - New `scripts/kannu-fable-usage.sh`: standalone `jq` extractor for the same value, for use outside
+    the app. Reads only the usage keys, prints `null` rather than a fabricated value when no such
+    quota exists, and takes an optional model name (defaulting to whatever is on the account's
+    overage-included allowlist)
+  - `KannuTests`: per-model parsing and its independent denominator, microsecond and plain ISO
+    timestamps, unparseable dates, non-scoped kinds ignored, `utilization` vs `used_percentage`,
+    account mismatch rejected, and every empty or malformed shape returning nil. Suite is now 126
+
 ### 2026-08-30 - Reset countdowns on the desktop-history path
 
 - **Developer label:** recover window boundaries from rollovers in plan-usage-history; countdown format reworked
