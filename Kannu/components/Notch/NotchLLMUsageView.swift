@@ -22,10 +22,6 @@ import Defaults
 struct NotchLLMUsageView: View {
     @ObservedObject private var manager = LLMUsageManager.shared
 
-    /// Observed rather than read through `Defaults[...]` so the card redraws the moment the
-    /// toggle below flips.
-    @Default(.enableClaudeUsageDisplay) private var claudeUsageGaugesEnabled
-
     // Live only while the tab is visible. Fires faster than the manager's refresh floor so a
     // tick landing just inside the floor doesn't stretch the effective cadence.
     //
@@ -52,28 +48,6 @@ struct NotchLLMUsageView: View {
         case .loading, .success, .none:
             return true
         }
-    }
-
-    /// Claude's 5h/7d limits are the one figure that needs the network and a one-time keychain
-    /// approval — everything else on the card is read from local files. The control lives here
-    /// rather than in Settings so the cost is visible exactly where the benefit appears.
-    private var claudeLimitsToggle: some View {
-        Button {
-            claudeUsageGaugesEnabled.toggle()
-            // Skip the refresh floor so the gauges appear or vanish on the click, not on the
-            // next poll. Nothing here prompts any more — the numbers come off disk.
-            manager.refreshAll(force: true, interactive: false)
-        } label: {
-            Image(systemName: claudeUsageGaugesEnabled
-                  ? "gauge.with.dots.needle.bottom.50percent"
-                  : "gauge.with.dots.needle.bottom.50percent.badge.minus")
-                .font(.caption)
-                .foregroundStyle(claudeUsageGaugesEnabled ? Color.accentColor : .secondary)
-        }
-        .buttonStyle(.plain)
-        .help(claudeUsageGaugesEnabled
-              ? "Hide rate-limit gauges. Plan, credits and token counts stay."
-              : "Show the 5-hour and weekly rate-limit gauges.")
     }
 
     var body: some View {
@@ -115,9 +89,6 @@ struct NotchLLMUsageView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
-                if provider == .claude {
-                    claudeLimitsToggle
-                }
             }
             if case .success(let snap) = manager.results[provider] ?? .loading,
                let note = snap.accountNote {

@@ -1,4 +1,3 @@
-import Defaults
 import Foundation
 
 struct ClaudeUsageProvider: UsageProvider {
@@ -53,7 +52,6 @@ struct ClaudeUsageProvider: UsageProvider {
     /// when nothing usable is cached.
     @MainActor
     private func applyRateLimitWindows(to snapshot: inout UsageSnapshot, now: Date) {
-        guard Defaults[.enableClaudeUsageDisplay] else { return }
         guard let usage = CursorAgentStatusMonitor.shared.claudeUsage else { return }
 
         for window in usage.displayWindows(now: now) {

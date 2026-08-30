@@ -4,6 +4,22 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-30 - Remove the vestigial gauge toggle from the Claude card
+
+- **Developer label:** drop claudeLimitsToggle, its @Default and the enableClaudeUsageDisplay key
+- **Agent label:** One less control on the usage card; the rate-limit bars just show
+- **Changes:**
+  - The gauge icon in the Claude card header existed because the 5h/7d limits once needed a network
+    call and a one-time keychain approval, and the control was deliberately placed on the card so
+    that cost sat next to the benefit. Its own comment still said so. That path was removed earlier —
+    every number now comes off disk — so the justification for the unusual placement went with it,
+    leaving an ordinary show/hide toggle in prime space on a status card
+  - It was also the only control for `enableClaudeUsageDisplay`, a preference with no Settings row,
+    which is backwards. Rather than relocate a toggle nobody needs, the control and the key are both
+    gone: the bars render whenever a source supplies them, governed by the staleness rules already in
+    `ClaudeUsageSnapshot`. A stale value left in user defaults is inert once nothing reads it
+  - `import Defaults` dropped from `ClaudeUsageProvider`, which no longer reads any default
+
 ### 2026-08-30 - Fix pale caffeinate toggle when the notch opens inactive
 
 - **Developer label:** custom capsule toggle replaces NSSwitch; literal sparkle colors

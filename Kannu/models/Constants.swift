@@ -1195,9 +1195,6 @@ extension Defaults.Keys {
     /// Smart caffeinate: keep the Mac awake automatically while any agent run is active.
     /// While on, the manual switch is hidden from the notch panel and its value is ignored.
     static let smartCaffeinate = Key<Bool>("smartCaffeinate", default: false)
-    /// Show Claude's rate-limit gauges in the Usage tab. Off hides them entirely; nothing is
-    /// read and nothing is rendered.
-    static let enableClaudeUsageDisplay = Key<Bool>("enableClaudeUsageDisplay", default: true)
 
     // MARK: Agent Status Mobile Notifications
     static let enableAgentStatusMobileNotifications = Key<Bool>("enableAgentStatusMobileNotifications", default: false)
