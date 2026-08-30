@@ -20,6 +20,7 @@ import SwiftUI
 import Defaults
 
 struct NotchLLMUsageView: View {
+    @ObservedObject private var agentMonitor = CursorAgentStatusMonitor.shared
     @ObservedObject private var manager = LLMUsageManager.shared
 
     // Live only while the tab is visible. Fires faster than the manager's refresh floor so a
@@ -89,6 +90,9 @@ struct NotchLLMUsageView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
+                if provider == .claude {
+                    claudeRefreshButton
+                }
             }
             if case .success(let snap) = manager.results[provider] ?? .loading,
                let note = snap.accountNote {
@@ -154,15 +158,26 @@ struct NotchLLMUsageView: View {
                 quotaActionButton(snap.quotaAction)
             } else {
                 if let limit = snap.sessionLimit {
-                    quotaGauge(Self.rateLimitLabel(ClaudeUsageSnapshot.fiveHourKey), limit)
+                    quotaSection(title: "Session", reset: limit.resetsAt, bars: [.init(limit)])
                 } else {
                     localSessionRow(snap)
                 }
-                if let limit = snap.weekLimit {
-                    quotaGauge(Self.rateLimitLabel(ClaudeUsageSnapshot.sevenDayKey), limit)
-                }
-                ForEach(snap.extraLimits, id: \.key) { extra in
-                    quotaGauge(Self.extraLimitLabel(extra), extra.limit)
+                if let week = snap.weekLimit {
+                    // The word "Weekly" and the shared reset live once on the header; the bars below
+                    // are just "All models" and each per-model name. Per-model windows share the
+                    // week's reset, so the header countdown covers them.
+                    quotaSection(
+                        title: "Weekly",
+                        reset: week.resetsAt,
+                        bars: [.init(week, label: "All models")]
+                            + snap.extraLimits.map { .init($0.limit, label: $0.label ?? Self.extraLimitLabel($0)) }
+                    )
+                } else if !snap.extraLimits.isEmpty {
+                    quotaSection(
+                        title: "Weekly",
+                        reset: snap.extraLimits.first?.limit.resetsAt,
+                        bars: snap.extraLimits.map { .init($0.limit, label: $0.label ?? Self.extraLimitLabel($0)) }
+                    )
                 }
                 // Claude's Session/Week quota gauges above already cover this ground —
                 // the compact Today/Week token counts were redundant for Claude specifically.
@@ -293,37 +308,91 @@ struct NotchLLMUsageView: View {
         }
     }
 
+    /// One bar in a quota section: an optional label (nil for a single-bar section), the value,
+    /// and the accent already resolved from severity-or-fraction.
+    private struct QuotaBar: Identifiable {
+        let id = UUID()
+        let label: String?
+        let fraction: Double
+        let percent: Int
+        let tint: Color
+
+        init(_ limit: UsageLimit, label: String? = nil) {
+            self.label = label
+            self.fraction = limit.fraction
+            self.percent = Int(limit.used.rounded())
+            self.tint = NotchLLMUsageView.accent(severity: limit.severity, fraction: limit.fraction)
+        }
+    }
+
+    /// Pulls the latest usage from Claude Code, including the per-model (Fable) weekly window that
+    /// only its own `/usage` fetch produces. Sits top-right of the Claude card with a help tooltip.
     @ViewBuilder
-    private func quotaGauge(_ label: String, _ limit: UsageLimit) -> some View {
-        let usedPct = Int(limit.used.rounded())
-        let leftPct = max(0, 100 - usedPct)
-        VStack(alignment: .leading, spacing: 3) {
-            HStack {
-                Text(label).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-                Spacer()
-                if let resets = resetsIn(limit.resetsAt) {
-                    Text(resets).font(.caption2).foregroundStyle(.secondary)
+    private var claudeRefreshButton: some View {
+        Button {
+            agentMonitor.refreshClaudeUsageFromCLI()
+        } label: {
+            if agentMonitor.isRefreshingClaudeUsage {
+                ProgressView().controlSize(.mini)
+            } else {
+                Image(systemName: "arrow.clockwise").font(.caption)
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(agentMonitor.isRefreshingClaudeUsage)
+        .foregroundStyle(.secondary)
+        .help("Fetch your latest Claude usage, including the per-model weekly limit. Uses your existing Claude login — one-time keychain approval, no message cost.")
+    }
+
+    /// A titled group of bars sharing one reset countdown — "Session" (one bar) or "Weekly"
+    /// (all-models plus any per-model windows). The title and the countdown appear once.
+    @ViewBuilder
+    private func quotaSection(title: String, reset: Date?, bars: [QuotaBar]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(title).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                if let resets = resetsIn(reset) {
+                    Text(resets).font(.caption2).foregroundStyle(.secondary).monospacedDigit()
                 }
             }
+            ForEach(bars) { bar in quotaBar(bar) }
+        }
+    }
+
+    @ViewBuilder
+    private func quotaBar(_ bar: QuotaBar) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(.white.opacity(0.15))
-                    Capsule().fill(gaugeTint(limit.fraction)).frame(width: max(4, geo.size.width * limit.fraction))
+                    Capsule().fill(bar.tint)
+                        .frame(width: max(4, geo.size.width * bar.fraction))
                 }
             }
             .frame(height: 6)
-            HStack {
-                Text("\(usedPct)% used").font(.caption2).monospacedDigit()
-                Spacer()
-                Text("\(leftPct)% left").font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+            HStack(spacing: 6) {
+                if let label = bar.label {
+                    Text(label).font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                Text("\(bar.percent)%").font(.caption2.weight(.medium)).monospacedDigit()
+                    .foregroundStyle(bar.tint == .accentColor ? Color.primary : bar.tint)
             }
         }
     }
 
-    private func gaugeTint(_ fraction: Double) -> Color {
-        if fraction > 0.95 { return .red }
-        if fraction > 0.9 { return .orange }
-        return .accentColor
+    /// The bar accent: the server's own severity when it reported one, else the fraction bands.
+    private static func accent(severity: String?, fraction: Double) -> Color {
+        switch severity?.lowercased() {
+        case "critical": return .red
+        case "warning": return .orange
+        case "normal": return .accentColor
+        default:
+            if fraction > 0.95 { return .red }
+            if fraction > 0.9 { return .orange }
+            return .accentColor
+        }
     }
 
     private func resetsIn(_ date: Date?) -> String? {

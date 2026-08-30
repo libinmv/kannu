@@ -4,6 +4,32 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-30 - Redesign the usage card and add a one-tap CLI usage refresh
+
+- **Developer label:** grouped Session/Weekly sections, severity-driven accents, pty-based /usage refresh button
+- **Agent label:** The usage card is cleaner, and a button pulls your latest usage including the per-model weekly limit
+- **Changes:**
+  - The three rate-limit bars are grouped into **Session** and **Weekly** sections. The word
+    "Weekly" and the reset countdown appear once per section instead of on every bar — the weekly
+    windows genuinely share one reset, so repeating it was noise. Per-model bars sit under the
+    Weekly header labelled by model name ("All models", "Fable")
+  - Bar accents now come from the server's own `severity` field (`normal`/`warning`/`critical`)
+    when present, falling back to the previous fraction bands for sources that do not report it.
+    A window at its cap (e.g. Fable at 93%, critical) reads red because the server says so
+  - `severity` is threaded from `ClaudeCachedUsage` through `UsageLimit`/`NamedLimit` to the view.
+    The fixed windows borrow their severity from the parallel `limits[]` array, which carries it
+    keyed by kind (`session`/`weekly_all`)
+  - New **refresh button** top-right of the Claude card, with help text. It triggers Claude Code's
+    own `/usage` fetch — the only local source of the per-model weekly window — by running the
+    installed CLI under a pseudo-terminal (the slash command needs an interactive session; headless
+    `-p` treats it as prompt text). It uses the credential Claude already stored: silent after a
+    one-time keychain "Always Allow", reads only limit metadata, and costs no tokens. Kannu never
+    sees the credential — the CLI writes `~/.claude.json`, Kannu re-reads it
+  - Race-free by construction: the spawned process only writes a file; the single cached snapshot is
+    still written on the main actor alone, and an in-flight guard prevents overlapping spawns. The
+    binary path resolves to the newest installed version, surviving updates
+  - `KannuTests`: per-model and fixed-window severity parsing. Suite is now 128
+
 ### 2026-08-30 - Remove the vestigial gauge toggle from the Claude card
 
 - **Developer label:** drop claudeLimitsToggle, its @Default and the enableClaudeUsageDisplay key

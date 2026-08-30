@@ -42,6 +42,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
     private var cachedTranscriptAnalysisAt: Date?
     private var lastActivityPulseAt: Date?
     private var lastClaudeUsageReadAt: Date?
+    /// True while a user-triggered CLI usage fetch is in flight; gates the button and its spinner.
+    @Published private(set) var isRefreshingClaudeUsage = false
     private var lastPublishedTrafficLightState: AgentTrafficLightState?
     private var lastPublishedShouldShowTrafficLight: Bool?
 
@@ -324,6 +326,96 @@ final class CursorAgentStatusMonitor: ObservableObject {
         if snapshot != claudeUsage {
             claudeUsage = snapshot
         }
+    }
+
+    /// Re-reads the usage sources immediately, bypassing the cadence gate. For the manual button,
+    /// which wants the freshest on-disk value the instant a fetch completes.
+    private func reloadClaudeUsageNow() {
+        let now = Date()
+        lastClaudeUsageReadAt = now
+        let url = AgentHookInstaller.statusDirectory
+            .appendingPathComponent(AgentHookInstaller.usageFileName)
+        var snapshot = ClaudeUsageSnapshot.load(from: url)
+        if snapshot == nil || snapshot?.isEmpty(now: now) == true {
+            snapshot = ClaudeCachedUsage.load() ?? snapshot
+        }
+        if snapshot == nil || snapshot?.isEmpty(now: now) == true {
+            snapshot = ClaudeDesktopUsageHistory.load(now: now) ?? snapshot
+        }
+        if snapshot != claudeUsage { claudeUsage = snapshot }
+    }
+
+    /// Triggers Claude Code's own usage fetch, which writes `cachedUsageUtilization` to
+    /// `~/.claude.json` — the only local source for the per-model (e.g. Fable) weekly window.
+    ///
+    /// Runs the installed CLI under a pseudo-terminal issuing `/usage`, because that slash command
+    /// only runs in an interactive session (headless `-p` treats it as prompt text). The spawn uses
+    /// the credential Claude already stored in the keychain: silent after a one-time "Always Allow",
+    /// and it reads only limit metadata — no message, no tokens, no cost. Kannu never sees the
+    /// credential; it only re-reads the file the CLI writes.
+    func refreshClaudeUsageFromCLI() {
+        guard !isRefreshingClaudeUsage else { return }
+        guard let binary = Self.resolveClaudeBinary() else { return }
+        isRefreshingClaudeUsage = true
+
+        Task.detached(priority: .userInitiated) {
+            Self.runUsageFetch(binary: binary)
+            await MainActor.run {
+                self.reloadClaudeUsageNow()
+                self.isRefreshingClaudeUsage = false
+            }
+        }
+    }
+
+    /// Newest installed Claude Code binary, or `claude` on PATH, so this survives version bumps.
+    private nonisolated static func resolveClaudeBinary() -> URL? {
+        let base = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Claude/claude-code")
+        if let versions = try? FileManager.default.contentsOfDirectory(
+            at: base, includingPropertiesForKeys: nil) {
+            let candidates = versions
+                .map { $0.appendingPathComponent("claude.app/Contents/MacOS/claude") }
+                .filter { FileManager.default.isExecutableFile(atPath: $0.path) }
+                .sorted { $0.path.compare($1.path, options: .numeric) == .orderedAscending }
+            if let newest = candidates.last { return newest }
+        }
+        let onPath = URL(fileURLWithPath: "/usr/bin/env")
+        return FileManager.default.isExecutableFile(atPath: onPath.path) ? onPath : nil
+    }
+
+    /// Runs `/usage` under a pty and waits briefly for the fetch to land, then exits. Best-effort:
+    /// any failure just means the file is unchanged and the card keeps its current value.
+    private nonisolated static func runUsageFetch(binary: URL) {
+        let process = Process()
+        if binary.lastPathComponent == "env" {
+            process.executableURL = binary
+            process.arguments = ["claude"]
+        } else {
+            process.executableURL = binary
+            process.arguments = []
+        }
+
+        // A pty makes the CLI start its interactive session so `/usage` is honoured.
+        var master: Int32 = 0, slave: Int32 = 0
+        guard openpty(&master, &slave, nil, nil, nil) == 0 else { return }
+        let masterHandle = FileHandle(fileDescriptor: master, closeOnDealloc: true)
+        let slaveHandle = FileHandle(fileDescriptor: slave, closeOnDealloc: true)
+        process.standardInput = slaveHandle
+        process.standardOutput = slaveHandle
+        process.standardError = slaveHandle
+
+        do { try process.run() } catch { return }
+
+        // Drive the session: run /usage, give the fetch a moment, then quit.
+        masterHandle.write(Data("/usage\r".utf8))
+        Thread.sleep(forTimeInterval: 6)
+        masterHandle.write(Data("/exit\r".utf8))
+
+        // Hard ceiling so a wedged CLI can never hang the task.
+        let deadline = Date().addingTimeInterval(15)
+        while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.25) }
+        if process.isRunning { process.terminate() }
+        try? masterHandle.close()
     }
 
     /// Keeps a still-running agent visible to time-boxed consumers.

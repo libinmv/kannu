@@ -55,7 +55,8 @@ struct ClaudeUsageProvider: UsageProvider {
         guard let usage = CursorAgentStatusMonitor.shared.claudeUsage else { return }
 
         for window in usage.displayWindows(now: now) {
-            let limit = UsageLimit(used: window.percent, limit: 100, resetsAt: window.resetsAt)
+            let limit = UsageLimit(used: window.percent, limit: 100,
+                                   resetsAt: window.resetsAt, severity: window.severity)
             switch window.key {
             case ClaudeUsageSnapshot.fiveHourKey: snapshot.sessionLimit = limit
             case ClaudeUsageSnapshot.sevenDayKey: snapshot.weekLimit = limit

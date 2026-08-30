@@ -28,11 +28,31 @@ final class ClaudeCachedUsageTests: XCTestCase {
     }
 
     private func scoped(_ name: String, _ pct: Double, kind: String = "weekly_scoped",
+                        severity: String = "normal",
                         resets: String? = "2026-07-17T22:59:59.679456+00:00") -> [String: Any] {
         var d: [String: Any] = ["kind": kind, "group": "weekly", "percent": NSNumber(value: pct),
+                                "severity": severity,
                                 "scope": ["model": ["display_name": name]]]
         if let resets { d["resets_at"] = resets }
         return d
+    }
+
+    private func fixedLimit(_ kind: String, _ pct: Double, severity: String) -> [String: Any] {
+        ["kind": kind, "group": kind, "percent": NSNumber(value: pct), "severity": severity,
+         "scope": NSNull()]
+    }
+
+    func testPerModelSeverityIsCarried() {
+        let snapshot = ClaudeCachedUsage.parse(json: config(limits: [scoped("Fable", 93, severity: "critical")]))
+        XCTAssertEqual(snapshot?.window("model_scoped:Fable")?.severity, "critical")
+    }
+
+    func testFixedWindowBorrowsSeverityFromLimitsArray() {
+        // The fixed five_hour object has no severity; the parallel limits[] session entry does.
+        let snapshot = ClaudeCachedUsage.parse(json: config(
+            limits: [fixedLimit("session", 9, severity: "warning")],
+            fixed: ["five_hour": window(9, resets: "2026-08-30T18:00:00+00:00")]))
+        XCTAssertEqual(snapshot?.window("five_hour")?.severity, "warning")
     }
 
     // MARK: - Per-model windows

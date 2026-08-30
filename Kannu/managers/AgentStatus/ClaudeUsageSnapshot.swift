@@ -26,6 +26,9 @@ struct ClaudeUsageSnapshot: Equatable {
         /// arrive labelled (e.g. "Fable") rather than under a key Kannu could name itself; the
         /// universal windows leave this nil because their names belong to us.
         var label: String? = nil
+        /// The server's own severity for this window ("normal"/"warning"/"critical"), when it
+        /// reports one. Only the cached-usage source carries it; drives the bar accent.
+        var severity: String? = nil
     }
 
     let windows: [Window]
@@ -145,8 +148,9 @@ struct ClaudeUsageSnapshot: Equatable {
             guard let key = entry["key"] as? String, !key.isEmpty,
                   let percent = (entry["pct"] as? NSNumber)?.doubleValue else { return nil }
             let label = (entry["label"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            let severity = (entry["severity"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             return Window(key: key, percent: percent,
-                          resetsAt: epochDate(entry["resets_at"]), label: label)
+                          resetsAt: epochDate(entry["resets_at"]), label: label, severity: severity)
         }
     }
 

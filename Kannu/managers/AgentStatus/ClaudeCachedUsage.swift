@@ -31,6 +31,16 @@ enum ClaudeCachedUsage {
         "seven_day_oauth_apps", "cinder_cove"
     ]
 
+    /// The `limits[]` array names its windows by a different `kind` than the fixed-field keys.
+    /// This maps a fixed key to its `limits[]` kind so a fixed bar can borrow that entry's severity.
+    private static func limitsKind(forKey key: String) -> String {
+        switch key {
+        case "five_hour": return "session"
+        case "seven_day": return "weekly_all"
+        default: return key
+        }
+    }
+
     static func load(from url: URL = defaultURL) -> ClaudeUsageSnapshot? {
         guard let data = try? Data(contentsOf: url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
@@ -50,24 +60,37 @@ enum ClaudeCachedUsage {
             return nil
         }
 
+        // The fixed windows carry no severity of their own, but the parallel `limits[]` array
+        // does — keyed by kind. Build that lookup once so the fixed bars can borrow it.
+        let limitsArray = utilization["limits"] as? [[String: Any]] ?? []
+        var severityByKind: [String: String] = [:]
+        for entry in limitsArray {
+            if let kind = entry["kind"] as? String,
+               let severity = entry["severity"] as? String, !severity.isEmpty {
+                severityByKind[kind] = severity
+            }
+        }
+
         var windows: [ClaudeUsageSnapshot.Window] = []
 
         for key in fixedWindows {
             guard let bucket = utilization[key] as? [String: Any],
                   let percent = (bucket["utilization"] as? NSNumber)?.doubleValue else { continue }
             windows.append(.init(key: key, percent: percent,
-                                 resetsAt: isoDate(bucket["resets_at"])))
+                                 resetsAt: isoDate(bucket["resets_at"]),
+                                 severity: severityByKind[Self.limitsKind(forKey: key)]))
         }
 
         // Per-model weekly windows, selected the way Claude Code selects them for its own display.
-        for entry in utilization["limits"] as? [[String: Any]] ?? [] {
+        for entry in limitsArray {
             guard entry["kind"] as? String == "weekly_scoped",
                   let scope = entry["scope"] as? [String: Any],
                   let model = scope["model"] as? [String: Any],
                   let name = model["display_name"] as? String, !name.isEmpty,
                   let percent = (entry["percent"] as? NSNumber)?.doubleValue else { continue }
             windows.append(.init(key: "model_scoped:\(name)", percent: percent,
-                                 resetsAt: isoDate(entry["resets_at"]), label: name))
+                                 resetsAt: isoDate(entry["resets_at"]), label: name,
+                                 severity: entry["severity"] as? String))
         }
 
         guard !windows.isEmpty else { return nil }

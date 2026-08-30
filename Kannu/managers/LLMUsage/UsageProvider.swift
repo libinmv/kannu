@@ -40,6 +40,8 @@ struct UsageLimit: Equatable {
     let used: Double
     let limit: Double
     var resetsAt: Date? = nil
+    /// Server-reported severity ("normal"/"warning"/"critical") when available; drives the accent.
+    var severity: String? = nil
     var fraction: Double { limit > 0 ? min(used / limit, 1) : 0 }
 }
 
@@ -63,6 +65,11 @@ struct NamedLimit: Equatable {
     let limit: UsageLimit
     /// The provider's own name for this window, preferred over anything derived from the key.
     var label: String? = nil
+}
+
+extension NamedLimit {
+    /// Severity rides on the inner limit, so views read it uniformly across session/week/extra.
+    var severity: String? { limit.severity }
 }
 
 struct UsageSnapshot: Equatable {
