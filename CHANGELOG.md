@@ -4,6 +4,21 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-30 - Harden the usage refresh from the ART review
+
+- **Developer label:** guaranteed SIGKILL escalation on the spawn; single shared usage-load ladder
+- **Agent label:** The refresh button can't get stuck, and the fallback logic lives in one place
+- **Changes:**
+  - **Refresh button could latch disabled.** `runUsageFetch` sent SIGTERM then `waitUntilExit()`, but
+    the interactive CLI under a pty can trap SIGTERM — `waitUntilExit()` would then block the detached
+    task forever and the spinner flag (`isRefreshingClaudeUsage`) would never clear, leaving the
+    button dead for the session. It now escalates to SIGKILL after a short grace, so exit is
+    guaranteed and the flag always resets
+  - **One usage-load ladder, not two.** The statusline → cached → desktop-history fallback was written
+    identically in both `refreshClaudeUsage(now:)` and `reloadClaudeUsageNow()`. Extracted to a single
+    `loadClaudeUsageSnapshot(now:)`, so a fourth source can never be added to one caller and forgotten
+    in the other
+
 ### 2026-08-30 - Make the usage refresh exit on success, and fix a crash it could cause
 
 - **Developer label:** wait for the cache stamp instead of the timeout; reap the process before any terminationStatus read

@@ -311,9 +311,18 @@ final class CursorAgentStatusMonitor: ObservableObject {
         ) else { return }
         lastClaudeUsageReadAt = now
 
-        // Three sources, best first. The statusline hook is freshest but only writes while a
-        // session drives it; Claude's own cached usage carries real reset times and the per-model
-        // weekly windows nothing else has; the desktop history is percentages with inferred resets.
+        let snapshot = Self.loadClaudeUsageSnapshot(now: now)
+        if snapshot != claudeUsage {
+            claudeUsage = snapshot
+        }
+    }
+
+    /// The single fallback ladder for Claude usage, best source first. The statusline hook is
+    /// freshest but only writes while a session drives it; Claude's own cached usage carries real
+    /// reset times and the per-model weekly windows nothing else has; the desktop history is
+    /// percentages with inferred resets. One definition, so a fourth source can never be added to
+    /// one caller and forgotten in the other.
+    private static func loadClaudeUsageSnapshot(now: Date) -> ClaudeUsageSnapshot? {
         let url = AgentHookInstaller.statusDirectory
             .appendingPathComponent(AgentHookInstaller.usageFileName)
         var snapshot = ClaudeUsageSnapshot.load(from: url)
@@ -323,9 +332,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
         if snapshot == nil || snapshot?.isEmpty(now: now) == true {
             snapshot = ClaudeDesktopUsageHistory.load(now: now) ?? snapshot
         }
-        if snapshot != claudeUsage {
-            claudeUsage = snapshot
-        }
+        return snapshot
     }
 
     /// Re-reads the usage sources immediately, bypassing the cadence gate. For the manual button,
@@ -333,15 +340,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
     private func reloadClaudeUsageNow() {
         let now = Date()
         lastClaudeUsageReadAt = now
-        let url = AgentHookInstaller.statusDirectory
-            .appendingPathComponent(AgentHookInstaller.usageFileName)
-        var snapshot = ClaudeUsageSnapshot.load(from: url)
-        if snapshot == nil || snapshot?.isEmpty(now: now) == true {
-            snapshot = ClaudeCachedUsage.load() ?? snapshot
-        }
-        if snapshot == nil || snapshot?.isEmpty(now: now) == true {
-            snapshot = ClaudeDesktopUsageHistory.load(now: now) ?? snapshot
-        }
+        let snapshot = Self.loadClaudeUsageSnapshot(now: now)
         if snapshot != claudeUsage { claudeUsage = snapshot }
     }
 
@@ -430,9 +429,15 @@ final class CursorAgentStatusMonitor: ObservableObject {
         }
 
         if process.isRunning {
+            // terminate() only sends SIGTERM, which the interactive TUI can trap or ignore — then
+            // waitUntilExit() would block the detached task forever and the button's spinner flag
+            // would never clear. Escalate to SIGKILL after a short grace so exit is guaranteed.
             process.terminate()
-            // terminate() only signals. Reaping here is also what makes any later status read safe:
-            // `terminationStatus` raises an uncatchable ObjC exception on a live process.
+            let killDeadline = Date().addingTimeInterval(2)
+            while process.isRunning && Date() < killDeadline { Thread.sleep(forTimeInterval: 0.1) }
+            if process.isRunning {
+                kill(process.processIdentifier, SIGKILL)
+            }
             process.waitUntilExit()
         }
         masterHandle.readabilityHandler = nil
