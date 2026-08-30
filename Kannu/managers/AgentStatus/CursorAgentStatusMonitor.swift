@@ -313,7 +313,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
             .appendingPathComponent(AgentHookInstaller.usageFileName)
         var snapshot = ClaudeUsageSnapshot.load(from: url)
         if snapshot == nil || snapshot?.isEmpty(now: now) == true {
-            snapshot = ClaudeDesktopUsageHistory.load() ?? snapshot
+            snapshot = ClaudeDesktopUsageHistory.load(now: now) ?? snapshot
         }
         if snapshot != claudeUsage {
             claudeUsage = snapshot

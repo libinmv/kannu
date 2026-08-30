@@ -359,15 +359,18 @@ struct NotchLLMUsageView: View {
         guard let date else { return nil }
         let seconds = Int(date.timeIntervalSinceNow)
         guard seconds > 0 else { return nil }
-        let hours = seconds / 3600
-        if hours >= 69 {
-            let days = hours / 24
-            return "resets in \(days)d \(hours % 24)h"
+        let minutes = seconds / 60
+        let days = minutes / (60 * 24)
+        let hours = (minutes / 60) % 24
+        // Only the units that carry information: a span over a day reads "2d 22h 37m", a shorter one
+        // "4h 56m", and under an hour just "56m" — a leading "0h" is noise on a glanceable gauge.
+        if days > 0 {
+            return "resets in \(days)d \(hours)h \(minutes % 60)m"
         }
-        if seconds >= 3600 {
-            return "resets in \(hours)h \((seconds % 3600) / 60)m"
+        if hours > 0 {
+            return "resets in \(hours)h \(minutes % 60)m"
         }
-        return "resets in \(seconds / 60)m \(seconds % 60)s"
+        return "resets in \(minutes)m"
     }
 
     private func window(

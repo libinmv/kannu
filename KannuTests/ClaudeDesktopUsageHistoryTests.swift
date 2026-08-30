@@ -32,13 +32,76 @@ final class ClaudeDesktopUsageHistoryTests: XCTestCase {
         XCTAssertEqual(snapshot?.windows.map(\.key), ["five_hour"])
     }
 
-    func testNoResetTimesAreReported() {
-        // The desktop history records percentages only, so the gauge must show no countdown
-        // rather than invent one.
-        let snapshot = ClaudeDesktopUsageHistory.parse(json: ["samples": [
-            sample(t: 1_788_027_991_573, ["fh": 38])
-        ]])
-        XCTAssertEqual(snapshot?.windows.first?.resetsAt, nil)
+    // MARK: - Reset times derived from rollovers
+
+    /// Fixed clock so the future-only rule is deterministic: 2026-08-30 08:00 UTC.
+    private let now = Date(timeIntervalSince1970: 1_788_076_800)
+
+    private func series(_ points: [(mins: Double, fh: Double?, sd: Double?)]) -> [String: Any] {
+        let base = 1_788_076_800_000.0
+        return ["samples": points.map { p -> [String: Any] in
+            var u: [String: Double] = [:]
+            if let fh = p.fh { u["fh"] = fh }
+            if let sd = p.sd { u["sd"] = sd }
+            return ["t": NSNumber(value: base + p.mins * 60_000),
+                    "u": u.mapValues { NSNumber(value: $0) }]
+        }]
+    }
+
+    func testFiveHourResetIsFiveHoursAfterTheRollover() {
+        // Drops 40 -> 7 at t-60min, so the running window ends 5h after that point.
+        let snapshot = ClaudeDesktopUsageHistory.parse(json: series([
+            (-120, 30, 50), (-90, 40, 51), (-60, 7, 51), (-30, 9, 52)
+        ]), now: now)
+        XCTAssertEqual(snapshot?.window("five_hour")?.resetsAt,
+                       now.addingTimeInterval(-60 * 60 + 5 * 3600))
+    }
+
+    func testWeeklyResetIsSevenDaysAfterTheRollover() {
+        let snapshot = ClaudeDesktopUsageHistory.parse(json: series([
+            (-120, 10, 82), (-90, 12, 0), (-30, 14, 3)
+        ]), now: now)
+        XCTAssertEqual(snapshot?.window("seven_day")?.resetsAt,
+                       now.addingTimeInterval(-90 * 60 + 7 * 24 * 3600))
+    }
+
+    func testSmallDecayIsNotTreatedAsARollover() {
+        // A rolling window sheds a point or two as old usage ages out; that is not a reset, so the
+        // earlier real rollover must remain the anchor.
+        let snapshot = ClaudeDesktopUsageHistory.parse(json: series([
+            (-120, 40, 50), (-90, 6, 50), (-60, 17, 50), (-30, 14, 50)
+        ]), now: now)
+        XCTAssertEqual(snapshot?.window("five_hour")?.resetsAt,
+                       now.addingTimeInterval(-90 * 60 + 5 * 3600))
+    }
+
+    func testAnyDecreaseLandingOnZeroIsARollover() {
+        // 4 -> 0 is a two-point drop but unmistakably a reset.
+        let snapshot = ClaudeDesktopUsageHistory.parse(json: series([
+            (-120, 30, 50), (-90, 4, 50), (-45, 0, 50), (-30, 2, 50)
+        ]), now: now)
+        XCTAssertEqual(snapshot?.window("five_hour")?.resetsAt,
+                       now.addingTimeInterval(-45 * 60 + 5 * 3600))
+    }
+
+    func testResetAlreadyPastIsDroppedAndTheWindowSurvives() {
+        // A stale history would otherwise put the reset behind us, and a past reset hides the
+        // window entirely. No countdown is the correct degradation, not a vanished bar.
+        let snapshot = ClaudeDesktopUsageHistory.parse(json: series([
+            (-600, 40, 50), (-540, 3, 50)
+        ]), now: now)
+        XCTAssertNil(snapshot?.window("five_hour")?.resetsAt)
+        XCTAssertEqual(snapshot?.window("five_hour")?.percent, 3)
+        XCTAssertFalse(snapshot?.isEmpty(now: now) ?? true)
+    }
+
+    func testNoRolloverMeansNoResetButStillReportsPercentages() {
+        let snapshot = ClaudeDesktopUsageHistory.parse(json: series([
+            (-120, 10, 50), (-60, 20, 51), (-30, 38, 52)
+        ]), now: now)
+        XCTAssertNil(snapshot?.window("five_hour")?.resetsAt)
+        XCTAssertEqual(snapshot?.window("five_hour")?.percent, 38)
+        XCTAssertEqual(snapshot?.window("seven_day")?.percent, 52)
     }
 
     func testRejectsUnusableInput() {

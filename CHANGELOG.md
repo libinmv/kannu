@@ -4,6 +4,32 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-30 - Reset countdowns on the desktop-history path
+
+- **Developer label:** recover window boundaries from rollovers in plan-usage-history; countdown format reworked
+- **Agent label:** Both usage bars now show time remaining, not just a percentage
+- **Changes:**
+  - The gauges only ever showed a countdown when the statusline hook supplied `resets_at`. The desktop
+    history fallback records `{t, org, u}` and no reset times at all, so anyone on that path — which
+    is anyone who has not signed the CLI in — saw bare percentages
+  - The boundaries are recoverable from the history itself, because a rollover shows up as a drop in
+    utilization: the running window began at the most recent one and ends a window-length later,
+    5 hours or 7 days taken from the window's own name rather than fitted to the curve
+  - A rollover is a decrease of more than 5 points, **or** any decrease landing on zero. Both clauses
+    earn their place against real data: the 5-hour window is rolling, so it also sheds a point or two
+    as old usage ages out and those decays must not count; but three genuine rollovers in the sample
+    history are `1 -> 0`, `4 -> 0` and `5 -> 0`, which a drop-size threshold alone would miss
+  - A derived reset is used **only if it lands in the future**. Sampling happens only while the app
+    runs, so a rollover is noticed minutes after the fact and the derived time errs late — the safe
+    direction, since `displayWindows` hides any window already past its reset. If a derivation is
+    wrong or the history is stale, the window loses its countdown rather than disappearing
+  - Countdowns now read `2d 22h 37m` over a day, `4h 56m` under one, and `56m` under an hour. The
+    previous format switched to days only past 69 hours and appended seconds under an hour, which is
+    noise on a gauge read at a glance
+  - `KannuTests`: both window lengths, decay-not-rollover, a two-point drop to zero that is one, a
+    past reset being dropped while the bar survives, and a history with no rollover at all. Suite is
+    now 114
+
 ### 2026-08-30 - Add the weekly per-model bar (Fable)
 
 - **Developer label:** forward `rate_limits.model_scoped` from the statusline hook; windows carry a server-supplied label
