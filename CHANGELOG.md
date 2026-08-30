@@ -4,6 +4,14 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-30 - Fix pale caffeinate toggle when the notch opens inactive
+
+- **Developer label:** custom capsule toggle replaces NSSwitch; literal sparkle colors
+- **Agent label:** The caffeinate switch is orange the moment the notch opens, not only after you click it
+- **Changes:**
+  - `.toggleStyle(.switch)` is a real NSSwitch, and NSSwitch draws its ON tint only while its window is key and the app active — this LSUIElement app's non-activating notch panel is neither on a hover-open, so an ON switch rendered desaturated gray until the first click made the panel key. Replaced with a custom capsule toggle in `NotchAgentStatusView` that draws its orange fill from SwiftUI state directly, immune to key-window status; same footprint, accessibility label/value/toggle trait preserved
+  - Smart-mode sparkle's off-state color switched from `Color.accentColor` (`controlAccentColor`, documented to render gray while the app is inactive) to a literal color for the same reason
+
 ### 2026-08-30 - Read Claude's own cached usage, including the per-model weekly bars
 
 - **Developer label:** new ClaudeCachedUsage source reading ~/.claude.json cachedUsageUtilization; three-source precedence

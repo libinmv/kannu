@@ -214,7 +214,11 @@ struct NotchAgentStatusView: View {
                         // held. Before, an idle smart mode looked identical to everything-off.
                         Image(systemName: "sparkles")
                             .font(.system(size: 7))
-                            .foregroundStyle(caffeinate.isKeepingAwake ? Color.orange : Color.accentColor)
+                            // Literal colors only: `Color.accentColor` is `controlAccentColor`,
+                            // which AppKit renders gray while the app is inactive — and this
+                            // LSUIElement app's non-activating notch panel is almost never
+                            // active, so the sparkle would sit permanently desaturated.
+                            .foregroundStyle(caffeinate.isKeepingAwake ? Color.orange : Color.blue)
                     }
                 }
                 .buttonStyle(.plain)
@@ -230,23 +234,40 @@ struct NotchAgentStatusView: View {
                 }
             } else {
                 cupIcon
-                Toggle("Keep the Mac awake", isOn: $caffeinateEnabled)
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    .labelsHidden()
-                    // The default accent tint at .mini size is nearly unreadable against
-                    // the dark notch material — ON and OFF looked the same. Orange matches
-                    // the lit cup, so one colour consistently means "caffeinated". The cup
-                    // itself still shows assertion truth (it can lag the switch by the
-                    // reconcile hop, and stays dark if the assertion ever fails) — the
-                    // switch shows intent, the cup shows reality.
-                    .tint(.orange)
-                    .help(
-                        caffeinate.isKeepingAwake
-                            ? String(localized: "Keeping the Mac awake — switch off to allow sleep")
-                            : String(localized: "Keep the Mac awake")
-                    )
-                    .accessibilityLabel("Keep the Mac awake")
+                // Custom capsule, not `.toggleStyle(.switch)`: that style is a real NSSwitch,
+                // and NSSwitch draws its ON tint only while its window is key and the app
+                // active. This LSUIElement app's non-activating notch panel is neither on a
+                // hover-open, so an ON switch rendered desaturated gray until first click.
+                // Drawing the fill from SwiftUI state directly is immune to key-window status.
+                // Orange matches the lit cup, so one colour consistently means "caffeinated".
+                // The cup itself still shows assertion truth (it can lag the toggle by the
+                // reconcile hop, and stays dark if the assertion ever fails) — the toggle
+                // shows intent, the cup shows reality.
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        caffeinateEnabled.toggle()
+                    }
+                } label: {
+                    Capsule()
+                        .fill(caffeinateEnabled ? Color.orange : Color.secondary.opacity(0.35))
+                        .frame(width: 26, height: 16)
+                        .overlay(alignment: caffeinateEnabled ? .trailing : .leading) {
+                            Circle()
+                                .fill(.white)
+                                .frame(width: 12, height: 12)
+                                .padding(2)
+                                .shadow(color: .black.opacity(0.2), radius: 0.5, y: 0.5)
+                        }
+                }
+                .buttonStyle(.plain)
+                .help(
+                    caffeinate.isKeepingAwake
+                        ? String(localized: "Keeping the Mac awake — switch off to allow sleep")
+                        : String(localized: "Keep the Mac awake")
+                )
+                .accessibilityLabel("Keep the Mac awake")
+                .accessibilityValue(caffeinateEnabled ? String(localized: "On") : String(localized: "Off"))
+                .accessibilityAddTraits(.isToggle)
             }
         }
         .frame(maxWidth: .infinity)
