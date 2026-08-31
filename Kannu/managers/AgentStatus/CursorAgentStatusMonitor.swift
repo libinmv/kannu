@@ -385,9 +385,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
     /// Runs `/usage` under a pty and waits briefly for the fetch to land, then exits. Best-effort:
     /// any failure just means the file is unchanged and the card keeps its current value.
     private nonisolated static func runUsageFetch(binary: URL) {
-        // Claude Code writes the refreshed usage into ~/.claude.json, so that file's fetch stamp is
-        // the completion signal: poll it and stop the moment it advances, rather than always burning
-        // the timeout. A press then costs a few seconds instead of a fixed ceiling.
+        // Claude Code writes refreshed usage into ~/.claude.json, so that file's fetch stamp is the
+        // completion signal: poll it and stop the moment it advances.
         let configURL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude.json")
         func fetchedAtMs() -> Double? {
@@ -398,50 +397,46 @@ final class CursorAgentStatusMonitor: ObservableObject {
         }
         let before = fetchedAtMs()
 
+        // Headless print mode, NOT an interactive session. An interactive `claude` auto-registers as
+        // a remote-control device on the account (a phantom "chat", and a new-device sign-in warning);
+        // `--print` is one-shot and registers nothing. `--no-session-persistence` leaves no resumable
+        // session, and the env var suppresses the bridge/feedback traffic as belt-and-braces.
         let process = Process()
         process.executableURL = binary
-        process.arguments = binary.lastPathComponent == "env" ? ["claude"] : []
+        let printArgs = ["--print", "--no-session-persistence", "/usage"]
+        process.arguments = binary.lastPathComponent == "env" ? ["claude"] + printArgs : printArgs
+        var env = ProcessInfo.processInfo.environment
+        env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
+        process.environment = env
 
-        // `/usage` is a slash command, so it needs an interactive session: headless `-p` treats it
-        // as prompt text. A pty gives the CLI the terminal it expects.
-        var master: Int32 = 0, slave: Int32 = 0
-        guard openpty(&master, &slave, nil, nil, nil) == 0 else { return }
-        let masterHandle = FileHandle(fileDescriptor: master, closeOnDealloc: true)
-        let slaveHandle = FileHandle(fileDescriptor: slave, closeOnDealloc: true)
-        process.standardInput = slaveHandle
-        process.standardOutput = slaveHandle
-        process.standardError = slaveHandle
-        // Drain the pty so the CLI never blocks on a full buffer; the output itself is not needed.
-        masterHandle.readabilityHandler = { _ = $0.availableData }
+        // Drain stdout/stderr so the child never blocks on a full pipe; the text is not needed.
+        let sink = Pipe()
+        process.standardOutput = sink
+        process.standardError = sink
+        process.standardInput = FileHandle.nullDevice
+        sink.fileHandleForReading.readabilityHandler = { _ = $0.availableData }
 
         do { try process.run() } catch { return }
 
-        // Let the session come up before issuing the command.
-        Thread.sleep(forTimeInterval: 2.5)
-        masterHandle.write(Data("/usage\r".utf8))
-
-        // Stop as soon as the fetch lands; the ceiling is only a backstop for a wedged CLI.
+        // Print mode is one-shot: it exits on its own. Stop as soon as it does or the cache advances;
+        // the ceiling is only a backstop for a wedged process.
         let deadline = Date().addingTimeInterval(20)
         while Date() < deadline {
             Thread.sleep(forTimeInterval: 0.25)
-            if let now = fetchedAtMs(), now != before { break }
             if !process.isRunning { break }
+            if let now = fetchedAtMs(), now != before { break }
         }
 
         if process.isRunning {
-            // terminate() only sends SIGTERM, which the interactive TUI can trap or ignore — then
-            // waitUntilExit() would block the detached task forever and the button's spinner flag
-            // would never clear. Escalate to SIGKILL after a short grace so exit is guaranteed.
+            // terminate() only sends SIGTERM; escalate to SIGKILL after a short grace so the detached
+            // task can never block on waitUntilExit() (which would leave the spinner flag stuck).
             process.terminate()
             let killDeadline = Date().addingTimeInterval(2)
             while process.isRunning && Date() < killDeadline { Thread.sleep(forTimeInterval: 0.1) }
-            if process.isRunning {
-                kill(process.processIdentifier, SIGKILL)
-            }
+            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
             process.waitUntilExit()
         }
-        masterHandle.readabilityHandler = nil
-        try? masterHandle.close()
+        sink.fileHandleForReading.readabilityHandler = nil
     }
 
     /// Keeps a still-running agent visible to time-boxed consumers.

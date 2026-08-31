@@ -4,6 +4,22 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-30 - Refresh usage headlessly so it never registers a device/chat
+
+- **Developer label:** replace the interactive pty spawn with `claude --print --no-session-persistence`
+- **Agent label:** The refresh button no longer creates a phantom Claude session or sign-in warning
+- **Changes:**
+  - The refresh button spawned `claude` **interactively**, and an interactive session auto-registers
+    as a remote-control device on the account — a phantom chat (auto-named, e.g.
+    `…-keen-wozniak`) plus a new-device "sign in" prompt. Neither was a real conversation or an auth
+    break (verified: `oauthAccount` and keychain intact), but both are noise the user should never see
+  - The spawn is now headless: `claude --print --no-session-persistence "/usage"`, with
+    `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` in the child env. Print mode is one-shot and registers
+    no device, so no chat and no sign-in prompt. Confirmed live: a press created no new session
+  - No pty any more — a plain `Process` with drained pipes, the same poll-the-fetch-stamp completion
+    signal, the SIGKILL escalation, and reap-before-exit. The button also re-reads `~/.claude.json`
+    on every press regardless, so it always refreshes the displayed value from disk
+
 ### 2026-08-30 - Harden the usage refresh from the ART review
 
 - **Developer label:** guaranteed SIGKILL escalation on the spawn; single shared usage-load ladder
