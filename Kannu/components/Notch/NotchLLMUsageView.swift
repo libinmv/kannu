@@ -337,7 +337,7 @@ struct NotchLLMUsageView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
-        .help("Reloads your usage from disk. The per-model weekly limit (e.g. Fable) only refreshes when you run /usage in Claude Code — it needs the interactive session.")
+        .help("Reload usage. Run /usage in Claude Code to refresh Fable.")
     }
 
     /// A titled group of bars sharing one reset countdown — "Session" (one bar) or "Weekly"

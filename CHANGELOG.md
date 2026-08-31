@@ -4,6 +4,14 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-30 - Shorten the refresh button tooltip
+
+- **Developer label:** trim the claudeRefreshButton .help() text
+- **Agent label:** The refresh button's hover tooltip is now one short line
+- **Changes:**
+  - The hover tooltip on the usage refresh button was a long two-clause sentence. Shortened to
+    "Reload usage. Run /usage in Claude Code to refresh Fable." — same meaning, glanceable
+
 ### 2026-08-30 - Make the usage refresh button an honest reload
 
 - **Developer label:** drop the spawn entirely; button re-reads from disk; help text states the /usage requirement
