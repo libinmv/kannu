@@ -222,16 +222,13 @@ struct NotchAgentStatusView: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .help(
+                .hoverTooltip(
                     caffeinate.isKeepingAwake
-                        ? String(localized: "Keeping the Mac awake — an agent is running. Smart caffeinate is on; click to change in Settings.")
-                        : String(localized: "Smart caffeinate is on — the Mac stays awake automatically while agents run. Click to change in Settings.")
-                )
+                        ? String(localized: "Keeping awake — agent running. Click for Settings.")
+                        : String(localized: "Smart caffeinate on. Click for Settings.")
+                , edge: .below, pointingHandCursor: true)
                 .accessibilityLabel("Smart caffeinate is on")
                 .accessibilityHint("Opens caffeinate settings")
-                .onHover { hovering in
-                    if hovering { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
-                }
             } else {
                 cupIcon
                 // Custom capsule, not `.toggleStyle(.switch)`: that style is a real NSSwitch,
@@ -260,11 +257,11 @@ struct NotchAgentStatusView: View {
                         }
                 }
                 .buttonStyle(.plain)
-                .help(
+                .hoverTooltip(
                     caffeinate.isKeepingAwake
-                        ? String(localized: "Keeping the Mac awake — switch off to allow sleep")
+                        ? String(localized: "Keeping awake — click to allow sleep")
                         : String(localized: "Keep the Mac awake")
-                )
+                , edge: .below, pointingHandCursor: true)
                 .accessibilityLabel("Keep the Mac awake")
                 .accessibilityValue(caffeinateEnabled ? String(localized: "On") : String(localized: "Off"))
                 .accessibilityAddTraits(.isToggle)
@@ -285,10 +282,11 @@ struct NotchAgentStatusView: View {
     /// that already has a `.help`, or the two will shadow each other).
     private var cupIcon: some View {
         cupImage
-            .help(
+            .hoverTooltip(
                 caffeinate.isKeepingAwake
                     ? String(localized: "Keeping the Mac awake")
-                    : String(localized: "Caffeinate — keep the Mac awake")
+                    : String(localized: "Keep the Mac awake"),
+                edge: .below
             )
     }
 
@@ -307,11 +305,8 @@ struct NotchAgentStatusView: View {
                 content()
             }
             .buttonStyle(.plain)
-            .help(String(localized: "Open in \(target.appName)"))
+            .hoverTooltip(String(localized: "Open in \(target.appName)"), pointingHandCursor: true)
             .accessibilityHint("Opens \(target.appName)")
-            .onHover { hovering in
-                if hovering { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
-            }
         } else {
             content()
         }

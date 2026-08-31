@@ -700,7 +700,7 @@ struct NoteListView: View {
                     }
                     .buttonStyle(PlainButtonStyle())
                     .disabled(appleNotesSync.isSyncing)
-                    .help(String(localized: "Sync with Apple Notes"))
+                    .hoverTooltip(String(localized: "Sync with Apple Notes"), edge: .below)
                 }
 
                 if enableNoteSearch || enableNoteColorFiltering {
@@ -732,7 +732,7 @@ struct NoteListView: View {
                             .clipShape(Circle())
                     }
                     .buttonStyle(PlainButtonStyle())
-                    .help("Create from Clipboard")
+                    .hoverTooltip("Create from Clipboard", edge: .below)
                 }
                 
                 if !notes.isEmpty {

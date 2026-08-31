@@ -570,7 +570,7 @@ private struct TimerControlButton: View {
         }
         .buttonStyle(.plain)
         .contentShape(Circle())
-        .help(accessibilityLabel)
+        .hoverTooltip(accessibilityLabel, edge: .below)
         .onHover { hovering in isHovering = hovering }
     }
 }

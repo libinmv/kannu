@@ -350,14 +350,131 @@ final class CursorAgentStatusMonitor: ObservableObject {
     /// the credential Claude already stored in the keychain: silent after a one-time "Always Allow",
     /// and it reads only limit metadata — no message, no tokens, no cost. Kannu never sees the
     /// credential; it only re-reads the file the CLI writes.
-    /// User-triggered reload of the usage display from disk.
+    /// True while a user-triggered usage fetch is running; drives the button's spinner and stops
+    /// a second press from spawning a concurrent process.
+    @Published private(set) var isRefreshingClaudeUsage = false
+
+    /// Runs Claude Code's own `/usage`, the only thing that refreshes the per-model (Fable) weekly
+    /// window, then reloads the display from what it wrote.
     ///
-    /// Cannot fetch fresh numbers itself: `/usage` — the only thing that refreshes the per-model
-    /// (Fable) weekly window — requires Claude Code's interactive TUI (`requires: {ink}`), which a
-    /// spawned process would register as a remote-control device (a phantom chat). So this simply
-    /// re-reads whatever the user's own `/usage` last wrote. The button's help text says so.
-    func reloadClaudeUsageFromDisk() {
-        reloadClaudeUsageNow()
+    /// `/usage` is declared `requires: {ink}`, so it only runs in an interactive session — headless
+    /// `--print` treats it as prompt text. An interactive session normally registers itself as a
+    /// remote-control device (which showed up as a phantom chat and a new-device sign-in warning),
+    /// so the spawn disables that explicitly and persists no session.
+    func refreshClaudeUsageFromCLI() {
+        guard !isRefreshingClaudeUsage else { return }
+        guard let binary = Self.resolveClaudeBinary() else {
+            reloadClaudeUsageNow()
+            return
+        }
+        isRefreshingClaudeUsage = true
+
+        Task.detached(priority: .userInitiated) {
+            Self.runUsageFetch(binary: binary)
+            await MainActor.run {
+                // Order matters: refresh the cache first, then re-run the providers so the card
+                // renders the new numbers. Doing this at press time instead would race the fetch.
+                self.reloadClaudeUsageNow()
+                LLMUsageManager.shared.refreshAll(force: true)
+                self.isRefreshingClaudeUsage = false
+            }
+        }
+    }
+
+    /// Newest installed Claude Code binary, so this keeps working across version bumps.
+    private nonisolated static func resolveClaudeBinary() -> URL? {
+        let base = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Claude/claude-code")
+        guard let versions = try? FileManager.default.contentsOfDirectory(
+            at: base, includingPropertiesForKeys: nil) else { return nil }
+        return versions
+            .map { $0.appendingPathComponent("claude.app/Contents/MacOS/claude") }
+            .filter { FileManager.default.isExecutableFile(atPath: $0.path) }
+            .sorted { $0.path.compare($1.path, options: .numeric) == .orderedAscending }
+            .last
+    }
+
+    private nonisolated static func runUsageFetch(binary: URL) {
+        // Two attempts. The first suppresses the remote-control device registration (the phantom
+        // chat); if that flag turns out to be rejected or ineffective and no fetch lands, fall back
+        // to the bare invocation, which is proven to fetch. Better a working refresh than a clean
+        // one that does nothing.
+        for arguments in ClaudeUsageFetchCommand.attempts {
+            guard ClaudeUsageFetchCommand.isValidForInteractiveSession(arguments: arguments) else { continue }
+            if attemptUsageFetch(binary: binary, arguments: arguments) { return }
+        }
+    }
+
+    /// One `/usage` run. Returns true when the on-disk fetch stamp advanced, i.e. it worked.
+    private nonisolated static func attemptUsageFetch(binary: URL, arguments: [String]) -> Bool {
+        let configURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude.json")
+        func fetchedAtMs() -> Double? {
+            guard let data = try? Data(contentsOf: configURL),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let cache = json["cachedUsageUtilization"] as? [String: Any] else { return nil }
+            return (cache["fetchedAtMs"] as? NSNumber)?.doubleValue
+        }
+        let before = fetchedAtMs()
+
+        let process = Process()
+        process.executableURL = binary
+        process.arguments = arguments
+        process.environment = ClaudeUsageFetchCommand.environment()
+        // Deliberately NOT setting `process.environment`: plain inheritance, exactly as the
+        // version that was proven to fetch. Setting CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC here
+        // suppressed nonessential network traffic — which is what the usage fetch is — so the
+        // session started, `/usage` ran, and nothing was ever fetched.
+
+        // A pty is required: `/usage` is declared `requires: {ink}` and only runs interactively.
+        var master: Int32 = 0, slave: Int32 = 0
+        guard openpty(&master, &slave, nil, nil, nil) == 0 else { return false }
+        let masterHandle = FileHandle(fileDescriptor: master, closeOnDealloc: true)
+        let slaveHandle = FileHandle(fileDescriptor: slave, closeOnDealloc: true)
+        process.standardInput = slaveHandle
+        process.standardOutput = slaveHandle
+        process.standardError = slaveHandle
+        // Drain the pty so the child never blocks on a full buffer; the output itself is unused.
+        masterHandle.readabilityHandler = { _ = $0.availableData }
+
+        do { try process.run() } catch { return false }
+
+        // Give the TUI time to come up before typing, then issue the command.
+        Thread.sleep(forTimeInterval: 3)
+        if !process.isRunning {
+            // Rejected argument or instant exit — nothing was typed, so report failure and let the
+            // caller try the next invocation.
+            masterHandle.readabilityHandler = nil
+            try? masterHandle.close()
+            return false
+        }
+        masterHandle.write(Data("/usage\r".utf8))
+
+        var fetched = false
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.25)
+            if let now = fetchedAtMs(), now != before { fetched = true; break }
+            if !process.isRunning { break }
+        }
+
+        if process.isRunning && fetched {
+            masterHandle.write(Data("/exit\r".utf8))
+            let quitDeadline = Date().addingTimeInterval(2)
+            while process.isRunning && Date() < quitDeadline { Thread.sleep(forTimeInterval: 0.1) }
+        }
+        if process.isRunning {
+            // terminate() only signals and the TUI can trap SIGTERM; escalate so waitUntilExit()
+            // can never block this task and strand the spinner.
+            process.terminate()
+            let killDeadline = Date().addingTimeInterval(2)
+            while process.isRunning && Date() < killDeadline { Thread.sleep(forTimeInterval: 0.1) }
+            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            process.waitUntilExit()
+        }
+        masterHandle.readabilityHandler = nil
+        try? masterHandle.close()
+        return fetched
     }
 
     /// Keeps a still-running agent visible to time-boxed consumers.

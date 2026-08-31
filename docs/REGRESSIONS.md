@@ -209,6 +209,57 @@ the field assertions in `ClaudeReconcilerTests` in the same commit.
 
 ---
 
+## 7. Never add a flag or env var to the usage spawn without proving a real fetch
+
+**Rule:** the Claude usage fetch invocation is verified empirically, not reasoned about. Every
+argument and environment variable must be confirmed against an actual `fetchedAtMs` advance before it
+ships.
+
+**Broken twice in one day**, both by additions that looked defensive and harmless:
+
+- `--no-session-persistence` — valid only with `--print`. The interactive session `/usage` requires
+  exited immediately ("can only be used with --print mode"), so the command was typed into a dead
+  process. Symptom: spinner ran, nothing fetched, no error surfaced.
+- `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` — added as "belt-and-braces" against bridge traffic.
+  It suppresses nonessential network traffic, and the usage fetch **is** a network call to
+  `/api/oauth/usage`. Symptom: identical — session started, `/usage` ran, cache never updated.
+
+**Why it keeps happening:** the failure is silent and looks like success. The session starts, the
+spinner spins, the process exits cleanly, and the only signal that anything went wrong is a
+timestamp on disk that did not move. Nothing in the UI or logs says "the fetch was suppressed".
+
+**Guard — exists.** `ClaudeUsageFetchCommand` holds the invocation as data, and
+`KannuTests/ClaudeUsageFetchCommandTests.swift` pins: no print-only flag in any attempt, the
+environment is plain inheritance (`nil`), the forbidden env key is recorded, and the **last attempt
+stays bare** — that bare invocation is the one observed to actually fetch. Both regressions were
+verified to turn the suite red before this was committed.
+
+---
+
+## 8. Notch tooltips are custom; `.help()` is dead there
+
+**Rule:** never use SwiftUI `.help(...)` under `Kannu/components/Notch/` or
+`Kannu/components/AgentStatus/`. Use `.hoverTooltip(...)`.
+
+**Broken across 8 call sites**, all shipped and none ever rendering: `KannuHeader`, `NotchNotesView`
+(x2), `NotchTimerView`, `NotchAgentStatusView` (x4). Then broken three more times while fixing it —
+a competing `.onHover` shadowing the tooltip, `fixedSize(horizontal:)` collapsing the bubble to the
+parent's width, and a `ScrollView` clipping a bubble that opened upward from its first row.
+
+**Why it keeps happening:** `.help()` is the obvious, correct-looking API and fails **silently** —
+it compiles, reads fine in review, and simply never appears. AppKit only shows tooltips for the
+active application, and this accessory app with a non-activating panel is never active. Nothing in
+the type system or the build says so.
+
+**Guard — exists.** `.githooks/pre-commit` rejects any `.help(` in those directories, requires
+`HoverTooltip.swift` to keep a bare `.fixedSize()`, and rejects `fixedSize(horizontal:)` there.
+The layout rules that cannot be grepped — `edge` versus container clipping, one hover source per
+control — are written up in **docs/TOOLTIPS.md** with the reasoning and a checklist.
+
+**Gap:** none of this is unit-testable; a new tooltip still has to be hovered in a real build.
+
+---
+
 ## Danger zones
 
 Commit counts across all branches (`--follow`, so pre-rename history counts):
@@ -218,6 +269,7 @@ Commit counts across all branches (`--follow`, so pre-rename history counts):
 | `CursorAgentStatusMonitor.swift` | 18 | The merge/reconcile seam. **Every** edit is chat-name resolution, hook-vs-transcript precedence, or session deletion/ageing. Entries 5 and 6 live here. |
 | `AgentTrafficLightState.swift` | 18 | The state ladder — staleness thresholds and verdict→colour mapping. Mostly *tuning numbers*, which is exactly how entry 2 happened. |
 | `AgentHookInstaller.swift` | 17 | Embedded script + event table + install/uninstall/migration. Grows monotonically; every growth episode has broken `checkInstalled` or a migration (entries 1 and 6). |
+| `CursorAgentStatusMonitor.swift` (usage spawn) | — | The `/usage` fetch invocation. Two silent breakages in one day from added flags/env (entry 7). |
 | `AgentSessionLogParser.swift` | 8 | `readTrailingLines` and the tail verdict. 4 of 8 commits touch the reader; **2 of those 4 fix the same failure mode** — the reader returning nil and silently sending callers down a wrong path (entry 4). |
 
 If you are changing a *constant* in `AgentTrafficLightState.swift`, assume it is load-bearing

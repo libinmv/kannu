@@ -331,13 +331,23 @@ struct NotchLLMUsageView: View {
     @ViewBuilder
     private var claudeRefreshButton: some View {
         Button {
-            agentMonitor.reloadClaudeUsageFromDisk()
+            // Only kick off the fetch. Refreshing the providers here would race it: the fetch is
+            // seconds long and async, so a refresh fired now reads the pre-fetch cache and paints
+            // stale numbers. The monitor's completion handler redraws once the new data is in.
+            agentMonitor.refreshClaudeUsageFromCLI()
         } label: {
-            Image(systemName: "arrow.clockwise").font(.caption)
+            if agentMonitor.isRefreshingClaudeUsage {
+                ProgressView().controlSize(.mini)
+            } else {
+                Image(systemName: "arrow.clockwise").font(.caption)
+            }
         }
         .buttonStyle(.plain)
+        .disabled(agentMonitor.isRefreshingClaudeUsage)
         .foregroundStyle(.secondary)
-        .help("Reload usage. Run /usage in Claude Code to refresh Fable.")
+        // Native .help() is dead in the notch: Kannu is an LSUIElement accessory app whose panel
+        // never becomes active, so AppKit's tooltip manager never runs. This draws its own.
+        .hoverTooltip("Fetch latest usage (runs /usage)")
     }
 
     /// A titled group of bars sharing one reset countdown — "Session" (one bar) or "Weekly"

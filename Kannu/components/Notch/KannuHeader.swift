@@ -141,7 +141,7 @@ struct KannuHeader: View {
                         // Icon-only, so VoiceOver would otherwise announce the SF Symbol name
                         // rather than what the control does.
                         .accessibilityLabel("Refresh usage")
-                        .help("Refresh usage")
+                        .hoverTooltip("Refresh usage", edge: .below)
                     }
 
                     if Defaults[.enableTimerFeature] && timerDisplayMode == .popover {

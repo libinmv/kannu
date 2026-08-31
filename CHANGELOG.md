@@ -4,6 +4,21 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-01 - Regression guards for the usage spawn and notch tooltips
+- **Developer label:** add test cases and doc md files to avoid such regressions
+- **Agent label:** Guard the usage-fetch invocation and the notch tooltip rules
+- **Changes:**
+  - Extracted the Claude `/usage` spawn decisions into a pure `ClaudeUsageFetchCommand` and covered
+    them with `ClaudeUsageFetchCommandTests`, pinning that no attempt carries a `--print`-only flag,
+    that the environment stays plain inheritance, and that the last attempt stays bare.
+  - Added pre-commit guards rejecting `.help(...)` in notch views and the `fixedSize(horizontal:)`
+    shape that silently collapses every tooltip.
+  - Added `docs/TOOLTIPS.md` explaining why `.help(...)` cannot render in an accessory app with a
+    non-activating panel, plus the layout rules for `hoverTooltip`.
+  - Added `docs/REGRESSIONS.md` entries 7 and 8 for both failure classes.
+  - Converted all eight dead `.help(...)` tooltips in the notch to the shared `HoverTooltip`
+    component, with the caffeinate controls opening downward so the `ScrollView` no longer clips them.
+
 ### 2026-08-30 - Shorten the refresh button tooltip
 
 - **Developer label:** trim the claudeRefreshButton .help() text

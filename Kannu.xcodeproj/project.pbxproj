@@ -39,6 +39,7 @@
 		AA1000000000000000000031 /* ClaudeUsageSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000030 /* ClaudeUsageSnapshot.swift */; };
 		AA1000000000000000000033 /* ClaudeDesktopUsageHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000032 /* ClaudeDesktopUsageHistory.swift */; };
 		AA1000000000000000000035 /* ClaudeCachedUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000034 /* ClaudeCachedUsage.swift */; };
+		AA1000000000000000000037 /* ClaudeUsageFetchCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000036 /* ClaudeUsageFetchCommand.swift */; };
 		F910B9C812C7AEFE2293F7D2 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4A9C58195E197C19F691DA62 /* Cocoa.framework */; };
 /* End PBXBuildFile section */
 
@@ -81,6 +82,7 @@
 		AA1000000000000000000030 /* ClaudeUsageSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeUsageSnapshot.swift; path = Kannu/managers/AgentStatus/ClaudeUsageSnapshot.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000032 /* ClaudeDesktopUsageHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeDesktopUsageHistory.swift; path = Kannu/managers/AgentStatus/ClaudeDesktopUsageHistory.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000034 /* ClaudeCachedUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeCachedUsage.swift; path = Kannu/managers/AgentStatus/ClaudeCachedUsage.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000036 /* ClaudeUsageFetchCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeUsageFetchCommand.swift; path = Kannu/managers/AgentStatus/ClaudeUsageFetchCommand.swift; sourceTree = SOURCE_ROOT; };
 		DAA671E7B1B26733F02166C5 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F4C1DD09EC134302938E84F6 /* MediaRemoteAdapter.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MediaRemoteAdapter.framework; path = Frameworks/MediaRemoteAdapter.framework; sourceTree = SOURCE_ROOT; };
 		F54406E72CD4987A00C7AFD9 /* Kannu.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Kannu.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -471,6 +473,7 @@
 				AA1000000000000000000031 /* ClaudeUsageSnapshot.swift in Sources */,
 				AA1000000000000000000033 /* ClaudeDesktopUsageHistory.swift in Sources */,
 				AA1000000000000000000035 /* ClaudeCachedUsage.swift in Sources */,
+				AA1000000000000000000037 /* ClaudeUsageFetchCommand.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
