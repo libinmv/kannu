@@ -15,9 +15,31 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     shape that silently collapses every tooltip.
   - Added `docs/TOOLTIPS.md` explaining why `.help(...)` cannot render in an accessory app with a
     non-activating panel, plus the layout rules for `hoverTooltip`.
-  - Added `docs/REGRESSIONS.md` entries 7 and 8 for both failure classes.
+  - Added `docs/REGRESSIONS.md` entries 8 and 9 for both failure classes.
   - Converted all eight dead `.help(...)` tooltips in the notch to the shared `HoverTooltip`
     component, with the caffeinate controls opening downward so the `ScrollView` no longer clips them.
+  - Reinstated the interactive `/usage` spawn behind the Claude card's refresh button
+    (`refreshClaudeUsageFromCLI`), reverting the 2026-08-30 "honest reload" entry below. `/usage` is
+    declared `requires: {ink}` and cannot run in `--print` mode, so a disk-only reload can never move
+    the per-model weekly window — the button would spin and change nothing. The tooltip is back to
+    "Fetch latest usage (runs /usage)". Known residual: only the first attempt carries
+    `--settings {"disableRemoteControl":true}`, so the bare fallback can still register a
+    remote-control device (the "phantom chat"); `disableRemoteControl` appears to be managed-only.
+  - Fixed a SIGPIPE bug in `.githooks/pre-commit` that meant the changelog check never actually ran.
+    Both changelog `awk` passes exited on their terminating line while `printf` was still writing the
+    ~78 KB `[Unreleased]` section; `printf` took SIGPIPE and `pipefail`+`errexit` aborted the hook
+    with exit 141 before any check executed. Both now read to EOF and gate on a flag.
+  - Renumbered the two `docs/REGRESSIONS.md` entries that were both numbered 7; the file now runs
+    1-9 with the danger-zone cross-reference corrected.
+  - Removed the dangling `"Show Claude usage"` Settings search entry, whose row and
+    `enableClaudeUsageDisplay` key were deleted in `4e85ff7` — searching for it scrolled to a row
+    that no longer exists. Its quota keywords are folded into the live `Claude Provider` entry so
+    the search stays useful.
+  - Replaced `.github/assets/kannu-logo.png`, which was still the **Atoll** app icon under a Kannu
+    filename, with the real mark from `AppIcon.appiconset` (1.9 MB to 36 KB). Deleted
+    `kannu-colorpicker.png` (a feature this fork removed) and the unreferenced `iosdevcentre.jpeg`.
+    Known follow-up: 20 of the remaining 21 files in `.github/assets/` are still unreferenced by any
+    tracked file — most are usable product screenshots that simply are not linked from the README.
 
 ### 2026-08-30 - Shorten the refresh button tooltip
 

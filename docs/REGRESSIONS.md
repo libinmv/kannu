@@ -209,7 +209,7 @@ the field assertions in `ClaudeReconcilerTests` in the same commit.
 
 ---
 
-## 7. Never add a flag or env var to the usage spawn without proving a real fetch
+## 8. Never add a flag or env var to the usage spawn without proving a real fetch
 
 **Rule:** the Claude usage fetch invocation is verified empirically, not reasoned about. Every
 argument and environment variable must be confirmed against an actual `fetchedAtMs` advance before it
@@ -236,7 +236,7 @@ verified to turn the suite red before this was committed.
 
 ---
 
-## 8. Notch tooltips are custom; `.help()` is dead there
+## 9. Notch tooltips are custom; `.help()` is dead there
 
 **Rule:** never use SwiftUI `.help(...)` under `Kannu/components/Notch/` or
 `Kannu/components/AgentStatus/`. Use `.hoverTooltip(...)`.
@@ -269,7 +269,7 @@ Commit counts across all branches (`--follow`, so pre-rename history counts):
 | `CursorAgentStatusMonitor.swift` | 18 | The merge/reconcile seam. **Every** edit is chat-name resolution, hook-vs-transcript precedence, or session deletion/ageing. Entries 5 and 6 live here. |
 | `AgentTrafficLightState.swift` | 18 | The state ladder — staleness thresholds and verdict→colour mapping. Mostly *tuning numbers*, which is exactly how entry 2 happened. |
 | `AgentHookInstaller.swift` | 17 | Embedded script + event table + install/uninstall/migration. Grows monotonically; every growth episode has broken `checkInstalled` or a migration (entries 1 and 6). |
-| `CursorAgentStatusMonitor.swift` (usage spawn) | — | The `/usage` fetch invocation. Two silent breakages in one day from added flags/env (entry 7). |
+| `CursorAgentStatusMonitor.swift` (usage spawn) | — | The `/usage` fetch invocation. Two silent breakages in one day from added flags/env (entry 8). |
 | `AgentSessionLogParser.swift` | 8 | `readTrailingLines` and the tail verdict. 4 of 8 commits touch the reader; **2 of those 4 fix the same failure mode** — the reader returning nil and silently sending callers down a wrong path (entry 4). |
 
 If you are changing a *constant* in `AgentTrafficLightState.swift`, assume it is load-bearing
