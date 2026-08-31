@@ -42,8 +42,6 @@ final class CursorAgentStatusMonitor: ObservableObject {
     private var cachedTranscriptAnalysisAt: Date?
     private var lastActivityPulseAt: Date?
     private var lastClaudeUsageReadAt: Date?
-    /// True while a user-triggered CLI usage fetch is in flight; gates the button and its spinner.
-    @Published private(set) var isRefreshingClaudeUsage = false
     private var lastPublishedTrafficLightState: AgentTrafficLightState?
     private var lastPublishedShouldShowTrafficLight: Bool?
 
@@ -352,91 +350,14 @@ final class CursorAgentStatusMonitor: ObservableObject {
     /// the credential Claude already stored in the keychain: silent after a one-time "Always Allow",
     /// and it reads only limit metadata — no message, no tokens, no cost. Kannu never sees the
     /// credential; it only re-reads the file the CLI writes.
-    func refreshClaudeUsageFromCLI() {
-        guard !isRefreshingClaudeUsage else { return }
-        guard let binary = Self.resolveClaudeBinary() else { return }
-        isRefreshingClaudeUsage = true
-
-        Task.detached(priority: .userInitiated) {
-            Self.runUsageFetch(binary: binary)
-            await MainActor.run {
-                self.reloadClaudeUsageNow()
-                self.isRefreshingClaudeUsage = false
-            }
-        }
-    }
-
-    /// Newest installed Claude Code binary, or `claude` on PATH, so this survives version bumps.
-    private nonisolated static func resolveClaudeBinary() -> URL? {
-        let base = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/Claude/claude-code")
-        if let versions = try? FileManager.default.contentsOfDirectory(
-            at: base, includingPropertiesForKeys: nil) {
-            let candidates = versions
-                .map { $0.appendingPathComponent("claude.app/Contents/MacOS/claude") }
-                .filter { FileManager.default.isExecutableFile(atPath: $0.path) }
-                .sorted { $0.path.compare($1.path, options: .numeric) == .orderedAscending }
-            if let newest = candidates.last { return newest }
-        }
-        let onPath = URL(fileURLWithPath: "/usr/bin/env")
-        return FileManager.default.isExecutableFile(atPath: onPath.path) ? onPath : nil
-    }
-
-    /// Runs `/usage` under a pty and waits briefly for the fetch to land, then exits. Best-effort:
-    /// any failure just means the file is unchanged and the card keeps its current value.
-    private nonisolated static func runUsageFetch(binary: URL) {
-        // Claude Code writes refreshed usage into ~/.claude.json, so that file's fetch stamp is the
-        // completion signal: poll it and stop the moment it advances.
-        let configURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude.json")
-        func fetchedAtMs() -> Double? {
-            guard let data = try? Data(contentsOf: configURL),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let cache = json["cachedUsageUtilization"] as? [String: Any] else { return nil }
-            return (cache["fetchedAtMs"] as? NSNumber)?.doubleValue
-        }
-        let before = fetchedAtMs()
-
-        // Headless print mode, NOT an interactive session. An interactive `claude` auto-registers as
-        // a remote-control device on the account (a phantom "chat", and a new-device sign-in warning);
-        // `--print` is one-shot and registers nothing. `--no-session-persistence` leaves no resumable
-        // session, and the env var suppresses the bridge/feedback traffic as belt-and-braces.
-        let process = Process()
-        process.executableURL = binary
-        let printArgs = ["--print", "--no-session-persistence", "/usage"]
-        process.arguments = binary.lastPathComponent == "env" ? ["claude"] + printArgs : printArgs
-        var env = ProcessInfo.processInfo.environment
-        env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
-        process.environment = env
-
-        // Drain stdout/stderr so the child never blocks on a full pipe; the text is not needed.
-        let sink = Pipe()
-        process.standardOutput = sink
-        process.standardError = sink
-        process.standardInput = FileHandle.nullDevice
-        sink.fileHandleForReading.readabilityHandler = { _ = $0.availableData }
-
-        do { try process.run() } catch { return }
-
-        // Print mode is one-shot: it exits on its own. Stop as soon as it does or the cache advances;
-        // the ceiling is only a backstop for a wedged process.
-        let deadline = Date().addingTimeInterval(20)
-        while Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.25)
-            if !process.isRunning { break }
-            if let now = fetchedAtMs(), now != before { break }
-        }
-
-        if process.isRunning {
-            // terminate() only sends SIGTERM; escalate to SIGKILL after a short grace so the detached
-            // task can never block on waitUntilExit() (which would leave the spinner flag stuck).
-            process.terminate()
-            let killDeadline = Date().addingTimeInterval(2)
-            while process.isRunning && Date() < killDeadline { Thread.sleep(forTimeInterval: 0.1) }
-            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-            process.waitUntilExit()
-        }
-        sink.fileHandleForReading.readabilityHandler = nil
+    /// User-triggered reload of the usage display from disk.
+    ///
+    /// Cannot fetch fresh numbers itself: `/usage` — the only thing that refreshes the per-model
+    /// (Fable) weekly window — requires Claude Code's interactive TUI (`requires: {ink}`), which a
+    /// spawned process would register as a remote-control device (a phantom chat). So this simply
+    /// re-reads whatever the user's own `/usage` last wrote. The button's help text says so.
+    func reloadClaudeUsageFromDisk() {
+        reloadClaudeUsageNow()
     }
 
     /// Keeps a still-running agent visible to time-boxed consumers.

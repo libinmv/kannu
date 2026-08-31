@@ -4,6 +4,24 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-08-30 - Make the usage refresh button an honest reload
+
+- **Developer label:** drop the spawn entirely; button re-reads from disk; help text states the /usage requirement
+- **Agent label:** The refresh button no longer spawns anything — it reloads, and says how to refresh Fable
+- **Changes:**
+  - `/usage` — the only command that fetches the per-model (Fable) weekly window — requires Claude
+    Code's interactive TUI (`requires: {ink}` in the command definition). Headless `--print` has no
+    TUI, so it cannot run `/usage` and cannot fetch Fable; the interactive session that can is exactly
+    what registers the remote-control device (the phantom chat). There is therefore no way for Kannu
+    to fetch fresh Fable without that side effect
+  - So the button no longer spawns anything. It re-reads `~/.claude.json` (and the other sources) on
+    press, picking up whatever the user's own `/usage` last wrote, and its help text says plainly:
+    *"Reloads your usage from disk. The per-model weekly limit (e.g. Fable) only refreshes when you
+    run /usage in Claude Code — it needs the interactive session."* No spawn, no chat, no keychain,
+    no token cost, no misleading "fetches" claim
+  - Removed the now-dead spawn machinery (`runUsageFetch`, `resolveClaudeBinary`, the pty/SIGKILL
+    handling and the in-flight flag)
+
 ### 2026-08-30 - Refresh usage headlessly so it never registers a device/chat
 
 - **Developer label:** replace the interactive pty spawn with `claude --print --no-session-persistence`

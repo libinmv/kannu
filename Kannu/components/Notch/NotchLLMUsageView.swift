@@ -325,23 +325,19 @@ struct NotchLLMUsageView: View {
         }
     }
 
-    /// Pulls the latest usage from Claude Code, including the per-model (Fable) weekly window that
-    /// only its own `/usage` fetch produces. Sits top-right of the Claude card with a help tooltip.
+    /// Re-reads the usage the Claude card displays. It cannot fetch the per-model weekly window
+    /// itself — that needs `/usage`, which requires Claude Code's interactive session — so the help
+    /// text points there. Sits top-right of the Claude card.
     @ViewBuilder
     private var claudeRefreshButton: some View {
         Button {
-            agentMonitor.refreshClaudeUsageFromCLI()
+            agentMonitor.reloadClaudeUsageFromDisk()
         } label: {
-            if agentMonitor.isRefreshingClaudeUsage {
-                ProgressView().controlSize(.mini)
-            } else {
-                Image(systemName: "arrow.clockwise").font(.caption)
-            }
+            Image(systemName: "arrow.clockwise").font(.caption)
         }
         .buttonStyle(.plain)
-        .disabled(agentMonitor.isRefreshingClaudeUsage)
         .foregroundStyle(.secondary)
-        .help("Fetch your latest Claude usage, including the per-model weekly limit. Uses your existing Claude login — one-time keychain approval, no message cost.")
+        .help("Reloads your usage from disk. The per-model weekly limit (e.g. Fable) only refreshes when you run /usage in Claude Code — it needs the interactive session.")
     }
 
     /// A titled group of bars sharing one reset countdown — "Session" (one bar) or "Weekly"
