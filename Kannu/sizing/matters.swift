@@ -296,8 +296,9 @@ let dynamicIslandShadowInset: CGFloat = 14
 /// The one reveal window: how long the island (and the agent traffic light, on every
 /// display type) stays visible after the most recent reason to show it, whether that
 /// reason was a hover ending or agent activity. Was two separate 3-second constants;
-/// unified at 5 by explicit user decision.
-let notchRevealHoldSeconds: TimeInterval = 5
+/// unified into one window by explicit user decision, then raised to 7 because five
+/// seconds was too short to catch a transition you were not already looking at.
+let notchRevealHoldSeconds: TimeInterval = 7
 
 /// Strict collapse: when false, the running-agent heartbeat does not refresh the reveal
 /// window, so the traffic light shows on state transitions only and goes dark mid-run.

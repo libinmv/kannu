@@ -4,6 +4,18 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-01 - Hold the notch reveal for 7 seconds instead of 5
+- **Developer label:** for any transition state traffic light disappears in 5 seconds, make that 7 seconds
+- **Agent label:** Raise the reveal window to 7 seconds
+- **Changes:**
+  - `notchRevealHoldSeconds` is now 7. Five seconds was too short to catch an agent state change you
+    were not already looking at — the heartbeat is filtered out by strict collapse, so only real
+    transitions arm the window and a missed one is missed entirely until the next transition.
+  - The constant is deliberately shared, so the hover-exit linger and the notch-close re-arm lengthen
+    with it; the hover mechanics themselves are untouched. Its doc comment is updated in the same
+    edit so it no longer claims the window is 5.
+
+
 ### 2026-09-01 - Regression guards for the usage spawn and notch tooltips
 - **Developer label:** add test cases and doc md files to avoid such regressions
 - **Agent label:** Guard the usage-fetch invocation and the notch tooltip rules
