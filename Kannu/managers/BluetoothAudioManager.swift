@@ -296,7 +296,10 @@ class BluetoothAudioManager: ObservableObject {
             guard let self else { return }
             self.connectedDevices = devices
             self.isBluetoothAudioConnected = !devices.isEmpty
-            self.refreshBatteryLevelsForConnectedDevices()
+            // Read the cache the scan above just filled. Forcing here re-ran system_profiler and
+            // pmset — seconds of blocking subprocess work — on the main thread, immediately after
+            // 7b3e290 had moved the IOBluetooth first touch off it.
+            self.refreshBatteryLevelsForConnectedDevices(forceCacheRefresh: false)
             if let lastDevice = devices.last {
                 self.lastConnectedDevice = lastDevice
                 print("🎧 [BluetoothAudioManager] ✅ Bluetooth audio connected: \(lastDevice.name)")

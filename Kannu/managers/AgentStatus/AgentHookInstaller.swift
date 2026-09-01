@@ -48,7 +48,7 @@ final class AgentHookInstaller: ObservableObject {
     private static let logger = os.Logger(subsystem: "com.kannu.app", category: "AgentHookInstaller")
 
     static let scriptName = "kannu-agent-status.sh"
-    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=28"
+    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=29"
 
     private static var home: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -510,7 +510,12 @@ final class AgentHookInstaller: ObservableObject {
         STATE_PRIORITY = {"quota_exceeded": 50, "awaiting_input": 40, "stopped": 30, "executing": 20, "thinking": 10, "idle": 0}
         preserved_ts = None
         if existing_state and existing.get("hook_event") == hook_event:
-            existing_ts_ms = existing.get("ts") or 0
+            _raw_ts = existing.get("ts")
+            # A status file is untrusted input (any same-user process can write it). `or 0`
+            # only defaults falsy values, so a truthy non-numeric ts reached the subtraction
+            # below and raised TypeError -- which killed the hook before it printed its allow
+            # JSON, leaving the host tool with empty stdout and exit 0.
+            existing_ts_ms = _raw_ts if isinstance(_raw_ts, (int, float)) and not isinstance(_raw_ts, bool) else 0
             if int(time.time() * 1000) - existing_ts_ms <= 2000:
                 if STATE_PRIORITY.get(existing_state, -1) > STATE_PRIORITY.get(state, -1):
                     state = existing_state
@@ -569,7 +574,9 @@ final class AgentHookInstaller: ObservableObject {
         #     Refreshing it here is what let yellow survive an entire thinking phase.
         if existing_state == "awaiting_input" and state not in {"awaiting_input", "stopped"}:
             if hook_event == "afterAgentThought":
-                existing_ts = existing.get("ts") or 0
+                _raw_sticky_ts = existing.get("ts")
+                # Same untrusted-input coercion as the priority merge above.
+                existing_ts = _raw_sticky_ts if isinstance(_raw_sticky_ts, (int, float)) and not isinstance(_raw_sticky_ts, bool) else 0
                 if int(time.time() * 1000) - existing_ts <= 300000:
                     existing["provider"] = provider
                     if name:

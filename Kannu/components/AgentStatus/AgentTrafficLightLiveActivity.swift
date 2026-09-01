@@ -67,6 +67,21 @@ struct AgentTrafficLightIndicator: View {
         return now.timeIntervalSince(ts) < Self.attentionWindow
     }
 
+    /// Spoken description of the aggregate state. `displayName` is a raw literal used for
+    /// on-screen text, so it is not reused here — VoiceOver output is localized.
+    private var accessibilityStateDescription: String {
+        switch activeState {
+        case .executing, .thinking:
+            return String(localized: "Agent status: working")
+        case .awaitingInput:
+            return String(localized: "Agent status: needs your input")
+        case .stopped:
+            return String(localized: "Agent status: stopped")
+        case .inactive:
+            return String(localized: "Agent status: no agents running")
+        }
+    }
+
     private var activeState: AgentTrafficLightState {
         if agentStatusMonitor.trafficLightState == .inactive && showAgentStoppedIndicator {
             return .stopped
@@ -100,6 +115,10 @@ struct AgentTrafficLightIndicator: View {
                 state: activeState,
                 isPulsing: shouldPulse(at: context.date)
             )
+            // The dots carry the aggregate state in colour alone, and it is rendered as text
+            // nowhere — the panel shows per-session state, and only on hover.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityStateDescription)
         }
         // Track when sessions leave an active run so the completion pulse has a start time.
         .onChange(of: visibleSessions) { _, newSessions in

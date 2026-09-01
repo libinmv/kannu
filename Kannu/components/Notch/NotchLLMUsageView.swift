@@ -345,6 +345,8 @@ struct NotchLLMUsageView: View {
         .buttonStyle(.plain)
         .disabled(agentMonitor.isRefreshingClaudeUsage)
         .foregroundStyle(.secondary)
+        // Icon-only, so VoiceOver would otherwise announce the SF Symbol name.
+        .accessibilityLabel(String(localized: "Fetch latest usage"))
         // Native .help() is dead in the notch: Kannu is an LSUIElement accessory app whose panel
         // never becomes active, so AppKit's tooltip manager never runs. This draws its own.
         .hoverTooltip("Fetch latest usage (runs /usage)")

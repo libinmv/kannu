@@ -4,6 +4,34 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-01 - Address the open CodeRabbit findings
+- **Developer label:** check code rabbit comments in pr #20 and address valid ones
+- **Agent label:** Fix the four CodeRabbit findings that verified, reject two
+- **Changes:**
+  - Hook script v29: coerced the two `existing.get("ts")` reads with `isinstance` before subtracting.
+    `or 0` only defaults falsy values, so a truthy non-numeric `ts` raised `TypeError` — and since the
+    allow JSON is printed only at the end, with no outer `try` and no `set -e`, the hook died with
+    empty stdout and exit 0, leaving the host tool with no permission verdict. Reproduced against the
+    pre-fix script (`"ts": "…"` and `"ts": [1]` both produced empty stdout) and confirmed fixed.
+    Applied identically to both copies; mirror parity verified by hand, since the pre-commit guard
+    compares only version markers and would not catch a body edit.
+  - `BluetoothAudioManager` no longer forces a battery cache refresh on the main thread after the
+    initial scan. `refreshBatteryLevelsForConnectedDevices` defaults to forcing, which re-ran
+    `system_profiler` and `pmset` synchronously — seconds of blocking subprocess work on main,
+    immediately after `7b3e290` had moved the IOBluetooth first touch off it. The scan a moment
+    earlier already warmed the cache.
+  - The deferred window-resize drain reads `pendingWindowResize` at drain time instead of capturing
+    it, and an immediate pass clears the queued request. Previously a synchronous resize arriving
+    after the re-entrancy guard dropped could be overwritten by the older queued size.
+  - Added accessibility labels to the closed-notch traffic light, whose aggregate state was conveyed
+    by colour alone and rendered as text nowhere, and to `claudeRefreshButton`, matching the existing
+    convention in `KannuHeader`.
+  - Declined two findings: `*.profraw` is deliberately unanchored and nothing in the repo enables
+    coverage, so anchoring it to the root would narrow the pattern for no benefit (the misleading
+    comment is reworded instead); and the `claudeLimitsToggle` label targets a control deleted in
+    `4e85ff7`.
+
+
 ### 2026-09-01 - Hold the notch reveal for 7 seconds instead of 5
 - **Developer label:** for any transition state traffic light disappears in 5 seconds, make that 7 seconds
 - **Agent label:** Raise the reveal window to 7 seconds

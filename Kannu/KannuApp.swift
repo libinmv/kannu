@@ -588,6 +588,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         isApplyingWindowResize = true
+        // This pass is newer than anything queued, so drop the queued request. A drain already
+        // scheduled on the runloop then finds nothing and no-ops, instead of replaying a size
+        // this pass has just superseded.
+        pendingWindowResize = nil
         var resizedWindows: [NSWindow] = []
         // The drain must run on EVERY exit path — an early return that skipped it stranded a
         // re-entrant request until some unrelated future resize happened to flush it.
@@ -598,12 +602,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             resizedWindows.forEach { $0.displayIfNeeded() }
             isApplyingWindowResize = false
 
-            if let pending = pendingWindowResize {
-                pendingWindowResize = nil
+            if pendingWindowResize != nil {
                 // A runloop source, so this lands outside the current CATransaction commit
                 // rather than re-entering it.
                 RunLoop.main.perform(inModes: [.common]) { [weak self] in
-                    self?.resizeWindows(to: pending.size, animated: pending.animated, force: pending.force)
+                    guard let self else { return }
+                    // Read at drain time, never captured. Capturing by value let a synchronous
+                    // resize that arrived after the guard dropped be overwritten by this older
+                    // size — main-actor isolation does not help, since the staleness comes from
+                    // the deliberate runloop hop, not from concurrency.
+                    guard let pending = self.pendingWindowResize else { return }
+                    self.pendingWindowResize = nil
+                    self.resizeWindows(to: pending.size, animated: pending.animated, force: pending.force)
                 }
             }
         }
