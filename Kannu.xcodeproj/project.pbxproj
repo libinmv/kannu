@@ -35,6 +35,7 @@
 		AA1000000000000000000016 /* CursorUsageEventDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000015 /* CursorUsageEventDecoder.swift */; };
 		AA1000000000000000000018 /* ClaudeSessionBlocks.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000017 /* ClaudeSessionBlocks.swift */; };
 		AA1000000000000000000020 /* LoginItemPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000019 /* LoginItemPolicy.swift */; };
+		AA1000000000000000000039 /* HoverDwell.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000038 /* HoverDwell.swift */; };
 		AA1000000000000000000022 /* ColorSpectrumMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000021 /* ColorSpectrumMath.swift */; };
 		AA1000000000000000000031 /* ClaudeUsageSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000030 /* ClaudeUsageSnapshot.swift */; };
 		AA1000000000000000000033 /* ClaudeDesktopUsageHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000032 /* ClaudeDesktopUsageHistory.swift */; };
@@ -78,6 +79,7 @@
 		AA1000000000000000000015 /* CursorUsageEventDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CursorUsageEventDecoder.swift; path = Kannu/managers/LLMUsage/CursorUsageEventDecoder.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000017 /* ClaudeSessionBlocks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeSessionBlocks.swift; path = Kannu/managers/LLMUsage/ClaudeSessionBlocks.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000019 /* LoginItemPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LoginItemPolicy.swift; path = Kannu/helpers/LoginItemPolicy.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000038 /* HoverDwell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HoverDwell.swift; path = Kannu/helpers/HoverDwell.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000021 /* ColorSpectrumMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ColorSpectrumMath.swift; path = Kannu/helpers/ColorSpectrumMath.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000030 /* ClaudeUsageSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeUsageSnapshot.swift; path = Kannu/managers/AgentStatus/ClaudeUsageSnapshot.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000032 /* ClaudeDesktopUsageHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeDesktopUsageHistory.swift; path = Kannu/managers/AgentStatus/ClaudeDesktopUsageHistory.swift; sourceTree = SOURCE_ROOT; };
@@ -469,6 +471,7 @@
 				AA1000000000000000000016 /* CursorUsageEventDecoder.swift in Sources */,
 				AA1000000000000000000018 /* ClaudeSessionBlocks.swift in Sources */,
 				AA1000000000000000000020 /* LoginItemPolicy.swift in Sources */,
+				AA1000000000000000000039 /* HoverDwell.swift in Sources */,
 				AA1000000000000000000022 /* ColorSpectrumMath.swift in Sources */,
 				AA1000000000000000000031 /* ClaudeUsageSnapshot.swift in Sources */,
 				AA1000000000000000000033 /* ClaudeDesktopUsageHistory.swift in Sources */,

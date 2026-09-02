@@ -733,6 +733,7 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .general, title: "Extend hover area", keywords: ["hover", "cursor"], highlightID: SettingsTab.general.highlightID(for: "Extend hover area")),
             SettingsSearchEntry(tab: .general, title: "Enable haptics", keywords: ["haptic", "feedback"], highlightID: SettingsTab.general.highlightID(for: "Enable haptics")),
             SettingsSearchEntry(tab: .general, title: "Open notch on hover", keywords: ["hover to open", "auto open"], highlightID: SettingsTab.general.highlightID(for: "Open notch on hover")),
+            SettingsSearchEntry(tab: .general, title: "Minimum hover duration", keywords: ["hover", "delay", "dwell", "slide in", "hidden island", "external display"], highlightID: SettingsTab.general.highlightID(for: "Minimum hover duration")),
             SettingsSearchEntry(tab: .general, title: "External display style", keywords: ["dynamic island", "pill", "external display", "non-notch", "floating", "capsule"], highlightID: SettingsTab.general.highlightID(for: "External display style")),
             SettingsSearchEntry(tab: .general, title: "Always show on non-notch displays", keywords: ["always show", "hide", "hover", "external", "non-notch", "auto hide", "slide"], highlightID: SettingsTab.general.highlightID(for: "Always show on non-notch displays")),
             SettingsSearchEntry(tab: .general, title: "Notch display height", keywords: ["display height", "menu bar size"], highlightID: SettingsTab.general.highlightID(for: "Notch display height")),
@@ -1036,6 +1037,7 @@ struct GeneralSettings: View {
     @Default(.automaticallySwitchDisplay) var automaticallySwitchDisplay
     @Default(.enableGestures) var enableGestures
     @Default(.openNotchOnHover) var openNotchOnHover
+    @Default(.alwaysShowOnNonNotchDisplays) var alwaysShowOnNonNotchDisplays
     @Default(.enableMinimalisticUI) var enableMinimalisticUI
     @Default(.showMinimalisticBatteryIndicator) var showMinimalisticBatteryIndicator
     @Default(.enableHorizontalMusicGestures) var enableHorizontalMusicGestures
@@ -1316,8 +1318,10 @@ struct GeneralSettings: View {
                 Text("Open notch on hover")
             }
             .settingsHighlight(id: highlightID("Open notch on hover"))
-            if openNotchOnHover {
-                Slider(value: $minimumHoverDuration, in: 0...1, step: 0.1) {
+            // Also shown with hover-to-open off when a display hides until hovered: the same
+            // value is the dwell before the hidden island slides in.
+            if openNotchOnHover || !alwaysShowOnNonNotchDisplays {
+                Slider(value: $minimumHoverDuration, in: 0...2, step: 0.1) {
                     HStack {
                         Text("Minimum hover duration")
                         Spacer()
@@ -1328,6 +1332,10 @@ struct GeneralSettings: View {
                 .onChange(of: minimumHoverDuration) {
                     NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
                 }
+                .settingsHighlight(id: highlightID("Minimum hover duration"))
+                Text("How long the pointer must rest on the notch before it opens. On displays where Kannu hides until hovered, this is also how long the pointer must rest at the top edge before the island slides in.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Picker("External display style", selection: $externalDisplayStyle) {
                 ForEach(ExternalDisplayStyle.allCases) { style in

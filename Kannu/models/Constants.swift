@@ -878,7 +878,10 @@ extension Defaults.Keys {
     static let hideDynamicIslandFromScreenCapture = Key<Bool>("hideDynamicIslandFromScreenCapture", default: false)
     
         // MARK: Behavior
-    static let minimumHoverDuration = Key<TimeInterval>("minimumHoverDuration", default: 0.3)
+    /// Seconds the pointer must rest before hover-to-open fires — and, on displays where Kannu
+    /// hides until hovered, before the island slides in at all. 1 s so a pointer crossing the
+    /// top edge on its way to a browser tab does not summon it.
+    static let minimumHoverDuration = Key<TimeInterval>("minimumHoverDuration", default: 1.0)
     static let enableHaptics = Key<Bool>("enableHaptics", default: true)
     static let openNotchOnHover = Key<Bool>("openNotchOnHover", default: true)
 	static let extendHoverArea = Key<Bool>("extendHoverArea", default: false)

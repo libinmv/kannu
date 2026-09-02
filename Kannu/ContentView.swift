@@ -812,6 +812,11 @@ struct ContentView: View {
             // Shadow bottom padding and hide-until-hover offset applied AFTER
             // interaction modifiers so .contentShape / .onHover only covers
             // the actual notch content, not the shadow clearance below it.
+            // The shelf drop target rides here for the same reason: it used to back the
+            // whole open-sized window (≥ 640 × 218 pt), so a closed notch swallowed clicks
+            // meant for the app beneath that strip. Placed before the offset, it also parks
+            // off-screen with the hidden island instead of leaving a dead zone at the edge.
+            .background(dragDetector)
             .padding(.bottom, notchBottomPadding)
             // `isRevealHoldActive` is a separate term rather than folded into
             // `shouldHideUntilHover` on purpose: `shouldUseHiddenEdgeHoverPolling` derives from
@@ -932,7 +937,6 @@ struct ContentView: View {
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .environmentObject(privacyManager)
-        .background(dragDetector)
         .environmentObject(vm)
     }
 
@@ -2109,7 +2113,11 @@ struct ContentView: View {
         } else if Defaults[.dynamicShelf] && !Defaults[.enableMinimalisticUI] {
             Color.clear
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
+                // Closed: only the notch/pill shape is a drop target and hit-testable, so clicks
+                // beside it reach the app beneath. Open: the whole panel, as before. One node
+                // whose shape changes, never a view swap — a swap would drop `isTargeted`
+                // mid-drag and close the notch right after the drop-triggered open.
+                .contentShape(vm.notchState == .closed ? resolvedClipShape : AnyShape(Rectangle()))
                 .onDrop(of: [.data], isTargeted: $vm.dragDetectorTargeting) { _ in true }
                 .onChange(of: vm.anyDropZoneTargeting) { _, isTargeted in
                     if isTargeted, vm.notchState == .closed {
@@ -2364,10 +2372,27 @@ struct ContentView: View {
 
         guard shouldUseHiddenEdgeHoverPolling else { return }
         hiddenEdgeHoverPollingTask = Task { @MainActor in
+            var dwell = HoverDwell()
             while !Task.isCancelled, self.shouldUseHiddenEdgeHoverPolling {
                 let hovering = self.hiddenHoverActivationContainsMouse()
-                if hovering != self.isHovering {
-                    self.handleHover(hovering)
+                if self.isHovering {
+                    // Exit path, unchanged: while hovering the detector tests the hysteresis
+                    // exit rect (see hiddenHoverActivationContainsMouse).
+                    dwell.noteOutside()
+                    if !hovering { self.handleHover(false) }
+                } else if hovering {
+                    // Entry path: while !isHovering the detector tests the small entry rect at
+                    // the top edge. Hold the pointer there for minimumHoverDuration before
+                    // sliding in — a pointer merely crossing the edge on its way to a browser
+                    // tab under the strip used to summon the island every time.
+                    let now = Date()
+                    dwell.noteInside(at: now)
+                    if dwell.isSatisfied(at: now, minimum: Defaults[.minimumHoverDuration]) {
+                        dwell.noteOutside()
+                        self.handleHover(true, dwellSatisfied: true)
+                    }
+                } else {
+                    dwell.noteOutside()
                 }
 
                 try? await Task.sleep(for: .milliseconds(50))
@@ -2441,8 +2466,31 @@ struct ContentView: View {
 
     // MARK: - Hover Management
     
-    /// Handle hover state changes with debouncing
-    private func handleHover(_ hovering: Bool) {
+    /// The open half of hover-to-open, once the debounce (or the hidden-edge poll's dwell) has
+    /// been served. Callers re-check `notchState` / `isHovering` before calling.
+    private func completeHoverOpen(shouldFocusTimerTab: Bool) {
+        if shouldFocusTimerTab {
+            withAnimation(.smooth) {
+                coordinator.currentView = .timer
+            }
+        } else if enableAgentStatusFeature
+            && agentStatusMonitor.shouldShowTrafficLight
+            && !isClosedMusicPairingEligible {
+            // Previously gated to `currentView == .home` only, so hovering while on
+            // Notes/Stats/etc. never surfaced active agent work. Requested change:
+            // always jump to Agent Status on hover when an agent is actually active,
+            // regardless of whichever tab was last open.
+            withAnimation(.smooth) {
+                coordinator.currentView = .agentStatus
+            }
+        }
+        openNotch()
+    }
+
+    /// Handle hover state changes with debouncing. `dwellSatisfied` is set by the hidden-edge
+    /// poll after it already held the pointer for `minimumHoverDuration`; the open then follows
+    /// synchronously instead of waiting the same interval a second time.
+    private func handleHover(_ hovering: Bool, dwellSatisfied: Bool = false) {
         hoverTask?.cancel()
 
         if hovering {
@@ -2477,6 +2525,13 @@ struct ContentView: View {
                 (Defaults[.openNotchOnHover] || shouldFocusTimerTab),
                 !isClosedMusicPairingEligible else { return }
 
+            if dwellSatisfied {
+                // Synchronous, so a racing .onHover / region hover (both cancel hoverTask)
+                // cannot restart a wait the poll already served.
+                completeHoverOpen(shouldFocusTimerTab: shouldFocusTimerTab)
+                return
+            }
+
             hoverTask = Task {
                 try? await Task.sleep(for: .seconds(Defaults[.minimumHoverDuration]))
                 guard !Task.isCancelled else { return }
@@ -2485,23 +2540,7 @@ struct ContentView: View {
                     guard self.vm.notchState == .closed,
                           self.isHovering,
                           !self.isSneakPeekVisibleOnCurrentScreen else { return }
-
-                    if shouldFocusTimerTab {
-                        withAnimation(.smooth) {
-                            self.coordinator.currentView = .timer
-                        }
-                    } else if self.enableAgentStatusFeature
-                        && self.agentStatusMonitor.shouldShowTrafficLight
-                        && !self.isClosedMusicPairingEligible {
-                        // Previously gated to `currentView == .home` only, so hovering while on
-                        // Notes/Stats/etc. never surfaced active agent work. Requested change:
-                        // always jump to Agent Status on hover when an agent is actually active,
-                        // regardless of whichever tab was last open.
-                        withAnimation(.smooth) {
-                            self.coordinator.currentView = .agentStatus
-                        }
-                    }
-                    self.openNotch()
+                    self.completeHoverOpen(shouldFocusTimerTab: shouldFocusTimerTab)
                 }
             }
         } else {

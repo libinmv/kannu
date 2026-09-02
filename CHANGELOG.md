@@ -4,6 +4,26 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-03 - Wait a beat before a hidden island reacts; stop the closed strip eating clicks
+- **Developer label:** only on hover of about 1 full second should reveal the notch, the idea is to not get in the way of actual content below
+- **Agent label:** Dwell-gate the hidden-edge hover poll on the existing hover-duration setting; hit-test only the notch shape while closed
+- **Changes:**
+  - On displays where Kannu hides until hovered, the island no longer slides in the instant the pointer
+    touches the top edge. The 50ms poll now keeps a `HoverDwell` (new, Foundation-only, 4 tests) and
+    calls the hover-in only once the pointer has rested in the entry rect for `minimumHoverDuration`;
+    the open then follows immediately instead of waiting the same interval a second time. Leaving during
+    the dwell leaves no trace. The physical notch, region hovers and the agent-activity reveal are
+    untouched. Not runtime-verified here (no external display).
+  - `minimumHoverDuration` default 0.3s → 1.0s and the Settings slider now spans 0–2s; the row is also
+    shown with hover-to-open off when a display hides until hovered, carries a caption explaining the
+    slide-in dwell, and is searchable ("dwell", "slide in"). Installs that ever moved the slider keep
+    their value; untouched installs get 1.0s for hover-to-open everywhere, by decision.
+  - While closed, the shelf drop target (`dragDetector`) no longer backs the whole ≥640×218pt panel:
+    it now sits on the notch layout with the notch's own shape, so clicks beside the closed notch reach
+    the app beneath instead of Kannu, and it parks off-screen with a hidden island. Open behaviour and
+    drop-to-shelf on the notch itself are unchanged. Unverified whether AppKit also swallowed those
+    clicks at the window level; if it did, a window-level fix is still needed.
+
 ### 2026-09-02 - Tell the user when Claude limits need a CLI sign-in
 - **Developer label:** so we need /login in cli always, werent we spinning up gui chat window ?
 - **Agent label:** Show a sign-in hint on the Claude card instead of silently falling back to the desktop history
