@@ -874,7 +874,6 @@ extension Defaults.Keys {
     static let lastLoginItemBundlePath = Key<String>("lastLoginItemBundlePath", default: "")
     static let showOnAllDisplays = Key<Bool>("showOnAllDisplays", default: true)
     static let automaticallySwitchDisplay = Key<Bool>("automaticallySwitchDisplay", default: true)
-    static let releaseName = Key<String>("releaseName", default: "Fiji")
     static let hideDynamicIslandFromScreenCapture = Key<Bool>("hideDynamicIslandFromScreenCapture", default: false)
     
         // MARK: Behavior
@@ -1475,4 +1474,14 @@ extension Defaults.Keys {
         Defaults[.musicAuxRightControl] = fallback
     }
     static let showSongMetadataInClosedNotch = Key<Bool>("showSongMetadataInClosedNotch", default: false)
+}
+
+/// Release codename, shown in Settings › About and used for the GitHub release title
+/// (`scripts/manual-release.sh` and `.github/workflows/release.yml` grep the `static let codename` declaration, so keep its
+/// shape). Kannu names releases after watchers — the app's job is to watch your
+/// agents — one per feature release: Argus (1.2.0), then Heimdall, Horus, Vigil, Sentinel. 1.0.0
+/// shipped as "Fiji", the tail of the Atoll island chain this fork inherited; that was not a scheme
+/// choice and is not continued.
+enum ReleaseInfo {
+    static let codename = "Argus"
 }

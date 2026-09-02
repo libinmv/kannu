@@ -136,6 +136,8 @@ if [ ! -x "$SPARKLE_BIN/sign_update" ] || [ ! -x "$SPARKLE_BIN/generate_appcast"
   exit 1
 fi
 
+CODENAME="$(grep -o 'static let codename = "[^"]*"' "$ROOT_DIR/Kannu/models/Constants.swift" | head -1 | cut -d'"' -f2)"
+RELEASE_TITLE="Kannu ${VERSION}${CODENAME:+ — $CODENAME}"
 DMG_NAME="Kannu.${VERSION}.dmg"
 DMG_PATH="$ROOT_DIR/build/${DMG_NAME}"
 mkdir -p "$ROOT_DIR/build"
@@ -170,12 +172,12 @@ if $PUBLISH; then
   gh release create "$TAG" \
     "$DMG_PATH" \
     --repo "$REPO" \
-    --title "Kannu ${VERSION}" \
+    --title "$RELEASE_TITLE" \
     --generate-notes
   echo "Published: https://github.com/${REPO}/releases/tag/${TAG}"
 else
   echo "Next: publish the release (upload $DMG_NAME), then push the appcast."
-  echo "  gh release create ${TAG} \"${DMG_PATH}\" --repo ${REPO} --title \"Kannu ${VERSION}\" --generate-notes"
+  echo "  gh release create ${TAG} \"${DMG_PATH}\" --repo ${REPO} --title \"${RELEASE_TITLE}\" --generate-notes"
 fi
 
 if $PUSH_APPCAST; then

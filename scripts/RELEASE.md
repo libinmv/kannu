@@ -92,6 +92,22 @@ Manual releases do **not** notarize automatically; use CI for notarized builds.
 
 ---
 
+## Codenames
+
+Each feature release carries a watcher's name — Kannu watches your agents — shown in Settings › About
+and in the GitHub release title (`Kannu 1.2.0 — Argus`). The list, in order:
+
+| Version | Codename |
+|---|---|
+| 1.2.0 | Argus |
+| next | Heimdall |
+| then | Horus, Vigil, Sentinel |
+
+The name lives in one place: `ReleaseInfo.codename` in `Kannu/models/Constants.swift`. Both release
+paths grep that line for the title, so bump it there and nowhere else. 1.0.0 shipped as "Fiji", the
+last of the island names inherited from Atoll (Maldives → Bora Bora → Seychelles → Fiji); that chain
+is not continued.
+
 ## Verify signing
 
 ```bash

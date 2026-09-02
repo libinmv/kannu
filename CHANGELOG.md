@@ -4,6 +4,21 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-03 - Name releases after watchers; 1.2.0 is Argus
+- **Developer label:** avoid atoll style naming and do something else we made first version fiji mistakenly
+- **Agent label:** Replace the inherited island codename with a Kannu scheme, shown in About and the release title
+- **Changes:**
+  - Release codenames now follow a watcher theme, since watching agents is the app's job: Argus for
+    1.2.0, then Heimdall, Horus, Vigil, Sentinel. 1.0.0's "Fiji" was the tail of Atoll's island chain
+    (Maldives → Bora Bora → Seychelles → Fiji), not a choice; it appeared in no tag, DMG, appcast item
+    or release title, so nothing external changes.
+  - The name is a plain constant, `ReleaseInfo.codename` in `Constants.swift`, replacing the
+    `releaseName` Defaults key that nothing ever wrote (a stored value could have pinned an old name
+    for upgraders). Settings › About reads it.
+  - Both release paths title the GitHub release `Kannu <version> — <codename>`: `manual-release.sh`
+    and the CI release workflow grep the constant, so the codename is bumped in one place. Documented
+    in `scripts/RELEASE.md` under "Codenames".
+
 ### 2026-09-03 - Wait a beat before a hidden island reacts; stop the closed strip eating clicks
 - **Developer label:** only on hover of about 1 full second should reveal the notch, the idea is to not get in the way of actual content below
 - **Agent label:** Dwell-gate the hidden-edge hover poll on the existing hover-duration setting; hit-test only the notch shape while closed

@@ -3240,7 +3240,7 @@ struct About: View {
                     HStack {
                         Text("Release name")
                         Spacer()
-                        Text(Defaults[.releaseName])
+                        Text(ReleaseInfo.codename)
                             .foregroundStyle(.secondary)
                     }
                     HStack {
