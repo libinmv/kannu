@@ -27,7 +27,8 @@ struct ClaudeUsageSnapshot: Equatable {
         /// universal windows leave this nil because their names belong to us.
         var label: String? = nil
         /// The server's own severity for this window ("normal"/"warning"/"critical"), when it
-        /// reports one. Only the cached-usage source carries it; drives the bar accent.
+        /// reports one. Today only the cached-usage source carries it; the statusline hook (v4+)
+        /// forwards it whenever a bucket supplies one. Drives the bar accent.
         var severity: String? = nil
     }
 
@@ -118,6 +119,35 @@ struct ClaudeUsageSnapshot: Equatable {
     /// True when nothing is left to show — no windows, or every one of them past its reset.
     func isEmpty(now: Date = Date()) -> Bool {
         displayWindows(now: now).isEmpty
+    }
+
+    /// Combines several sources, best first, one window key at a time: each key is taken from the
+    /// first source in which it is live (per `displayWindows`), and sources further down fill only
+    /// the keys nothing above them could. One lapsed window in a good source therefore neither
+    /// hides that source's live siblings nor blocks a lesser source from covering the gap — the
+    /// whole-snapshot fallthrough this replaces dropped a live per-model window the moment the
+    /// same source's five-hour window rolled over.
+    ///
+    /// A nil-reset window counts as live, as everywhere else, so it fills a key only when no
+    /// better source has that key live. Lapsed copies are dropped, not carried. Severity is never
+    /// borrowed across sources for one key: `accent(severity:fraction:)` gives it precedence, so a
+    /// stale "normal" would suppress the red band on a fresher value. `observedAt` is the newest
+    /// among the sources that contributed a window.
+    ///
+    /// Returns nil when nothing is live anywhere. Pure in its inputs, so repeated merges of
+    /// unchanged files compare equal and do not republish.
+    static func merged(_ sources: [ClaudeUsageSnapshot?], now: Date) -> ClaudeUsageSnapshot? {
+        var windows: [Window] = []
+        var seen: Set<String> = []
+        var observedAt: Date?
+        for source in sources.compactMap({ $0 }) {
+            for window in source.displayWindows(now: now) where seen.insert(window.key).inserted {
+                windows.append(window)
+                observedAt = max(observedAt ?? source.observedAt, source.observedAt)
+            }
+        }
+        guard let observedAt, !windows.isEmpty else { return nil }
+        return ClaudeUsageSnapshot(windows: windows, observedAt: observedAt)
     }
 
     /// Parses both file shapes: the `windows` array written by the current hook, and the flat

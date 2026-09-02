@@ -1,6 +1,6 @@
 #!/bin/bash
 # Installed by Kannu: forwards Claude Code rate-limit usage to the notch.
-# KANNU_USAGE_SCRIPT_VERSION=3
+# KANNU_USAGE_SCRIPT_VERSION=4
 # KANNU_USAGE_CHAIN_B64=
 # Reads the Claude Code statusLine JSON from stdin, writes rate-limit usage to
 # the Kannu status directory, then chains the user's original statusLine (if any).
@@ -27,13 +27,25 @@ except json.JSONDecodeError:
 # arrives means a newly added window shows up without the script changing again.
 rl = data.get("rate_limits") or {}
 windows = []
+
+# Severity is not in the statusline payload today (only /api/oauth/usage limits[] carries
+# it, which Kannu reads from ~/.claude.json). Forwarded only when a bucket supplies a
+# non-empty string, so a future CLI that adds it tints the bar with the server's word
+# instead of Kannu's fraction bands.
+def with_severity(window, bucket):
+    severity = bucket.get("severity")
+    if isinstance(severity, str) and severity:
+        window["severity"] = severity
+    return window
+
 for key, bucket in rl.items():
     if not isinstance(bucket, dict):
         continue
     pct = bucket.get("used_percentage")
     if pct is None:
         continue
-    windows.append({"key": key, "pct": pct, "resets_at": bucket.get("resets_at")})
+    windows.append(with_severity(
+        {"key": key, "pct": pct, "resets_at": bucket.get("resets_at")}, bucket))
 
 # Per-model weekly windows (e.g. Fable) arrive separately, as an array with a
 # server-supplied label rather than a fixed key — "additive; present only when the server
@@ -58,8 +70,9 @@ try:
                     raw.replace("Z", "+00:00")).timestamp()
             except ValueError:
                 resets = None
-        windows.append({"key": f"model_scoped:{name}", "label": name,
-                        "pct": pct, "resets_at": resets})
+        windows.append(with_severity(
+            {"key": f"model_scoped:{name}", "label": name, "pct": pct, "resets_at": resets},
+            bucket))
 except Exception:
     pass
 

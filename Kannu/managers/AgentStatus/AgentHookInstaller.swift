@@ -1180,7 +1180,7 @@ final class AgentHookInstaller: ObservableObject {
     /// the same stdin after the usage write, and restored verbatim on uninstall.
     static let usageScriptName = "kannu-usage-status.sh"
     static let usageFileName = "claude-usage.json"
-    private static let usageScriptVersionMarker = "KANNU_USAGE_SCRIPT_VERSION=3"
+    private static let usageScriptVersionMarker = "KANNU_USAGE_SCRIPT_VERSION=4"
     private static let usageChainMarkerPrefix = "# KANNU_USAGE_CHAIN_B64="
 
     static var claudeUsageScriptURL: URL { home.appendingPathComponent(".claude/\(usageScriptName)") }
@@ -1281,13 +1281,25 @@ final class AgentHookInstaller: ObservableObject {
         # arrives means a newly added window shows up without the script changing again.
         rl = data.get("rate_limits") or {}
         windows = []
+
+        # Severity is not in the statusline payload today (only /api/oauth/usage limits[] carries
+        # it, which Kannu reads from ~/.claude.json). Forwarded only when a bucket supplies a
+        # non-empty string, so a future CLI that adds it tints the bar with the server's word
+        # instead of Kannu's fraction bands.
+        def with_severity(window, bucket):
+            severity = bucket.get("severity")
+            if isinstance(severity, str) and severity:
+                window["severity"] = severity
+            return window
+
         for key, bucket in rl.items():
             if not isinstance(bucket, dict):
                 continue
             pct = bucket.get("used_percentage")
             if pct is None:
                 continue
-            windows.append({"key": key, "pct": pct, "resets_at": bucket.get("resets_at")})
+            windows.append(with_severity(
+                {"key": key, "pct": pct, "resets_at": bucket.get("resets_at")}, bucket))
 
         # Per-model weekly windows (e.g. Fable) arrive separately, as an array with a
         # server-supplied label rather than a fixed key — "additive; present only when the server
@@ -1312,8 +1324,9 @@ final class AgentHookInstaller: ObservableObject {
                             raw.replace("Z", "+00:00")).timestamp()
                     except ValueError:
                         resets = None
-                windows.append({"key": f"model_scoped:{name}", "label": name,
-                                "pct": pct, "resets_at": resets})
+                windows.append(with_severity(
+                    {"key": f"model_scoped:{name}", "label": name, "pct": pct, "resets_at": resets},
+                    bucket))
         except Exception:
             pass
 

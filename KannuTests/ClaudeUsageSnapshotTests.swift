@@ -221,4 +221,85 @@ final class ClaudeUsageSnapshotTests: XCTestCase {
                 "\(state) should re-read once the interval elapses")
         }
     }
+
+    // MARK: - Merging sources
+
+    private func window(_ key: String, pct: Double, resetsIn seconds: TimeInterval?, label: String? = nil,
+                        severity: String? = nil) -> ClaudeUsageSnapshot.Window {
+        .init(key: key, percent: pct, resetsAt: seconds.map { now.addingTimeInterval($0) },
+              label: label, severity: severity)
+    }
+
+    func testMergeFillsLapsedKeyFromLowerSourceAndKeepsHigherLiveSiblings() {
+        let higher = ClaudeUsageSnapshot(windows: [
+            window("five_hour", pct: 61, resetsIn: -60),
+            window("model_scoped:Fable", pct: 95, resetsIn: 3_600, label: "Fable", severity: "critical")
+        ], observedAt: now.addingTimeInterval(-100))
+        let lower = ClaudeUsageSnapshot(windows: [
+            window("five_hour", pct: 25, resetsIn: 600)
+        ], observedAt: now.addingTimeInterval(-50))
+
+        let merged = ClaudeUsageSnapshot.merged([higher, lower], now: now)
+        XCTAssertEqual(merged?.windows.map(\.key), ["model_scoped:Fable", "five_hour"])
+        XCTAssertEqual(merged?.window("five_hour")?.percent, 25, "the lapsed higher copy must yield to the live lower one")
+        XCTAssertEqual(merged?.window("five_hour")?.resetsAt, now.addingTimeInterval(600))
+        XCTAssertEqual(merged?.window("model_scoped:Fable")?.severity, "critical")
+    }
+
+    func testMergeUsesLowerSourceWhenHigherIsEntirelyLapsed() {
+        let higher = ClaudeUsageSnapshot(windows: [
+            window("five_hour", pct: 61, resetsIn: -60),
+            window("seven_day", pct: 80, resetsIn: -30)
+        ], observedAt: now)
+        let lower = ClaudeUsageSnapshot(windows: [
+            window("five_hour", pct: 25, resetsIn: 600),
+            window("seven_day", pct: 13, resetsIn: 6_000)
+        ], observedAt: now.addingTimeInterval(-10))
+
+        let merged = ClaudeUsageSnapshot.merged([higher, lower], now: now)
+        XCTAssertEqual(merged?.fiveHourPercent, 25)
+        XCTAssertEqual(merged?.sevenDayPercent, 13)
+    }
+
+    func testMergePrefersHigherSourceForAKeyLiveInBoth() {
+        let higher = ClaudeUsageSnapshot(windows: [window("five_hour", pct: 40, resetsIn: 300)], observedAt: now)
+        let lower = ClaudeUsageSnapshot(windows: [window("five_hour", pct: 45, resetsIn: 900)], observedAt: now)
+
+        let merged = ClaudeUsageSnapshot.merged([higher, lower], now: now)
+        XCTAssertEqual(merged?.windows.count, 1)
+        XCTAssertEqual(merged?.fiveHourPercent, 40)
+        XCTAssertEqual(merged?.fiveHourResetsAt, now.addingTimeInterval(300))
+    }
+
+    func testMergeIsNilWhenNothingIsLiveAnywhere() {
+        let lapsed = ClaudeUsageSnapshot(windows: [window("five_hour", pct: 61, resetsIn: -1)], observedAt: now)
+        XCTAssertNil(ClaudeUsageSnapshot.merged([nil, lapsed, nil], now: now))
+        XCTAssertNil(ClaudeUsageSnapshot.merged([], now: now))
+    }
+
+    func testMergeOfIdenticalInputsIsEqual() {
+        let a = ClaudeUsageSnapshot(windows: [window("five_hour", pct: 40, resetsIn: 300)], observedAt: now)
+        let b = ClaudeUsageSnapshot(windows: [window("seven_day", pct: 10, resetsIn: 3_000)], observedAt: now.addingTimeInterval(-5))
+        XCTAssertEqual(ClaudeUsageSnapshot.merged([a, b], now: now), ClaudeUsageSnapshot.merged([a, b], now: now))
+    }
+
+    func testMergeNilResetFillsOnlyAMissingKey() {
+        let nilReset = ClaudeUsageSnapshot(windows: [window("five_hour", pct: 100, resetsIn: nil)], observedAt: now)
+
+        let liveHigher = ClaudeUsageSnapshot(windows: [window("five_hour", pct: 40, resetsIn: 300)], observedAt: now)
+        XCTAssertEqual(ClaudeUsageSnapshot.merged([liveHigher, nilReset], now: now)?.fiveHourPercent, 40)
+
+        let lapsedHigher = ClaudeUsageSnapshot(windows: [window("five_hour", pct: 40, resetsIn: -300)], observedAt: now)
+        XCTAssertEqual(ClaudeUsageSnapshot.merged([lapsedHigher, nilReset], now: now)?.fiveHourPercent, 100)
+    }
+
+    func testMergeObservedAtIsNewestContributingSource() {
+        let older = ClaudeUsageSnapshot(windows: [window("five_hour", pct: 40, resetsIn: 300)], observedAt: now.addingTimeInterval(-500))
+        let newerLapsed = ClaudeUsageSnapshot(windows: [window("seven_day", pct: 80, resetsIn: -1)], observedAt: now)
+        XCTAssertEqual(ClaudeUsageSnapshot.merged([older, newerLapsed], now: now)?.observedAt, now.addingTimeInterval(-500),
+                       "a source that contributed nothing must not advertise freshness")
+
+        let newerLive = ClaudeUsageSnapshot(windows: [window("seven_day", pct: 80, resetsIn: 100)], observedAt: now)
+        XCTAssertEqual(ClaudeUsageSnapshot.merged([older, newerLive], now: now)?.observedAt, now)
+    }
 }

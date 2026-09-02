@@ -50,7 +50,9 @@ copy's 8-space indent) and expect byte identity. Regenerate the mirror from the 
 rather than hand-editing it; hand-editing is how `quota_exceeded` had to be typed into both copies
 separately (`817f114`). Since v30, `KannuTests/HookScriptTests.swift` executes the mirror as a
 subprocess and pins the merge and lock behaviour, so a behavioural drift in the mirror fails CI even
-when the markers agree.
+when the markers agree. The Claude statusline script (`writeUsageScript` ↔
+`scripts/kannu-usage-status.sh`, `KANNU_USAGE_SCRIPT_VERSION`) has the same two-copy shape; since v4
+the pre-commit hook checks its markers too and `KannuTests/UsageScriptTests.swift` executes its mirror.
 
 ---
 

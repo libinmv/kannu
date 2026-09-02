@@ -4,6 +4,30 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-02 - Merge Claude usage sources per window instead of falling through whole snapshots
+- **Developer label:** the fable bar seems to have had some regression. check that
+- **Agent label:** Keep a live per-model window when a sibling window in the same source has lapsed; forward severity from the statusline
+- **Changes:**
+  - Diagnosis first: the "Fable" bar was not a code regression. It exists only in Claude Code's
+    `~/.claude.json` usage cache (`limits[]` `weekly_scoped`), every window in that cache lapsed at the
+    05:30 IST weekly reset, and the source ladder discarded the whole snapshot for the desktop-history
+    file, which carries only the 5-hour and all-models series. The cache cannot refresh on this
+    machine because the CLI's usage fetch returns nothing when the OAuth sign-in lacks the
+    `user:profile` scope (the same gate leaves the statusline's `rate_limits` null) — `/login` again.
+  - `ClaudeUsageSnapshot.merged(_:now:)`: the three sources (statusline file, cache, desktop history)
+    are now merged one window key at a time, best source first, taking each key from the first source
+    where it is still live. One rolled-over five-hour window no longer takes a live Fable down with it,
+    and a lesser source fills only the keys nothing better has. Nil-reset windows keep their "live"
+    meaning; severity is never borrowed across sources; `observedAt` is the newest contributing source.
+    When nothing is live anywhere the best parsed snapshot is kept so the 600 s re-read gate holds.
+    Pinned by 7 tests.
+  - Claude statusline script v4 (both copies): forwards a bucket's `severity` when present. The CLI
+    (2.1.255) sends none today, so this is forward-compatibility; the migration re-installs the script
+    on next launch and keeps any chained user statusLine.
+  - The pre-commit hook now checks the usage-script mirror's version marker the way it already checks
+    the agent-status one, and new `UsageScriptTests` (3) execute the usage mirror as a subprocess for
+    the first time.
+
 ### 2026-09-02 - Name the Claude 5-hour bar and keep its countdown live
 - **Developer label:** session in claude to be specifically named 5 hour; the time left is wrong
 - **Agent label:** Label the five-hour window "5 hour"; tick the countdown and expire windows at render

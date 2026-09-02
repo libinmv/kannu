@@ -30,6 +30,26 @@ EOF
     exit 1
   fi
 fi
+# The Claude statusline script has the same two-copy shape (writeUsageScript embeds it,
+# scripts/kannu-usage-status.sh mirrors it) and drifted unnoticed until v4 because only the
+# agent-status pair was checked. Same rule, same fix.
+usage_mirror_script="scripts/kannu-usage-status.sh"
+if [[ -f "${installer_script}" && -f "${usage_mirror_script}" ]]; then
+  usage_installer_version="$(grep -o 'KANNU_USAGE_SCRIPT_VERSION=[0-9]*' "${installer_script}" | head -1 || true)"
+  usage_mirror_version="$(grep -o 'KANNU_USAGE_SCRIPT_VERSION=[0-9]*' "${usage_mirror_script}" | head -1 || true)"
+  if [[ -n "${usage_installer_version}" && "${usage_installer_version}" != "${usage_mirror_version}" ]]; then
+    cat <<EOF
+ERROR: Usage statusline script mirror is out of sync.
+
+  embedded (authoritative): ${usage_installer_version}  in ${installer_script}
+  mirror:                   ${usage_mirror_version:-<none>}  in ${usage_mirror_script}
+
+Apply the same body edit to both copies and bump both markers, then re-stage.
+See docs/REGRESSIONS.md entry 1 for why this check exists.
+EOF
+    exit 1
+  fi
+fi
 # ------------------------------------------------------------------------------
 
 # --- Notch tooltip invariants -------------------------------------------------

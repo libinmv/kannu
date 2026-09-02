@@ -324,22 +324,25 @@ final class CursorAgentStatusMonitor: ObservableObject {
         }
     }
 
-    /// The single fallback ladder for Claude usage, best source first. The statusline hook is
-    /// freshest but only writes while a session drives it; Claude's own cached usage carries real
-    /// reset times and the per-model weekly windows nothing else has; the desktop history is
-    /// percentages with inferred resets. One definition, so a fourth source can never be added to
-    /// one caller and forgotten in the other.
+    /// The single source list for Claude usage, best first, merged one window key at a time. The
+    /// statusline hook is freshest but only writes while a session drives it; Claude's own cached
+    /// usage carries real reset times and the per-model weekly windows nothing else has; the
+    /// desktop history is percentages with inferred resets. Merging per key (not falling through
+    /// whole snapshots) means one rolled-over five-hour window in the cache no longer takes the
+    /// still-live per-model bar down with it. One definition, so a fourth source can never be
+    /// added to one caller and forgotten in the other.
     private static func loadClaudeUsageSnapshot(now: Date) -> ClaudeUsageSnapshot? {
         let url = AgentHookInstaller.statusDirectory
             .appendingPathComponent(AgentHookInstaller.usageFileName)
-        var snapshot = ClaudeUsageSnapshot.load(from: url)
-        if snapshot == nil || snapshot?.isEmpty(now: now) == true {
-            snapshot = ClaudeCachedUsage.load() ?? snapshot
-        }
-        if snapshot == nil || snapshot?.isEmpty(now: now) == true {
-            snapshot = ClaudeDesktopUsageHistory.load(now: now) ?? snapshot
-        }
-        return snapshot
+        // All three are local reads on a 600 s cadence, so reading every one is cheap.
+        let sources = [
+            ClaudeUsageSnapshot.load(from: url),
+            ClaudeCachedUsage.load(),
+            ClaudeDesktopUsageHistory.load(now: now)
+        ]
+        // Nothing live anywhere: keep the best parsed-but-lapsed snapshot rather than nil, so
+        // shouldRefresh keeps its cadence gate (a nil snapshot re-reads on every rescan tick).
+        return ClaudeUsageSnapshot.merged(sources, now: now) ?? sources.compactMap { $0 }.first
     }
 
     /// Re-reads the usage sources immediately, bypassing the cadence gate. For the manual button,
