@@ -4,6 +4,27 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-02 - Name the Claude 5-hour bar and keep its countdown live
+- **Developer label:** session in claude to be specifically named 5 hour; the time left is wrong
+- **Agent label:** Label the five-hour window "5 hour"; tick the countdown and expire windows at render
+- **Changes:**
+  - The Claude card's five-hour rate-limit bar is titled "5 hour" (was "Session", a bare literal that
+    never reached the string catalog); "Weekly" and "All models" now go through `String(localized:)`
+    too, and the dead `rateLimitLabel` case agrees.
+  - "resets in" is computed as `resetsAt − now` at render, but the view had no clock, so the text only
+    moved when something republished — at best the 180s refresh floor, and not at all with no agent on
+    screen. The quota body now sits in a one-minute `TimelineView`, and the same tick drops a bar whose
+    reset has passed: expiry used to be evaluated only at fetch time, so a window that ran out while
+    the tab was open kept its percent with the countdown silently gone until the next admitted refresh.
+  - Diagnosed, not changed this round: the "resets 5:30 am" seen was the Weekly window from a 41-hour-old
+    `~/.claude.json` cache — `~/.kannu/agent-status/claude-usage.json` has never been written by the
+    statusline, and `ClaudeUsageSnapshot.shouldRefresh` does not re-read while no agent is on screen.
+    Also the desktop-history fallback returns `nil` for a lapsed derived reset, which renders as live
+    with no countdown. Both left as-is by decision.
+  - Checked: the notch caffeinate cup never carried a Smart option (five commits, all on this branch;
+    `development`/`main` have no caffeinate code), so its absence is not a regression. A cup-click
+    popover with a Smart toggle would reuse the clipboard/timer popover pattern — deferred.
+
 ### 2026-09-02 - Race-condition pass over PR #20
 - **Developer label:** fix everything according to need, avoid regressions and see if something is a specific ask
 - **Agent label:** Fix the confirmed races from the PR #20 concurrency review; keep every deliberate behaviour

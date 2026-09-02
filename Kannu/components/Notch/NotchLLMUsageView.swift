@@ -157,27 +157,39 @@ struct NotchLLMUsageView: View {
                 }
                 quotaActionButton(snap.quotaAction)
             } else {
-                if let limit = snap.sessionLimit {
-                    quotaSection(title: "Session", reset: limit.resetsAt, bars: [.init(limit)])
-                } else {
-                    localSessionRow(snap)
-                }
-                if let week = snap.weekLimit {
-                    // The word "Weekly" and the shared reset live once on the header; the bars below
-                    // are just "All models" and each per-model name. Per-model windows share the
-                    // week's reset, so the header countdown covers them.
-                    quotaSection(
-                        title: "Weekly",
-                        reset: week.resetsAt,
-                        bars: [.init(week, label: "All models")]
-                            + snap.extraLimits.map { .init($0.limit, label: $0.label ?? Self.extraLimitLabel($0)) }
-                    )
-                } else if !snap.extraLimits.isEmpty {
-                    quotaSection(
-                        title: "Weekly",
-                        reset: snap.extraLimits.first?.limit.resetsAt,
-                        bars: snap.extraLimits.map { .init($0.limit, label: $0.label ?? Self.extraLimitLabel($0)) }
-                    )
+                // A minute tick: "resets in" is computed from `now` at render, and without a clock
+                // this view only re-rendered when something republished (the 180s refresh floor
+                // at best), so the countdown sat frozen for minutes. The same `now` also drops a
+                // window whose reset has passed — the fetch-time filter in ClaudeUsageProvider
+                // only re-runs on an admitted refresh, so a bar used to keep a stale percent with
+                // the countdown silently gone until then.
+                TimelineView(.periodic(from: .now, by: 60)) { context in
+                    let now = context.date
+                    let liveExtras = snap.extraLimits.filter { Self.isLive($0.limit, now: now) }
+                    if let limit = snap.sessionLimit, Self.isLive(limit, now: now) {
+                        quotaSection(title: String(localized: "5 hour"), reset: limit.resetsAt, bars: [.init(limit)], now: now)
+                    } else {
+                        localSessionRow(snap)
+                    }
+                    if let week = snap.weekLimit, Self.isLive(week, now: now) {
+                        // The word "Weekly" and the shared reset live once on the header; the bars
+                        // below are just "All models" and each per-model name. Per-model windows
+                        // share the week's reset, so the header countdown covers them.
+                        quotaSection(
+                            title: String(localized: "Weekly"),
+                            reset: week.resetsAt,
+                            bars: [.init(week, label: String(localized: "All models"))]
+                                + liveExtras.map { .init($0.limit, label: $0.label ?? Self.extraLimitLabel($0)) },
+                            now: now
+                        )
+                    } else if !liveExtras.isEmpty {
+                        quotaSection(
+                            title: String(localized: "Weekly"),
+                            reset: liveExtras.first?.limit.resetsAt,
+                            bars: liveExtras.map { .init($0.limit, label: $0.label ?? Self.extraLimitLabel($0)) },
+                            now: now
+                        )
+                    }
                 }
                 // Claude's Session/Week quota gauges above already cover this ground —
                 // the compact Today/Week token counts were redundant for Claude specifically.
@@ -294,7 +306,7 @@ struct NotchLLMUsageView: View {
     static func rateLimitLabel(_ key: String) -> String {
         switch key {
         case ClaudeUsageSnapshot.fiveHourKey:
-            return String(localized: "5-hour session")
+            return String(localized: "5 hour")
         case ClaudeUsageSnapshot.sevenDayKey:
             return String(localized: "Weekly (all models)")
         default:
@@ -352,15 +364,16 @@ struct NotchLLMUsageView: View {
         .hoverTooltip("Fetch latest usage (runs /usage)")
     }
 
-    /// A titled group of bars sharing one reset countdown — "Session" (one bar) or "Weekly"
+    /// A titled group of bars sharing one reset countdown — "5 hour" (one bar) or "Weekly"
     /// (all-models plus any per-model windows). The title and the countdown appear once.
+    /// `now` comes from the enclosing TimelineView so the countdown and the expiry agree.
     @ViewBuilder
-    private func quotaSection(title: String, reset: Date?, bars: [QuotaBar]) -> some View {
+    private func quotaSection(title: String, reset: Date?, bars: [QuotaBar], now: Date) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 Text(title).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                 Spacer(minLength: 0)
-                if let resets = resetsIn(reset) {
+                if let resets = resetsIn(reset, now: now) {
                     Text(resets).font(.caption2).foregroundStyle(.secondary).monospacedDigit()
                 }
             }
@@ -403,9 +416,15 @@ struct NotchLLMUsageView: View {
         }
     }
 
-    private func resetsIn(_ date: Date?) -> String? {
+    /// A limit with no reset is treated as live (nothing to expire against); one whose reset has
+    /// passed is not shown, matching the fetch-time rule in `ClaudeUsageSnapshot.displayWindows`.
+    private static func isLive(_ limit: UsageLimit, now: Date) -> Bool {
+        limit.resetsAt.map { $0 > now } ?? true
+    }
+
+    private func resetsIn(_ date: Date?, now: Date = Date()) -> String? {
         guard let date else { return nil }
-        let seconds = Int(date.timeIntervalSinceNow)
+        let seconds = Int(date.timeIntervalSince(now))
         guard seconds > 0 else { return nil }
         let minutes = seconds / 60
         let days = minutes / (60 * 24)
