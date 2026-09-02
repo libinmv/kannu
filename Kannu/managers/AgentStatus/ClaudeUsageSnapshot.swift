@@ -150,6 +150,30 @@ struct ClaudeUsageSnapshot: Equatable {
         return ClaudeUsageSnapshot(windows: windows, observedAt: observedAt)
     }
 
+    /// Why the card may be showing less than it should.
+    enum Hint: Equatable {
+        /// Claude hooks are installed, so the CLI is in use, yet neither server-backed source
+        /// (statusline file, Claude Code's usage cache) has a live window. The CLI's usage fetch
+        /// returns nothing when its keychain sign-in lacks the `user:profile` scope, and the same
+        /// gate leaves the statusline's `rate_limits` null — one `/login` from a Terminal `claude`
+        /// fixes both. Sessions inside the desktop app run on a host token without that scope,
+        /// so `/login` there does not help.
+        case signInNeeded
+    }
+
+    /// Desktop-only users (no Claude hooks) are never nagged: the desktop history is the source
+    /// they were always meant to have.
+    static func hint(
+        hooksInstalled: Bool,
+        statusline: ClaudeUsageSnapshot?,
+        cache: ClaudeUsageSnapshot?,
+        now: Date
+    ) -> Hint? {
+        guard hooksInstalled else { return nil }
+        let serverBacked = [statusline, cache].compactMap { $0 }.contains { !$0.isEmpty(now: now) }
+        return serverBacked ? nil : .signInNeeded
+    }
+
     /// Parses both file shapes: the `windows` array written by the current hook, and the flat
     /// `five_hour_pct` / `seven_day_pct` form written by hooks predating open-ended windows.
     /// Older files stay readable so the gauges do not blank out between the app upgrading and

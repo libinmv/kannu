@@ -4,6 +4,21 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-02 - Tell the user when Claude limits need a CLI sign-in
+- **Developer label:** so we need /login in cli always, werent we spinning up gui chat window ?
+- **Agent label:** Show a sign-in hint on the Claude card instead of silently falling back to the desktop history
+- **Changes:**
+  - Clarified which sign-in the usage paths use: Kannu's `/usage` spawn and the statusline both run the
+    CLI on its own keychain credentials (`Claude Code-credentials`); sessions inside the desktop app run
+    on a host-injected token whose scopes omit `user:profile`, and the CLI's usage fetch returns nothing
+    without that scope. One `/login` from a Terminal `claude` (not from a chat inside the desktop app)
+    restores it; it is not a recurring step.
+  - `ClaudeUsageSnapshot.hint(hooksInstalled:statusline:cache:now:)` (4 tests): when Claude hooks are
+    installed and neither server-backed source has a live window, the monitor publishes
+    `claudeUsageHint = .signInNeeded` and the Claude card shows one line — "Limits unavailable — in
+    Terminal run claude, then /login". Desktop-only users (no hooks) are never nagged; the hint is
+    suppressed while a manual fetch is running and clears on the next refresh once the cache is live.
+
 ### 2026-09-02 - Merge Claude usage sources per window instead of falling through whole snapshots
 - **Developer label:** the fable bar seems to have had some regression. check that
 - **Agent label:** Keep a live per-model window when a sibling window in the same source has lapsed; forward severity from the statusline

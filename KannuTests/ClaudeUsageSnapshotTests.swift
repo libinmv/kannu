@@ -302,4 +302,27 @@ final class ClaudeUsageSnapshotTests: XCTestCase {
         let newerLive = ClaudeUsageSnapshot(windows: [window("seven_day", pct: 80, resetsIn: 100)], observedAt: now)
         XCTAssertEqual(ClaudeUsageSnapshot.merged([older, newerLive], now: now)?.observedAt, now)
     }
+
+    // MARK: - Sign-in hint
+
+    func testHintIsNeverShownWithoutClaudeHooks() {
+        XCTAssertNil(ClaudeUsageSnapshot.hint(hooksInstalled: false, statusline: nil, cache: nil, now: now))
+    }
+
+    func testHintIsSilentWhileTheStatuslineIsLive() {
+        let live = ClaudeUsageSnapshot(windows: [window("five_hour", pct: 40, resetsIn: 300)], observedAt: now)
+        XCTAssertNil(ClaudeUsageSnapshot.hint(hooksInstalled: true, statusline: live, cache: nil, now: now))
+    }
+
+    func testHintIsSilentWhileTheCacheIsLive() {
+        let lapsed = ClaudeUsageSnapshot(windows: [window("five_hour", pct: 40, resetsIn: -300)], observedAt: now)
+        let live = ClaudeUsageSnapshot(windows: [window("seven_day", pct: 10, resetsIn: 3_000)], observedAt: now)
+        XCTAssertNil(ClaudeUsageSnapshot.hint(hooksInstalled: true, statusline: lapsed, cache: live, now: now))
+    }
+
+    func testHintAsksForSignInWhenNoServerBackedSourceIsLive() {
+        let lapsed = ClaudeUsageSnapshot(windows: [window("five_hour", pct: 40, resetsIn: -300)], observedAt: now)
+        XCTAssertEqual(ClaudeUsageSnapshot.hint(hooksInstalled: true, statusline: nil, cache: lapsed, now: now), .signInNeeded)
+        XCTAssertEqual(ClaudeUsageSnapshot.hint(hooksInstalled: true, statusline: nil, cache: nil, now: now), .signInNeeded)
+    }
 }

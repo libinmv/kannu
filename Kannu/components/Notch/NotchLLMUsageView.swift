@@ -156,6 +156,7 @@ struct NotchLLMUsageView: View {
                     Text("quota unavailable").font(.caption2).foregroundStyle(.secondary.opacity(0.7))
                 }
                 quotaActionButton(snap.quotaAction)
+                claudeSignInHint(provider: provider)
             } else {
                 // A minute tick: "resets in" is computed from `now` at render, and without a clock
                 // this view only re-rendered when something republished (the 180s refresh floor
@@ -191,6 +192,7 @@ struct NotchLLMUsageView: View {
                         )
                     }
                 }
+                claudeSignInHint(provider: provider)
                 // Claude's Session/Week quota gauges above already cover this ground —
                 // the compact Today/Week token counts were redundant for Claude specifically.
                 // Other providers (e.g. Cursor, Codex) keep them.
@@ -362,6 +364,21 @@ struct NotchLLMUsageView: View {
         // Native .help() is dead in the notch: Kannu is an LSUIElement accessory app whose panel
         // never becomes active, so AppKit's tooltip manager never runs. This draws its own.
         .hoverTooltip("Fetch latest usage (runs /usage)")
+    }
+
+    /// One line explaining why the Claude bars may be thinner than expected. The fix is a
+    /// Terminal `/login`, not anything Kannu can do, so this is text only — no button, no tooltip.
+    /// Hidden while a manual fetch runs so it cannot flash between the press and the reload.
+    @ViewBuilder
+    private func claudeSignInHint(provider: ProviderID) -> some View {
+        if provider == .claude,
+           agentMonitor.claudeUsageHint == .signInNeeded,
+           !agentMonitor.isRefreshingClaudeUsage {
+            Text(String(localized: "Limits unavailable — in Terminal run claude, then /login"))
+                .font(.caption2)
+                .foregroundStyle(.orange)
+                .lineLimit(2)
+        }
     }
 
     /// A titled group of bars sharing one reset countdown — "5 hour" (one bar) or "Weekly"

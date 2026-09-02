@@ -16,6 +16,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
     /// hook's `claude-usage.json`, falling back to the desktop app's own history. Refreshed on the
     /// cadence in `refreshClaudeUsage(now:)`, never on demand. Nil until first observation.
     @Published private(set) var claudeUsage: ClaudeUsageSnapshot?
+    /// Why `claudeUsage` may be thinner than expected; the card renders it as one line of text.
+    @Published private(set) var claudeUsageHint: ClaudeUsageSnapshot.Hint?
 
     /// Bumped whenever an agent actually does something — a traffic light transition or any
     /// change to the session list. Views use it to drive time-boxed reveals; unlike
@@ -318,9 +320,12 @@ final class CursorAgentStatusMonitor: ObservableObject {
         ) else { return }
         lastClaudeUsageReadAt = now
 
-        let snapshot = Self.loadClaudeUsageSnapshot(now: now)
+        let (snapshot, hint) = Self.loadClaudeUsageSnapshot(now: now)
         if snapshot != claudeUsage {
             claudeUsage = snapshot
+        }
+        if hint != claudeUsageHint {
+            claudeUsageHint = hint
         }
     }
 
@@ -331,18 +336,23 @@ final class CursorAgentStatusMonitor: ObservableObject {
     /// whole snapshots) means one rolled-over five-hour window in the cache no longer takes the
     /// still-live per-model bar down with it. One definition, so a fourth source can never be
     /// added to one caller and forgotten in the other.
-    private static func loadClaudeUsageSnapshot(now: Date) -> ClaudeUsageSnapshot? {
+    private static func loadClaudeUsageSnapshot(now: Date) -> (snapshot: ClaudeUsageSnapshot?, hint: ClaudeUsageSnapshot.Hint?) {
         let url = AgentHookInstaller.statusDirectory
             .appendingPathComponent(AgentHookInstaller.usageFileName)
         // All three are local reads on a 600 s cadence, so reading every one is cheap.
-        let sources = [
-            ClaudeUsageSnapshot.load(from: url),
-            ClaudeCachedUsage.load(),
-            ClaudeDesktopUsageHistory.load(now: now)
-        ]
+        let statusline = ClaudeUsageSnapshot.load(from: url)
+        let cache = ClaudeCachedUsage.load()
+        let sources = [statusline, cache, ClaudeDesktopUsageHistory.load(now: now)]
         // Nothing live anywhere: keep the best parsed-but-lapsed snapshot rather than nil, so
         // shouldRefresh keeps its cadence gate (a nil snapshot re-reads on every rescan tick).
-        return ClaudeUsageSnapshot.merged(sources, now: now) ?? sources.compactMap { $0 }.first
+        let snapshot = ClaudeUsageSnapshot.merged(sources, now: now) ?? sources.compactMap { $0 }.first
+        let hint = ClaudeUsageSnapshot.hint(
+            hooksInstalled: AgentHookInstaller.shared.isInstalled(.claude),
+            statusline: statusline,
+            cache: cache,
+            now: now
+        )
+        return (snapshot, hint)
     }
 
     /// Re-reads the usage sources immediately, bypassing the cadence gate. For the manual button,
@@ -350,8 +360,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
     private func reloadClaudeUsageNow() {
         let now = Date()
         lastClaudeUsageReadAt = now
-        let snapshot = Self.loadClaudeUsageSnapshot(now: now)
+        let (snapshot, hint) = Self.loadClaudeUsageSnapshot(now: now)
         if snapshot != claudeUsage { claudeUsage = snapshot }
+        if hint != claudeUsageHint { claudeUsageHint = hint }
     }
 
     /// Triggers Claude Code's own usage fetch, which writes `cachedUsageUtilization` to
@@ -373,6 +384,10 @@ final class CursorAgentStatusMonitor: ObservableObject {
     /// `--print` treats it as prompt text. An interactive session normally registers itself as a
     /// remote-control device (which showed up as a phantom chat and a new-device sign-in warning),
     /// so the spawn disables that explicitly and persists no session.
+    ///
+    /// The spawn inherits no `CLAUDE_CODE_OAUTH_*` variables, so the CLI uses its keychain sign-in.
+    /// That sign-in must carry the `user:profile` scope or the CLI's fetch returns nothing and the
+    /// cache stays as it was; `claudeUsageHint` tells the user when that is the case.
     func refreshClaudeUsageFromCLI() {
         guard !isRefreshingClaudeUsage else { return }
         guard let binary = Self.resolveClaudeBinary() else {
