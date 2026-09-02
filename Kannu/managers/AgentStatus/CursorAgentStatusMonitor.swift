@@ -12,12 +12,30 @@ final class CursorAgentStatusMonitor: ObservableObject {
     @Published private(set) var trafficLightState: AgentTrafficLightState = .inactive
     @Published private(set) var shouldShowTrafficLight = false
     @Published private(set) var sessions: [AgentSessionStatus] = []
+    /// Latest server-reported Claude rate-limit usage, and the only cache of it: the statusline
+    /// hook's `claude-usage.json`, falling back to the desktop app's own history. Refreshed on the
+    /// cadence in `refreshClaudeUsage(now:)`, never on demand. Nil until first observation.
+    @Published private(set) var claudeUsage: ClaudeUsageSnapshot?
+    /// Why `claudeUsage` may be thinner than expected; the card renders it as one line of text.
+    @Published private(set) var claudeUsageHint: ClaudeUsageSnapshot.Hint?
 
     /// Bumped whenever an agent actually does something — a traffic light transition or any
     /// change to the session list. Views use it to drive time-boxed reveals; unlike
     /// `trafficLightState` it also fires on same-state activity (executing → executing), so a
     /// window keyed off it stays open for the whole of a long run rather than expiring mid-way.
     @Published private(set) var activityPulse: Int = 0
+    /// Whether every `activityPulse` bump since the reveal observer last consumed was the
+    /// running-agent heartbeat. A "was the last bump a heartbeat" flag was wrong here: one
+    /// `rescan()` publishes up to three bumps (session list, traffic light, then the heartbeat)
+    /// and SwiftUI delivers them as a single `onChange`, so the trailing heartbeat masked the
+    /// transition it rode in with and the island never revealed on idle → executing.
+    private var pulseLatch = AgentActivityPulseLatch()
+
+    /// For the reveal observer: true when nothing but heartbeats fired since its last call.
+    /// Consuming resets the window, so exactly one observer may call this per pulse.
+    func consumeActivityPulseWasHeartbeatOnly() -> Bool {
+        pulseLatch.consume()
+    }
 
     private var eventStream: FSEventStreamRef?
     private var statusDirectorySource: DispatchSourceFileSystemObject?
@@ -33,6 +51,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
     private var cachedTranscriptAnalysisBySession: [String: TranscriptAnalysis] = [:]
     private var cachedTranscriptAnalysisAt: Date?
     private var lastActivityPulseAt: Date?
+    private var lastClaudeUsageReadAt: Date?
     private var lastPublishedTrafficLightState: AgentTrafficLightState?
     private var lastPublishedShouldShowTrafficLight: Bool?
 
@@ -43,10 +62,11 @@ final class CursorAgentStatusMonitor: ObservableObject {
         isRunning = true
         installWatchers()
         scheduleRescan(delay: 0)
-        // Background poll; hook directory watcher handles near-real-time updates for hook-based
-        // providers, but Claude's passive session detection has no filesystem watcher, so this
-        // interval is also its detection latency ceiling.
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        // Slow safety net only: hook files and Claude transcript/session dirs are all under
+        // FSEvents or the kqueue watcher, so changes rescan event-driven. This interval is the
+        // ceiling for changes with no filesystem trace (chiefly: an agent process dying without
+        // writing anything) — the dead-PID reconciler runs on every rescan, whatever triggers it.
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.scheduleRescan(delay: 0)
             }
@@ -60,13 +80,11 @@ final class CursorAgentStatusMonitor: ObservableObject {
         pollTimer?.invalidate()
         pollTimer = nil
         if let statusDirectorySource {
+            // The cancel handler (fd captured by value) closes the descriptor.
             statusDirectorySource.cancel()
             self.statusDirectorySource = nil
         }
-        if statusDirectoryFD >= 0 {
-            close(statusDirectoryFD)
-            statusDirectoryFD = -1
-        }
+        statusDirectoryFD = -1
         quickRescanTask?.cancel()
         quickRescanTask = nil
         if let eventStream {
@@ -95,9 +113,14 @@ final class CursorAgentStatusMonitor: ObservableObject {
             withIntermediateDirectories: true
         )
         // Only watch hook status + transcript roots. Avoid Cursor's huge Application Support trees.
+        // The Claude dirs make passive session detection event-driven: transcripts and session
+        // PID files change on every turn, so the FSEvents callback (which already invalidates
+        // both path caches) covers what the old 1-second poll existed for.
         watchedPaths = [
             CursorTranscriptParser.projectsDirectory.path,
-            AgentHookInstaller.statusDirectory.path
+            AgentHookInstaller.statusDirectory.path,
+            AgentSessionLogParser.claudeProjectsDirectory.path,
+            AgentSessionLogParser.claudeSessionsDirectory.path
         ]
 
         installStatusDirectoryWatcher()
@@ -160,11 +183,10 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 self?.scheduleQuickRescan()
             }
         }
-        source.setCancelHandler { [weak self] in
-            if let fd = self?.statusDirectoryFD, fd >= 0 {
-                close(fd)
-                self?.statusDirectoryFD = -1
-            }
+        // fd captured by value — see SystemTimerBridge.startFileMonitor for why closing
+        // via self from an enqueued cancel handler closes the wrong descriptor.
+        source.setCancelHandler {
+            close(fd)
         }
         source.resume()
         statusDirectorySource = source
@@ -205,7 +227,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
             staleMinutes: staleMinutes,
             collapseSeconds: collapseSeconds,
             inactiveSeconds: inactiveSeconds,
-            now: now
+            now: now,
+            allowBackingDelete: !hooksOnly
         )
 
         let (passiveClaudeSessions, deadPIDConversationIDs) = buildClaudeSessions(
@@ -214,67 +237,17 @@ final class CursorAgentStatusMonitor: ObservableObject {
             inactiveSeconds: inactiveSeconds,
             now: now
         )
-        if !passiveClaudeSessions.isEmpty || !deadPIDConversationIDs.isEmpty {
-            let passiveByConversationID = Dictionary(
-                passiveClaudeSessions.map { ($0.conversationID, $0) },
-                uniquingKeysWith: { first, _ in first }
-            )
-            let collapseMs = Int64(collapseSeconds) * 1_000
-            let inactiveMs = Int64(inactiveSeconds) * 1_000
-            let nowMs = Int64(now.timeIntervalSince1970 * 1000)
-
-            hookSessions = hookSessions.map { session in
-                guard session.provider.lowercased() == "claude" else { return session }
-                let passive = passiveByConversationID[session.conversationID]
-                let processDead = deadPIDConversationIDs.contains(session.conversationID)
-
-                // Demote: the hook file still claims active work — Stop never fires on a
-                // user interrupt, and SIGKILL/crash skips it entirely — but fresher passive
-                // evidence (a newer transcript record, or a dead process) says otherwise.
-                if session.displayState.isActiveRun {
-                    if let passive, !passive.displayState.isActiveRun,
-                       processDead || passive.updatedAt >= session.updatedAt {
-                        return session.withDisplayState(passive.displayState, visible: passive.isVisible)
-                    }
-                    if passive == nil, processDead {
-                        // Process gone and its session record too old for a passive card:
-                        // age the stop from the hook's own timestamp.
-                        let ageMs = nowMs - Int64(session.updatedAt.timeIntervalSince1970 * 1000)
-                        let lifecycle = AgentTrafficLightMapper.resolveHookState(
-                            rawState: "stopped",
-                            ageMs: ageMs,
-                            collapseMs: collapseMs,
-                            inactiveMs: inactiveMs
-                        )
-                        return session.withDisplayState(lifecycle.state, visible: lifecycle.visible)
-                    }
-                    return session
-                }
-
-                // Hooks only fire at tool boundaries. A single long-running tool — a build, a
-                // test suite, an extended turn with no tool calls — leaves the status file
-                // untouched for minutes, and `resolveHookState` then ages it out of its active
-                // state and dims the session while it is hardest at work. Passive detection can
-                // still see the truth (process alive, tool in flight), and a live process beats
-                // a stale timestamp. Safe against stale tails: passive "thinking" is bounded by
-                // the working-staleness ladder and passive "executing" means a verified
-                // in-flight tool.
-                guard session.hasActiveRawState,
-                      let passive,
-                      passive.displayState.isActiveRun
-                else { return session }
-                return session.withDisplayState(
-                    passive.displayState,
-                    visible: true,
-                    updatedAt: max(session.updatedAt, passive.updatedAt)
-                )
-            }
-
-            let hookConversationIDs = Set(hookSessions.map(\.conversationID))
-            for session in passiveClaudeSessions where !hookConversationIDs.contains(session.conversationID) {
-                hookSessions.append(session)
-            }
-        }
+        // Extracted to AgentTrafficLightMapper.reconcileClaudeSessions (pure, tested):
+        // this merge has regressed repeatedly while it lived inline here, unreachable by
+        // the logic test target — docs/REGRESSIONS.md entries 5 and 7.
+        hookSessions = AgentTrafficLightMapper.reconcileClaudeSessions(
+            hookSessions: hookSessions,
+            passiveSessions: passiveClaudeSessions,
+            deadPIDConversationIDs: deadPIDConversationIDs,
+            collapseMs: Int64(collapseSeconds) * 1_000,
+            inactiveMs: Int64(inactiveSeconds) * 1_000,
+            nowMs: Int64(now.timeIntervalSince1970 * 1000)
+        )
 
         let transcriptAnalysis: [String: TranscriptAnalysis]
         let transcriptSessions: [AgentSessionStatus]
@@ -287,7 +260,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
             let retainedTranscriptSessions = sessions.filter { !hookConversationIDs.contains($0.conversationID) }
             transcriptSessions = retainedTranscriptSessions
         } else if isCursorRunning() {
-            transcriptAnalysis = cachedTranscriptAnalysis(maxAgeMinutes: staleMinutes, now: now, forceRefresh: true)
+            transcriptAnalysis = cachedTranscriptAnalysis(maxAgeMinutes: staleMinutes, now: now, forceRefresh: false)
             transcriptSessions = buildTranscriptSessions(
                 analysisBySession: transcriptAnalysis,
                 staleMinutes: staleMinutes,
@@ -317,6 +290,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
         let sortedSessions = resolvedSessions.sorted { $0.updatedAt > $1.updatedAt }
         if sessions != sortedSessions {
             sessions = sortedSessions
+            pulseLatch.noteTransition()
             activityPulse &+= 1
         }
         hadHookFilesThisCycle = !hookSessions.isEmpty || hadRecentHookFiles(staleMinutes: staleMinutes)
@@ -328,7 +302,220 @@ final class CursorAgentStatusMonitor: ObservableObject {
             applyDisplay(from: visibleSessions)
         }
 
+        refreshClaudeUsage(now: now)
         emitActivityHeartbeatIfRunning(now: now)
+    }
+
+    /// Refreshes the cached Claude usage, at most once per `claudeUsageRefreshInterval`.
+    ///
+    /// The statusline hook is authoritative because it reports reset times. The desktop app's own
+    /// history is the fallback for the case the hook cannot cover — a user who runs Claude only in
+    /// the desktop app, where the statusline command never fires.
+    private func refreshClaudeUsage(now: Date) {
+        guard ClaudeUsageSnapshot.shouldRefresh(
+            now: now,
+            lastRead: lastClaudeUsageReadAt,
+            state: trafficLightState,
+            hasSnapshot: claudeUsage != nil
+        ) else { return }
+        lastClaudeUsageReadAt = now
+
+        let (snapshot, hint) = Self.loadClaudeUsageSnapshot(now: now)
+        if snapshot != claudeUsage {
+            claudeUsage = snapshot
+        }
+        if hint != claudeUsageHint {
+            claudeUsageHint = hint
+        }
+    }
+
+    /// The single source list for Claude usage, best first, merged one window key at a time. The
+    /// statusline hook is freshest but only writes while a session drives it; Claude's own cached
+    /// usage carries real reset times and the per-model weekly windows nothing else has; the
+    /// desktop history is percentages with inferred resets. Merging per key (not falling through
+    /// whole snapshots) means one rolled-over five-hour window in the cache no longer takes the
+    /// still-live per-model bar down with it. One definition, so a fourth source can never be
+    /// added to one caller and forgotten in the other.
+    private static func loadClaudeUsageSnapshot(now: Date) -> (snapshot: ClaudeUsageSnapshot?, hint: ClaudeUsageSnapshot.Hint?) {
+        let url = AgentHookInstaller.statusDirectory
+            .appendingPathComponent(AgentHookInstaller.usageFileName)
+        // All three are local reads on a 600 s cadence, so reading every one is cheap.
+        let statusline = ClaudeUsageSnapshot.load(from: url)
+        let cache = ClaudeCachedUsage.load()
+        let sources = [statusline, cache, ClaudeDesktopUsageHistory.load(now: now)]
+        // Nothing live anywhere: keep the best parsed-but-lapsed snapshot rather than nil, so
+        // shouldRefresh keeps its cadence gate (a nil snapshot re-reads on every rescan tick).
+        let snapshot = ClaudeUsageSnapshot.merged(sources, now: now) ?? sources.compactMap { $0 }.first
+        let hint = ClaudeUsageSnapshot.hint(
+            hooksInstalled: AgentHookInstaller.shared.isInstalled(.claude),
+            statusline: statusline,
+            cache: cache,
+            now: now
+        )
+        return (snapshot, hint)
+    }
+
+    /// Re-reads the usage sources immediately, bypassing the cadence gate. For the manual button,
+    /// which wants the freshest on-disk value the instant a fetch completes.
+    private func reloadClaudeUsageNow() {
+        let now = Date()
+        lastClaudeUsageReadAt = now
+        let (snapshot, hint) = Self.loadClaudeUsageSnapshot(now: now)
+        if snapshot != claudeUsage { claudeUsage = snapshot }
+        if hint != claudeUsageHint { claudeUsageHint = hint }
+    }
+
+    /// Triggers Claude Code's own usage fetch, which writes `cachedUsageUtilization` to
+    /// `~/.claude.json` — the only local source for the per-model (e.g. Fable) weekly window.
+    ///
+    /// Runs the installed CLI under a pseudo-terminal issuing `/usage`, because that slash command
+    /// only runs in an interactive session (headless `-p` treats it as prompt text). The spawn uses
+    /// the credential Claude already stored in the keychain: silent after a one-time "Always Allow",
+    /// and it reads only limit metadata — no message, no tokens, no cost. Kannu never sees the
+    /// credential; it only re-reads the file the CLI writes.
+    /// True while a user-triggered usage fetch is running; drives the button's spinner and stops
+    /// a second press from spawning a concurrent process.
+    @Published private(set) var isRefreshingClaudeUsage = false
+
+    /// Runs Claude Code's own `/usage`, the only thing that refreshes the per-model (Fable) weekly
+    /// window, then reloads the display from what it wrote.
+    ///
+    /// `/usage` is declared `requires: {ink}`, so it only runs in an interactive session — headless
+    /// `--print` treats it as prompt text. An interactive session normally registers itself as a
+    /// remote-control device (which showed up as a phantom chat and a new-device sign-in warning),
+    /// so the spawn disables that explicitly and persists no session.
+    ///
+    /// The spawn inherits no `CLAUDE_CODE_OAUTH_*` variables, so the CLI uses its keychain sign-in.
+    /// That sign-in must carry the `user:profile` scope or the CLI's fetch returns nothing and the
+    /// cache stays as it was; `claudeUsageHint` tells the user when that is the case.
+    func refreshClaudeUsageFromCLI() {
+        guard !isRefreshingClaudeUsage else { return }
+        guard let binary = Self.resolveClaudeBinary() else {
+            reloadClaudeUsageNow()
+            return
+        }
+        isRefreshingClaudeUsage = true
+
+        // A GCD worker, not a Task: runUsageFetch is up to ~55 s of Thread.sleep, and a
+        // detached Task would pin one cooperative-pool thread (sized to core count) for the
+        // whole fetch, starving every other Task in the process on a small machine.
+        DispatchQueue.global(qos: .userInitiated).async {
+            Self.runUsageFetch(binary: binary)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    // Order matters: refresh the cache first, then re-run the providers so the
+                    // card renders the new numbers. Doing this at press time would race the fetch.
+                    self.reloadClaudeUsageNow()
+                    LLMUsageManager.shared.refreshAll(force: true)
+                    self.isRefreshingClaudeUsage = false
+                }
+            }
+        }
+    }
+
+    /// Newest installed Claude Code binary, so this keeps working across version bumps.
+    private nonisolated static func resolveClaudeBinary() -> URL? {
+        let base = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Claude/claude-code")
+        guard let versions = try? FileManager.default.contentsOfDirectory(
+            at: base, includingPropertiesForKeys: nil) else { return nil }
+        return versions
+            .map { $0.appendingPathComponent("claude.app/Contents/MacOS/claude") }
+            .filter { FileManager.default.isExecutableFile(atPath: $0.path) }
+            .sorted { $0.path.compare($1.path, options: .numeric) == .orderedAscending }
+            .last
+    }
+
+    private nonisolated static func runUsageFetch(binary: URL) {
+        // Two attempts. The first suppresses the remote-control device registration (the phantom
+        // chat); if that flag turns out to be rejected or ineffective and no fetch lands, fall back
+        // to the bare invocation, which is proven to fetch. Better a working refresh than a clean
+        // one that does nothing.
+        for arguments in ClaudeUsageFetchCommand.attempts {
+            guard ClaudeUsageFetchCommand.isValidForInteractiveSession(arguments: arguments) else { continue }
+            if attemptUsageFetch(binary: binary, arguments: arguments) { return }
+        }
+    }
+
+    /// One `/usage` run. Returns true when the on-disk fetch stamp advanced, i.e. it worked.
+    private nonisolated static func attemptUsageFetch(binary: URL, arguments: [String]) -> Bool {
+        let configURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude.json")
+        func fetchedAtMs() -> Double? {
+            guard let data = try? Data(contentsOf: configURL),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let cache = json["cachedUsageUtilization"] as? [String: Any] else { return nil }
+            return (cache["fetchedAtMs"] as? NSNumber)?.doubleValue
+        }
+        let before = fetchedAtMs()
+
+        let process = Process()
+        process.executableURL = binary
+        process.arguments = arguments
+        process.environment = ClaudeUsageFetchCommand.environment()
+        // Deliberately NOT setting `process.environment`: plain inheritance, exactly as the
+        // version that was proven to fetch. Setting CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC here
+        // suppressed nonessential network traffic — which is what the usage fetch is — so the
+        // session started, `/usage` ran, and nothing was ever fetched.
+
+        // A pty is required: `/usage` is declared `requires: {ink}` and only runs interactively.
+        var master: Int32 = 0, slave: Int32 = 0
+        guard openpty(&master, &slave, nil, nil, nil) == 0 else { return false }
+        let masterHandle = FileHandle(fileDescriptor: master, closeOnDealloc: true)
+        let slaveHandle = FileHandle(fileDescriptor: slave, closeOnDealloc: true)
+        process.standardInput = slaveHandle
+        process.standardOutput = slaveHandle
+        process.standardError = slaveHandle
+        // Drain the pty so the child never blocks on a full buffer; the output itself is unused.
+        masterHandle.readabilityHandler = { _ = $0.availableData }
+
+        do { try process.run() } catch {
+            // Reachable: Claude Code self-updates by reaping old version directories, so the
+            // binary resolved a moment ago can be gone. Every other exit path clears the
+            // handler before the handle is dropped — an armed readability source on a
+            // closing descriptor is FileHandle's documented crash — so this one must too.
+            masterHandle.readabilityHandler = nil
+            try? masterHandle.close()
+            try? slaveHandle.close()
+            return false
+        }
+
+        // Give the TUI time to come up before typing, then issue the command.
+        Thread.sleep(forTimeInterval: 3)
+        if !process.isRunning {
+            // Rejected argument or instant exit — nothing was typed, so report failure and let the
+            // caller try the next invocation.
+            masterHandle.readabilityHandler = nil
+            try? masterHandle.close()
+            return false
+        }
+        masterHandle.write(Data("/usage\r".utf8))
+
+        var fetched = false
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.25)
+            if let now = fetchedAtMs(), now != before { fetched = true; break }
+            if !process.isRunning { break }
+        }
+
+        if process.isRunning && fetched {
+            masterHandle.write(Data("/exit\r".utf8))
+            let quitDeadline = Date().addingTimeInterval(2)
+            while process.isRunning && Date() < quitDeadline { Thread.sleep(forTimeInterval: 0.1) }
+        }
+        if process.isRunning {
+            // terminate() only signals and the TUI can trap SIGTERM; escalate so waitUntilExit()
+            // can never block this task and strand the spinner.
+            process.terminate()
+            let killDeadline = Date().addingTimeInterval(2)
+            while process.isRunning && Date() < killDeadline { Thread.sleep(forTimeInterval: 0.1) }
+            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            process.waitUntilExit()
+        }
+        masterHandle.readabilityHandler = nil
+        try? masterHandle.close()
+        return fetched
     }
 
     /// Keeps a still-running agent visible to time-boxed consumers.
@@ -346,6 +533,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
             return
         }
         lastActivityPulseAt = now
+        pulseLatch.noteHeartbeat()
         activityPulse &+= 1
     }
 
@@ -378,6 +566,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
             changed = true
         }
         if changed {
+            pulseLatch.noteTransition()
             activityPulse &+= 1
         }
     }
@@ -434,7 +623,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
             displayState: winner.displayState,
             updatedAt: winner.updatedAt,
             isVisible: winner.isVisible || loser.isVisible,
-            executionStartedAt: winner.executionStartedAt ?? loser.executionStartedAt
+            executionStartedAt: winner.executionStartedAt ?? loser.executionStartedAt,
+            cwd: winner.cwd ?? loser.cwd,
+            hostPID: winner.hostPID ?? loser.hostPID
         )
     }
 
@@ -487,7 +678,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     displayState: session.displayState,
                     updatedAt: session.updatedAt,
                     isVisible: session.isVisible,
-                    executionStartedAt: session.executionStartedAt
+                    executionStartedAt: session.executionStartedAt,
+                    cwd: session.cwd,
+                    hostPID: session.hostPID
                 )
             } else {
                 candidate = session
@@ -505,7 +698,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     displayState: merged.displayState,
                     updatedAt: max(existing.updatedAt, candidate.updatedAt),
                     isVisible: existing.isVisible || candidate.isVisible,
-                    executionStartedAt: merged.executionStartedAt ?? existing.executionStartedAt ?? candidate.executionStartedAt
+                    executionStartedAt: merged.executionStartedAt ?? existing.executionStartedAt ?? candidate.executionStartedAt,
+                    cwd: existing.cwd ?? candidate.cwd,
+                    hostPID: existing.hostPID ?? candidate.hostPID
                 )
             } else {
                 rolledUp[targetID] = candidate
@@ -584,7 +779,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     displayState: .thinking,
                     updatedAt: session.updatedAt,
                     isVisible: true,
-                    executionStartedAt: session.executionStartedAt
+                    executionStartedAt: session.executionStartedAt,
+                    cwd: session.cwd,
+                    hostPID: session.hostPID
                 )
             }
 
@@ -600,7 +797,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     displayState: .awaitingInput,
                     updatedAt: session.updatedAt,
                     isVisible: true,
-                    executionStartedAt: session.executionStartedAt
+                    executionStartedAt: session.executionStartedAt,
+                    cwd: session.cwd,
+                    hostPID: session.hostPID
                 )
             }
 
@@ -621,7 +820,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     displayState: .stopped,
                     updatedAt: session.updatedAt,
                     isVisible: true,
-                    executionStartedAt: session.executionStartedAt
+                    executionStartedAt: session.executionStartedAt,
+                    cwd: session.cwd,
+                    hostPID: session.hostPID
                 )
             }
 
@@ -629,11 +830,31 @@ final class CursorAgentStatusMonitor: ObservableObject {
         }
     }
 
+    /// Runs `body` under the hook script's directory lock without ever blocking the main
+    /// actor. Returns false, with `body` not run, when a hook currently holds the lock: the
+    /// file is mid-rewrite and any delete decision made from its previous contents is void
+    /// for this cycle. Mirrors the script's own fallback — if the lock file cannot be opened
+    /// at all, proceed unlocked rather than never deleting anything.
+    private static func withStatusLock(in directory: URL, _ body: () -> Void) -> Bool {
+        let lockPath = directory.appendingPathComponent(".kannu-status.lock").path
+        let fd = open(lockPath, O_WRONLY | O_CREAT | O_APPEND, 0o600)
+        guard fd >= 0 else { body(); return true }
+        defer { close(fd) }
+        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else { return false }
+        body()
+        return true
+    }
+
+    /// `allowBackingDelete` is false on the 50 ms hook-triggered rescan: that path does not
+    /// invalidate `CursorTranscriptParser`'s 2 s path cache (the FSEvents path does), so a
+    /// brand-new Cursor conversation's hook file would be judged "unbacked" against a listing
+    /// taken before it existed and deleted milliseconds after the hook wrote it.
     private func parseHookSessions(
         staleMinutes: Int,
         collapseSeconds: Int,
         inactiveSeconds: Int,
-        now: Date = Date()
+        now: Date = Date(),
+        allowBackingDelete: Bool = true
     ) -> [AgentSessionStatus] {
         let directory = AgentHookInstaller.statusDirectory
         guard let files = try? FileManager.default.contentsOfDirectory(
@@ -649,9 +870,27 @@ final class CursorAgentStatusMonitor: ObservableObject {
         var results: [AgentSessionStatus] = []
 
         for file in files where file.pathExtension == "json" {
+            // The agent hook replaces this file atomically (mkstemp + os.replace) and can
+            // do so between our read and a delete decision below. Deleting is only safe if
+            // the file is still the one we judged — otherwise we destroy a status the
+            // agent wrote milliseconds ago and its session vanishes until the next hook
+            // event, potentially minutes away. The stat must come BEFORE the read: sampled
+            // after it, a replace landing in between pairs the new file's mtime with the
+            // old file's contents and the guard deletes exactly what it exists to protect.
+            let mtimeAtRead = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
             guard let data = try? Data(contentsOf: file),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let state = json["state"] as? String else { continue }
+
+            func removeIfUnchanged() {
+                // Under the script's lock so a hook mid-read-modify-write cannot have the file
+                // pulled out from under it (it would resurrect the card from its cached copy).
+                _ = Self.withStatusLock(in: directory) {
+                    let mtimeNow = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+                    guard mtimeNow == mtimeAtRead else { return }
+                    try? FileManager.default.removeItem(at: file)
+                }
+            }
 
             var tsMs = (json["ts"] as? NSNumber)?.int64Value ?? 0
             if tsMs <= 0,
@@ -660,7 +899,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
             }
 
             guard nowMs - tsMs <= staleMs else {
-                try? FileManager.default.removeItem(at: file)
+                removeIfUnchanged()
                 continue
             }
 
@@ -669,22 +908,32 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 .replacingOccurrences(of: "\(provider)-", with: "")
 
             if AgentTrafficLightMapper.isSimulationConversationID(conversationID) {
-                try? FileManager.default.removeItem(at: file)
+                removeIfUnchanged()
                 continue
             }
 
-            if !hasHookSessionBacking(
+            // Cursor's backing check consults live app state and is cheap to trust. For
+            // claude/codex the "backing" is the same transcript listing that feeds chat-name
+            // lookup — deleting on a miss welded "no name yet" to "delete the session": a
+            // brand-new session (no JSONL yet), a >30-min approval wait (quiet transcript),
+            // or the per-scan session cap all destroyed hook files written seconds earlier.
+            // Their freshness is already enforced by the staleMs check above.
+            let providerKey = provider.lowercased()
+            if allowBackingDelete,
+               providerKey == "cursor",
+               !hasHookSessionBacking(
                 conversationID: conversationID,
                 provider: provider,
                 staleMinutes: staleMinutes
-            ) {
-                try? FileManager.default.removeItem(at: file)
+               ) {
+                removeIfUnchanged()
                 continue
             }
             let chatName = preferredHookChatName(from: json)
             let projectName = normalizedProjectName(
                 json["project"] as? String ?? json["project_name"] as? String ?? json["workspace_name"] as? String
             )
+            let hookCwd = (json["cwd"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             let ageMs = nowMs - tsMs
             let resolved = AgentTrafficLightMapper.resolveHookState(
                 rawState: state,
@@ -704,7 +953,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     displayState: resolved.state,
                     updatedAt: Date(timeIntervalSince1970: TimeInterval(tsMs) / 1000),
                     isVisible: resolved.visible,
-                    executionStartedAt: nil
+                    executionStartedAt: nil,
+                    cwd: hookCwd
                 )
             )
         }
@@ -1204,7 +1454,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 displayState: session.displayState,
                 updatedAt: session.updatedAt,
                 isVisible: session.isVisible,
-                executionStartedAt: session.executionStartedAt
+                executionStartedAt: session.executionStartedAt,
+                cwd: session.cwd,
+                hostPID: session.hostPID
             )
         }
     }
@@ -1263,7 +1515,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 displayState: session.displayState,
                 updatedAt: session.updatedAt,
                 isVisible: session.isVisible,
-                executionStartedAt: executionStartForSession
+                executionStartedAt: executionStartForSession,
+                cwd: session.cwd,
+                hostPID: session.hostPID
             )
         }
     }
@@ -1404,7 +1658,12 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 displayState: resolved.state,
                 updatedAt: Date(timeIntervalSince1970: TimeInterval(updatedAtMs) / 1000),
                 isVisible: resolved.visible,
-                executionStartedAt: nil
+                executionStartedAt: nil,
+                // Click-through locators: the parent chain of this pid leads to the hosting
+                // terminal/IDE, and cwd identifies the project. Only attach the pid while the
+                // process is provably alive — a dead pid must not make the row clickable.
+                cwd: json["cwd"] as? String,
+                hostPID: processAlive ? pid : nil
             ))
         }
 
@@ -1460,19 +1719,3 @@ final class CursorAgentStatusMonitor: ObservableObject {
     }
 }
 
-private extension AgentSessionStatus {
-    func replacingChatName(_ chatName: String) -> AgentSessionStatus {
-        AgentSessionStatus(
-            id: id,
-            provider: provider,
-            conversationID: conversationID,
-            chatName: chatName,
-            projectName: projectName,
-            rawState: rawState,
-            displayState: displayState,
-            updatedAt: updatedAt,
-            isVisible: isVisible,
-            executionStartedAt: executionStartedAt
-        )
-    }
-}

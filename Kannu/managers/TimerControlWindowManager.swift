@@ -164,6 +164,7 @@ final class TimerControlWindowManager {
             return hostingView
         }
         let view = NSHostingView(rootView: overlay)
+        view.sizingOptions = []
         hostingView = view
         return view
     }

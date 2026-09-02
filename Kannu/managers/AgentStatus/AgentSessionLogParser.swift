@@ -13,6 +13,10 @@ enum AgentSessionLogProvider: String, CaseIterable {
     }
 }
 
+// NOT @MainActor only because this file compiles into the logic-only test target,
+// whose synchronous tests could not call isolated statics. The caches below are still
+// main-thread-only state: every production caller is the @MainActor monitor. Keep it
+// that way, or add isolation here and migrate the tests, before parsing moves off-main.
 enum AgentSessionLogParser {
     private static let leadingByteLimit = 32_000
     private static let trailingByteLimit = 16_000

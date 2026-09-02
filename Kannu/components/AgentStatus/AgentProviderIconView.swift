@@ -6,6 +6,7 @@ enum AgentProviderIconSource: Equatable {
     case claude
     case codex
     case vscode
+    case antigravity
     case unknown(String)
 
     init(providerID: ProviderID) {
@@ -13,6 +14,7 @@ enum AgentProviderIconSource: Equatable {
         case .cursor: self = .cursor
         case .claude: self = .claude
         case .codex: self = .codex
+        case .antigravity: self = .antigravity
         }
     }
 
@@ -22,6 +24,7 @@ enum AgentProviderIconSource: Equatable {
         case "claude": self = .claude
         case "codex": self = .codex
         case "vscode": self = .vscode
+        case "antigravity": self = .antigravity
         default: self = .unknown(rawProvider)
         }
     }
@@ -32,6 +35,7 @@ enum AgentProviderIconSource: Equatable {
         case .vscode: self = .vscode
         case .codex: self = .codex
         case .claude: self = .claude
+        case .antigravity: self = .antigravity
         }
     }
 }
@@ -60,7 +64,9 @@ struct AgentProviderIconView: View {
     }
 }
 
-private extension AgentProviderIconSource {
+extension AgentProviderIconSource {
+    // Internal, not private: these lists double as the activation targets for
+    // click-through from the notch's agent panel (AgentSessionOpener).
     var bundleIdentifiers: [String] {
         switch self {
         case .cursor:
@@ -71,6 +77,8 @@ private extension AgentProviderIconSource {
             return ["com.openai.chat", "com.openai.codex"]
         case .vscode:
             return ["com.microsoft.VSCode", "com.visualstudio.code.oss"]
+        case .antigravity:
+            return ["com.google.antigravity", "com.google.Antigravity"]
         case .unknown:
             return []
         }
@@ -86,6 +94,8 @@ private extension AgentProviderIconSource {
             return ["/Applications/Codex.app", "/Applications/ChatGPT.app"]
         case .vscode:
             return ["/Applications/Visual Studio Code.app", "/Applications/Code.app"]
+        case .antigravity:
+            return ["/Applications/Antigravity.app", "/Applications/Google Antigravity.app"]
         case .unknown:
             return []
         }
@@ -97,6 +107,7 @@ private extension AgentProviderIconSource {
         case .claude: return "sparkles"
         case .codex: return "terminal"
         case .vscode: return "chevron.left.forwardslash.chevron.right"
+        case .antigravity: return "atom"
         case .unknown: return "app.fill"
         }
     }
@@ -107,6 +118,7 @@ private extension AgentProviderIconSource {
         case .claude: return Color(red: 0.85, green: 0.47, blue: 0.36)
         case .codex: return .green
         case .vscode: return Color(red: 0.27, green: 0.51, blue: 0.85)
+        case .antigravity: return Color(red: 0.26, green: 0.52, blue: 0.96)
         case .unknown: return .secondary
         }
     }

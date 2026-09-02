@@ -88,6 +88,7 @@ class ModelSelectionPanel: NSPanel {
     private func setupContentView() {
         let contentView = ModelSelectionView()
         let hostingView = NSHostingView(rootView: contentView)
+        hostingView.sizingOptions = []
         applyModelSelectionCornerMask(hostingView, radius: 16)
         self.contentView = hostingView
         

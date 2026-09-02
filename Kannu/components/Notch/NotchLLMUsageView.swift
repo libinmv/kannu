@@ -20,31 +20,58 @@ import SwiftUI
 import Defaults
 
 struct NotchLLMUsageView: View {
+    @ObservedObject private var agentMonitor = CursorAgentStatusMonitor.shared
     @ObservedObject private var manager = LLMUsageManager.shared
+
+    // Live only while the tab is visible. Fires faster than the manager's refresh floor so a
+    // tick landing just inside the floor doesn't stretch the effective cadence.
+    //
+    // `static` for publisher identity: a plain `let` on a struct View is re-evaluated on every
+    // re-render, and `manager` is an @ObservedObject that re-renders this card several times
+    // per refresh — each re-render handed `.onReceive` a brand-new timer whose 30s countdown
+    // restarted from zero, so the poll could starve indefinitely while the tab was open.
+    private static let pollTimer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
     private func isEnabled(_ provider: ProviderID) -> Bool { Defaults[provider.enabledKey] }
 
+    /// A provider is "active" (shows full card) when:
+    /// - Antigravity: always shown (session info instead of token counts)
+    /// - Others: show unless result is a hard .failure, OR a .success where the provider
+    ///   has neither local logs nor quota limits (e.g. Claude with a dead OAuth token, Codex
+    ///   not installed — both return .success but have nothing useful to display).
+    private func isActiveProvider(_ provider: ProviderID) -> Bool {
+        if provider == .antigravity { return true }
+        switch manager.results[provider] {
+        case .failure:
+            return false   // hard API error
+        case .success(let snap) where snap.isFatallyUnconfigured:
+            return false   // signed out / not installed — omit the card entirely
+        case .loading, .success, .none:
+            return true
+        }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Spacer()
-                Button {
-                    manager.refreshAll(force: true)
-                } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                        .font(.caption)
-                }
-                .buttonStyle(.plain)
-                .disabled(manager.isRefreshing)
-            }
+        let enabled = ProviderID.allCases.filter { isEnabled($0) }
+        let active = enabled.filter { isActiveProvider($0) }
+
+        VStack(alignment: .leading, spacing: 6) {
+            // Refresh control moved to KannuHeader, next to the clipboard icon
+            // (icon-only, shown while this tab is active) — no longer needed here.
             HStack(alignment: .top, spacing: 10) {
-                ForEach(ProviderID.allCases.filter { isEnabled($0) }) { provider in
+                ForEach(active) { provider in
                     card(for: provider)
                 }
             }
         }
         .padding(.horizontal, 8)
-        .onAppear { manager.refreshAll(force: true) }
+        // Deliberately not forced: this fires on every open of the tab, and forcing bypasses
+        // the refresh floor entirely — which is how the quota API ends up rate-limiting us.
+        // The Refresh button above still forces, because a user pressing it means it.
+        .onAppear { manager.refreshAll() }
+        // Keep the card current while it stays open; the manager's floor still paces the
+        // actual work, so this can never poll harder than once a minute.
+        .onReceive(Self.pollTimer) { _ in manager.refreshAll() }
     }
 
     @ViewBuilder
@@ -63,6 +90,15 @@ struct NotchLLMUsageView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
+                if provider == .claude {
+                    claudeRefreshButton
+                }
+            }
+            if case .success(let snap) = manager.results[provider] ?? .loading,
+               let note = snap.accountNote {
+                Text(note)
+                    .font(.caption2)
+                    .foregroundStyle(.orange.opacity(0.9))
             }
             switch manager.results[provider] ?? .loading {
             case .loading:
@@ -70,7 +106,11 @@ struct NotchLLMUsageView: View {
             case .failure(let reason):
                 Text(reason).font(.caption).foregroundStyle(.secondary).lineLimit(4)
             case .success(let snap):
-                success(snap)
+                if provider == .antigravity {
+                    antigravitySessionInfo(snap)
+                } else {
+                    success(snap, provider: provider)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -79,9 +119,26 @@ struct NotchLLMUsageView: View {
     }
 
     @ViewBuilder
-    private func success(_ snap: UsageSnapshot) -> some View {
+    private func antigravitySessionInfo(_ snap: UsageSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let info = snap.quotaError {
+                Text(info)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+            } else {
+                Text("No recent sessions")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+
+    @ViewBuilder
+    private func success(_ snap: UsageSnapshot, provider: ProviderID) -> some View {
         let hasPartialEstimate = snap.today.hasUnpricedModel || snap.week.hasUnpricedModel || snap.session.hasUnpricedModel
-        let showsQuota = snap.sessionLimit != nil || snap.weekLimit != nil
+        let showsQuota = snap.sessionLimit != nil || snap.weekLimit != nil || !snap.extraLimits.isEmpty
         let showEstimatedCost = !snap.billedCostOnly
         VStack(alignment: .leading, spacing: 6) {
             if !showsQuota {
@@ -92,21 +149,61 @@ struct NotchLLMUsageView: View {
                     window("Week", snap.week, showCost: showEstimatedCost)
                     window("Session", snap.session, showCost: showEstimatedCost)
                 }
+                localSessionRow(snap)
                 if let quotaError = snap.quotaError {
                     Text(quotaError).font(.caption2).foregroundStyle(.orange).lineLimit(4)
-                } else {
+                } else if snap.localSessionBlock == nil {
                     Text("quota unavailable").font(.caption2).foregroundStyle(.secondary.opacity(0.7))
                 }
                 quotaActionButton(snap.quotaAction)
+                claudeSignInHint(provider: provider)
             } else {
-                if let limit = snap.sessionLimit { quotaGauge("Session", limit) }
-                if let limit = snap.weekLimit { quotaGauge("Week", limit) }
-                if snap.logsUnavailable {
-                    Text("Token totals unavailable (no local logs)").font(.caption2).foregroundStyle(.secondary)
-                } else {
-                    VStack(alignment: .leading, spacing: 2) {
-                        window("Today", snap.today, compact: true, showCost: false)
-                        window("Week", snap.week, compact: true, showCost: false)
+                // A minute tick: "resets in" is computed from `now` at render, and without a clock
+                // this view only re-rendered when something republished (the 180s refresh floor
+                // at best), so the countdown sat frozen for minutes. The same `now` also drops a
+                // window whose reset has passed — the fetch-time filter in ClaudeUsageProvider
+                // only re-runs on an admitted refresh, so a bar used to keep a stale percent with
+                // the countdown silently gone until then.
+                TimelineView(.periodic(from: .now, by: 60)) { context in
+                    let now = context.date
+                    let liveExtras = snap.extraLimits.filter { Self.isLive($0.limit, now: now) }
+                    if let limit = snap.sessionLimit, Self.isLive(limit, now: now) {
+                        quotaSection(title: String(localized: "5 hour"), reset: limit.resetsAt, bars: [.init(limit)], now: now)
+                    } else {
+                        localSessionRow(snap)
+                    }
+                    if let week = snap.weekLimit, Self.isLive(week, now: now) {
+                        // The word "Weekly" and the shared reset live once on the header; the bars
+                        // below are just "All models" and each per-model name. Per-model windows
+                        // share the week's reset, so the header countdown covers them.
+                        quotaSection(
+                            title: String(localized: "Weekly"),
+                            reset: week.resetsAt,
+                            bars: [.init(week, label: String(localized: "All models"))]
+                                + liveExtras.map { .init($0.limit, label: $0.label ?? Self.extraLimitLabel($0)) },
+                            now: now
+                        )
+                    } else if !liveExtras.isEmpty {
+                        quotaSection(
+                            title: String(localized: "Weekly"),
+                            reset: liveExtras.first?.limit.resetsAt,
+                            bars: liveExtras.map { .init($0.limit, label: $0.label ?? Self.extraLimitLabel($0)) },
+                            now: now
+                        )
+                    }
+                }
+                claudeSignInHint(provider: provider)
+                // Claude's Session/Week quota gauges above already cover this ground —
+                // the compact Today/Week token counts were redundant for Claude specifically.
+                // Other providers (e.g. Cursor, Codex) keep them.
+                if provider != .claude {
+                    if snap.logsUnavailable {
+                        Text("Token totals unavailable").font(.caption2).foregroundStyle(.secondary)
+                    } else {
+                        VStack(alignment: .leading, spacing: 2) {
+                            window("Today", snap.today, compact: true, showCost: false)
+                            window("Week", snap.week, compact: true, showCost: false)
+                        }
                     }
                 }
                 if let onDemand = snap.onDemandSpendUSD {
@@ -142,7 +239,6 @@ struct NotchLLMUsageView: View {
                     .background(.white.opacity(0.12), in: Capsule())
             }
             .buttonStyle(.plain)
-            .disabled(manager.isRefreshing)
         }
     }
 
@@ -161,52 +257,204 @@ struct NotchLLMUsageView: View {
         }
     }
 
+    /// Locally reconstructed 5-hour block: tokens spent + reset countdown. Labeled local and
+    /// never a percentage — the plan's budget only exists server-side.
     @ViewBuilder
-    private func quotaGauge(_ label: String, _ limit: UsageLimit) -> some View {
-        let usedPct = Int(limit.used.rounded())
-        let leftPct = max(0, 100 - usedPct)
-        VStack(alignment: .leading, spacing: 3) {
-            HStack {
-                Text(label).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-                Spacer()
-                if let resets = resetsIn(limit.resetsAt) {
-                    Text(resets).font(.caption2).foregroundStyle(.secondary)
+    private func localSessionRow(_ snap: UsageSnapshot) -> some View {
+        if let block = snap.localSessionBlock {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("Session (local)")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 4)
+                Text(compactTokens(block.totalTokens))
+                    .font(.caption2)
+                    .monospacedDigit()
+                if let resets = resetsIn(block.resetsAt) {
+                    Text(resets)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
             }
+        }
+    }
+
+    private func compactTokens(_ tokens: Int) -> String {
+        switch tokens {
+        case ..<1_000: return "\(tokens) tok"
+        case ..<1_000_000: return String(format: "%.1fK tok", Double(tokens) / 1_000)
+        default: return String(format: "%.1fM tok", Double(tokens) / 1_000_000)
+        }
+    }
+
+    @ViewBuilder
+    /// Names an extra window, preferring the label its provider supplied.
+    ///
+    /// Per-model weekly windows are named by the server ("Fable"), not by a key we could recognise,
+    /// so a derived name would be a guess where a real one was already sent.
+    static func extraLimitLabel(_ extra: NamedLimit) -> String {
+        if let label = extra.label {
+            return String(localized: "Weekly (\(label))")
+        }
+        return rateLimitLabel(extra.key)
+    }
+
+    /// Names a rate-limit window for display.
+    ///
+    /// These are usage caps, not the token/cost windows listed below them, so they must not reuse
+    /// "Session" and "Week" — the same two words meaning something else in the same card was the
+    /// original confusion. Windows beyond the two universal ones are named from the provider's own
+    /// key, so a newly added cap renders with a sensible label rather than being dropped.
+    static func rateLimitLabel(_ key: String) -> String {
+        switch key {
+        case ClaudeUsageSnapshot.fiveHourKey:
+            return String(localized: "5 hour")
+        case ClaudeUsageSnapshot.sevenDayKey:
+            return String(localized: "Weekly (all models)")
+        default:
+            let suffix = key.hasPrefix("seven_day_")
+                ? String(key.dropFirst("seven_day_".count))
+                : key
+            let name = suffix.split(separator: "_").map(\.capitalized).joined(separator: " ")
+            return key.hasPrefix("seven_day")
+                ? String(localized: "Weekly (\(name))")
+                : name
+        }
+    }
+
+    /// One bar in a quota section: an optional label (nil for a single-bar section), the value,
+    /// and the accent already resolved from severity-or-fraction.
+    private struct QuotaBar: Identifiable {
+        let id = UUID()
+        let label: String?
+        let fraction: Double
+        let percent: Int
+        let tint: Color
+
+        init(_ limit: UsageLimit, label: String? = nil) {
+            self.label = label
+            self.fraction = limit.fraction
+            self.percent = Int(limit.used.rounded())
+            self.tint = NotchLLMUsageView.accent(severity: limit.severity, fraction: limit.fraction)
+        }
+    }
+
+    /// Re-reads the usage the Claude card displays. It cannot fetch the per-model weekly window
+    /// itself — that needs `/usage`, which requires Claude Code's interactive session — so the help
+    /// text points there. Sits top-right of the Claude card.
+    @ViewBuilder
+    private var claudeRefreshButton: some View {
+        Button {
+            // Only kick off the fetch. Refreshing the providers here would race it: the fetch is
+            // seconds long and async, so a refresh fired now reads the pre-fetch cache and paints
+            // stale numbers. The monitor's completion handler redraws once the new data is in.
+            agentMonitor.refreshClaudeUsageFromCLI()
+        } label: {
+            if agentMonitor.isRefreshingClaudeUsage {
+                ProgressView().controlSize(.mini)
+            } else {
+                Image(systemName: "arrow.clockwise").font(.caption)
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(agentMonitor.isRefreshingClaudeUsage)
+        .foregroundStyle(.secondary)
+        // Icon-only, so VoiceOver would otherwise announce the SF Symbol name.
+        .accessibilityLabel(String(localized: "Fetch latest usage"))
+        // Native .help() is dead in the notch: Kannu is an LSUIElement accessory app whose panel
+        // never becomes active, so AppKit's tooltip manager never runs. This draws its own.
+        .hoverTooltip("Fetch latest usage (runs /usage)")
+    }
+
+    /// One line explaining why the Claude bars may be thinner than expected. The fix is a
+    /// Terminal `/login`, not anything Kannu can do, so this is text only — no button, no tooltip.
+    /// Hidden while a manual fetch runs so it cannot flash between the press and the reload.
+    @ViewBuilder
+    private func claudeSignInHint(provider: ProviderID) -> some View {
+        if provider == .claude,
+           agentMonitor.claudeUsageHint == .signInNeeded,
+           !agentMonitor.isRefreshingClaudeUsage {
+            Text(String(localized: "Limits unavailable — in Terminal run claude, then /login"))
+                .font(.caption2)
+                .foregroundStyle(.orange)
+                .lineLimit(2)
+        }
+    }
+
+    /// A titled group of bars sharing one reset countdown — "5 hour" (one bar) or "Weekly"
+    /// (all-models plus any per-model windows). The title and the countdown appear once.
+    /// `now` comes from the enclosing TimelineView so the countdown and the expiry agree.
+    @ViewBuilder
+    private func quotaSection(title: String, reset: Date?, bars: [QuotaBar], now: Date) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(title).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                if let resets = resetsIn(reset, now: now) {
+                    Text(resets).font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+                }
+            }
+            ForEach(bars) { bar in quotaBar(bar) }
+        }
+    }
+
+    @ViewBuilder
+    private func quotaBar(_ bar: QuotaBar) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(.white.opacity(0.15))
-                    Capsule().fill(gaugeTint(limit.fraction)).frame(width: max(4, geo.size.width * limit.fraction))
+                    Capsule().fill(bar.tint)
+                        .frame(width: max(4, geo.size.width * bar.fraction))
                 }
             }
             .frame(height: 6)
-            HStack {
-                Text("\(usedPct)% used").font(.caption2).monospacedDigit()
-                Spacer()
-                Text("\(leftPct)% left").font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+            HStack(spacing: 6) {
+                if let label = bar.label {
+                    Text(label).font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                Text("\(bar.percent)%").font(.caption2.weight(.medium)).monospacedDigit()
+                    .foregroundStyle(bar.tint == .accentColor ? Color.primary : bar.tint)
             }
         }
     }
 
-    private func gaugeTint(_ fraction: Double) -> Color {
-        if fraction > 0.95 { return .red }
-        if fraction > 0.9 { return .orange }
-        return .accentColor
+    /// The bar accent: the server's own severity when it reported one, else the fraction bands.
+    private static func accent(severity: String?, fraction: Double) -> Color {
+        switch severity?.lowercased() {
+        case "critical": return .red
+        case "warning": return .orange
+        case "normal": return .accentColor
+        default:
+            if fraction > 0.95 { return .red }
+            if fraction > 0.9 { return .orange }
+            return .accentColor
+        }
     }
 
-    private func resetsIn(_ date: Date?) -> String? {
+    /// A limit with no reset is treated as live (nothing to expire against); one whose reset has
+    /// passed is not shown, matching the fetch-time rule in `ClaudeUsageSnapshot.displayWindows`.
+    private static func isLive(_ limit: UsageLimit, now: Date) -> Bool {
+        limit.resetsAt.map { $0 > now } ?? true
+    }
+
+    private func resetsIn(_ date: Date?, now: Date = Date()) -> String? {
         guard let date else { return nil }
-        let seconds = Int(date.timeIntervalSinceNow)
+        let seconds = Int(date.timeIntervalSince(now))
         guard seconds > 0 else { return nil }
-        let hours = seconds / 3600
-        if hours >= 69 {
-            let days = hours / 24
-            return "resets in \(days)d \(hours % 24)h"
+        let minutes = seconds / 60
+        let days = minutes / (60 * 24)
+        let hours = (minutes / 60) % 24
+        // Only the units that carry information: a span over a day reads "2d 22h 37m", a shorter one
+        // "4h 56m", and under an hour just "56m" — a leading "0h" is noise on a glanceable gauge.
+        if days > 0 {
+            return "resets in \(days)d \(hours)h \(minutes % 60)m"
         }
-        if seconds >= 3600 {
-            return "resets in \(hours)h \((seconds % 3600) / 60)m"
+        if hours > 0 {
+            return "resets in \(hours)h \(minutes % 60)m"
         }
-        return "resets in \(seconds / 60)m \(seconds % 60)s"
+        return "resets in \(minutes)m"
     }
 
     private func window(

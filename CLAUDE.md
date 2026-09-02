@@ -30,6 +30,8 @@ Scan the skill listing provided in the session context and pick the skills relev
 
 Copy each skill name **exactly as listed**, including any namespace prefix. Never manufacture a skill because it sounds useful — **zero skills is valid** if nothing listed is relevant.
 
+**Mandatory skill — `caveman`:** this project always loads the `caveman` skill (installed at `.claude/skills/caveman/`). Include it in **every** ART breakdown's "Relevant skills" line and load it with the other named skills — even when no other skill applies. It sets the response style (terse, full technical substance, code/errors exact); it never replaces the task-relevant skills, it accompanies them.
+
 ### 3. Display the breakdown
 
 Before doing any real work, output exactly:
@@ -40,7 +42,7 @@ ART Breakdown
 - Act as: <persona>
 - Request: <one sentence>
 - Terms: <constraints/output format, or "none specified">
-- Relevant skills: <comma-separated list, or "none — general development">
+- Relevant skills: caveman, <comma-separated list, or just "caveman" when nothing else applies>
 ```
 
 ### 4. Load what you named — as the very next tool call
@@ -59,7 +61,7 @@ ART Breakdown
 - Act as: Senior macOS Swift Architect
 - Request: Detect when Claude Code requires user input and surface it through the existing traffic-light state
 - Terms: Preserve existing architecture and UI; native APIs; low CPU
-- Relevant skills: <exact names from the session's skill listing, or "none — general development">
+- Relevant skills: caveman, <exact names from the session's skill listing, or just "caveman">
 ```
 
 `Loading: <those skills>` — then, and only then, start reading the code.
@@ -117,7 +119,7 @@ For coding tasks report: what changed, why, files affected, important architectu
 ## Build, run, verify
 
 - Verification build (no signing): `xcodebuild -project Kannu.xcodeproj -scheme Kannu -configuration Debug CODE_SIGNING_ALLOWED=NO build`
-- Runnable dev build (dev machines have no signing identities — build ad-hoc): add `CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM="" CODE_SIGN_STYLE=Manual` and a `-derivedDataPath`, then launch the produced `.app` with `open`. Never launch the bare executable — it aborts with a TCC violation outside a proper launch context.
+- Runnable dev build: prefer the stable local identity `CODE_SIGN_IDENTITY="Kannu Dev"` (a self-signed code-signing cert in the login keychain — check with `security find-identity -v -p codesigning`; create once via Keychain Access › Certificate Assistant, type Code Signing, name `Kannu Dev`). A stable identity keeps TCC grants (Accessibility etc.) valid across rebuilds. If the identity doesn't exist, fall back to ad-hoc: `CODE_SIGN_IDENTITY="-"` — but every ad-hoc rebuild mints a new code identity, so **all TCC grants die on each rebuild** and must be re-granted. Either way add `CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM="" CODE_SIGN_STYLE=Manual` and a `-derivedDataPath`, then launch the produced `.app` with `open`. Never launch the bare executable — it aborts with a TCC violation outside a proper launch context. **Trap: `xcodebuild test … CODE_SIGNING_ALLOWED=NO` rebuilds the app product UNSIGNED in the same derivedData, silently stomping an identity-signed product.** Always re-run the signed `build` as the last step before copying to `/Applications`, and verify with `codesign -dr-` (expect `certificate leaf`, not a bare `cdhash`).
 - App logs go through `os.Logger` (subsystem `com.kannu.app`); read them with **`/usr/bin/log show --predicate ...`** — plain `log` is a zsh builtin that silently mangles arguments.
 - Branch model: day-to-day work lands on `development`; `main` is the release branch; PRs target `development`.
 

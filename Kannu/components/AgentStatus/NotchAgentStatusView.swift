@@ -1,10 +1,19 @@
+import AppKit
 import Foundation
+import Defaults
 import SwiftUI
 
 struct NotchAgentStatusView: View {
     @EnvironmentObject private var vm: KannuViewModel
     @ObservedObject private var monitor = CursorAgentStatusMonitor.shared
     @ObservedObject private var skinManager = NotchSkinManager.shared
+    @ObservedObject private var caffeinate = CaffeinateManager.shared
+    /// Defaults-backed, not @State: this tab is torn down and rebuilt on every tab switch.
+    @Default(.caffeinateEnabled) private var caffeinateEnabled
+    @Default(.smartCaffeinate) private var smartCaffeinate
+    @Default(.agentActiveColor) private var activePaletteColor
+    @Default(.agentAwaitingInputColor) private var awaitingPaletteColor
+    @Default(.agentStoppedColor) private var stoppedPaletteColor
     @State private var isSuppressingScrollGesture = false
     @State private var redBlinkStartTimes: [String: Date] = [:]
     private let scrollSuppressionToken = UUID()
@@ -84,30 +93,34 @@ struct NotchAgentStatusView: View {
                 source: .codex, name: "Codex",
                 detected: fm.fileExists(atPath: home.appendingPathComponent(".codex/sessions").path)
             ),
+            ProviderInstallStatus(
+                source: .antigravity, name: "Antigravity",
+                detected: fm.fileExists(atPath: home.appendingPathComponent(".gemini").path)
+            ),
         ]
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+                caffeinateRow
+
                 if let primary = primarySession {
-                    primaryCard(primary)
+                    clickableSession(primary) { primaryCard(primary) }
                 } else if dedupedSessions.isEmpty {
                     emptyStateView
                 }
 
                 if !recentChats.isEmpty {
-                    Text("Recent chats")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
                     ForEach(recentChats) { session in
-                        sessionRow(session)
+                        clickableSession(session) { sessionRow(session) }
                     }
                 } else if !allSessions.isEmpty, primarySession == nil {
                     ForEach(allSessions) { session in
-                        sessionRow(session)
+                        clickableSession(session) { sessionRow(session) }
                     }
                 }
+
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -127,7 +140,7 @@ struct NotchAgentStatusView: View {
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.center)
-            Text("Fire up Cursor, Claude Code, or Codex and start a session — we'll watch the lights for you.")
+            Text("Fire up Cursor, Claude Code, Codex, or Antigravity and start a session — we'll watch the lights for you.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -165,6 +178,138 @@ struct NotchAgentStatusView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 16)
+    }
+
+    /// Top-right caffeinate control, visible in every panel state. Two faces:
+    /// - Smart mode on: a status-only indicator (cup + sparkle) — the Mac stays awake
+    ///   automatically while agents run; clicking opens Settings to change the mode.
+    /// - Smart mode off: the manual switch — on keeps the Mac awake right now, until off.
+    /// In both faces the cup fills and warms only while the assertion is actually held,
+    /// so the icon reports truth, not the switch position.
+    @ViewBuilder
+    private var caffeinateRow: some View {
+        HStack(spacing: 6) {
+            // The chat-list label lives on this line now — it fills the gap left of the
+            // caffeinate control instead of costing its own row. Hidden in the empty state:
+            // a "Recent chats" heading over the coffee-break message would label nothing.
+            if !allSessions.isEmpty {
+                Text("Recent chats")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            if smartCaffeinate {
+                Button {
+                    SettingsWindowController.shared.showWindow(
+                        navigatingToAgentStatusHighlight: SettingsDeepLink.smartCaffeinateHighlightID
+                    )
+                } label: {
+                    HStack(spacing: 3) {
+                        // Bare image, not `cupIcon` — `cupIcon`'s own .help would sit inside
+                        // this Button's hit area and shadow the Button-level tooltip below
+                        // whenever the pointer is directly over the cup glyph.
+                        cupImage
+                        // The sparkle marks "smart mode is on" — it stays lit whenever the
+                        // mode is enabled, independent of whether an assertion is currently
+                        // held. Before, an idle smart mode looked identical to everything-off.
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 7))
+                            // Literal colors only: `Color.accentColor` is `controlAccentColor`,
+                            // which AppKit renders gray while the app is inactive — and this
+                            // LSUIElement app's non-activating notch panel is almost never
+                            // active, so the sparkle would sit permanently desaturated.
+                            .foregroundStyle(caffeinate.isKeepingAwake ? Color.orange : Color.blue)
+                    }
+                }
+                .buttonStyle(.plain)
+                .hoverTooltip(
+                    caffeinate.isKeepingAwake
+                        ? String(localized: "Keeping awake — agent running. Click for Settings.")
+                        : String(localized: "Smart caffeinate on. Click for Settings.")
+                , edge: .below, pointingHandCursor: true)
+                .accessibilityLabel("Smart caffeinate is on")
+                .accessibilityHint("Opens caffeinate settings")
+            } else {
+                cupIcon
+                // Custom capsule, not `.toggleStyle(.switch)`: that style is a real NSSwitch,
+                // and NSSwitch draws its ON tint only while its window is key and the app
+                // active. This LSUIElement app's non-activating notch panel is neither on a
+                // hover-open, so an ON switch rendered desaturated gray until first click.
+                // Drawing the fill from SwiftUI state directly is immune to key-window status.
+                // Orange matches the lit cup, so one colour consistently means "caffeinated".
+                // The cup itself still shows assertion truth (it can lag the toggle by the
+                // reconcile hop, and stays dark if the assertion ever fails) — the toggle
+                // shows intent, the cup shows reality.
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        caffeinateEnabled.toggle()
+                    }
+                } label: {
+                    Capsule()
+                        .fill(caffeinateEnabled ? Color.orange : Color.secondary.opacity(0.35))
+                        .frame(width: 26, height: 16)
+                        .overlay(alignment: caffeinateEnabled ? .trailing : .leading) {
+                            Circle()
+                                .fill(.white)
+                                .frame(width: 12, height: 12)
+                                .padding(2)
+                                .shadow(color: .black.opacity(0.2), radius: 0.5, y: 0.5)
+                        }
+                }
+                .buttonStyle(.plain)
+                .hoverTooltip(
+                    caffeinate.isKeepingAwake
+                        ? String(localized: "Keeping awake — click to allow sleep")
+                        : String(localized: "Keep the Mac awake")
+                , edge: .below, pointingHandCursor: true)
+                .accessibilityLabel("Keep the Mac awake")
+                .accessibilityValue(caffeinateEnabled ? String(localized: "On") : String(localized: "Off"))
+                .accessibilityAddTraits(.isToggle)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// Bare cup glyph, no tooltip — use inside a container that supplies its own `.help`.
+    private var cupImage: some View {
+        Image(systemName: caffeinate.isKeepingAwake ? "cup.and.saucer.fill" : "cup.and.saucer")
+            .font(.caption)
+            .foregroundStyle(caffeinate.isKeepingAwake ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+            .symbolRenderingMode(.hierarchical)
+    }
+
+    /// Cup glyph with its own tooltip — use standalone (not nested inside another control
+    /// that already has a `.help`, or the two will shadow each other).
+    private var cupIcon: some View {
+        cupImage
+            .hoverTooltip(
+                caffeinate.isKeepingAwake
+                    ? String(localized: "Keeping the Mac awake")
+                    : String(localized: "Keep the Mac awake"),
+                edge: .below
+            )
+    }
+
+    /// Wraps a card/row in a click-through Button when the session's hosting app can be
+    /// located — otherwise returns the content untouched: no hand cursor, no tooltip, no
+    /// dead click. Help text lives on the Button only (a nested .help would shadow it).
+    @ViewBuilder
+    private func clickableSession<Content: View>(_ session: AgentSessionStatus, @ViewBuilder content: () -> Content) -> some View {
+        if let target = AgentSessionOpener.target(for: session) {
+            Button {
+                if AgentSessionOpener.open(session) {
+                    // The user is leaving for the other app; get the notch out of the way.
+                    vm.close()
+                }
+            } label: {
+                content()
+            }
+            .buttonStyle(.plain)
+            .hoverTooltip(String(localized: "Open in \(target.appName)"), pointingHandCursor: true)
+            .accessibilityHint("Opens \(target.appName)")
+        } else {
+            content()
+        }
     }
 
     @ViewBuilder
@@ -271,10 +416,11 @@ struct NotchAgentStatusView: View {
         return String(format: "%02d:%02d", minutes, seconds)
     }
 
-    // Saturated neon palette — brighter than the system colors so the dots read as "lit" rather than flat fills.
-    private static let neonRed = Color(red: 1.0, green: 0.06, blue: 0.16)
-    private static let neonYellow = Color(red: 1.0, green: 0.86, blue: 0.0)
-    private static let neonGreen = Color(red: 0.12, green: 1.0, blue: 0.35)
+    // Neon variants come from the user's palette choices; the defaults reproduce the
+    // hand-tuned values this panel always used (see AgentTrafficLightPaletteColor.neonColor).
+    private var neonRed: Color { stoppedPaletteColor.neonColor }
+    private var neonYellow: Color { awaitingPaletteColor.neonColor }
+    private var neonGreen: Color { activePaletteColor.neonColor }
 
     @ViewBuilder
     private func stateBadge(_ state: AgentTrafficLightState, sessionId: String, large: Bool) -> some View {
@@ -289,13 +435,13 @@ struct NotchAgentStatusView: View {
                 TimelineView(.periodic(from: .now, by: 0.1)) { context in
                     let elapsed = context.date.timeIntervalSince(blinkStart ?? .now)
                     let pulse = (sin(elapsed * .pi * 4) + 1) / 2 // smooth 0...1 pulse, ~2 blinks/sec
-                    neonDot(Self.neonRed, size: dotSize, opacity: 0.35 + pulse * 0.65, glowRadius: 2 + pulse * (large ? 7 : 5))
+                    neonDot(neonRed, size: dotSize, opacity: 0.35 + pulse * 0.65, glowRadius: 2 + pulse * (large ? 7 : 5))
                 }
             } else {
-                neonDot(Self.neonRed, size: dotSize, opacity: state.showsRedTrafficLight ? 1 : 0.2, glowRadius: state.showsRedTrafficLight ? (large ? 5 : 3.5) : 0)
+                neonDot(neonRed, size: dotSize, opacity: state.showsRedTrafficLight ? 1 : 0.2, glowRadius: state.showsRedTrafficLight ? (large ? 5 : 3.5) : 0)
             }
-            neonDot(Self.neonYellow, size: dotSize, opacity: state.showsYellowTrafficLight ? 1 : 0.2, glowRadius: state.showsYellowTrafficLight ? (large ? 5 : 3.5) : 0)
-            neonDot(Self.neonGreen, size: dotSize, opacity: state.showsGreenTrafficLight ? 1 : 0.2, glowRadius: state.showsGreenTrafficLight ? (large ? 5 : 3.5) : 0)
+            neonDot(neonYellow, size: dotSize, opacity: state.showsYellowTrafficLight ? 1 : 0.2, glowRadius: state.showsYellowTrafficLight ? (large ? 5 : 3.5) : 0)
+            neonDot(neonGreen, size: dotSize, opacity: state.showsGreenTrafficLight ? 1 : 0.2, glowRadius: state.showsGreenTrafficLight ? (large ? 5 : 3.5) : 0)
         }
         .frame(width: width, height: height)
         .onChange(of: state.showsRedTrafficLight) { _, isRed in
@@ -315,9 +461,9 @@ struct NotchAgentStatusView: View {
 
     private func stateColor(_ state: AgentTrafficLightState) -> Color {
         switch state {
-        case .executing, .thinking: return Self.neonGreen
-        case .awaitingInput: return Self.neonYellow
-        case .stopped: return Self.neonRed
+        case .executing, .thinking: return neonGreen
+        case .awaitingInput: return neonYellow
+        case .stopped: return neonRed
         case .inactive: return .secondary
         }
     }

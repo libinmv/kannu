@@ -167,3 +167,7 @@ local env
 
 
 *.env
+
+# Coverage counters from instrumented builds. Deliberately unanchored: the one observed
+# instance was a stray default.profraw in the repo root, but nothing pins them there.
+*.profraw

@@ -26,8 +26,16 @@ private final class LiquidGlassContainerView: NSView {
 
     private var observedBackdropLayers: [CALayer] = []
     private var hasScheduledBackdropSetup = false
+    private var backdropSetupAttempts = 0
     private let windowServerAwareKeyPath = "windowServerAware"
     private let scaleKeyPath = "scale"
+    /// The private NSGlassEffectView can take a few layout passes to build its CABackdropLayer
+    /// subtree, especially on a floating panel (Kannu's notch window) that rarely becomes key.
+    /// Retry a bounded number of times instead of silently giving up with zero observers
+    /// attached — if we never attach here, a later `windowServerAware` flip to `false` is never
+    /// caught, and the glass content renders incorrectly (near-invisible against the backdrop)
+    /// until something else forces a fresh composite, e.g. taking a screenshot.
+    private static let maxBackdropSetupAttempts = 20
 
     deinit {
         removeBackdropObservers()
@@ -68,6 +76,15 @@ private final class LiquidGlassContainerView: NSView {
         setBackdropProperties(in: rootLayer)
         let newBackdropLayers = collectBackdropLayers(in: rootLayer)
 
+        if newBackdropLayers.isEmpty {
+            if backdropSetupAttempts < Self.maxBackdropSetupAttempts {
+                backdropSetupAttempts += 1
+                scheduleBackdropSetup()
+            }
+            return
+        }
+        backdropSetupAttempts = 0
+
         removeBackdropObservers()
         observedBackdropLayers = newBackdropLayers
         for backdrop in observedBackdropLayers {
@@ -102,6 +119,13 @@ private final class LiquidGlassContainerView: NSView {
         if keyPath == windowServerAwareKeyPath {
             if change?[.newKey] as? Bool == false {
                 configureBackdropLayers()
+                // Flipping the KVC flag back to `true` corrects the backdrop layer's internal
+                // state, but doesn't by itself retrigger its live window-server sampling — the
+                // stale (broken) composite stays on screen until something else forces a fresh
+                // one. Without this, the fix only becomes visible after an unrelated event
+                // (screen recording, a screenshot) forces the compositor to recompose the
+                // window; force it here so the correction actually shows up immediately.
+                forceBackdropRedraw()
             }
         } else if keyPath == scaleKeyPath {
             guard let layer = object as? CALayer else { return }
@@ -111,6 +135,13 @@ private final class LiquidGlassContainerView: NSView {
         } else {
             super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
         }
+    }
+
+    private func forceBackdropRedraw() {
+        glassView?.layer?.setNeedsDisplay()
+        glassView?.needsLayout = true
+        window?.viewsNeedDisplay = true
+        window?.displayIfNeeded()
     }
 
     private func removeBackdropObservers() {
@@ -222,14 +253,34 @@ public struct LiquidGlassBackground<Content: View>: NSViewRepresentable {
 
             let hosting = NSHostingView(rootView: AnyView(content))
             hosting.translatesAutoresizingMaskIntoConstraints = false
-            glass.setValue(hosting, forKey: "contentView")
-
+            // As a private `contentView`, this hosting view was invisible to SwiftUI's
+            // window-auto-sizing walk. As a plain sibling subview it's now a second
+            // independent NSHostingView in the window, and by default each one tries to
+            // negotiate the window's content size — competing with the window's actual root
+            // hosting view and triggering an Update-Constraints-in-Window invalidation loop
+            // that AppKit aborts on (NSGenericException, seen as EXC_BREAKPOINT under the
+            // debugger). Its size should come from the constraints pinned below, not from
+            // resizing KannuWindow, so opt it out of that negotiation entirely.
+            hosting.sizingOptions = []
+            // Previously handed to the glass via its private `contentView` key so the glass
+            // could blend/tint it as part of the lens effect. That blend is what makes text
+            // render at ~0 visible opacity live (a screenshot forces a full recomposite and
+            // shows it correctly — the live blend on hosted content is what's broken, not the
+            // text itself; shapes/images survive because they're opaque enough to read through
+            // a bad blend, thin glyphs aren't). Layer content as a plain sibling on top of the
+            // glass instead: the glass still renders its blur/tint behind, our content draws
+            // normally in front, untouched by whatever that private blend does.
             container.addSubview(glass)
+            container.addSubview(hosting)
             NSLayoutConstraint.activate([
                 glass.leadingAnchor.constraint(equalTo: container.leadingAnchor),
                 glass.trailingAnchor.constraint(equalTo: container.trailingAnchor),
                 glass.topAnchor.constraint(equalTo: container.topAnchor),
-                glass.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+                glass.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+                hosting.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                hosting.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                hosting.topAnchor.constraint(equalTo: container.topAnchor),
+                hosting.bottomAnchor.constraint(equalTo: container.bottomAnchor)
             ])
 
             container.glassView = glass

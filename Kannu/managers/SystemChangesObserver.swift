@@ -239,6 +239,15 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
         // so only our notch HUD shows (parity with brightness). No-op unless active.
         SystemOSDManager.suppressNativeOSDNow()
 
+        // If the media keys are not actually being intercepted, macOS handled the key
+        // itself and drew its own HUD (Control Center on macOS 26, OSDUIHelper before
+        // it). Drawing ours on top would stack two HUDs showing the same number, so
+        // stand down until interception is provably live. Recovers by itself: the first
+        // successfully intercepted key sets that proof before this path runs.
+        if !mediaKeyInterceptor.isVolumeInterceptionEffective {
+            return
+        }
+
         if HUDSuppressionCoordinator.shared.shouldSuppressVolumeHUD {
             return
         }
@@ -293,6 +302,14 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
         // Auto-brightness and DDC-driven changes land here without going through the
         // key handler above, so suppress here too — parity with the volume notification path.
         SystemOSDManager.suppressNativeOSDNow()
+
+        // Same stand-down as the volume path, but only when brightness interception was
+        // intended: observe-only and third-party DDC modes pass the key to macOS by
+        // design, and their HUD must keep working.
+        if mediaKeyInterceptor.configuration.interceptBrightness,
+           !mediaKeyInterceptor.isBrightnessInterceptionEffective {
+            return
+        }
 
         // Send to Circular HUD if enabled
         if Defaults[.enableCircularHUD] && Defaults[.enableBrightnessHUD] {

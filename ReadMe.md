@@ -2,7 +2,7 @@
 
 
 
-**Kannu** is a macOS notch utility focused on **AI agent status** in the MacBook notch. It shows a traffic-light indicator while Cursor, VS Code Copilot, or Codex agents run, with optional custom notch backgrounds and mobile push notifications.
+**Kannu** is a macOS notch utility focused on **AI agent status** in the MacBook notch. It shows a traffic-light indicator while Cursor, VS Code Copilot, Codex, Claude, or Google Antigravity agents run, with optional custom notch backgrounds and mobile push notifications.
 
 This project is licensed under GPL v3. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for upstream attribution.
 
@@ -10,7 +10,11 @@ Kannu is a fork of [Atoll](https://github.com/Ebullioscopic/Atoll), which itself
 
 ## Highlights
 
-- **Agent status traffic light** — green (thinking/executing), yellow (awaiting your input, e.g. approval cards), red (stopped), fed by editor hooks and transcript polling.
+- **Agent status traffic light** — green (thinking/executing), yellow (awaiting your input, e.g. approval cards), red (stopped), fed by editor hooks and transcript polling. One light in the notch, aggregated across every session.
+- **Make the light yours** — Classic (all three lights, inactive ones dimmed) or Minimal (only the lit one), with a colour for each state from a curated palette. Two states can never share a colour, so the lights stay readable with red-green colour blindness.
+- **Agent usage and quota** — Claude rate limits in the notch, grouped as Session and Weekly with a per-model window, one reset countdown per group, and bar colour driven by the severity the server itself reports. Codex, Cursor, and Antigravity have their own cards.
+- **Keep the Mac awake** — smart caffeinate holds sleep off automatically while an agent runs and releases it when the agent stops, or drive it manually. One native power assertion; no `caffeinate` subprocess. Only system sleep is prevented — the display may still sleep, and closing the lid always sleeps the Mac.
+- **Jump to the session** — click a chat row to activate the app that owns it (terminal, IDE, or a resumable Claude session). Rows that cannot be located offer no affordance rather than a dead click.
 - **Custom notch skins** — upload a background image clipped to the notch shape, with optional dark scrim for readability.
 - **Mobile notifications (optional)** — push agent state changes to iPhone, Apple Watch, or Android via ntfy, Pushover, or a custom webhook.
 - Media controls, live activities, lock screen widgets, stats, timers, clipboard, and shelf.
@@ -22,6 +26,7 @@ Calendar, terminal, and color picker features from the Atoll/Boring.Notch lineag
 
 - macOS 14.0 or later (optimised for macOS 15+).
 - MacBook with a notch, or a non-notch Mac using floating Dynamic Island pill mode.
+- Apple silicon or Intel — the app builds universal.
 - Xcode 15+ to build from source.
 - Permissions as needed: Accessibility, Screen Recording, Music.
 

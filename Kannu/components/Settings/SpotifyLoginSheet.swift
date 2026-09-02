@@ -44,7 +44,7 @@ struct SpotifyLoginSheet: View {
     let onCapture: (String) -> Void
 
     @State private var statusText: String =
-        "Sign in with email & password, Apple, or Facebook. Google blocks in-app sign-in — use “Open in Browser” for Google accounts."
+        "Sign in with email & password, Apple, or Facebook. Google blocks in-app sign-in, so use “Open in Browser” for Google accounts."
     @State private var didCapture = false
 
     var body: some View {

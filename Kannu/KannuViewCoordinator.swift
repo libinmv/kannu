@@ -101,7 +101,6 @@ struct ExpandedItem {
 class KannuViewCoordinator: ObservableObject {
     static let shared = KannuViewCoordinator()
     private var cancellables = Set<AnyCancellable>()
-    private var hoverOpenSuppressedUntil: Date = .distantPast
     
     private static let tabOrder: [NotchViews] = [.home, .shelf, .timer, .stats, .llmUsage, .agentStatus, .notes, .clipboard, .extensionExperience]
     
@@ -266,13 +265,7 @@ class KannuViewCoordinator: ObservableObject {
         }
     }
 
-    var isHoverOpenSuppressed: Bool {
-        Date() < hoverOpenSuppressedUntil
-    }
 
-    func suppressHoverOpen(for duration: TimeInterval = 0.35) {
-        hoverOpenSuppressedUntil = Date().addingTimeInterval(max(0, duration))
-    }
 
     private func handleStatsTabTransition(from oldValue: NotchViews, to newValue: NotchViews) {
         guard oldValue != newValue else { return }
@@ -483,10 +476,5 @@ class KannuViewCoordinator: ObservableObject {
     }
     
     // MARK: - Clipboard Management
-    @Published var shouldToggleClipboardPopover: Bool = false
     
-    func toggleClipboardPopover() {
-        // Toggle the published property to trigger UI updates
-        shouldToggleClipboardPopover.toggle()
-    }
 }

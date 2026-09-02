@@ -22,6 +22,8 @@ import Combine
 import Defaults
 import KeyboardShortcuts
 import LaunchAtLogin
+import os
+import ServiceManagement
 import SwiftUI
 import SkyLightWindow
 
@@ -226,17 +228,50 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
-    /// `SMAppService.mainApp` pins whichever bundle called `register()`, so enabling "launch at
-    /// login" from a build folder or DerivedData copy leaves the OS relaunching that stale path
-    /// at every login — even after a newer release is installed in /Applications. Re-registering
-    /// from the installed copy repoints the entry at ourselves and clears the ghost.
+    private static let loginItemLog = os.Logger(subsystem: "com.kannu.app", category: "LaunchAtLogin")
+
+    private var isInstalledCopy: Bool {
+        let path = Bundle.main.bundleURL.resolvingSymlinksInPath().path
+        return path.hasPrefix("/Applications/")
+            || path.hasPrefix(NSHomeDirectory() + "/Applications/")
+    }
+
+    /// `SMAppService.mainApp` pins whichever bundle called `register()`, so moving or reinstalling
+    /// the app leaves the OS relaunching the old path. Re-register from the copy running now —
+    /// but only when the path actually changed. The previous version did this teardown on every
+    /// launch, so a single transient failure silently lost launch-at-login for good.
     private func repairLoginItemIfStale() {
         let path = Bundle.main.bundleURL.resolvingSymlinksInPath().path
-        let isInstalled = path.hasPrefix("/Applications/")
-            || path.hasPrefix(NSHomeDirectory() + "/Applications/")
-        guard isInstalled, LaunchAtLogin.isEnabled else { return }
-        LaunchAtLogin.isEnabled = false
+        guard LoginItemPolicy.shouldRepairRegistration(
+            isInstalled: isInstalledCopy,
+            isEnabled: LaunchAtLogin.isEnabled,
+            currentPath: path,
+            lastRegisteredPath: Defaults[.lastLoginItemBundlePath]
+        ) else { return }
+
+        LaunchAtLogin.isEnabled = true // the package's setter re-registers in place
+        Defaults[.lastLoginItemBundlePath] = path
+        Self.loginItemLog.notice("repaired login item registration for \(path, privacy: .public)")
+    }
+
+    /// Registers Kannu at login once on a fresh install, so an ambient monitor is actually
+    /// running when the user logs in. Deliberately one-shot: `didAutoEnableLaunchAtLogin` means
+    /// switching it off in Settings sticks forever — the app never re-enables behind the user.
+    private func autoEnableLaunchAtLoginIfNeeded() {
+        guard LoginItemPolicy.shouldAutoEnable(
+            isInstalled: isInstalledCopy,
+            hasAutoEnabledBefore: Defaults[.didAutoEnableLaunchAtLogin],
+            isCurrentlyRegistered: LaunchAtLogin.isEnabled
+        ) else { return }
+
         LaunchAtLogin.isEnabled = true
+        Defaults[.didAutoEnableLaunchAtLogin] = true
+        let path = Bundle.main.bundleURL.resolvingSymlinksInPath().path
+        Defaults[.lastLoginItemBundlePath] = path
+        // Report what the OS actually did: registration can silently land in .requiresApproval.
+        Self.loginItemLog.notice(
+            "auto-enabled launch at login (status now: \(String(describing: SMAppService.mainApp.status), privacy: .public))"
+        )
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -261,6 +296,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Restore Lunar's native OSD if integration was active
         LunarManager.shared.appWillTerminate()
+
+        // Resume the SIGSTOPed OSDUIHelper so the native HUD works after we quit
+        SystemOSDManager.restoreSystemHUDForTermination()
     }
     
     @objc func onScreenLocked(_: Notification) {
@@ -537,7 +575,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// state change observed during that pass can call straight back in here — resizing a window
     /// from inside its own layout is what AppKit aborts on.
     private var isApplyingWindowResize = false
-    private var pendingWindowResize: (size: CGSize, force: Bool)?
+    private var pendingWindowResize: (size: CGSize, animated: Bool, force: Bool)?
 
     private func resizeWindows(to size: CGSize, animated: Bool, force: Bool) {
         guard size.width > 0, size.height > 0 else { return }
@@ -545,12 +583,40 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Already inside a resize: remember the newest request and let the outer call drain it
         // once the layout pass has finished.
         if isApplyingWindowResize {
-            pendingWindowResize = (size, force)
+            pendingWindowResize = (size, animated, force)
             return
         }
 
         isApplyingWindowResize = true
+        // This pass is newer than anything queued, so drop the queued request. A drain already
+        // scheduled on the runloop then finds nothing and no-ops, instead of replaying a size
+        // this pass has just superseded.
+        pendingWindowResize = nil
         var resizedWindows: [NSWindow] = []
+        // The drain must run on EVERY exit path — an early return that skipped it stranded a
+        // re-entrant request until some unrelated future resize happened to flush it.
+        defer {
+            // displayIfNeeded drives a layout pass, which is exactly where a SwiftUI state
+            // change can call back into resizeWindows — so it must run while the guard is
+            // still up, routing that re-entry onto the deferred path instead of recursing.
+            resizedWindows.forEach { $0.displayIfNeeded() }
+            isApplyingWindowResize = false
+
+            if pendingWindowResize != nil {
+                // A runloop source, so this lands outside the current CATransaction commit
+                // rather than re-entering it.
+                RunLoop.main.perform(inModes: [.common]) { [weak self] in
+                    guard let self else { return }
+                    // Read at drain time, never captured. Capturing by value let a synchronous
+                    // resize that arrived after the guard dropped be overwritten by this older
+                    // size — main-actor isolation does not help, since the staleness comes from
+                    // the deliberate runloop hop, not from concurrency.
+                    guard let pending = self.pendingWindowResize else { return }
+                    self.pendingWindowResize = nil
+                    self.resizeWindows(to: pending.size, animated: pending.animated, force: pending.force)
+                }
+            }
+        }
 
         if Defaults[.showOnAllDisplays] {
             for (screen, window) in windows {
@@ -562,27 +628,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         } else if let window {
             let screen = window.screen ?? NSScreen.screens.first { $0.frame.intersects(window.frame) } ?? NSScreen.main ?? NSScreen.screens.first
-            guard let screen else {
-                isApplyingWindowResize = false
-                return
-            }
+            guard let screen else { return }
             let screenSize = adjustedSizeForScreen(size, screen: screen)
             if force || window.frame.size != screenSize {
                 resizeWindow(window, on: screen, to: screenSize)
                 resizedWindows.append(window)
-            }
-        }
-
-        isApplyingWindowResize = false
-        // Display only after the flag clears, so any relayout it triggers takes the deferred path.
-        resizedWindows.forEach { $0.displayIfNeeded() }
-
-        if let pending = pendingWindowResize {
-            pendingWindowResize = nil
-            // A runloop source, so this lands outside the current CATransaction commit rather
-            // than re-entering it.
-            RunLoop.main.perform(inModes: [.common]) { [weak self] in
-                self?.resizeWindows(to: pending.size, animated: animated, force: pending.force)
             }
         }
     }
@@ -612,10 +662,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             deliverImmediately: true
         )
 
+        autoEnableLaunchAtLoginIfNeeded()
         repairLoginItemIfStale()
 
         LockScreenLiveActivityWindowManager.shared.configure(viewModel: vm)
         LockScreenManager.shared.configure(viewModel: vm)
+        // Spin up the caffeinate manager at launch: a toggle left on must take effect
+        // immediately, even if the notch is never opened this session.
+        _ = CaffeinateManager.shared
         extensionXPCServiceHost.start()
         extensionRPCServer.start()
         SparkleUpdaterController.shared.configure()
@@ -626,6 +680,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Defaults.Keys.migrateMusicControlSlots()
         Defaults.Keys.migrateMediaControllerToNowPlaying()
         Defaults.Keys.migrateCapsLockTintMode()
+        Defaults.Keys.migrateNonNotchAlwaysShow()
         Defaults.Keys.migrateThirdPartyDDCIntegration()
         Defaults.Keys.enforceRemovedFeatureDefaults()
         SecureSecretsStore.migrateFromDefaultsIfNeeded()
@@ -709,10 +764,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }.store(in: &cancellables)
 
+        // Same willSet deferral as $currentView above: without it the resize reads the
+        // OLD layout's preferredHeight and animates one wrong-height frame.
         coordinator.$notesLayoutState
             .removeDuplicates()
             .sink { [weak self] _ in
-                self?.updateWindowSizeIfNeeded()
+                DispatchQueue.main.async {
+                    self?.updateWindowSizeIfNeeded()
+                }
             }
             .store(in: &cancellables)
         
@@ -791,8 +850,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Observe minimalistic UI setting changes - trigger window resize
         Defaults.publisher(.enableMinimalisticUI, options: []).sink { [weak self] _ in
-            // Update window size IMMEDIATELY (no debouncing) to prevent position shift
-            self?.updateWindowSizeIfNeeded()
+            // Defaults.publisher is raw KVO with no scheduler: the sink runs inside the
+            // `Defaults[...] = x` assignment's own stack frame — from a SwiftUI @Default
+            // binding, that is the middle of a SwiftUI update pass, and resizing an NSWindow
+            // (setFrame + displayIfNeeded) from there is the re-entrancy the
+            // FirstMouseHostingView sizing workaround exists to avoid. Hop like every other
+            // sink here; the next main-actor turn is still before the next frame.
+            Task { @MainActor [weak self] in
+                self?.updateWindowSizeIfNeeded()
+            }
         }.store(in: &cancellables)
         
         // Observe screen recording settings changes
@@ -827,6 +893,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     (.vscode, ".copilot"),
                     (.codex, ".codex"),
                     (.claude, ".claude"),
+                    (.antigravity, ".gemini"),
                 ].compactMap { provider, dir in
                     FileManager.default.fileExists(atPath: home.appendingPathComponent(dir).path) ? provider : nil
                 }
@@ -1364,17 +1431,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         audioPlayer.play(fileName: "dynamic", fileExtension: "m4a")
     }
     
-    func deviceHasNotch() -> Bool {
-        if #available(macOS 12.0, *) {
-            for screen in NSScreen.screens {
-                if screen.safeAreaInsets.top > 0 {
-                    return true
-                }
-            }
-        }
-        return false
-    }
-    
     @objc func screenConfigurationDidChange() {
         let currentScreens = NSScreen.screens
 
@@ -1465,21 +1521,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
-    @objc func togglePopover(_ sender: Any?) {
-        if window?.isVisible == true {
-            window?.orderOut(nil)
-        } else {
-            window?.orderFrontRegardless()
-        }
-    }
     
-    @objc func showMenu() {
-        statusItem?.menu?.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
-    }
     
-    @objc func quitAction() {
-        NSApplication.shared.terminate(nil)
-    }
 
     
     

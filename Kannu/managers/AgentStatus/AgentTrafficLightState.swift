@@ -79,6 +79,13 @@ struct AgentSessionStatus: Identifiable, Equatable {
     let updatedAt: Date
     let isVisible: Bool
     let executionStartedAt: Date?
+    /// Full working directory / workspace root, when the session source knows it. Used by
+    /// click-through to open the right project window; nil is fine — the row just won't
+    /// offer window-level targeting.
+    var cwd: String? = nil
+    /// PID of the agent process itself (Claude passive sessions). The parent chain of this
+    /// PID leads to the hosting terminal or IDE, which is what click-through activates.
+    var hostPID: Int? = nil
 
     /// True when the hook that produced this session reported work in progress, regardless of
     /// what the staleness ladder later concluded about its age.
@@ -100,7 +107,9 @@ struct AgentSessionStatus: Identifiable, Equatable {
             displayState: state,
             updatedAt: updatedAt ?? self.updatedAt,
             isVisible: visible,
-            executionStartedAt: executionStartedAt
+            executionStartedAt: executionStartedAt,
+            cwd: cwd,
+            hostPID: hostPID
         )
     }
 
@@ -110,6 +119,7 @@ struct AgentSessionStatus: Identifiable, Equatable {
         case "vscode": return "VS Code"
         case "codex": return "Codex"
         case "claude": return "Claude"
+        case "antigravity": return "Antigravity"
         default: return provider.capitalized
         }
     }
@@ -138,6 +148,180 @@ struct AgentSessionSnapshot: Equatable {
 }
 
 enum AgentTrafficLightMapper {
+    /// The caffeinate arbitration, pure so it is testable: smart wins outright when the agent
+    /// feature is on; manual is honored only with smart off; and with the agent feature off —
+    /// which hides every caffeinate control — nothing may hold the Mac awake, or the user is
+    /// stranded with an assertion they cannot see or clear.
+    static func shouldKeepAwake(
+        smartEnabled: Bool,
+        manualEnabled: Bool,
+        featureEnabled: Bool,
+        hasActiveVisibleSession: Bool
+    ) -> Bool {
+        guard featureEnabled else { return false }
+        if smartEnabled { return hasActiveVisibleSession }
+        return manualEnabled
+    }
+
+    /// The single IOPM action a caffeinate reconcile pass must perform, as an explicit table.
+    /// Pinned row-for-row by CaffeinateDecisionTests and documented in docs/CAFFEINATE.md —
+    /// keep all three in sync.
+    enum CaffeinateTransition: Equatable {
+        /// Assertion state already matches intent — do nothing.
+        case none
+        /// Not held but should be — one IOPMAssertionCreate.
+        case create
+        /// Held but should not be — one IOPMAssertionRelease.
+        case release
+        /// Held, but under the other mode's reason string — release then create, so
+        /// `pmset -g assertions` reports the mode actually in force.
+        case refresh
+    }
+
+    static func caffeinateTransition(
+        isHeld: Bool,
+        heldModeIsSmart: Bool?,
+        shouldHold: Bool,
+        smartNow: Bool
+    ) -> CaffeinateTransition {
+        switch (isHeld, shouldHold) {
+        case (false, true): return .create
+        case (true, false): return .release
+        case (false, false): return .none
+        case (true, true):
+            return heldModeIsSmart == smartNow ? .none : .refresh
+        }
+    }
+
+    /// Whether any session justifies smart caffeinate holding the Mac awake: visible, not a
+    /// simulation, and in an active run — the same definition the traffic light uses.
+    static func hasCaffeinateWorthySession(_ sessions: [AgentSessionStatus]) -> Bool {
+        sessions.contains {
+            $0.isVisible && !isSimulationSession($0) && $0.displayState.isActiveRun
+        }
+    }
+
+    /// Merges Claude hook sessions with passive transcript/PID evidence. Pure — lives here
+    /// (Foundation-only, compiled into the logic test target) because this exact logic has
+    /// regressed repeatedly while it was unreachable by tests: docs/REGRESSIONS.md entries
+    /// 5 and 7 both point at this function's former home inside the monitor.
+    static func reconcileClaudeSessions(
+        hookSessions: [AgentSessionStatus],
+        passiveSessions: [AgentSessionStatus],
+        deadPIDConversationIDs: Set<String>,
+        collapseMs: Int64,
+        inactiveMs: Int64,
+        nowMs: Int64
+    ) -> [AgentSessionStatus] {
+        guard !passiveSessions.isEmpty || !deadPIDConversationIDs.isEmpty else { return hookSessions }
+
+        let passiveByConversationID = Dictionary(
+            passiveSessions.map { ($0.conversationID, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        var merged = hookSessions.map { session -> AgentSessionStatus in
+            guard session.provider.lowercased() == "claude" else { return session }
+            let passive = passiveByConversationID[session.conversationID]
+            let processDead = deadPIDConversationIDs.contains(session.conversationID)
+
+            // A hook file shadows the passive session for the same conversation, and the
+            // hook payload is thinner: no title, no pid. Everything the passive side knows
+            // and the hook side doesn't has to be carried across here, or it is lost for
+            // every hook-tracked Claude session — which is the normal case.
+            //
+            // This has now bitten three times: missing names rendered every session as
+            // "Untitled chat" (twice), and missing locators made click-through silently
+            // inert because `AgentSessionOpener` needs a live pid to find the hosting
+            // terminal. When you add a field to AgentSessionStatus that a passive session
+            // can populate, add it here too. See docs/REGRESSIONS.md entry 7.
+            //
+            // Applied to EVERY exit below, not just the promote path: the state arms
+            // return early, and a demoted or unchanged session still needs this data.
+            func inheritingPassiveData(_ candidate: AgentSessionStatus) -> AgentSessionStatus {
+                guard let passive else { return candidate }
+                var repaired = candidate
+                if repaired.chatName?.isEmpty != false, let name = passive.chatName {
+                    repaired = repaired.replacingChatName(name)
+                }
+                if repaired.projectName?.isEmpty != false, let project = passive.projectName {
+                    repaired = repaired.replacingProjectName(project)
+                }
+                if repaired.cwd?.isEmpty != false, let cwd = passive.cwd {
+                    repaired.cwd = cwd
+                }
+                // Safe by construction: the passive path only sets hostPID while the
+                // process is provably alive, so a dead session inherits nil and stays
+                // correctly non-clickable.
+                if repaired.hostPID == nil, let hostPID = passive.hostPID {
+                    repaired.hostPID = hostPID
+                }
+                return repaired
+            }
+
+            // Demote: the hook file still claims active work — Stop never fires on a
+            // user interrupt, and SIGKILL/crash skips it entirely — but fresher passive
+            // evidence (a newer transcript record, or a dead process) says otherwise.
+            if session.displayState.isActiveRun {
+                if let passive, !passive.displayState.isActiveRun,
+                   processDead || passive.updatedAt >= session.updatedAt {
+                    return inheritingPassiveData(
+                        session.withDisplayState(passive.displayState, visible: passive.isVisible)
+                    )
+                }
+                if passive == nil, processDead {
+                    // Process gone and its session record too old for a passive card:
+                    // age the stop from the hook's own timestamp.
+                    let ageMs = nowMs - Int64(session.updatedAt.timeIntervalSince1970 * 1000)
+                    let lifecycle = AgentTrafficLightMapper.resolveHookState(
+                        rawState: "stopped",
+                        ageMs: ageMs,
+                        collapseMs: collapseMs,
+                        inactiveMs: inactiveMs
+                    )
+                    return inheritingPassiveData(
+                        session.withDisplayState(lifecycle.state, visible: lifecycle.visible)
+                    )
+                }
+                return inheritingPassiveData(session)
+            }
+
+            // Promote: hooks only fire at tool boundaries. A single long-running tool — a
+            // build, a test suite, an extended turn with no tool calls — leaves the status
+            // file untouched for minutes, and `resolveHookState` then ages it out of its
+            // active state and dims the session while it is hardest at work. Passive
+            // detection can still see the truth (process alive, tool in flight), and a live
+            // process beats a stale timestamp. Safe against stale tails: passive "thinking"
+            // is bounded by the working-staleness ladder and passive "executing" means a
+            // verified in-flight tool.
+            guard session.hasActiveRawState,
+                  let passive,
+                  passive.displayState.isActiveRun
+            else { return inheritingPassiveData(session) }
+
+            // `!session.displayState.isActiveRun` is structurally implied here by the
+            // early return above, so the promotion is unconditional.
+            return inheritingPassiveData(
+                session.withDisplayState(
+                    passive.displayState,
+                    visible: true,
+                    updatedAt: max(session.updatedAt, passive.updatedAt)
+                )
+            )
+        }
+
+        let hookConversationIDs = Set(merged.map(\.conversationID))
+        for session in passiveSessions where !hookConversationIDs.contains(session.conversationID) {
+            merged.append(session)
+        }
+        return merged
+    }
+
+    /// Generous on purpose. Hook-only providers (Codex, VS Code) write a status file at tool
+    /// boundaries and then nothing for the duration of the call, so a short window marks a
+    /// session that is hardest at work as stopped. Cursor has a live composer status and
+    /// Claude has passive transcript detection to cut short a genuinely dead session; the
+    /// others have only this timer, so it must outlast a long build or test run.
     private static let runningStaleSeconds: TimeInterval = 360
     private static let abortedIdleSeconds: TimeInterval = 90
     /// Keep yellow visible for the full approval-card window (users often pause).
@@ -371,5 +555,66 @@ enum AgentTrafficLightMapper {
 
     static func aggregate(_ sessions: [AgentSessionStatus]) -> AgentTrafficLightState {
         resolveDisplayState(from: sessions)
+    }
+}
+
+extension AgentSessionStatus {
+    func replacingChatName(_ chatName: String) -> AgentSessionStatus {
+        AgentSessionStatus(
+            id: id,
+            provider: provider,
+            conversationID: conversationID,
+            chatName: chatName,
+            projectName: projectName,
+            rawState: rawState,
+            displayState: displayState,
+            updatedAt: updatedAt,
+            isVisible: isVisible,
+            executionStartedAt: executionStartedAt,
+            cwd: cwd,
+            hostPID: hostPID
+        )
+    }
+
+    func replacingProjectName(_ projectName: String) -> AgentSessionStatus {
+        AgentSessionStatus(
+            id: id,
+            provider: provider,
+            conversationID: conversationID,
+            chatName: chatName,
+            projectName: projectName,
+            rawState: rawState,
+            displayState: displayState,
+            updatedAt: updatedAt,
+            isVisible: isVisible,
+            executionStartedAt: executionStartedAt,
+            cwd: cwd,
+            hostPID: hostPID
+        )
+    }
+}
+
+/// Answers "did anything other than the running-agent heartbeat happen since the reveal
+/// observer last looked?" for `CursorAgentStatusMonitor.activityPulse`.
+///
+/// One `rescan()` can publish several bumps in a single main-actor turn — a session-list
+/// change, a traffic-light transition, and the heartbeat last — and SwiftUI collapses them
+/// into one `onChange`. A flag describing only the *last* bump therefore reported "heartbeat"
+/// for a turn that also carried the transition, and strict collapse dropped the reveal. The
+/// latch is monotonic within a window: a transition can never be masked by a later heartbeat.
+/// Lives here rather than on the monitor so the logic-only test target can pin it.
+struct AgentActivityPulseLatch {
+    private(set) var heartbeatOnly = true
+
+    /// A traffic-light transition or session-list change was published.
+    mutating func noteTransition() { heartbeatOnly = false }
+
+    /// A heartbeat was published. Never upgrades a window back to heartbeat-only.
+    mutating func noteHeartbeat() {}
+
+    /// The observer's verdict for the window that just closed; opens the next one.
+    mutating func consume() -> Bool {
+        defer { heartbeatOnly = true }
+        return heartbeatOnly
     }
 }

@@ -156,6 +156,8 @@ jobs:
 
           echo "RELEASE_DMG=${DMG_NAME}" >> "$GITHUB_ENV"
           echo "RELEASE_VERSION=${VERSION}" >> "$GITHUB_ENV"
+          CODENAME="$(grep -o 'static let codename = "[^"]*"' Kannu/models/Constants.swift | head -1 | cut -d'"' -f2)"
+          echo "RELEASE_TITLE=Kannu ${VERSION}${CODENAME:+ — $CODENAME}" >> "$GITHUB_ENV"
 
       - name: Notarize DMG
         env:
@@ -196,6 +198,7 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
         with:
+          name: ${{ env.RELEASE_TITLE }}
           files: |
             build/${{ env.RELEASE_DMG }}
           generate_release_notes: true

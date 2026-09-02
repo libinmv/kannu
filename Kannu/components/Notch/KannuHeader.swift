@@ -27,6 +27,7 @@ struct KannuHeader: View {
     @ObservedObject var shelfState = ShelfStateViewModel.shared
     @ObservedObject var timerManager = TimerManager.shared
     @ObservedObject var doNotDisturbManager = DoNotDisturbManager.shared
+    @ObservedObject var llmUsageManager = LLMUsageManager.shared
     @State private var showClipboardPopover = false
     @State private var showColorPickerPopover = false
     @State private var showTimerPopover = false
@@ -34,7 +35,6 @@ struct KannuHeader: View {
     @Default(.timerDisplayMode) var timerDisplayMode
     @Default(.showClipboardIcon) var showClipboardIcon
     @Default(.showColorPickerIcon) var showColorPickerIcon
-    @Default(.notchFillColor) private var notchFillColor
     @Default(.clipboardDisplayMode) var clipboardDisplayMode
     @Default(.showBatteryIndicator) var showBatteryIndicator
     @Default(.showBatteryPercentInside) var showBatteryPercentInside
@@ -59,14 +59,16 @@ struct KannuHeader: View {
             .padding(8)
 
             if vm.notchState == .open {
-                let spacerWidth = min(vm.closedNotchSize.width, 300)
-                let spacerHeight = max(24, vm.effectiveClosedNotchHeight)
-                Rectangle()
-                    .fill(enableMinimalisticUI || !selectedScreenHasPhysicalNotch ? .clear : notchFillColor)
-                    .frame(width: spacerWidth, height: spacerHeight)
-                    .mask {
-                        NotchShape()
-                    }
+                // Layout only — this must not paint. The panel background already covers these
+                // bounds with the skin (or the fill colour) and sits strictly behind the header,
+                // so filling here only ever duplicated it. Once skins landed, the duplicate
+                // became wrong: it stamped a flat notchFillColor patch in NotchShape over the
+                // middle of the skin. The mask went with it — masking a clear rect is a no-op.
+                Color.clear
+                    .frame(
+                        width: min(vm.closedNotchSize.width, 300),
+                        height: max(24, vm.effectiveClosedNotchHeight)
+                    )
             }
 
             HStack(spacing: 4) {
@@ -115,7 +117,33 @@ struct KannuHeader: View {
                             }
                         }
                     }
-                    
+
+                    // Refresh icon for the Usage tab — moved up here from inside
+                    // NotchLLMUsageView (was a labeled "Refresh" text button in its own
+                    // row there); now icon-only, next to the clipboard button, and only
+                    // shown while the Usage tab is the active view.
+                    if coordinator.currentView == .llmUsage {
+                        Button(action: {
+                            llmUsageManager.refreshAll(force: true)
+                        }) {
+                            Capsule()
+                                .fill(.black)
+                                .frame(width: 30, height: 30)
+                                .overlay {
+                                    Image(systemName: "arrow.clockwise")
+                                        .foregroundColor(.white)
+                                        .padding()
+                                        .imageScale(.medium)
+                                }
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .disabled(llmUsageManager.isRefreshing)
+                        // Icon-only, so VoiceOver would otherwise announce the SF Symbol name
+                        // rather than what the control does.
+                        .accessibilityLabel("Refresh usage")
+                        .hoverTooltip("Refresh usage", edge: .below)
+                    }
+
                     if Defaults[.enableTimerFeature] && timerDisplayMode == .popover {
                         Button(action: {
                             withAnimation(.smooth) {
@@ -220,23 +248,6 @@ struct KannuHeader: View {
         }
         .foregroundColor(.gray)
         .environmentObject(vm)
-        .onChange(of: coordinator.shouldToggleClipboardPopover) { _, _ in
-            // Only toggle if clipboard is enabled
-            if Defaults[.enableClipboardManager] {
-                switch clipboardDisplayMode {
-                case .panel:
-                    ClipboardPanelManager.shared.toggleClipboardPanel()
-                case .popover:
-                    showClipboardPopover.toggle()
-                case .separateTab:
-                    if coordinator.currentView == .notes {
-                        coordinator.currentView = .home
-                    } else {
-                        coordinator.currentView = .notes
-                    }
-                }
-            }
-        }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ToggleClipboardPopover"))) { _ in
             // Handle keyboard shortcut for popover mode
             if Defaults[.enableClipboardManager] && clipboardDisplayMode == .popover {
@@ -259,10 +270,6 @@ struct KannuHeader: View {
 }
 
 private extension KannuHeader {
-    var selectedScreenHasPhysicalNotch: Bool {
-        NSScreen.screens.first(where: { $0.localizedName == coordinator.selectedScreen })?.safeAreaInsets.top ?? 0 > 0
-    }
-
     var shouldSuppressStatusIndicators: Bool {
         Defaults[.settingsIconInNotch]
             && Defaults[.enableClipboardManager]

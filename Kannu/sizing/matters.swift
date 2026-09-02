@@ -24,8 +24,6 @@ import Defaults
 import Foundation
 import SwiftUI
 
-let downloadSneakSize: CGSize = .init(width: 65, height: 1)
-let batterySneakSize: CGSize = .init(width: 160, height: 1)
 
 var openNotchSize: CGSize {
     let storedWidth = Defaults[.openNotchWidth]
@@ -158,47 +156,7 @@ let minimalisticCornerRadiusInsets: (opened: (top: CGFloat, bottom: CGFloat), cl
 
 // MARK: - Terminal tab clip (notch surface)
 
-/// Padding on the terminal block inside the notch. Inner corner radius = outer shell radius on that edge, minus the matching edge padding.
-let notchTerminalContentEdgePadding: (top: CGFloat, horizontal: CGFloat, bottom: CGFloat) = (4, 8, 8)
 
-/// Inner margin (all edges) between the SwiftTerm view's glyphs and the terminal block edge.
-/// Applied to the LocalProcessTerminalView frame only; the frosted blur underlay stays full-bleed.
-let notchTerminalInnerTextInset: CGFloat = 6
-
-/// Bottom radii for the shell (outer) and the terminal ``clipShape`` (inner), per design: inner = outer shell bottom radius − `notchTerminalContentEdgePadding.bottom`.
-func notchTerminalBottomCornerRadii(
-    isDynamicIslandMode: Bool,
-    notchState: NotchState,
-    cornerRadiusScaling: Bool,
-    enableMinimalisticUI: Bool,
-    closedNotchHeight: CGFloat
-) -> (outerBottom: CGFloat, innerBottom: CGFloat) {
-    let p = notchTerminalContentEdgePadding.bottom
-    if isDynamicIslandMode {
-        let outer: CGFloat
-        if notchState == .open {
-            outer = enableMinimalisticUI
-                ? minimalisticCornerRadiusInsets.opened.top
-                : dynamicIslandPillCornerRadiusInsets.opened
-        } else {
-            outer = max(closedNotchHeight / 2, dynamicIslandPillCornerRadiusInsets.closed.standard)
-        }
-        return (outer, max(0, outer - p))
-    }
-    let active: (opened: (top: CGFloat, bottom: CGFloat), closed: (top: CGFloat, bottom: CGFloat)) = {
-        if enableMinimalisticUI {
-            return (opened: minimalisticCornerRadiusInsets.opened, closed: cornerRadiusInsets.closed)
-        }
-        return cornerRadiusInsets
-    }()
-    let outerBottom: CGFloat
-    if notchState == .open && cornerRadiusScaling {
-        outerBottom = active.opened.bottom
-    } else {
-        outerBottom = active.closed.bottom
-    }
-    return (outerBottom, max(0, outerBottom - p))
-}
 
 func statsAdjustedNotchSize(
     from baseSize: CGSize,
@@ -297,14 +255,6 @@ func effectiveDisplayStyle(for screenName: String?) -> ExternalDisplayStyle {
     return Defaults[.externalDisplayStyle]
 }
 
-/// Whether `screenName` should tuck the island away until hovered, preferring a per-display
-/// override over the global choice.
-func effectiveHideUntilHover(for screenName: String?) -> Bool {
-    if let screenName, let override = Defaults[.hideUntilHoverOverrides][screenName] {
-        return override
-    }
-    return Defaults[.hideNonNotchUntilHover]
-}
 
 func shouldUseDynamicIslandMode(for screenName: String?) -> Bool {
     guard effectiveDisplayStyle(for: screenName) == .dynamicIsland else {
@@ -343,21 +293,20 @@ let dynamicIslandTopOffset: CGFloat = 6
 /// by the outer frame constraint.
 let dynamicIslandShadowInset: CGFloat = 14
 
-/// How long the island stays revealed on a non-notch display after an agent update
-/// pulls it back into view. Applies to agent activity only — a plain hover does not
-/// start a hold, so moving the pointer away puts the island straight back.
-let nonNotchRevealHoldSeconds: TimeInterval = 3
+/// The one reveal window: how long the island (and the agent traffic light, on every
+/// display type) stays visible after the most recent reason to show it, whether that
+/// reason was a hover ending or agent activity. Was two separate 3-second constants;
+/// unified into one window by explicit user decision, then raised to 7 because five
+/// seconds was too short to catch a transition you were not already looking at.
+let notchRevealHoldSeconds: TimeInterval = 7
 
-/// How long the agent traffic light stays lit after the most recent agent
-/// activity when hide-until-hover is on. Separate from the reveal hold so the
-/// two can diverge later; displays with a physical notch keep the light
-/// visible for as long as sessions exist and ignore this entirely.
-let agentTrafficLightHoverModeWindowSeconds: TimeInterval = 3
+/// Strict collapse: when false, the running-agent heartbeat does not refresh the reveal
+/// window, so the traffic light shows on state transitions only and goes dark mid-run.
+/// Flip to true to keep the light lit for the whole active run instead.
+let physicalNotchAgentBandFollowsHeartbeat = false
 
-/// How often a still-running agent re-announces itself. A long tool emits no state
-/// change and no new transcript records, so without a heartbeat the window above
-/// would expire mid-run and the light would go dark while work was still going on.
-/// Must stay comfortably under that window.
+/// How often a still-running agent re-announces itself. With strict collapse above this
+/// no longer drives the reveal window; it still feeds other consumers of activityPulse.
 let agentActivityHeartbeatSeconds: TimeInterval = 2
 
 enum MusicPlayerImageSizes {

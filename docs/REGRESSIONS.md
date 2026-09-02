@@ -43,10 +43,16 @@ the script got a version without the `flock` serialisation and without the atomi
 temp-then-`os.replace` write — the exact races later measured at 11/200 lost urgent states
 and 14/4825 torn reads.
 
-**Guard — exists.** `.githooks/pre-commit` compares the two version markers and rejects the
-commit on mismatch. Regenerate the mirror from the embedded literal rather than hand-editing
-it; hand-editing is how `quota_exceeded` had to be typed into both copies separately
-(`817f114`).
+**Guard — exists, partial.** `.githooks/pre-commit` compares the two version markers and rejects the
+commit on mismatch. It does **not** compare bodies, so a body edit without a version bump ships
+silently — after any edit, diff the two Python bodies (extract each heredoc, strip the embedded
+copy's 8-space indent) and expect byte identity. Regenerate the mirror from the embedded literal
+rather than hand-editing it; hand-editing is how `quota_exceeded` had to be typed into both copies
+separately (`817f114`). Since v30, `KannuTests/HookScriptTests.swift` executes the mirror as a
+subprocess and pins the merge and lock behaviour, so a behavioural drift in the mirror fails CI even
+when the markers agree. The Claude statusline script (`writeUsageScript` ↔
+`scripts/kannu-usage-status.sh`, `KANNU_USAGE_SCRIPT_VERSION`) has the same two-copy shape; since v4
+the pre-commit hook checks its markers too and `KannuTests/UsageScriptTests.swift` executes its mirror.
 
 ---
 
@@ -170,6 +176,121 @@ cheap and would have caught both occurrences.
 
 ---
 
+## 7. A hook session shadows the passive session — carry everything across
+
+**Rule:** when a hook session and a passive session describe the same conversation, the hook
+one wins the display slot. Anything the passive side knows and the hook payload does not must
+be copied across in the reconciler, or it is lost for every hook-tracked session.
+
+**Broken 3 times, in two different fields.**
+
+| # | Field lost | Symptom | Commits |
+|---|---|---|---|
+| 1-2 | `chatName` / `projectName` | every hook-tracked Claude session rendered "Untitled chat" | `8caf98d` (2026-07-20), `f46a323` (2026-08-18) |
+| 3 | `hostPID` / `cwd` | click-through silently inert — no hand cursor, no tooltip, dead click | shipped in `ff2caab`, fixed here |
+
+**Why it keeps happening:** the hook payload is structurally thinner than the passive
+session — no title, no pid — and the shadowing is invisible at the call site. A field added
+to `AgentSessionStatus` is wired through ~14 construction sites and *still* silently dropped
+here unless the reconciler's inheritance helper is updated too. The third occurrence happened
+in the same helper that had just been written to fix the first two.
+
+**How occurrence 3 evaded verification:** the feature was tested against a passive-only
+session (no hook file), which carries its own `hostPID` and worked correctly. Sessions *with*
+hook files — the normal case — were broken the whole time. Measured on the live machine:
+3 of 4 displayed Claude sessions had `hostPID = nil` before the fix; the fourth was the one
+without a hook file.
+
+**Guard — exists (2026-08-26).** The reconciler was lifted verbatim into
+`AgentTrafficLightMapper.reconcileClaudeSessions(...)` (pure, Foundation-only, in the logic
+test target). `ClaudeReconcilerTests.testInheritedFieldsCarryAcrossOnDemote` and
+`...OnUnchangedSession` pin all four inherited fields — verified by temporarily dropping the
+`hostPID` inheritance and watching both tests fail. Entry 5's name-resolution half is NOT
+covered by this: the resolvers still span filesystem/SQLite sources inside the monitor and
+remain untestable until they grow a seam.
+
+**Still true:** when you add a field to `AgentSessionStatus` that a passive session can
+populate, add it to `inheritingPassiveData` (now in `AgentTrafficLightState.swift`) AND to
+the field assertions in `ClaudeReconcilerTests` in the same commit.
+
+---
+
+## 8. Never add a flag or env var to the usage spawn without proving a real fetch
+
+**Rule:** the Claude usage fetch invocation is verified empirically, not reasoned about. Every
+argument and environment variable must be confirmed against an actual `fetchedAtMs` advance before it
+ships.
+
+**Broken twice in one day**, both by additions that looked defensive and harmless:
+
+- `--no-session-persistence` — valid only with `--print`. The interactive session `/usage` requires
+  exited immediately ("can only be used with --print mode"), so the command was typed into a dead
+  process. Symptom: spinner ran, nothing fetched, no error surfaced.
+- `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` — added as "belt-and-braces" against bridge traffic.
+  It suppresses nonessential network traffic, and the usage fetch **is** a network call to
+  `/api/oauth/usage`. Symptom: identical — session started, `/usage` ran, cache never updated.
+
+**Why it keeps happening:** the failure is silent and looks like success. The session starts, the
+spinner spins, the process exits cleanly, and the only signal that anything went wrong is a
+timestamp on disk that did not move. Nothing in the UI or logs says "the fetch was suppressed".
+
+**Guard — exists.** `ClaudeUsageFetchCommand` holds the invocation as data, and
+`KannuTests/ClaudeUsageFetchCommandTests.swift` pins: no print-only flag in any attempt, the
+environment is plain inheritance (`nil`), the forbidden env key is recorded, and the **last attempt
+stays bare** — that bare invocation is the one observed to actually fetch. Both regressions were
+verified to turn the suite red before this was committed.
+
+---
+
+## 9. Notch tooltips are custom; `.help()` is dead there
+
+**Rule:** never use SwiftUI `.help(...)` under `Kannu/components/Notch/` or
+`Kannu/components/AgentStatus/`. Use `.hoverTooltip(...)`.
+
+**Broken across 8 call sites**, all shipped and none ever rendering: `KannuHeader`, `NotchNotesView`
+(x2), `NotchTimerView`, `NotchAgentStatusView` (x4). Then broken three more times while fixing it —
+a competing `.onHover` shadowing the tooltip, `fixedSize(horizontal:)` collapsing the bubble to the
+parent's width, and a `ScrollView` clipping a bubble that opened upward from its first row.
+
+**Why it keeps happening:** `.help()` is the obvious, correct-looking API and fails **silently** —
+it compiles, reads fine in review, and simply never appears. AppKit only shows tooltips for the
+active application, and this accessory app with a non-activating panel is never active. Nothing in
+the type system or the build says so.
+
+**Guard — exists.** `.githooks/pre-commit` rejects any `.help(` in those directories, requires
+`HoverTooltip.swift` to keep a bare `.fixedSize()`, and rejects `fixedSize(horizontal:)` there.
+The layout rules that cannot be grepped — `edge` versus container clipping, one hover source per
+control — are written up in **docs/TOOLTIPS.md** with the reasoning and a checklist.
+
+**Gap:** none of this is unit-testable; a new tooltip still has to be hovered in a real build.
+
+---
+
+## 10. Never derive observer semantics from the *last* `@Published` bump
+
+**Rule:** a `@Published` counter can be bumped several times in one main-actor turn, and SwiftUI
+delivers them as a single `onChange`. Any side flag the observer reads must describe the whole
+window since it last looked, never the most recent publish.
+
+**Broken once, on the commit that introduced the flag** — `32c260b` (2026-08-26) added
+`lastPulseWasHeartbeat` with a doc comment asserting it was "read synchronously by the pulse
+observer (same main-actor turn as the publish)". It was not: `rescan()` bumps `activityPulse` for
+the session list, again for the traffic light, and last for the heartbeat, so the observer saw
+one change and a flag that said "heartbeat". Strict collapse then swallowed every idle → executing
+and every permission prompt — the reveal the 7s hold (`d3d056a`) was raised to serve. Listed
+despite a single occurrence because the false premise was written down as fact in the code and
+survived two review passes.
+
+**Why it keeps happening:** the publish and the observation feel synchronous when you read the
+code top to bottom; nothing at the call site says "coalesced".
+
+**Guard — exists.** `AgentActivityPulseLatch` (in `AgentTrafficLightState.swift`, logic target)
+is the only source of the verdict and is pinned by `AgentActivityPulseLatchTests`. Keep the
+heartbeat emit last in `rescan()` — it reads the state `applyDisplay` just wrote — and keep
+exactly one consumer of the latch.
+
+---
+
 ## Danger zones
 
 Commit counts across all branches (`--follow`, so pre-rename history counts):
@@ -179,6 +300,7 @@ Commit counts across all branches (`--follow`, so pre-rename history counts):
 | `CursorAgentStatusMonitor.swift` | 18 | The merge/reconcile seam. **Every** edit is chat-name resolution, hook-vs-transcript precedence, or session deletion/ageing. Entries 5 and 6 live here. |
 | `AgentTrafficLightState.swift` | 18 | The state ladder — staleness thresholds and verdict→colour mapping. Mostly *tuning numbers*, which is exactly how entry 2 happened. |
 | `AgentHookInstaller.swift` | 17 | Embedded script + event table + install/uninstall/migration. Grows monotonically; every growth episode has broken `checkInstalled` or a migration (entries 1 and 6). |
+| `CursorAgentStatusMonitor.swift` (usage spawn) | — | The `/usage` fetch invocation. Two silent breakages in one day from added flags/env (entry 8). |
 | `AgentSessionLogParser.swift` | 8 | `readTrailingLines` and the tail verdict. 4 of 8 commits touch the reader; **2 of those 4 fix the same failure mode** — the reader returning nil and silently sending callers down a wrong path (entry 4). |
 
 If you are changing a *constant* in `AgentTrafficLightState.swift`, assume it is load-bearing

@@ -10,6 +10,7 @@ import Combine
 import Defaults
 import KeyboardShortcuts
 import LaunchAtLogin
+import ServiceManagement
 import LottieUI
 import SwiftUI
 import SwiftUIIntrospect
@@ -17,6 +18,7 @@ import UniformTypeIdentifiers
 
 /// Groups for organizing settings tabs in the sidebar.
 private enum SettingsTabGroup: String, CaseIterable, Identifiable {
+    case agents
     case core
     case mediaAndDisplay
     case system
@@ -31,6 +33,7 @@ private enum SettingsTabGroup: String, CaseIterable, Identifiable {
     /// Display title for the section header.  `nil` means no visible header.
     var title: String? {
         switch self {
+        case .agents:           return String(localized: "AI Agents")
         case .core:             return nil
         case .mediaAndDisplay:  return String(localized: "Media & Display")
         case .system:           return String(localized: "System")
@@ -62,6 +65,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
     case shortcuts
     case notes
     case agentStatus
+    case llmUsage
     case about
 
     var id: String { rawValue }
@@ -76,7 +80,8 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .clipboard, .screenAssistant, .shelf,
              .downloads, .shortcuts:                                         return .utilities
         case .stats:                                              return .developer
-        case .extensions, .agentStatus:                                      return .integrations
+        case .agentStatus, .llmUsage:                                        return .agents
+        case .extensions:                                                    return .integrations
         case .about:                                                         return .info
         }
     }
@@ -100,7 +105,8 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .shelf: return String(localized: "Shelf")
         case .shortcuts: return String(localized: "Shortcuts")
         case .notes: return String(localized: "Notes")
-        case .agentStatus: return String(localized: "Agent Status")
+        case .agentStatus: return String(localized: "Agents")
+        case .llmUsage: return String(localized: "Usage")
         case .about: return String(localized: "About")
         }
     }
@@ -125,6 +131,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .shortcuts: return "keyboard"
         case .notes: return "note.text"
         case .agentStatus: return "light.beacon.max"
+        case .llmUsage: return "gauge.with.dots.needle.bottom.50percent"
         case .about: return "info.circle"
         }
     }
@@ -149,6 +156,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .shortcuts: return .orange
         case .notes: return Color(red: 0.979, green: 0.716, blue: 0.153, opacity: 1.000)
         case .agentStatus: return .yellow
+        case .llmUsage: return .cyan
         case .about: return .secondary
         }
     }
@@ -167,7 +175,19 @@ private struct SettingsSearchEntry: Identifiable {
     var id: String { "\(tab.rawValue)-\(title)" }
 }
 
+/// Highlight ids that external callers (outside this file) can deep-link to. Typed constants
+/// so the string can never drift from the row's own `.settingsHighlight(id:)` registration.
+enum SettingsDeepLink {
+    static let smartCaffeinateHighlightID = SettingsTab.agentStatus.highlightID(for: "Smart caffeinate")
+}
+
 final class SettingsHighlightCoordinator: ObservableObject {
+    /// `SettingsView` is constructed exactly once for the app's whole life
+    /// (`SettingsWindowController` builds it a single time), so this is reachable from
+    /// outside the file for callers that want to open Settings AND jump to a specific
+    /// row — e.g. a notch control's "click to change in Settings" action.
+    static let shared = SettingsHighlightCoordinator()
+
     struct ScrollRequest: Identifiable, Equatable {
         let id: String
         fileprivate let tab: SettingsTab
@@ -181,6 +201,15 @@ final class SettingsHighlightCoordinator: ObservableObject {
     fileprivate func focus(on entry: SettingsSearchEntry) {
         guard let highlightID = entry.highlightID else { return }
         pendingScrollRequest = ScrollRequest(id: highlightID, tab: entry.tab)
+        activateHighlight(id: highlightID)
+    }
+
+    /// External entry point for deep-linking into the Agent Status tab. Deliberately typed
+    /// with a plain String rather than exposing `SettingsTab`/`SettingsSearchEntry` outward —
+    /// callers outside this file only ever need to name a highlight id, not construct one of
+    /// this file's private navigation types.
+    func requestAgentStatusNavigation(highlightID: String) {
+        pendingScrollRequest = ScrollRequest(id: highlightID, tab: .agentStatus)
         activateHighlight(id: highlightID)
     }
 
@@ -283,9 +312,10 @@ private struct SettingsForm<Content: View>: View {
 }
 
 struct SettingsView: View {
-    @State private var selectedTab: SettingsTab = .general
+    // Land on the product's core pane, not a generic one — "Watch Your Agents".
+    @State private var selectedTab: SettingsTab = .agentStatus
     @State private var searchText: String = ""
-    @StateObject private var highlightCoordinator = SettingsHighlightCoordinator()
+    @StateObject private var highlightCoordinator = SettingsHighlightCoordinator.shared
     @Default(.enableMinimalisticUI) var enableMinimalisticUI
 
     var body: some View {
@@ -333,6 +363,13 @@ struct SettingsView: View {
         .toolbar(removing: .sidebarToggle)
         .toolbar { toolbarSpacingShim }
         .environmentObject(highlightCoordinator)
+        // The single place tab selection reacts to a navigation request — search-bar picks
+        // and external deep links (the notch caffeinate indicator) both flow through here.
+        // The scroll itself is handled per-tab by SettingsForm once the target tab's form
+        // exists; this only makes sure that tab is frontmost.
+        .onReceive(highlightCoordinator.$pendingScrollRequest.compactMap { $0 }) { request in
+            selectedTab = request.tab
+        }
         .formStyle(.grouped)
         .frame(width: 700)
         .onChange(of: searchText) { _, newValue in
@@ -463,9 +500,12 @@ struct SettingsView: View {
     }
 
     private var availableTabs: [SettingsTab] {
-        // Ordered to match group layout: core → media & display → system →
+        // Ordered to match group layout: agents → core → media & display → system →
         // productivity → utilities → developer → integrations → info.
         let ordered: [SettingsTab] = [
+            // AI Agents — the product's core, so it leads.
+            .agentStatus,
+            .llmUsage,
             // Core
             .general,
             .appearance,
@@ -490,7 +530,6 @@ struct SettingsView: View {
             .stats,
             // Integrations
             .extensions,
-            .agentStatus,
             // Info
             .about
         ]
@@ -532,8 +571,10 @@ struct SettingsView: View {
 
     private func handleSearchSuggestionSelection(_ suggestion: SettingsSearchEntry) {
         guard suggestion.tab != .downloads else { return }
+        // Tab selection happens via the body-level onReceive of pendingScrollRequest, the
+        // single switch point shared with external deep links (e.g. the notch caffeinate
+        // indicator) — not here, or the two paths drift.
         highlightCoordinator.focus(on: suggestion)
-        selectedTab = suggestion.tab
     }
 
     private struct SettingsSidebarSearchBar: View {
@@ -692,8 +733,9 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .general, title: "Extend hover area", keywords: ["hover", "cursor"], highlightID: SettingsTab.general.highlightID(for: "Extend hover area")),
             SettingsSearchEntry(tab: .general, title: "Enable haptics", keywords: ["haptic", "feedback"], highlightID: SettingsTab.general.highlightID(for: "Enable haptics")),
             SettingsSearchEntry(tab: .general, title: "Open notch on hover", keywords: ["hover to open", "auto open"], highlightID: SettingsTab.general.highlightID(for: "Open notch on hover")),
+            SettingsSearchEntry(tab: .general, title: "Minimum hover duration", keywords: ["hover", "delay", "dwell", "slide in", "hidden island", "external display"], highlightID: SettingsTab.general.highlightID(for: "Minimum hover duration")),
             SettingsSearchEntry(tab: .general, title: "External display style", keywords: ["dynamic island", "pill", "external display", "non-notch", "floating", "capsule"], highlightID: SettingsTab.general.highlightID(for: "External display style")),
-            SettingsSearchEntry(tab: .general, title: "Hide until hovered", keywords: ["hide", "hover", "external", "non-notch", "auto hide", "slide"], highlightID: SettingsTab.general.highlightID(for: "Hide until hovered")),
+            SettingsSearchEntry(tab: .general, title: "Always show on non-notch displays", keywords: ["always show", "hide", "hover", "external", "non-notch", "auto hide", "slide"], highlightID: SettingsTab.general.highlightID(for: "Always show on non-notch displays")),
             SettingsSearchEntry(tab: .general, title: "Notch display height", keywords: ["display height", "menu bar size"], highlightID: SettingsTab.general.highlightID(for: "Notch display height")),
 
             // Live Activities
@@ -844,10 +886,11 @@ struct SettingsView: View {
 
             // Stats
             SettingsSearchEntry(tab: .stats, title: "Enable system stats monitoring", keywords: ["stats", "monitoring"], highlightID: SettingsTab.stats.highlightID(for: "Enable system stats monitoring")),
-            SettingsSearchEntry(tab: .stats, title: "Enable LLM Usage Monitor", keywords: ["llm", "usage", "ai", "monitor"], highlightID: SettingsTab.stats.highlightID(for: "Enable LLM Usage Monitor")),
-            SettingsSearchEntry(tab: .stats, title: "Claude Provider", keywords: ["llm", "claude", "provider", "toggle"], highlightID: SettingsTab.stats.highlightID(for: "Claude Provider")),
-            SettingsSearchEntry(tab: .stats, title: "Codex Provider", keywords: ["llm", "codex", "provider", "toggle"], highlightID: SettingsTab.stats.highlightID(for: "Codex Provider")),
-            SettingsSearchEntry(tab: .stats, title: "Cursor Provider", keywords: ["llm", "cursor", "provider", "toggle"], highlightID: SettingsTab.stats.highlightID(for: "Cursor Provider")),
+            SettingsSearchEntry(tab: .llmUsage, title: "Enable LLM Usage Monitor", keywords: ["llm", "usage", "ai", "monitor"], highlightID: SettingsTab.llmUsage.highlightID(for: "Enable LLM Usage Monitor")),
+            SettingsSearchEntry(tab: .llmUsage, title: "Claude Provider", keywords: ["llm", "claude", "provider", "toggle", "usage", "rate", "limit", "quota", "5h", "7d", "weekly", "session"], highlightID: SettingsTab.llmUsage.highlightID(for: "Claude Provider")),
+            SettingsSearchEntry(tab: .llmUsage, title: "Codex Provider", keywords: ["llm", "codex", "provider", "toggle"], highlightID: SettingsTab.llmUsage.highlightID(for: "Codex Provider")),
+            SettingsSearchEntry(tab: .llmUsage, title: "Cursor Provider", keywords: ["llm", "cursor", "provider", "toggle"], highlightID: SettingsTab.llmUsage.highlightID(for: "Cursor Provider")),
+            SettingsSearchEntry(tab: .llmUsage, title: "Antigravity Provider", keywords: ["antigravity", "gemini", "provider", "usage", "sessions"], highlightID: SettingsTab.llmUsage.highlightID(for: "Antigravity Provider")),
             SettingsSearchEntry(tab: .stats, title: "Stop monitoring after closing the notch", keywords: ["stats", "auto stop"], highlightID: SettingsTab.stats.highlightID(for: "Stop monitoring after closing the notch")),
             SettingsSearchEntry(tab: .stats, title: "CPU Usage", keywords: ["cpu", "graph"], highlightID: SettingsTab.stats.highlightID(for: "CPU Usage")),
             SettingsSearchEntry(tab: .stats, title: "Temperature unit", keywords: ["cpu", "temperature", "celsius", "fahrenheit"], highlightID: SettingsTab.stats.highlightID(for: "Temperature unit")),
@@ -867,7 +910,14 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .screenAssistant, title: "Display Mode", keywords: ["screen assistant", "mode"], highlightID: SettingsTab.screenAssistant.highlightID(for: "Display Mode")),
 
             // Agent Status
-            SettingsSearchEntry(tab: .agentStatus, title: "Enable Cursor Agent Status", keywords: ["agent", "cursor", "status", "traffic", "light", "ai", "notch"], highlightID: SettingsTab.agentStatus.highlightID(for: "Enable Cursor Agent Status")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Enable Agent Monitoring", keywords: ["agent", "cursor", "claude", "codex", "status", "traffic", "light", "ai", "notch", "monitoring"], highlightID: SettingsTab.agentStatus.highlightID(for: "Enable Agent Monitoring")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Smart caffeinate", keywords: ["caffeinate", "awake", "sleep", "smart", "coffee", "keep awake", "assertion", "insomnia"], highlightID: SettingsDeepLink.smartCaffeinateHighlightID),
+            SettingsSearchEntry(tab: .agentStatus, title: "Traffic light style", keywords: ["traffic", "light", "style", "classic", "minimal", "dots", "notch", "agent", "indicator"], highlightID: SettingsTab.agentStatus.highlightID(for: "Traffic light style")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Active color", keywords: ["active", "green", "color", "traffic", "light", "palette", "agent"], highlightID: SettingsTab.agentStatus.highlightID(for: "Active color")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Awaiting input color", keywords: ["awaiting", "yellow", "color", "traffic", "light", "palette", "agent"], highlightID: SettingsTab.agentStatus.highlightID(for: "Awaiting input color")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Stopped color", keywords: ["stopped", "red", "color", "traffic", "light", "palette", "agent"], highlightID: SettingsTab.agentStatus.highlightID(for: "Stopped color")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Show a red light when no agents are running", keywords: ["red", "light", "idle", "no agents", "stopped", "indicator", "always"], highlightID: SettingsTab.agentStatus.highlightID(for: "Show a red light when no agents are running")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Reset traffic light colors", keywords: ["reset", "color", "traffic", "light", "default"], highlightID: SettingsTab.agentStatus.highlightID(for: "Reset traffic light colors")),
             SettingsSearchEntry(tab: .agentStatus, title: "Editor Hooks", keywords: ["agent", "cursor", "vscode", "copilot", "codex", "claude", "hook", "install", "integration"], highlightID: SettingsTab.agentStatus.highlightID(for: "Cursor Hook")),
             SettingsSearchEntry(tab: .agentStatus, title: "Mobile notifications", keywords: ["mobile", "push", "ntfy", "pushover", "webhook", "iphone", "android"], highlightID: SettingsTab.agentStatus.highlightID(for: "Mobile notifications")),
             SettingsSearchEntry(tab: .agentStatus, title: "Send test notification", keywords: ["test", "mobile", "push", "notification"], highlightID: SettingsTab.agentStatus.highlightID(for: "Send test notification")),
@@ -958,6 +1008,10 @@ struct SettingsView: View {
             SettingsForm(tab: .notes) {
                 NotesSettingsView()
             }
+        case .llmUsage:
+            SettingsForm(tab: .llmUsage) {
+                UsageSettings()
+            }
         case .about:
             SettingsForm(tab: .about) {
                 About()
@@ -983,6 +1037,7 @@ struct GeneralSettings: View {
     @Default(.automaticallySwitchDisplay) var automaticallySwitchDisplay
     @Default(.enableGestures) var enableGestures
     @Default(.openNotchOnHover) var openNotchOnHover
+    @Default(.alwaysShowOnNonNotchDisplays) var alwaysShowOnNonNotchDisplays
     @Default(.enableMinimalisticUI) var enableMinimalisticUI
     @Default(.showMinimalisticBatteryIndicator) var showMinimalisticBatteryIndicator
     @Default(.enableHorizontalMusicGestures) var enableHorizontalMusicGestures
@@ -990,7 +1045,6 @@ struct GeneralSettings: View {
     @Default(.reverseSwipeGestures) var reverseSwipeGestures
     @Default(.reverseScrollGestures) var reverseScrollGestures
     @Default(.externalDisplayStyle) var externalDisplayStyle
-    @Default(.hideNonNotchUntilHover) var hideNonNotchUntilHover
 
     /// `SMAppService.mainApp` registers whatever bundle is currently running, so a build
     /// launched from DerivedData or a build folder pins that path as the login item forever —
@@ -1046,6 +1100,20 @@ struct GeneralSettings: View {
                         Text("Launch at login")
                     }
                     .settingsHighlight(id: highlightID("Launch at login"))
+                    // macOS can accept the registration but park it pending user approval; the
+                    // toggle alone would just read off with no explanation and no way forward.
+                    if SMAppService.mainApp.status == .requiresApproval {
+                        HStack(spacing: 6) {
+                            Text("macOS needs you to approve Kannu in Login Items.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Button("Open Login Items") {
+                                SMAppService.openSystemSettingsLoginItems()
+                            }
+                            .buttonStyle(.link)
+                            .font(.caption)
+                        }
+                    }
                 } else {
                     Toggle(isOn: .constant(false)) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -1250,8 +1318,10 @@ struct GeneralSettings: View {
                 Text("Open notch on hover")
             }
             .settingsHighlight(id: highlightID("Open notch on hover"))
-            if openNotchOnHover {
-                Slider(value: $minimumHoverDuration, in: 0...1, step: 0.1) {
+            // Also shown with hover-to-open off when a display hides until hovered: the same
+            // value is the dwell before the hidden island slides in.
+            if openNotchOnHover || !alwaysShowOnNonNotchDisplays {
+                Slider(value: $minimumHoverDuration, in: 0...2, step: 0.1) {
                     HStack {
                         Text("Minimum hover duration")
                         Spacer()
@@ -1262,6 +1332,10 @@ struct GeneralSettings: View {
                 .onChange(of: minimumHoverDuration) {
                     NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
                 }
+                .settingsHighlight(id: highlightID("Minimum hover duration"))
+                Text("How long the pointer must rest on the notch before it opens. On displays where Kannu hides until hovered, this is also how long the pointer must rest at the top edge before the island slides in.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Picker("External display style", selection: $externalDisplayStyle) {
                 ForEach(ExternalDisplayStyle.allCases) { style in
@@ -1276,11 +1350,11 @@ struct GeneralSettings: View {
             Text(externalDisplayStyle.description)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Defaults.Toggle(key: .hideNonNotchUntilHover) {
-                Text("Hide until hovered on non-notch displays")
+            Defaults.Toggle(key: .alwaysShowOnNonNotchDisplays) {
+                Text("Always show on non-notch displays")
             }
-            .settingsHighlight(id: highlightID("Hide until hovered"))
-            Text("When enabled, the notch slides up and hides on external (non-notch) displays until you hover over it.")
+            .settingsHighlight(id: highlightID("Always show on non-notch displays"))
+            Text("By default the notch hides on external displays and appears when you hover near the top. Turn this on to keep it visible.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         } header: {
@@ -1313,13 +1387,13 @@ struct GeneralSettings: View {
                             Spacer()
                             Button("Reset") {
                                 Defaults[.displayStyleOverrides].removeValue(forKey: name)
-                                Defaults[.hideUntilHoverOverrides].removeValue(forKey: name)
+                                Defaults[.alwaysShowOverrides].removeValue(forKey: name)
                                 NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
                             }
                             .buttonStyle(.link)
                             .disabled(
                                 Defaults[.displayStyleOverrides][name] == nil
-                                    && Defaults[.hideUntilHoverOverrides][name] == nil
+                                    && Defaults[.alwaysShowOverrides][name] == nil
                             )
                         }
                         Picker("Style", selection: displayStyleBinding(for: name)) {
@@ -1328,7 +1402,7 @@ struct GeneralSettings: View {
                                 Text(style.localizedName).tag(ExternalDisplayStyle?.some(style))
                             }
                         }
-                        Picker("Hide until hovered", selection: hideUntilHoverBinding(for: name)) {
+                        Picker("Always show", selection: alwaysShowBinding(for: name)) {
                             Text("Follow default").tag(Bool?.none)
                             Text("On").tag(Bool?.some(true))
                             Text("Off").tag(Bool?.some(false))
@@ -1360,14 +1434,14 @@ struct GeneralSettings: View {
         )
     }
 
-    private func hideUntilHoverBinding(for name: String) -> Binding<Bool?> {
+    private func alwaysShowBinding(for name: String) -> Binding<Bool?> {
         Binding(
-            get: { Defaults[.hideUntilHoverOverrides][name] },
+            get: { Defaults[.alwaysShowOverrides][name] },
             set: { newValue in
                 if let newValue {
-                    Defaults[.hideUntilHoverOverrides][name] = newValue
+                    Defaults[.alwaysShowOverrides][name] = newValue
                 } else {
-                    Defaults[.hideUntilHoverOverrides].removeValue(forKey: name)
+                    Defaults[.alwaysShowOverrides].removeValue(forKey: name)
                 }
                 // Changes the closed-notch offset, so the window geometry needs re-evaluating.
                 NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
@@ -2086,7 +2160,7 @@ private struct HUDAndOSDSettingsView: View {
                             Toggle("Brightness HUD", isOn: $enableBrightnessHUD)
                             Toggle("Keyboard Backlight HUD", isOn: $enableKeyboardBacklightHUD)
                                 .disabled(enableThirdPartyDDCIntegration)
-                                .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active — brightness keys are handled by the external app." : "")
+                                .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active. Brightness keys are handled by the external app." : "")
                         } header: {
                             Text("Controls")
                         } footer: {
@@ -2207,7 +2281,7 @@ private struct HUDAndOSDSettingsView: View {
                             Toggle("Brightness HUD", isOn: $enableBrightnessHUD)
                             Toggle("Keyboard Backlight HUD", isOn: $enableKeyboardBacklightHUD)
                                 .disabled(enableThirdPartyDDCIntegration)
-                                .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active — brightness keys are handled by the external app." : "")
+                                .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active. Brightness keys are handled by the external app." : "")
                         } header: {
                             Text("Controls")
                         } footer: {
@@ -2258,6 +2332,7 @@ private struct HUDAndOSDSettingsView: View {
         .background(paneBackgroundColor)
         .navigationTitle("Controls")
         .onAppear {
+            accessibilityPermission.refreshStatus()
             if #unavailable(macOS 26.0), verticalHUDMaterial == .liquid {
                 verticalHUDMaterial = .frosted
                 verticalHUDLiquidGlassCustomizationMode = .standard
@@ -2657,7 +2732,7 @@ struct HUD: View {
             if !hasAccessibilityPermission && !enableThirdPartyDDCIntegration {
                 Section {
                     SettingsPermissionCallout(
-                        message: "Accessibility permission lets Dynamic Island replace the native volume, brightness, and keyboard HUDs.",
+                        message: "Without Accessibility permission macOS handles the volume and brightness keys itself and shows its own HUD, so Kannu hides its own to avoid two HUDs stacking. Granting it lets Kannu replace them.",
                         requestAction: { accessibilityPermission.requestAuthorizationPrompt() },
                         openSettingsAction: { accessibilityPermission.openSystemSettings() }
                     )
@@ -2674,7 +2749,7 @@ struct HUD: View {
                     Toggle("Brightness HUD", isOn: $enableBrightnessHUD)
                     Toggle("Keyboard Backlight HUD", isOn: $enableKeyboardBacklightHUD)
                         .disabled(enableThirdPartyDDCIntegration)
-                        .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active \u{2014} brightness keys are handled by the external app." : "")
+                        .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active. Brightness keys are handled by the external app." : "")
                 } header: {
                     Text("Controls")
                 } footer: {
@@ -2780,6 +2855,10 @@ struct HUD: View {
         .onChange(of: accessibilityPermission.isAuthorized) { _, granted in
             if !granted {
                 enableSystemHUD = false
+            } else {
+                // Without this the tap was created once at launch and never retried, so
+                // granting Accessibility only took effect after restarting Kannu.
+                MediaKeyInterceptor.shared.start()
             }
         }
     }
@@ -2854,7 +2933,7 @@ struct Media: View {
                 } else {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(String(localized: "'Now Playing' was the only option on previous versions and works with all media apps."))
-                        Text(String(localized: "Uses macOS Now Playing when the Amazon Music app is the active media source. Playback controls follow the system Now Playing target. Scrubbing the timeline may not work if the Amazon Music app does not support remote seek."))
+                        Text(String(localized: "Uses macOS Now Playing when Amazon Music is the active source. Timeline scrubbing may be unavailable."))
                     }
                     .foregroundStyle(.secondary)
                     .font(.caption)
@@ -2887,7 +2966,7 @@ struct Media: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else if !autoHideInactiveNotchMediaPlayer {
-                    Text("When disabled, the notch music player stays visible with placeholder metadata even when playback is inactive.")
+                    Text("When off, the notch player stays visible with placeholder info while nothing plays.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -2955,7 +3034,7 @@ struct Media: View {
                     Text("Show floating media controls")
                 }
                 .disabled(!coordinator.musicLiveActivityEnabled || standardControlsSuppressed)
-                .help("Displays play/pause and skip buttons beside the notch while music is active. Disabled by default.")
+                .help("Shows play/pause and skip buttons beside the notch while music is active.")
                 Toggle("Enable sneak peek", isOn: $enableSneakPeek)
                 Toggle("Show sneak peek on playback changes", isOn: $showSneakPeekOnTrackChange)
                     .disabled(!enableSneakPeek)
@@ -2967,7 +3046,7 @@ struct Media: View {
                     Text("Show live canvas in Dynamic Island")
                 }
                 .settingsHighlight(id: highlightID("Show live canvas in Dynamic Island"))
-                .help("Replaces the artwork tile with the live canvas when the current app provides one, and reuses that moving canvas for the surrounding lighting effect.")
+                .help("Shows the app's live canvas in place of album art when one is available.")
                 
                 //Parallax Effect Intensity to control how much parallax is wanted
                 Slider(value: $parallaxEffectIntensity, in: 0...12, step: 1.0) {
@@ -3031,7 +3110,7 @@ struct Media: View {
             } header: {
                 Text("Music Visualizer")
             } footer: {
-                Text("When enabled, the music visualizer displays real-time audio spectrum data synced to your music. Requires macOS 14.2+ and uses minimal CPU/GPU resources via the Accelerate framework.")
+                Text("Shows a real-time audio spectrum synced to your music. Requires macOS 14.2 or later.")
             }
 
             Section {
@@ -3090,7 +3169,7 @@ struct Media: View {
                     }
                     .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
                     .settingsHighlight(id: highlightID("Keep album art visible during fullscreen artwork"))
-                    Text("Right-click the album art on the lock screen to set it as the wallpaper. Right-click again or click the background to restore the original wallpaper. If a canvas is available, Kannu can also keep the same album art + player layout on top of the live canvas.")
+                    Text("Right-click the lock screen album art to use it as the wallpaper; right-click again to restore.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -3098,7 +3177,7 @@ struct Media: View {
             } header: {
                 Text("Lock Screen Integration")
             } footer: {
-                Text("These controls mirror the Lock Screen tab so you can tune the media overlay while focusing on playback settings.")
+                Text("These controls mirror the Lock Screen tab.")
             }
             .disabled(!showStandardMediaControls)
             .opacity(showStandardMediaControls ? 1 : 0.5)
@@ -3161,7 +3240,7 @@ struct About: View {
                     HStack {
                         Text("Release name")
                         Spacer()
-                        Text(Defaults[.releaseName])
+                        Text(ReleaseInfo.codename)
                             .foregroundStyle(.secondary)
                     }
                     HStack {
@@ -3449,14 +3528,9 @@ struct Shelf: View {
                 if let selectedProvider {
                     HStack {
                         QuickShareProviderIconImage(provider: selectedProvider, size: 16)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Currently selected: \(selectedProvider.id)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text("Files dropped on the shelf will be shared via this service")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
+                        Text("Files dropped on the shelf will be shared via this service")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 4)
                 }
@@ -3576,7 +3650,7 @@ struct LiveActivitiesSettings: View {
                 if !fullDiskAccessPermission.isAuthorized {
                     SettingsPermissionCallout(
                         title: String(localized: "Custom Focus metadata"),
-                        message: String(localized: "Full Disk Access unlocks custom Focus icons, colors, and labels. Standard Focus detection still works without it—grant access only if you need personalized indicators."),
+                        message: String(localized: "Full Disk Access unlocks custom Focus icons, colors, and labels. Standard Focus detection works without it, so grant access only if you want personalized indicators."),
                         icon: "externaldrive.fill",
                         iconColor: .purple,
                         requestButtonTitle: String(localized: "Request Full Disk Access"),
@@ -4389,6 +4463,8 @@ struct Appearance: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .disabled(!customizePhysicalNotchWidth)
+                .opacity(customizePhysicalNotchWidth ? 1 : 0.5)
                 .settingsHighlight(id: highlightID("Closed notch / pill width"))
 
                 Divider().padding(.vertical, 4)
@@ -4405,7 +4481,8 @@ struct Appearance: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .disabled(enableMinimalisticUI)
+                .disabled(enableMinimalisticUI || !customizePhysicalNotchWidth)
+                .opacity(customizePhysicalNotchWidth ? 1 : 0.5)
                 .settingsHighlight(id: highlightID("Expanded notch width"))
 
                 HStack {
@@ -4416,7 +4493,7 @@ struct Appearance: View {
                     Button("Reset Width") {
                         openNotchWidth = recommendedMin
                     }
-                    .disabled(abs(openNotchWidth - recommendedMin) < 0.5)
+                    .disabled(!customizePhysicalNotchWidth || abs(openNotchWidth - recommendedMin) < 0.5)
                     .buttonStyle(.bordered)
                 }
 
@@ -4649,7 +4726,7 @@ struct LockScreenSettings: View {
                     }
                     .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
                     .settingsHighlight(id: highlightID("Keep album art visible during fullscreen artwork"))
-                    Text("Right-click the album art on the lock screen to set it as the wallpaper. Right-click again or click the background to restore the original wallpaper. If a canvas is available, Kannu can also keep the same album art + player layout on top of the live canvas.")
+                    Text("Right-click the lock screen album art to use it as the wallpaper; right-click again to restore.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -6317,7 +6394,6 @@ private struct TimerPresetComponentControl: View {
 struct StatsSettings: View {
     @ObservedObject var statsManager = StatsManager.shared
     @Default(.enableStatsFeature) var enableStatsFeature
-    @Default(.enableLLMUsageFeature) var enableLLMUsageFeature
     @Default(.statsStopWhenNotchCloses) var statsStopWhenNotchCloses
     @Default(.statsUpdateInterval) var statsUpdateInterval
     @Default(.showCpuGraph) var showCpuGraph
@@ -6364,44 +6440,13 @@ struct StatsSettings: View {
                     // Note: Smart monitoring will handle starting when switching to stats tab
                 }
 
-                Defaults.Toggle(key: .enableLLMUsageFeature) {
-                    Text("Enable LLM Usage Monitor")
-                }
-                .settingsHighlight(id: highlightID("Enable LLM Usage Monitor"))
-
             } header: {
                 Text("General")
             } footer: {
-                Text("When enabled, the Stats tab will display real-time system performance graphs. This feature requires system permissions and may use additional battery. Enabling LLM Usage Monitor adds a Usage tab that tracks token usage and spend across your configured AI providers.")
+                Text("When enabled, the Stats tab will display real-time system performance graphs. This feature requires system permissions and may use additional battery.")
                     .multilineTextAlignment(.trailing)
                     .foregroundStyle(.secondary)
                     .font(.caption)
-            }
-
-            if enableLLMUsageFeature {
-                Section {
-                    Defaults.Toggle(key: .enableClaudeProvider) {
-                        Text("Claude")
-                    }
-                    .settingsHighlight(id: highlightID("Claude Provider"))
-
-                    Defaults.Toggle(key: .enableCodexProvider) {
-                        Text("Codex")
-                    }
-                    .settingsHighlight(id: highlightID("Codex Provider"))
-
-                    Defaults.Toggle(key: .enableCursorProvider) {
-                        Text("Cursor")
-                    }
-                    .settingsHighlight(id: highlightID("Cursor Provider"))
-                } header: {
-                    Text("LLM Providers")
-                } footer: {
-                    Text("Choose which AI providers appear in the Usage tab. Quota requires each CLI to be signed in locally (Claude: ~/.claude/.credentials.json or the \"Claude Code-credentials\" keychain item, Codex: ~/.codex/auth.json, Cursor: signed into the Cursor app). Claude's login lives in the keychain on macOS, so the Usage tab asks for approval once before it can show quota. Full Disk Access is not required for usage monitoring.")
-                        .multilineTextAlignment(.trailing)
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
             }
 
             if enableStatsFeature {
@@ -7097,7 +7142,7 @@ struct CustomOSDSettings: View {
                     Toggle("Keyboard Backlight OSD", isOn: $enableOSDKeyboardBacklight)
                         .settingsHighlight(id: highlightID("Keyboard Backlight OSD"))
                         .disabled(enableThirdPartyDDCIntegration)
-                        .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active \u{2014} brightness keys are handled by the external app." : "")
+                        .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active. Brightness keys are handled by the external app." : "")
                 } header: {
                     Text("Controls")
                 } footer: {
@@ -7347,54 +7392,114 @@ private struct SettingsColorPickerRow: View {
         HStack {
             Text(title)
             Spacer()
-            ColorWellSwatch(color: $selection, supportsOpacity: supportsOpacity)
+            KannuColorPickerButton(color: selection, accessibilityLabel: title) {
+                SettingsColorPickerPopover(selection: $selection, supportsOpacity: supportsOpacity)
+            }
         }
     }
 }
 
-private struct ColorWellSwatch: NSViewRepresentable {
-    @Binding var color: Color
+/// Presets + screen sampler, with the gradient picker one click away. The gradient replaced a
+/// "Custom…" button that opened `NSColorPanel`: in this accessory app the panel never reliably
+/// appeared, so custom colours were unreachable.
+private struct SettingsColorPickerPopover: View {
+    @Binding var selection: Color
     var supportsOpacity: Bool
 
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    @State private var showsSpectrum = false
 
-    func makeNSView(context: Context) -> WheelColorWell {
-        let well = WheelColorWell(style: .minimal)
-        well.color = NSColor(color)
-        well.isBordered = false
-        well.wantsLayer = true
-        well.layer?.cornerRadius = 4
-        well.layer?.masksToBounds = true
-        well.target = context.coordinator
-        well.action = #selector(Coordinator.colorChanged(_:))
-        return well
+    private static let presets: [NSColor] = [
+        .systemRed, .systemOrange, .systemYellow, .systemGreen, .systemMint, .systemTeal,
+        .systemCyan, .systemBlue, .systemIndigo, .systemPurple, .systemPink, .systemBrown,
+        .systemGray, .black, .white, .darkGray,
+    ]
+
+    private var items: [KannuColorSwatchGrid.Item] {
+        Self.presets.enumerated().map { index, preset in
+            KannuColorSwatchGrid.Item(
+                id: "preset-\(index)",
+                color: Color(nsColor: preset),
+                disabledReason: nil,
+                accessibilityLabel: String(localized: "Color swatch")
+            )
+        }
     }
 
-    func updateNSView(_ nsView: WheelColorWell, context: Context) {
-        let new = NSColor(color)
-        if nsView.color != new { nsView.color = new }
-        context.coordinator.parent = self
+    private var selectedID: String? {
+        items.first { matches($0.color, selection) }?.id
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: WheelColorWell, context: Context) -> CGSize? {
-        CGSize(width: 22, height: 14)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if showsSpectrum {
+                HStack(spacing: 6) {
+                    Button {
+                        showsSpectrum = false
+                    } label: {
+                        Image(systemName: "chevron.left")
+                    }
+                    .buttonStyle(.borderless)
+                    Text("Custom color")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .font(.caption)
+                ColorSpectrumPicker(color: $selection, supportsOpacity: supportsOpacity)
+                    .frame(width: 220)
+            } else {
+                KannuColorSwatchGrid(
+                    items: items,
+                    selectedID: selectedID,
+                    columns: 8,
+                    swatchSize: 18
+                ) { item in
+                    selection = item.color
+                }
+                Divider()
+                HStack {
+                    Button {
+                        ScreenColorSampler.shared.sample { picked in selection = picked }
+                    } label: {
+                        Label("Pick from screen", systemImage: "eyedropper")
+                    }
+                    .buttonStyle(.borderless)
+                    Spacer()
+                    Button("Custom…") { showsSpectrum = true }
+                        .buttonStyle(.borderless)
+                }
+                .font(.caption)
+            }
+        }
+        .padding(12)
     }
 
-    class Coordinator: NSObject {
-        var parent: ColorWellSwatch
-        init(_ parent: ColorWellSwatch) { self.parent = parent }
-        @objc func colorChanged(_ sender: WheelColorWell) {
-            parent.color = Color(sender.color)
+    private func matches(_ lhs: Color, _ rhs: Color) -> Bool {
+        guard let a = NSColor(lhs).usingColorSpace(.sRGB),
+              let b = NSColor(rhs).usingColorSpace(.sRGB) else { return false }
+        return abs(a.redComponent - b.redComponent) < 0.01
+            && abs(a.greenComponent - b.greenComponent) < 0.01
+            && abs(a.blueComponent - b.blueComponent) < 0.01
+    }
+}
+
+/// Owns the screen sampler so it outlives the popover — a locally-created `NSColorSampler` can be
+/// released before the user finishes picking, silently dropping the result.
+private final class ScreenColorSampler {
+    static let shared = ScreenColorSampler()
+    private var sampler: NSColorSampler?
+    private init() {}
+
+    func sample(onPick: @escaping (Color) -> Void) {
+        let sampler = NSColorSampler()
+        self.sampler = sampler
+        sampler.show { [weak self] picked in
+            self?.sampler = nil
+            guard let picked else { return }
+            onPick(Color(nsColor: picked))
         }
     }
 }
 
-final class WheelColorWell: NSColorWell {
-    override func activate(_ exclusive: Bool) {
-        super.activate(exclusive)
-        NSColorPanel.shared.mode = .wheel
-    }
-}
 
 struct AppIconImage: View {
     let bundleIdentifiers: [String]
@@ -7500,6 +7605,7 @@ private extension QuickShareProvider {
 
 struct AgentStatusSettings: View {
     @ObservedObject var monitor = CursorAgentStatusMonitor.shared
+    @ObservedObject private var accessibilityPermission = AccessibilityPermissionStore.shared
     @ObservedObject var hookInstaller = AgentHookInstaller.shared
     @ObservedObject private var notificationBridge = AgentStatusNotificationBridge.shared
     @Default(.enableAgentStatusFeature) var enableAgentStatusFeature
@@ -7507,6 +7613,11 @@ struct AgentStatusSettings: View {
     @Default(.agentStoppedCollapseSeconds) var agentStoppedCollapseSeconds
     @Default(.agentInactiveDisplaySeconds) var agentInactiveDisplaySeconds
     @Default(.showAgentStoppedIndicator) var showAgentStoppedIndicator
+    @Default(.agentTrafficLightStyle) var agentTrafficLightStyle
+    @Default(.agentActiveColor) var agentActiveColor
+    @Default(.agentAwaitingInputColor) var agentAwaitingInputColor
+    @Default(.agentStoppedColor) var agentStoppedColor
+    @Default(.smartCaffeinate) var smartCaffeinate
     @Default(.enableAgentStatusMobileNotifications) var enableMobileNotifications
     @Default(.agentStatusNotificationProvider) var notificationProvider
     @Default(.agentStatusNtfyTopic) var ntfyTopic
@@ -7527,9 +7638,9 @@ struct AgentStatusSettings: View {
                 Defaults.Toggle(key: .enableAgentStatusFeature) {
                     Text("Enable Agent Status")
                 }
-                .settingsHighlight(id: highlightID("Enable Cursor Agent Status"))
+                .settingsHighlight(id: highlightID("Enable Agent Monitoring"))
             } header: {
-                Text("Agent Status")
+                Text("Monitoring")
             } footer: {
                 Text("Shows a traffic light in the notch while AI agents run in your editor: green while the agent is working, yellow when it needs your input, and red when it has stopped.")
             }
@@ -7543,27 +7654,99 @@ struct AgentStatusSettings: View {
                     Text("Kannu watches these editors automatically. Install a hook below for richer status on editors marked as not detected.")
                 }
 
-                Section {
-                    legendRow(color: .green, title: String(localized: "Active"), detail: String(localized: "The agent is thinking, planning, executing tools, or otherwise working"))
-                    legendRow(color: .yellow, title: String(localized: "Awaiting Input"), detail: String(localized: "The agent needs your approval or a response"))
-                    legendRow(color: .red, title: String(localized: "Stopped"), detail: String(localized: "The agent has finished or was aborted"))
-                    HStack {
-                        Text("Current State")
-                        Spacer()
-                        Text(stateDescription(monitor.trafficLightState))
-                            .foregroundColor(.secondary)
+                // Optional, not required: without it clicking a chat still activates the
+                // right app — it just can't raise the specific window for terminal- and
+                // IDE-hosted sessions. Claude Desktop chats deep-link and don't need it.
+                if !accessibilityPermission.isAuthorized {
+                    Section {
+                        SettingsPermissionCallout(
+                            title: "Accessibility improves click-through",
+                            message: "Clicking a recent chat brings its app forward. With Accessibility access, Kannu can also raise the exact window for sessions running in a terminal or IDE.",
+                            requestAction: { accessibilityPermission.requestAuthorizationPrompt() },
+                            openSettingsAction: { accessibilityPermission.openSystemSettings() }
+                        )
+                    } header: {
+                        Text("Click-through")
                     }
+                }
+
+                Section {
+                    Picker("Traffic light style", selection: $agentTrafficLightStyle) {
+                        ForEach(AgentTrafficLightStyle.allCases) { style in
+                            Text(style.localizedName).tag(style)
+                        }
+                    }
+                    .settingsHighlight(id: highlightID("Traffic light style"))
+                    Text(agentTrafficLightStyle.description)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    // Live preview using the same view the notch draws, so this can't drift.
+                    HStack(spacing: 10) {
+                        Text("Preview")
+                        Spacer()
+                        AgentTrafficLightDots(
+                            style: agentTrafficLightStyle,
+                            state: monitor.trafficLightState == .inactive ? .executing : monitor.trafficLightState
+                        )
+                    }
+                    stateColorRow(
+                        key: .agentActiveColor,
+                        title: String(localized: "Active"),
+                        detail: String(localized: "The agent is thinking, planning, executing tools, or otherwise working"),
+                        highlightTitle: "Active color"
+                    )
+                    stateColorRow(
+                        key: .agentAwaitingInputColor,
+                        title: String(localized: "Awaiting Input"),
+                        detail: String(localized: "The agent needs your approval or a response"),
+                        highlightTitle: "Awaiting input color"
+                    )
+                    stateColorRow(
+                        key: .agentStoppedColor,
+                        title: String(localized: "Stopped"),
+                        detail: String(localized: "The agent has finished or was aborted"),
+                        highlightTitle: "Stopped color"
+                    )
+                    Button("Reset Colors") {
+                        Defaults[.agentActiveColor] = .green
+                        Defaults[.agentAwaitingInputColor] = .yellow
+                        Defaults[.agentStoppedColor] = .red
+                    }
+                    .buttonStyle(.link)
+                    .disabled(
+                        agentActiveColor == .green
+                            && agentAwaitingInputColor == .yellow
+                            && agentStoppedColor == .red
+                    )
+                    .settingsHighlight(id: highlightID("Reset traffic light colors"))
                 } header: {
                     Text("Traffic Light")
                 } footer: {
-                    Text("Yellow during approval cards needs the Cursor hook installed below. Transcript-only detection can lag until Cursor writes the tool call.")
+                    Text("The yellow light is most reliable when hooks are installed.")
+                }
+
+                Section {
+                    Defaults.Toggle(key: .smartCaffeinate) {
+                        Text("Smart caffeinate")
+                    }
+                    .settingsHighlight(id: SettingsDeepLink.smartCaffeinateHighlightID)
+                    Text("Keeps the Mac awake automatically while any agent is running, and lets it sleep when they stop. While this is on, the manual switch in the notch is hidden.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text("Caffeinate")
+                } footer: {
+                    Text("Only system sleep is prevented, so the display may still sleep while agents keep running. Closing the lid always sleeps the Mac.")
                 }
 
                 Section {
                     Defaults.Toggle(key: .showAgentStoppedIndicator) {
-                        Text("Keep red light visible when idle")
+                        Text("Show a red light when no agents are running")
                     }
-                    .settingsHighlight(id: highlightID("Keep red light visible when idle"))
+                    .settingsHighlight(id: highlightID("Show a red light when no agents are running"))
+                    Text("When off, the light hides once agents go quiet.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
 
                     HStack {
                         Text("Hide indicator after agent stops for")
@@ -7732,8 +7915,9 @@ struct AgentStatusSettings: View {
             pushoverAppToken = SecureSecretsStore.value(for: .pushoverAppToken)
             webhookURL = SecureSecretsStore.value(for: .webhookURL)
             hookInstaller.refresh()
+            accessibilityPermission.refreshStatus()
         }
-        .navigationTitle("Agent Status")
+        .navigationTitle("Agents")
     }
 
     private var detectedProviders: [(source: AgentProviderIconSource, name: String, detected: Bool)] {
@@ -7785,28 +7969,110 @@ struct AgentStatusSettings: View {
         }
     }
 
-    private func stateDescription(_ state: AgentTrafficLightState) -> String {
-        switch state {
-        case .thinking: return String(localized: "Thinking")
-        case .executing: return String(localized: "Executing")
-        case .awaitingInput: return String(localized: "Awaiting Input")
-        case .stopped: return String(localized: "Stopped")
-        case .inactive: return String(localized: "Inactive")
-        }
-    }
 
     @ViewBuilder
-    private func legendRow(color: Color, title: String, detail: String) -> some View {
-        HStack(spacing: 10) {
+    /// Legend row plus the palette picker for that state's color. The popover offers only
+    /// the curated palette and blocks swatches already used by another state, so two states
+    /// can never share a color.
+    private func stateColorRow(
+        key: Defaults.Key<AgentTrafficLightPaletteColor>,
+        title: String,
+        detail: String,
+        highlightTitle: String
+    ) -> some View {
+        let selection = Defaults[key]
+        let others: [AgentTrafficLightPaletteColor: String] = {
+            var taken: [AgentTrafficLightPaletteColor: String] = [:]
+            let all: [(Defaults.Key<AgentTrafficLightPaletteColor>, String)] = [
+                (.agentActiveColor, String(localized: "Active")),
+                (.agentAwaitingInputColor, String(localized: "Awaiting Input")),
+                (.agentStoppedColor, String(localized: "Stopped")),
+            ]
+            for (otherKey, name) in all where otherKey != key {
+                taken[Defaults[otherKey]] = name
+            }
+            return taken
+        }()
+        return HStack(spacing: 10) {
             Circle()
-                .fill(color)
+                .fill(selection.color)
                 .frame(width: 10, height: 10)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                 Text(detail)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
+            Spacer()
+            AgentPaletteSwatchButton(key: key, takenByOthers: others)
         }
+        .settingsHighlight(id: highlightID(highlightTitle))
+    }
+}
+
+/// The swatch button + popover for one traffic-light state. Palette-only by design: no
+/// eyedropper, no custom well — the closed set is what makes duplicate colors impossible.
+private struct AgentPaletteSwatchButton: View {
+    let key: Defaults.Key<AgentTrafficLightPaletteColor>
+    let takenByOthers: [AgentTrafficLightPaletteColor: String]
+    // Observed via the runtime key so the swatch recolors in the same transaction as the
+    // selection write — the struct's other inputs don't change when its own key does, so
+    // without this SwiftUI may skip the re-render and show a stale color.
+    @Default private var selection: AgentTrafficLightPaletteColor
+
+    init(key: Defaults.Key<AgentTrafficLightPaletteColor>, takenByOthers: [AgentTrafficLightPaletteColor: String]) {
+        self.key = key
+        self.takenByOthers = takenByOthers
+        self._selection = Default(key)
+    }
+
+    var body: some View {
+        KannuColorPickerButton(
+            color: selection.color,
+            accessibilityLabel: selection.localizedName
+        ) {
+            AgentPalettePopover(key: key, takenByOthers: takenByOthers)
+        }
+    }
+}
+
+/// The traffic-light palette: a closed set, and a colour already assigned to another state is
+/// unpickable — that is what makes two states sharing a colour impossible. The rule travels as
+/// each item's `disabledReason`, so the shared grid enforces it rather than a local copy.
+private struct AgentPalettePopover: View {
+    let key: Defaults.Key<AgentTrafficLightPaletteColor>
+    let takenByOthers: [AgentTrafficLightPaletteColor: String]
+    @Default private var selection: AgentTrafficLightPaletteColor
+    @Environment(\.dismiss) private var dismiss
+
+    init(key: Defaults.Key<AgentTrafficLightPaletteColor>, takenByOthers: [AgentTrafficLightPaletteColor: String]) {
+        self.key = key
+        self.takenByOthers = takenByOthers
+        self._selection = Default(key)
+    }
+
+    private var items: [KannuColorSwatchGrid.Item] {
+        AgentTrafficLightPaletteColor.allCases.map { option in
+            KannuColorSwatchGrid.Item(
+                id: option.rawValue,
+                color: option.color,
+                disabledReason: takenByOthers[option].map { String(localized: "Used by \($0)") },
+                accessibilityLabel: option.localizedName
+            )
+        }
+    }
+
+    var body: some View {
+        KannuColorSwatchGrid(
+            items: items,
+            selectedID: selection.rawValue,
+            columns: 5,
+            swatchSize: 20
+        ) { item in
+            guard let picked = AgentTrafficLightPaletteColor(rawValue: item.id) else { return }
+            selection = picked
+            dismiss()
+        }
+        .padding(12)
     }
 }

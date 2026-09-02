@@ -83,11 +83,11 @@ struct ContentView: View {
     @Default(.enableExtensionLiveActivities) var enableExtensionLiveActivities
     @Default(.showStandardMediaControls) var showStandardMediaControls
     @Default(.externalDisplayStyle) var externalDisplayStyle
-    @Default(.hideNonNotchUntilHover) var hideNonNotchUntilHover
+    @Default(.alwaysShowOnNonNotchDisplays) var alwaysShowOnNonNotchDisplays
     // Observed so SwiftUI invalidates when a per-display override changes. The resolvers in
     // matters.swift read Defaults directly, which is not an observable dependency on its own.
     @Default(.displayStyleOverrides) var displayStyleOverrides
-    @Default(.hideUntilHoverOverrides) var hideUntilHoverOverrides
+    @Default(.alwaysShowOverrides) var alwaysShowOverrides
     
     // Battery settings reactivity
     @Default(.showPowerStatusNotifications) var showPowerStatusNotifications
@@ -349,11 +349,17 @@ struct ContentView: View {
             && !idleScheduleManager.isActive
     }
 
-    private var isClosedMusicPairingEligible: Bool {
+    /// "There is music worth showing" — playing, or paused with metadata still on screen.
+    /// Single definition on purpose: this was inlined at three call sites and a fourth used
+    /// `isPlaying` alone, which silently disagreed whenever playback was paused.
+    private var hasActiveMusicSnapshot: Bool {
         let hasMusicMetadata = !musicManager.songTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !musicManager.artistName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let hasActiveMusicSnapshot = musicManager.isPlaying || (!musicManager.isPlayerIdle && hasMusicMetadata)
-        return closedMusicPairingEligible(hasActiveMusicSnapshot: hasActiveMusicSnapshot)
+        return musicManager.isPlaying || (!musicManager.isPlayerIdle && hasMusicMetadata)
+    }
+
+    private var isClosedMusicPairingEligible: Bool {
+        closedMusicPairingEligible(hasActiveMusicSnapshot: hasActiveMusicSnapshot)
     }
 
     private var closedLiveActivitySwapTransition: AnyTransition {
@@ -416,10 +422,14 @@ struct ContentView: View {
     }
 
     private var shouldExpandPhysicalNotchForAgent: Bool {
+        // `showAgentTrafficLight` implies enableAgentStatusFeature && the monitor's
+        // shouldShowTrafficLight (upstream's conditions) plus the hide-until-hover reveal
+        // window — keeping expansion tied to whether a light is actually being drawn. On
+        // physical-notch screens hide-until-hover never applies, so this is equivalent to
+        // upstream's check there, with one source of truth instead of two.
         isPhysicalNotchScreen
             && vm.notchState == .closed
-            && enableAgentStatusFeature
-            && agentStatusMonitor.shouldShowTrafficLight
+            && showAgentTrafficLight
             && !vm.hideOnClosed
     }
 
@@ -460,8 +470,8 @@ struct ContentView: View {
     /// Whether hide-until-hover applies to *this* screen. Displays with a physical notch are
     /// never affected, so all the time-boxing below leaves them on their existing behaviour.
     private var hideUntilHoverAppliesHere: Bool {
-        let resolved = hideUntilHoverOverrides[currentScreenName] ?? hideNonNotchUntilHover
-        return resolved && isNonNotchScreen
+        let alwaysShow = alwaysShowOverrides[currentScreenName] ?? alwaysShowOnNonNotchDisplays
+        return !alwaysShow && isNonNotchScreen
     }
 
     /// The traffic light, time-boxed when hide-until-hover is on.
@@ -472,10 +482,14 @@ struct ContentView: View {
     /// activity, or while the pointer is on the island. Everywhere else the raw value stands.
     private var showAgentTrafficLight: Bool {
         guard enableAgentStatusFeature, agentStatusMonitor.shouldShowTrafficLight else { return false }
-        guard hideUntilHoverAppliesHere else { return true }
+        // Notched displays used to show the light for as long as a session existed; they now
+        // share the same activity-refreshed window so the band collapses between events.
+        guard hideUntilHoverAppliesHere || isPhysicalNotchScreen else { return true }
         // While a music pill is already on screen the light is drawn inside it, so keep it
-        // steady rather than blinking a dot in and out of a persistent container.
-        if closedMusicPairingEligible(hasActiveMusicSnapshot: musicManager.isPlaying) { return true }
+        // steady rather than blinking a dot in and out of a persistent container. Uses the
+        // shared snapshot — testing `isPlaying` alone missed the paused-but-still-shown pill,
+        // which is exactly when the blink was visible.
+        if isClosedMusicPairingEligible { return true }
         return agentLightDeadline != nil || isHovering
     }
 
@@ -497,7 +511,20 @@ struct ContentView: View {
     /// This is only needed when the notch is fully hidden off-screen and
     /// regular `.onHover` hit-testing may not trigger reliably.
     private var shouldUseHiddenEdgeHoverPolling: Bool {
-        shouldHideUntilHover && !lockScreenManager.isLocked
+        guard !lockScreenManager.isLocked else { return false }
+        if shouldHideUntilHover { return true }
+        // Keep polling while a hover is latched on the plain closed island. `showAgentTrafficLight`
+        // is true while hovering, which turns `shouldHideUntilHover` off — so the poll used to
+        // stop the moment it succeeded. An island that slid in under a stationary pointer never
+        // receives a tracking-area exit (AppKit only reports exits for entries it delivered),
+        // leaving `isHovering` latched and the island stranded on screen; the poll is the only
+        // guaranteed exit path, so it must outlive its own success. The HUD terms hand hover
+        // ownership back to `.onHover` when the island is wider than the poll's exit rect.
+        return hideUntilHoverAppliesHere
+            && vm.notchState == .closed
+            && isHovering
+            && !isSneakPeekVisibleOnCurrentScreen
+            && !coordinator.expandingView.show
     }
     
     /// Whether the LocalSend live activity should be shown
@@ -558,10 +585,7 @@ struct ContentView: View {
         if idlePreviewManager.isActive { return false }
         if idleScheduleManager.isActive { return false }
 
-        let hasMusicMetadata = !musicManager.songTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !musicManager.artistName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let hasActiveMusicSnapshot = musicManager.isPlaying || (!musicManager.isPlayerIdle && hasMusicMetadata)
-        if closedMusicPairingEligible(hasActiveMusicSnapshot: hasActiveMusicSnapshot) { return false }
+        if isClosedMusicPairingEligible { return false }
 
         if isSneakPeekVisibleOnCurrentScreen && Defaults[.inlineHUD] { return false }
         if capsLockManager.isCapsLockActive && Defaults[.enableCapsLockIndicator] && !lockScreenManager.isLocked { return false }
@@ -788,6 +812,11 @@ struct ContentView: View {
             // Shadow bottom padding and hide-until-hover offset applied AFTER
             // interaction modifiers so .contentShape / .onHover only covers
             // the actual notch content, not the shadow clearance below it.
+            // The shelf drop target rides here for the same reason: it used to back the
+            // whole open-sized window (≥ 640 × 218 pt), so a closed notch swallowed clicks
+            // meant for the app beneath that strip. Placed before the offset, it also parks
+            // off-screen with the hidden island instead of leaving a dead zone at the edge.
+            .background(dragDetector)
             .padding(.bottom, notchBottomPadding)
             // `isRevealHoldActive` is a separate term rather than folded into
             // `shouldHideUntilHover` on purpose: `shouldUseHiddenEdgeHoverPolling` derives from
@@ -861,10 +890,11 @@ struct ContentView: View {
                 }
             }
             .onChange(of: coordinator.sneakPeek.show) { _, sneakPeekShowing in
+                syncHiddenEdgeHoverPolling()
                 // When sneak peek finishes, check if user is still hovering and open notch if needed
                 if !sneakPeekShowing {
                     runAfter(0.2) {
-                        if isHovering && vm.notchState == .closed && !coordinator.isHoverOpenSuppressed {
+                        if isHovering && vm.notchState == .closed {
                             openNotch()
                         }
                     }
@@ -907,7 +937,6 @@ struct ContentView: View {
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .environmentObject(privacyManager)
-        .background(dragDetector)
         .environmentObject(vm)
     }
 
@@ -937,12 +966,15 @@ struct ContentView: View {
             }
             .onChange(of: agentStatusMonitor.activityPulse) { _, _ in
                 noteAgentActivityPulse()
+                syncHiddenEdgeHoverPolling()
             }
-            .onChange(of: hideNonNotchUntilHover) { _, _ in
+            .onChange(of: alwaysShowOnNonNotchDisplays) { _, _ in
                 clearRevealState()
+                syncHiddenEdgeHoverPolling()
             }
             .onChange(of: externalDisplayStyle) { _, _ in
                 clearRevealState()
+                syncHiddenEdgeHoverPolling()
             }
             .onChange(of: vm.notchState) { _, state in
                 if state == .open {
@@ -954,12 +986,17 @@ struct ContentView: View {
                     hideMusicControlWindow()
                 } else {
                     if hideUntilHoverAppliesHere && isRevealHoldActive {
-                        revealHoldDeadline = Date().addingTimeInterval(nonNotchRevealHoldSeconds)
+                        revealHoldDeadline = Date().addingTimeInterval(notchRevealHoldSeconds)
+                        armRevealCountdown()
+                    } else if isPhysicalNotchScreen, agentLightDeadline != nil {
+                        // Closing the notch must not strand the band on a stale deadline.
+                        agentLightDeadline = Date().addingTimeInterval(notchRevealHoldSeconds)
                         armRevealCountdown()
                     }
                     releaseMusicControlWindowUpdates(after: musicControlResumeDelay)
                     enqueueMusicControlWindowSync(forceRefresh: true, delay: 0.05)
                 }
+                syncHiddenEdgeHoverPolling()
             }
             .onChange(of: musicControlWindowEnabled) { _, enabled in
                 if enabled {
@@ -996,6 +1033,20 @@ struct ContentView: View {
             }
             .onChange(of: lockScreenManager.isLocked) { _, locked in
                 if locked {
+                    // `interactionsEnabled` removes the .onHover modifier and the windows are
+                    // ordered out, so no hover-exit will ever arrive for a pointer that was on
+                    // the notch at lock time. Drop the hover state here, or the global
+                    // leftMouseDown monitor (guarded on isHovering) opens the notch on every
+                    // click anywhere after unlock. Not via handleHover(false): that arms a
+                    // reveal linger and a close-debounce that could vm.close() during lock.
+                    hoverTask?.cancel()
+                    agentHoverTask?.cancel()
+                    stopHoverClickMonitor()
+                    isHovering = false
+                    isHoveringClosedMusicWaveformControl = false
+                }
+                syncHiddenEdgeHoverPolling()
+                if locked {
                     suppressMusicControlWindowUpdates()
                     cancelMusicControlWindowSync()
                     hideMusicControlWindow()
@@ -1030,9 +1081,16 @@ struct ContentView: View {
                 }
             }
             .onChange(of: isHovering) { _, hovering in
+                // A hover latched by .onHover or a region (not by the poll) must also start the
+                // poll, which is now the guaranteed exit path for a latched hover — see
+                // shouldUseHiddenEdgeHoverPolling.
+                syncHiddenEdgeHoverPolling()
                 if shouldShowMusicControlWindow() {
                     enqueueMusicControlWindowSync(forceRefresh: true, delay: hovering ? 0.05 : 0.12)
                 }
+            }
+            .onChange(of: coordinator.expandingView.show) { _, _ in
+                syncHiddenEdgeHoverPolling()
             }
             .onChange(of: musicManager.isPlaying) { _, isPlaying in
                 handleMusicControlPlaybackChange(isPlaying: isPlaying)
@@ -2055,7 +2113,11 @@ struct ContentView: View {
         } else if Defaults[.dynamicShelf] && !Defaults[.enableMinimalisticUI] {
             Color.clear
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
+                // Closed: only the notch/pill shape is a drop target and hit-testable, so clicks
+                // beside it reach the app beneath. Open: the whole panel, as before. One node
+                // whose shape changes, never a view swap — a swap would drop `isTargeted`
+                // mid-drag and close the notch right after the drop-triggered open.
+                .contentShape(vm.notchState == .closed ? resolvedClipShape : AnyShape(Rectangle()))
                 .onDrop(of: [.data], isTargeted: $vm.dragDetectorTargeting) { _ in true }
                 .onChange(of: vm.anyDropZoneTargeting) { _, isTargeted in
                     if isTargeted, vm.notchState == .closed {
@@ -2092,12 +2154,19 @@ struct ContentView: View {
 
     private func handleRegionHoverOpen(_ hovering: Bool, focus: NotchViews) {
         agentHoverTask?.cancel()
+        // The outer .onHover fires alongside a region's, and both tasks used to race to set
+        // coordinator.currentView before opening. The region's focus is the explicit one.
+        hoverTask?.cancel()
 
         guard hovering else { return }
 
         withAnimation(.bouncy.speed(1.2)) {
             isHovering = true
         }
+        // Deliberately no cancelRevealCountdown() here: the expiry task already re-arms itself
+        // while isHovering is true, and cancelling it on hover-in with no matching re-arm on
+        // hover-out (a region inserted under a stationary pointer never reports one) left
+        // revealHoldDeadline set with nothing to clear it — the island stayed out for good.
 
         if vm.notchState == .closed && Defaults[.enableHaptics] {
             triggerHapticIfAllowed()
@@ -2105,8 +2174,7 @@ struct ContentView: View {
 
         guard vm.notchState == .closed,
               !isSneakPeekVisibleOnCurrentScreen,
-              Defaults[.openNotchOnHover],
-              !coordinator.isHoverOpenSuppressed else { return }
+              Defaults[.openNotchOnHover] else { return }
 
         agentHoverTask = Task {
             try? await Task.sleep(for: .seconds(Defaults[.minimumHoverDuration]))
@@ -2115,8 +2183,7 @@ struct ContentView: View {
             await MainActor.run {
                 guard self.vm.notchState == .closed,
                       self.isHovering,
-                      !self.isSneakPeekVisibleOnCurrentScreen,
-                      !self.coordinator.isHoverOpenSuppressed else { return }
+                      !self.isSneakPeekVisibleOnCurrentScreen else { return }
                 self.openNotch(focus: focus)
             }
         }
@@ -2168,7 +2235,27 @@ struct ContentView: View {
             height: activationHeight
         )
 
-        return activationRect.contains(location)
+        guard isHovering else { return activationRect.contains(location) }
+
+        // Exit test, with hysteresis. While hovering, the island's .onHover shape is larger than
+        // the entry rect above: closed size +8 on each axis, pushed down by the pill's top
+        // offset, plus the closed-music wings (base wing = height + 8, the right wing up to
+        // base + 0.6 × centre, plus the 6 pt pill edge inset). Polling against the small entry
+        // rect while the pointer sat in that band made the poll report "outside" 50 ms after
+        // .onHover reported "inside", cancelling the open debounce and shrinking the frame
+        // under the pointer — a 20 Hz flap in which hover-to-open could never fire. The exit
+        // rect is a superset of both, so the two detectors can no longer disagree. The window
+        // frame is not readable here (the view holds no NSWindow and close() never resizes
+        // it), hence computed from the same inputs the view lays out with.
+        let wingAllowance = (vm.closedNotchSize.height + 8) + 0.6 * (vm.closedNotchSize.width + 8) + 6
+        let verticalAllowance = pillTopOffset + 8
+        let exitRect = CGRect(
+            x: activationRect.minX - wingAllowance,
+            y: activationRect.minY - verticalAllowance,
+            width: activationRect.width + wingAllowance * 2,
+            height: activationRect.height + verticalAllowance
+        )
+        return exitRect.contains(location)
     }
 
     // MARK: - Non-notch reveal windows
@@ -2176,10 +2263,17 @@ struct ContentView: View {
     /// An agent did something: pull the island back into view and relight the traffic light,
     /// each for its own window. Only meaningful when the island is hidden by default.
     private func noteAgentActivityPulse() {
-        guard hideUntilHoverAppliesHere, enableAgentStatusFeature else { return }
+        guard hideUntilHoverAppliesHere || isPhysicalNotchScreen, enableAgentStatusFeature else { return }
+        // Strict collapse: the running-agent heartbeat keeps other consumers informed but
+        // must not hold the band on screen; only real transitions refresh the window. This
+        // is the sole consumer of the latch — consuming resets it — and it answers for every
+        // bump SwiftUI coalesced into this one onChange, not just the last one published.
+        if agentStatusMonitor.consumeActivityPulseWasHeartbeatOnly() && !physicalNotchAgentBandFollowsHeartbeat {
+            return
+        }
         let now = Date()
-        let lightDeadline = now.addingTimeInterval(agentTrafficLightHoverModeWindowSeconds)
-        let holdDeadline = now.addingTimeInterval(nonNotchRevealHoldSeconds)
+        let lightDeadline = now.addingTimeInterval(notchRevealHoldSeconds)
+        let holdDeadline = now.addingTimeInterval(notchRevealHoldSeconds)
 
         // Only animate when the island is actually coming back on screen. Repeat pulses during
         // a long run just extend the deadlines and must not restage the slide. Both deadlines
@@ -2212,11 +2306,18 @@ struct ContentView: View {
             self.revealExpiryTask = nil
 
             // Hovering, an open notch, or anything that blocks auto-close means the user is
-            // still engaged — leave the island out and let hover-exit / notch-close re-arm.
+            // still engaged — leave the island out. Re-arm rather than return bare: hover-exit
+            // and notch-close have their own re-arm paths, but shouldPreventAutoClose (music
+            // playing, a pinned popover) has none, and once the agent stops no further pulse
+            // arrives — a bare return stranded the island revealed forever.
             guard !self.isHovering,
                   self.vm.notchState == .closed,
                   !self.shouldPreventAutoClose()
-            else { return }
+            else {
+                self.revealHoldDeadline = Date().addingTimeInterval(notchRevealHoldSeconds)
+                self.armRevealCountdown()
+                return
+            }
 
             // A pulse may have pushed the deadline out while we slept.
             if let current = self.latestRevealDeadline, current > Date() {
@@ -2228,6 +2329,8 @@ struct ContentView: View {
                 self.revealHoldDeadline = nil
                 self.agentLightDeadline = nil
             }
+            // Deadlines clearing can flip shouldUseHiddenEdgeHoverPolling true again.
+            self.syncHiddenEdgeHoverPolling()
         }
     }
 
@@ -2267,19 +2370,47 @@ struct ContentView: View {
     private func startHiddenEdgeHoverPolling() {
         guard hiddenEdgeHoverPollingTask == nil else { return }
 
+        guard shouldUseHiddenEdgeHoverPolling else { return }
         hiddenEdgeHoverPollingTask = Task { @MainActor in
-            while !Task.isCancelled {
-                if self.shouldUseHiddenEdgeHoverPolling {
-                    let hovering = self.hiddenHoverActivationContainsMouse()
-                    if hovering != self.isHovering {
-                        self.handleHover(hovering)
+            var dwell = HoverDwell()
+            while !Task.isCancelled, self.shouldUseHiddenEdgeHoverPolling {
+                let hovering = self.hiddenHoverActivationContainsMouse()
+                if self.isHovering {
+                    // Exit path, unchanged: while hovering the detector tests the hysteresis
+                    // exit rect (see hiddenHoverActivationContainsMouse).
+                    dwell.noteOutside()
+                    if !hovering { self.handleHover(false) }
+                } else if hovering {
+                    // Entry path: while !isHovering the detector tests the small entry rect at
+                    // the top edge. Hold the pointer there for minimumHoverDuration before
+                    // sliding in — a pointer merely crossing the edge on its way to a browser
+                    // tab under the strip used to summon the island every time.
+                    let now = Date()
+                    dwell.noteInside(at: now)
+                    if dwell.isSatisfied(at: now, minimum: Defaults[.minimumHoverDuration]) {
+                        dwell.noteOutside()
+                        self.handleHover(true, dwellSatisfied: true)
                     }
+                } else {
+                    dwell.noteOutside()
                 }
 
                 try? await Task.sleep(for: .milliseconds(50))
             }
 
             self.hiddenEdgeHoverPollingTask = nil
+        }
+    }
+
+    /// Restarts or stops the hidden-edge poll as its precondition changes; called from
+    /// the onChange hooks of everything shouldUseHiddenEdgeHoverPolling depends on.
+    private func syncHiddenEdgeHoverPolling() {
+        if shouldUseHiddenEdgeHoverPolling {
+            if hiddenEdgeHoverPollingTask == nil {
+                startHiddenEdgeHoverPolling()
+            }
+        } else {
+            stopHiddenEdgeHoverPolling()
         }
     }
 
@@ -2297,7 +2428,6 @@ struct ContentView: View {
                 guard let vm, let lockScreenManager else { return }
                 guard !lockScreenManager.isLocked else { return }
                 guard vm.notchState == .closed else { return }
-                guard !self.coordinator.isHoverOpenSuppressed else { return }
                 guard self.isHovering else { return }
                 guard !self.handleClosedMusicWaveformTapIfNeeded() else { return }
                 if Defaults[.enableHaptics] {
@@ -2336,8 +2466,31 @@ struct ContentView: View {
 
     // MARK: - Hover Management
     
-    /// Handle hover state changes with debouncing
-    private func handleHover(_ hovering: Bool) {
+    /// The open half of hover-to-open, once the debounce (or the hidden-edge poll's dwell) has
+    /// been served. Callers re-check `notchState` / `isHovering` before calling.
+    private func completeHoverOpen(shouldFocusTimerTab: Bool) {
+        if shouldFocusTimerTab {
+            withAnimation(.smooth) {
+                coordinator.currentView = .timer
+            }
+        } else if enableAgentStatusFeature
+            && agentStatusMonitor.shouldShowTrafficLight
+            && !isClosedMusicPairingEligible {
+            // Previously gated to `currentView == .home` only, so hovering while on
+            // Notes/Stats/etc. never surfaced active agent work. Requested change:
+            // always jump to Agent Status on hover when an agent is actually active,
+            // regardless of whichever tab was last open.
+            withAnimation(.smooth) {
+                coordinator.currentView = .agentStatus
+            }
+        }
+        openNotch()
+    }
+
+    /// Handle hover state changes with debouncing. `dwellSatisfied` is set by the hidden-edge
+    /// poll after it already held the pointer for `minimumHoverDuration`; the open then follows
+    /// synchronously instead of waiting the same interval a second time.
+    private func handleHover(_ hovering: Bool, dwellSatisfied: Bool = false) {
         hoverTask?.cancel()
 
         if hovering {
@@ -2356,9 +2509,10 @@ struct ContentView: View {
                 isHovering = true
             }
 
-            // The island stays out for as long as the pointer is on it; the reveal countdown
-            // is restarted from scratch on hover-exit below.
-            cancelRevealCountdown()
+            // The island stays out for as long as the pointer is on it: the expiry task checks
+            // isHovering when it fires and re-arms instead of collapsing, so the countdown is
+            // left running rather than cancelled (a cancel with no guaranteed hover-exit to
+            // re-arm it stranded the island). Hover-exit below still restarts it from scratch.
 
             if vm.notchState == .closed && Defaults[.enableHaptics] {
                 triggerHapticIfAllowed()
@@ -2371,6 +2525,13 @@ struct ContentView: View {
                 (Defaults[.openNotchOnHover] || shouldFocusTimerTab),
                 !isClosedMusicPairingEligible else { return }
 
+            if dwellSatisfied {
+                // Synchronous, so a racing .onHover / region hover (both cancel hoverTask)
+                // cannot restart a wait the poll already served.
+                completeHoverOpen(shouldFocusTimerTab: shouldFocusTimerTab)
+                return
+            }
+
             hoverTask = Task {
                 try? await Task.sleep(for: .seconds(Defaults[.minimumHoverDuration]))
                 guard !Task.isCancelled else { return }
@@ -2378,41 +2539,30 @@ struct ContentView: View {
                 await MainActor.run {
                     guard self.vm.notchState == .closed,
                           self.isHovering,
-                          !self.isSneakPeekVisibleOnCurrentScreen,
-                          !self.coordinator.isHoverOpenSuppressed else { return }
-
-                    if shouldFocusTimerTab {
-                        withAnimation(.smooth) {
-                            self.coordinator.currentView = .timer
-                        }
-                    } else if self.enableAgentStatusFeature
-                        && self.agentStatusMonitor.shouldShowTrafficLight
-                        && !self.isClosedMusicPairingEligible
-                        && self.coordinator.currentView == .home {
-                        withAnimation(.smooth) {
-                            self.coordinator.currentView = .agentStatus
-                        }
-                    }
-                    self.openNotch()
+                          !self.isSneakPeekVisibleOnCurrentScreen else { return }
+                    self.completeHoverOpen(shouldFocusTimerTab: shouldFocusTimerTab)
                 }
             }
         } else {
+            withAnimation(.bouncy.speed(1.2)) {
+                isHovering = false
+            }
+
+            // A short linger after the pointer leaves keeps a brief slip off the
+            // edge from yanking the island away mid-glance.
+            if hideUntilHoverAppliesHere {
+                revealHoldDeadline = Date().addingTimeInterval(notchRevealHoldSeconds)
+                armRevealCountdown()
+            } else if isPhysicalNotchScreen, agentLightDeadline != nil {
+                armRevealCountdown()
+            }
+
             hoverTask = Task {
                 try? await Task.sleep(for: .milliseconds(100))
                 guard !Task.isCancelled else { return }
 
                 await MainActor.run {
-                    withAnimation(.bouncy.speed(1.2)) {
-                        self.isHovering = false
-                    }
-
-                    // A plain hover earns no lingering: once the pointer leaves, the island
-                    // goes straight back. Only an agent update holds it out, and if one is
-                    // still running its deadline simply resumes here.
-                    if self.hideUntilHoverAppliesHere {
-                        self.armRevealCountdown()
-                    }
-
+                    guard !self.isHovering else { return }
                     if self.vm.notchState == .open && !self.shouldPreventAutoClose() {
                         self.vm.close()
                     }
@@ -2421,19 +2571,6 @@ struct ContentView: View {
         }
     }
 
-    private func isPointInsideNotchWindow(_ point: CGPoint) -> Bool {
-        if let appDelegate = AppDelegate.shared {
-            if Defaults[.showOnAllDisplays] {
-                return appDelegate.windows.values.contains(where: { $0.frame.contains(point) })
-            }
-            if let window = appDelegate.window {
-                return window.frame.contains(point)
-            }
-        }
-
-        return NSApp.windows.contains(where: { $0.frame.contains(point) })
-    }
-    
     // Helper function to check if any popovers are active
     private func hasAnyActivePopovers() -> Bool {
      return vm.isBatteryPopoverActive || 
@@ -2721,13 +2858,14 @@ struct ContentView: View {
             guard !Task.isCancelled else { return }
 
             await MainActor.run {
+                guard !Task.isCancelled else { return }
                 if let currentDeadline = musicControlVisibilityDeadline, currentDeadline <= Date() {
                     musicControlVisibilityDeadline = nil
                 }
 
                 enqueueMusicControlWindowSync(forceRefresh: false)
-
-                musicControlHideTask = nil
+                // Deliberately no self-nil: this handle may already point at a
+                // replacement task, and clearing it would orphan that task.
             }
         }
     }
@@ -2763,13 +2901,14 @@ struct ContentView: View {
             guard !Task.isCancelled else { return }
 
             await MainActor.run {
+                guard !Task.isCancelled else { return }
                 if vm.notchState == .closed && !lockScreenManager.isLocked && !isMusicHUDDeferredAfterUnlock {
                     isMusicControlWindowSuppressed = false
                     triggerPendingMusicControlSyncIfNeeded()
                 } else {
                     isMusicControlWindowSuppressed = true
                 }
-                musicControlSuppressionTask = nil
+                // No self-nil — see musicControlHideTask.
             }
         }
     }
@@ -2854,6 +2993,7 @@ struct ContentView: View {
             guard !Task.isCancelled else { return }
 
             await MainActor.run {
+                guard !Task.isCancelled else { return }
                 if shouldShowMusicControlWindow() {
                     logMusicControlEvent("Running floating window sync (force: \(forceRefresh))")
                     syncMusicControlWindow(forceRefresh: forceRefresh)
@@ -2861,8 +3001,7 @@ struct ContentView: View {
                     logMusicControlEvent("Skipping floating window sync (conditions changed)")
                     hideMusicControlWindow()
                 }
-
-                pendingMusicControlTask = nil
+                // No self-nil — see musicControlHideTask.
             }
         }
         #endif

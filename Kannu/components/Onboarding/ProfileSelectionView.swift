@@ -272,7 +272,6 @@ func applyProfileSettings(_ profiles: Set<String>) {
         Defaults[.externalDisplayStyle] = .notch
     } else {
         Defaults[.externalDisplayStyle] = .dynamicIsland
-        Defaults[.hideNonNotchUntilHover] = true
     }
     
     // Lock screen glass: custom liquid glass v11 on macOS 26+

@@ -97,38 +97,61 @@ final class SystemVolumeController {
         onRouteChange = nil
     }
 
+    // All mutable state (currentDeviceID, volumeElement, muteElement, listenersInstalled)
+    // is confined to callbackQueue: the CoreAudio listener blocks already run there, and
+    // the public API hops on with .sync so device re-resolution and element caching can
+    // never interleave with a listener updating the same fields. Queue confinement (not a
+    // per-field lock) keeps multi-step sequences like resolve-compare-swap atomic.
+    // CoreAudio delivers listener blocks asynchronously to the queue, so .sync from the
+    // main thread cannot deadlock against them.
+
     func adjust(by delta: Float) {
         guard delta != 0 else { return }
-        if isMuted {
-            setMuted(false)
+        callbackQueue.sync {
+            refreshDeviceIfNeeded()
+            if getMuteState() {
+                applyMuted(false)
+            }
+            var newValue = getVolume() + delta
+            newValue = max(0, min(1, newValue))
+            applyVolume(newValue)
         }
-        var newValue = currentVolume + delta
-        newValue = max(0, min(1, newValue))
-        setVolume(newValue)
     }
 
     func toggleMute() {
-        setMuted(!isMuted)
+        callbackQueue.sync {
+            refreshDeviceIfNeeded()
+            applyMuted(!getMuteState())
+        }
     }
 
     var currentVolume: Float {
-        getVolume()
+        callbackQueue.sync { getVolume() }
     }
 
     var isMuted: Bool {
-        getMuteState()
+        callbackQueue.sync { getMuteState() }
     }
 
     func setVolume(_ value: Float) {
+        callbackQueue.sync { applyVolume(value) }
+    }
+
+    func setMuted(_ muted: Bool) {
+        callbackQueue.sync { applyMuted(muted) }
+    }
+
+    /// Queue-confined body of `setVolume`. Callers must be on `callbackQueue`.
+    private func applyVolume(_ value: Float) {
         let clamped = max(0, min(1, value))
-        let currentlyMuted = isMuted
+        let currentlyMuted = getMuteState()
 
         if clamped <= silenceThreshold {
             if !currentlyMuted {
-                setMuted(true)
+                applyMuted(true)
             }
         } else if currentlyMuted {
-            setMuted(false)
+            applyMuted(false)
         }
 
         let elements = volumeElements()
@@ -153,7 +176,8 @@ final class SystemVolumeController {
         notifyCurrentState()
     }
 
-    func setMuted(_ muted: Bool) {
+    /// Queue-confined body of `setMuted`. Callers must be on `callbackQueue`.
+    private func applyMuted(_ muted: Bool) {
         var muteFlag: UInt32 = muted ? 1 : 0
         let elements = muteElements()
 
@@ -210,6 +234,7 @@ final class SystemVolumeController {
         }
         if status != noErr {
             NSLog("⚠️ Failed to install default device listener: \(status)")
+            return // leave listenersInstalled false so a later attempt can retry
         }
         listenersInstalled = true
     }
@@ -230,6 +255,19 @@ final class SystemVolumeController {
                 self?.notifyCurrentState()
             }
         }
+    }
+
+    /// Re-syncs device + elements + listeners if the default output changed and
+    /// the device-change listener missed it (failed registration, route churn,
+    /// wake races). One HAL property read when nothing changed — cheap enough
+    /// to run on every media-key press so reads/writes never hit a stale device.
+    private func refreshDeviceIfNeeded() {
+        let resolved = resolveDefaultDevice()
+        guard resolved != 0, resolved != currentDeviceID else { return }
+        NSLog("⚠️ Default output device changed without listener callback; re-syncing")
+        currentDeviceID = resolved
+        refreshPropertyElements()
+        installVolumeListeners(for: resolved)
     }
 
     private func handleDefaultDeviceChanged() {

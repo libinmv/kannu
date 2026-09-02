@@ -247,6 +247,7 @@ final class LockScreenTimerWidgetPanelManager {
     private func hostingView() -> NSHostingView<LockScreenTimerWidget> {
         let view = LockScreenTimerWidget(animator: animator)
         let hosting = NSHostingView(rootView: view)
+        hosting.sizingOptions = []
         hosting.frame = NSRect(origin: .zero, size: LockScreenTimerWidget.preferredSize)
         hosting.autoresizingMask = [.width, .height]
         hosting.wantsLayer = true
