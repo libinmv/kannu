@@ -43,10 +43,14 @@ the script got a version without the `flock` serialisation and without the atomi
 temp-then-`os.replace` write — the exact races later measured at 11/200 lost urgent states
 and 14/4825 torn reads.
 
-**Guard — exists.** `.githooks/pre-commit` compares the two version markers and rejects the
-commit on mismatch. Regenerate the mirror from the embedded literal rather than hand-editing
-it; hand-editing is how `quota_exceeded` had to be typed into both copies separately
-(`817f114`).
+**Guard — exists, partial.** `.githooks/pre-commit` compares the two version markers and rejects the
+commit on mismatch. It does **not** compare bodies, so a body edit without a version bump ships
+silently — after any edit, diff the two Python bodies (extract each heredoc, strip the embedded
+copy's 8-space indent) and expect byte identity. Regenerate the mirror from the embedded literal
+rather than hand-editing it; hand-editing is how `quota_exceeded` had to be typed into both copies
+separately (`817f114`). Since v30, `KannuTests/HookScriptTests.swift` executes the mirror as a
+subprocess and pins the merge and lock behaviour, so a behavioural drift in the mirror fails CI even
+when the markers agree.
 
 ---
 
@@ -257,6 +261,31 @@ The layout rules that cannot be grepped — `edge` versus container clipping, on
 control — are written up in **docs/TOOLTIPS.md** with the reasoning and a checklist.
 
 **Gap:** none of this is unit-testable; a new tooltip still has to be hovered in a real build.
+
+---
+
+## 10. Never derive observer semantics from the *last* `@Published` bump
+
+**Rule:** a `@Published` counter can be bumped several times in one main-actor turn, and SwiftUI
+delivers them as a single `onChange`. Any side flag the observer reads must describe the whole
+window since it last looked, never the most recent publish.
+
+**Broken once, on the commit that introduced the flag** — `32c260b` (2026-08-26) added
+`lastPulseWasHeartbeat` with a doc comment asserting it was "read synchronously by the pulse
+observer (same main-actor turn as the publish)". It was not: `rescan()` bumps `activityPulse` for
+the session list, again for the traffic light, and last for the heartbeat, so the observer saw
+one change and a flag that said "heartbeat". Strict collapse then swallowed every idle → executing
+and every permission prompt — the reveal the 7s hold (`d3d056a`) was raised to serve. Listed
+despite a single occurrence because the false premise was written down as fact in the code and
+survived two review passes.
+
+**Why it keeps happening:** the publish and the observation feel synchronous when you read the
+code top to bottom; nothing at the call site says "coalesced".
+
+**Guard — exists.** `AgentActivityPulseLatch` (in `AgentTrafficLightState.swift`, logic target)
+is the only source of the verdict and is pinned by `AgentActivityPulseLatchTests`. Keep the
+heartbeat emit last in `rescan()` — it reads the state `applyDisplay` just wrote — and keep
+exactly one consumer of the latch.
 
 ---
 

@@ -48,7 +48,7 @@ final class AgentHookInstaller: ObservableObject {
     private static let logger = os.Logger(subsystem: "com.kannu.app", category: "AgentHookInstaller")
 
     static let scriptName = "kannu-agent-status.sh"
-    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=29"
+    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=30"
 
     private static var home: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -135,8 +135,14 @@ final class AgentHookInstaller: ObservableObject {
                 try Self.ensureCodexHooksFeatureEnabled()
             case .claude:
                 try Self.writeScript(to: Self.claudeScriptURL)
-                try Self.mergeClaudeHooksConfig()
-                try Self.installClaudeUsageStatusLine()
+                // One read-modify-write of settings.json for both keys. As two passes (hooks,
+                // then statusLine) each re-reading the file, a write Claude Code made between a
+                // pass's read and its write was silently discarded — .atomic protects the write,
+                // not the RMW — and several migrations in init can each call install().
+                var settings = try Self.readJSONForMerge(at: Self.claudeSettingsURL)
+                Self.mergeClaudeHooks(into: &settings)
+                try Self.setClaudeUsageStatusLine(in: &settings)
+                try Self.writeJSON(settings, to: Self.claudeSettingsURL)
             case .antigravity:
                 try Self.writeScript(to: Self.antigravityScriptURL)
                 try Self.mergeAntigravityHooksConfig()
@@ -461,12 +467,17 @@ final class AgentHookInstaller: ObservableObject {
         # outright — the exact downgrade (yellow "needs you" overwritten by green "running")
         # that the merge exists to prevent. Serialise the whole read-modify-write instead.
         #
-        # The lock is advisory and per-conversation, held until this process exits, so it
-        # cannot deadlock a hook for a different session. If flock is unavailable or the
-        # wait fails we proceed unlocked: a possible lost update beats a hung hook, which
+        # The lock is advisory and held until this process exits. It is one file for the whole
+        # status directory, never truncated and never unlinked: a per-conversation lock had to
+        # be unlinked at session end to avoid piling up, and unlinking a lock file while another
+        # hook has opened but not yet locked it hands that hook a lock on a dead inode — two
+        # hooks then run the merge unserialised, the exact race the lock exists to stop. Hooks
+        # hold it for milliseconds, so serialising across sessions costs nothing. Kannu takes
+        # the same lock (non-blocking) before deleting a status file. If flock is unavailable or
+        # the wait fails we proceed unlocked: a possible lost update beats a hung hook, which
         # would stall the agent itself.
         try:
-            _lock_fh = open(status_dir / f".{provider}-{conversation_id}.lock", "w")
+            _lock_fh = open(status_dir / ".kannu-status.lock", "a")
             fcntl.flock(_lock_fh.fileno(), fcntl.LOCK_EX)
         except Exception:
             _lock_fh = None
@@ -485,9 +496,9 @@ final class AgentHookInstaller: ObservableObject {
                 status_file.unlink()
             except Exception:
                 pass
-            # Otherwise one zero-byte lock file per conversation accumulates forever. Safe to
-            # remove while we hold it: flock lives on the open descriptor, not the directory
-            # entry, and the session is over so nothing else will contend for this one.
+            # Legacy per-conversation lock files from script versions < 30. Nothing locks them
+            # any more, so removing one cannot strand a concurrent hook; this just stops them
+            # accumulating on upgraded installs.
             try:
                 (status_dir / f".{provider}-{conversation_id}.lock").unlink()
             except Exception:
@@ -509,7 +520,16 @@ final class AgentHookInstaller: ObservableObject {
         # so the winner of the race cannot silently downgrade the light.
         STATE_PRIORITY = {"quota_exceeded": 50, "awaiting_input": 40, "stopped": 30, "executing": 20, "thinking": 10, "idle": 0}
         preserved_ts = None
-        if existing_state and existing.get("hook_event") == hook_event:
+        # The merge is scoped to one event's parallel group (same hook_event) so consecutive
+        # events are not re-arbitrated against each other. One cross-event case is carried
+        # deliberately: Claude issues parallel tool calls, so a PermissionRequest ("needs you")
+        # for one tool and a PreToolUse ("running") for its sibling can land within the same
+        # 2s window, and the generic gate let green overwrite yellow while the prompt was still
+        # open. Cost of the carry: after approval the light can stay yellow for the remainder
+        # of the 2s window before the next event clears it.
+        same_group = existing.get("hook_event") == hook_event
+        urgent_carry = existing_state == "awaiting_input" and existing.get("hook_event") == "PermissionRequest"
+        if existing_state and (same_group or urgent_carry):
             _raw_ts = existing.get("ts")
             # A status file is untrusted input (any same-user process can write it). `or 0`
             # only defaults falsy values, so a truthy non-numeric ts reached the subtraction
@@ -712,8 +732,8 @@ final class AgentHookInstaller: ObservableObject {
 
     // MARK: - Claude Code (~/.claude/settings.json, matcher-group schema)
 
-    private static func mergeClaudeHooksConfig() throws {
-        var config = try readJSONForMerge(at: claudeSettingsURL)
+    /// Mutates the caller's copy of settings.json; the caller owns the single read and write.
+    private static func mergeClaudeHooks(into config: inout [String: Any]) {
         var hooks = config["hooks"] as? [String: Any] ?? [:]
         stripClaudeEntries(from: &hooks)
 
@@ -737,7 +757,6 @@ final class AgentHookInstaller: ObservableObject {
         }
 
         config["hooks"] = hooks
-        try writeJSON(config, to: claudeSettingsURL)
     }
 
     private static func stripClaudeEntries(from hooks: inout [String: Any]) {
@@ -1166,11 +1185,20 @@ final class AgentHookInstaller: ObservableObject {
 
     static var claudeUsageScriptURL: URL { home.appendingPathComponent(".claude/\(usageScriptName)") }
 
+    /// Standalone entry point (the usage-script version migration). `install(.claude)` folds the
+    /// same mutation into its single settings.json read-modify-write instead.
     static func installClaudeUsageStatusLine() throws {
+        var config = try readJSONForMerge(at: claudeSettingsURL)
+        try setClaudeUsageStatusLine(in: &config)
+        try writeJSON(config, to: claudeSettingsURL)
+    }
+
+    /// Writes the usage script and points `statusLine` at it in the caller's copy of
+    /// settings.json. The chain decision reads the same copy, never the file again.
+    static func setClaudeUsageStatusLine(in config: inout [String: Any]) throws {
         try FileManager.default.createDirectory(at: statusDirectory, withIntermediateDirectories: true)
 
         var chainCommand: String? = nil
-        let config = readJSON(at: claudeSettingsURL) ?? [:]
         if let statusLine = config["statusLine"] as? [String: Any],
            let command = statusLine["command"] as? String,
            !command.contains(usageScriptName) {
@@ -1183,13 +1211,11 @@ final class AgentHookInstaller: ObservableObject {
 
         try writeUsageScript(to: claudeUsageScriptURL, chainCommand: chainCommand)
 
-        var newConfig = readJSON(at: claudeSettingsURL) ?? [:]
-        newConfig["statusLine"] = [
+        config["statusLine"] = [
             "type": "command",
             "command": claudeUsageScriptURL.path,
             "padding": 0
         ]
-        try writeJSON(newConfig, to: claudeSettingsURL)
     }
 
     static func stripClaudeUsageStatusLine() throws {

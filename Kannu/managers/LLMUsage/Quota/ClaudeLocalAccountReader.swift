@@ -40,7 +40,11 @@ enum ClaudeLocalAccountReader {
         }
         lock.unlock()
 
-        let account = parse()
+        // A failed parse is not cached. Claude Code rewrites this file (Kannu's own /usage
+        // spawn makes it do so), and the stat above is not atomic with the read: a torn read
+        // caught mid-rewrite decodes as nothing, and caching that under the pre-read mtime
+        // pinned an empty account — no tier badge — until the file changed again.
+        guard let account = parse() else { return ClaudeLocalAccount() }
 
         lock.lock()
         cached = (modified, account)
@@ -48,10 +52,10 @@ enum ClaudeLocalAccountReader {
         return account
     }
 
-    private static func parse() -> ClaudeLocalAccount {
+    private static func parse() -> ClaudeLocalAccount? {
         guard let data = try? Data(contentsOf: path),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return ClaudeLocalAccount()
+            return nil
         }
 
         let oauth = json["oauthAccount"] as? [String: Any]

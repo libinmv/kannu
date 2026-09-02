@@ -45,6 +45,7 @@ struct HoverTooltip: ViewModifier {
 
     @State private var hovering = false
     @State private var visible = false
+    @State private var showWork: DispatchWorkItem?
 
     func body(content: Content) -> some View {
         content
@@ -53,12 +54,19 @@ struct HoverTooltip: ViewModifier {
                 if pointingHandCursor {
                     if isHovering { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
                 }
+                // Cancel the pending show on every edge: an uncancelled asyncAfter from an
+                // earlier hover-in survived a hover-out and fired for the next hover-in early,
+                // which is exactly the brush-past flash the delay exists to prevent.
+                showWork?.cancel()
                 if isHovering {
                     // Short delay so brushing past a control does not flash a bubble.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    let work = DispatchWorkItem {
                         if hovering { withAnimation(.easeOut(duration: 0.12)) { visible = true } }
                     }
+                    showWork = work
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
                 } else {
+                    showWork = nil
                     withAnimation(.easeOut(duration: 0.1)) { visible = false }
                 }
             }

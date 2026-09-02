@@ -511,7 +511,20 @@ struct ContentView: View {
     /// This is only needed when the notch is fully hidden off-screen and
     /// regular `.onHover` hit-testing may not trigger reliably.
     private var shouldUseHiddenEdgeHoverPolling: Bool {
-        shouldHideUntilHover && !lockScreenManager.isLocked
+        guard !lockScreenManager.isLocked else { return false }
+        if shouldHideUntilHover { return true }
+        // Keep polling while a hover is latched on the plain closed island. `showAgentTrafficLight`
+        // is true while hovering, which turns `shouldHideUntilHover` off — so the poll used to
+        // stop the moment it succeeded. An island that slid in under a stationary pointer never
+        // receives a tracking-area exit (AppKit only reports exits for entries it delivered),
+        // leaving `isHovering` latched and the island stranded on screen; the poll is the only
+        // guaranteed exit path, so it must outlive its own success. The HUD terms hand hover
+        // ownership back to `.onHover` when the island is wider than the poll's exit rect.
+        return hideUntilHoverAppliesHere
+            && vm.notchState == .closed
+            && isHovering
+            && !isSneakPeekVisibleOnCurrentScreen
+            && !coordinator.expandingView.show
     }
     
     /// Whether the LocalSend live activity should be shown
@@ -1015,6 +1028,19 @@ struct ContentView: View {
                 }
             }
             .onChange(of: lockScreenManager.isLocked) { _, locked in
+                if locked {
+                    // `interactionsEnabled` removes the .onHover modifier and the windows are
+                    // ordered out, so no hover-exit will ever arrive for a pointer that was on
+                    // the notch at lock time. Drop the hover state here, or the global
+                    // leftMouseDown monitor (guarded on isHovering) opens the notch on every
+                    // click anywhere after unlock. Not via handleHover(false): that arms a
+                    // reveal linger and a close-debounce that could vm.close() during lock.
+                    hoverTask?.cancel()
+                    agentHoverTask?.cancel()
+                    stopHoverClickMonitor()
+                    isHovering = false
+                    isHoveringClosedMusicWaveformControl = false
+                }
                 syncHiddenEdgeHoverPolling()
                 if locked {
                     suppressMusicControlWindowUpdates()
@@ -1051,9 +1077,16 @@ struct ContentView: View {
                 }
             }
             .onChange(of: isHovering) { _, hovering in
+                // A hover latched by .onHover or a region (not by the poll) must also start the
+                // poll, which is now the guaranteed exit path for a latched hover — see
+                // shouldUseHiddenEdgeHoverPolling.
+                syncHiddenEdgeHoverPolling()
                 if shouldShowMusicControlWindow() {
                     enqueueMusicControlWindowSync(forceRefresh: true, delay: hovering ? 0.05 : 0.12)
                 }
+            }
+            .onChange(of: coordinator.expandingView.show) { _, _ in
+                syncHiddenEdgeHoverPolling()
             }
             .onChange(of: musicManager.isPlaying) { _, isPlaying in
                 handleMusicControlPlaybackChange(isPlaying: isPlaying)
@@ -2113,13 +2146,19 @@ struct ContentView: View {
 
     private func handleRegionHoverOpen(_ hovering: Bool, focus: NotchViews) {
         agentHoverTask?.cancel()
+        // The outer .onHover fires alongside a region's, and both tasks used to race to set
+        // coordinator.currentView before opening. The region's focus is the explicit one.
+        hoverTask?.cancel()
 
         guard hovering else { return }
 
         withAnimation(.bouncy.speed(1.2)) {
             isHovering = true
         }
-        cancelRevealCountdown()
+        // Deliberately no cancelRevealCountdown() here: the expiry task already re-arms itself
+        // while isHovering is true, and cancelling it on hover-in with no matching re-arm on
+        // hover-out (a region inserted under a stationary pointer never reports one) left
+        // revealHoldDeadline set with nothing to clear it — the island stayed out for good.
 
         if vm.notchState == .closed && Defaults[.enableHaptics] {
             triggerHapticIfAllowed()
@@ -2188,7 +2227,27 @@ struct ContentView: View {
             height: activationHeight
         )
 
-        return activationRect.contains(location)
+        guard isHovering else { return activationRect.contains(location) }
+
+        // Exit test, with hysteresis. While hovering, the island's .onHover shape is larger than
+        // the entry rect above: closed size +8 on each axis, pushed down by the pill's top
+        // offset, plus the closed-music wings (base wing = height + 8, the right wing up to
+        // base + 0.6 × centre, plus the 6 pt pill edge inset). Polling against the small entry
+        // rect while the pointer sat in that band made the poll report "outside" 50 ms after
+        // .onHover reported "inside", cancelling the open debounce and shrinking the frame
+        // under the pointer — a 20 Hz flap in which hover-to-open could never fire. The exit
+        // rect is a superset of both, so the two detectors can no longer disagree. The window
+        // frame is not readable here (the view holds no NSWindow and close() never resizes
+        // it), hence computed from the same inputs the view lays out with.
+        let wingAllowance = (vm.closedNotchSize.height + 8) + 0.6 * (vm.closedNotchSize.width + 8) + 6
+        let verticalAllowance = pillTopOffset + 8
+        let exitRect = CGRect(
+            x: activationRect.minX - wingAllowance,
+            y: activationRect.minY - verticalAllowance,
+            width: activationRect.width + wingAllowance * 2,
+            height: activationRect.height + verticalAllowance
+        )
+        return exitRect.contains(location)
     }
 
     // MARK: - Non-notch reveal windows
@@ -2198,8 +2257,10 @@ struct ContentView: View {
     private func noteAgentActivityPulse() {
         guard hideUntilHoverAppliesHere || isPhysicalNotchScreen, enableAgentStatusFeature else { return }
         // Strict collapse: the running-agent heartbeat keeps other consumers informed but
-        // must not hold the band on screen; only real transitions refresh the window.
-        if agentStatusMonitor.lastPulseWasHeartbeat && !physicalNotchAgentBandFollowsHeartbeat {
+        // must not hold the band on screen; only real transitions refresh the window. This
+        // is the sole consumer of the latch — consuming resets it — and it answers for every
+        // bump SwiftUI coalesced into this one onChange, not just the last one published.
+        if agentStatusMonitor.consumeActivityPulseWasHeartbeatOnly() && !physicalNotchAgentBandFollowsHeartbeat {
             return
         }
         let now = Date()
@@ -2400,9 +2461,10 @@ struct ContentView: View {
                 isHovering = true
             }
 
-            // The island stays out for as long as the pointer is on it; the reveal countdown
-            // is restarted from scratch on hover-exit below.
-            cancelRevealCountdown()
+            // The island stays out for as long as the pointer is on it: the expiry task checks
+            // isHovering when it fires and re-arms instead of collapsing, so the countdown is
+            // left running rather than cancelled (a cancel with no guaranteed hover-exit to
+            // re-arm it stranded the island). Hover-exit below still restarts it from scratch.
 
             if vm.notchState == .closed && Defaults[.enableHaptics] {
                 triggerHapticIfAllowed()

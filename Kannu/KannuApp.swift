@@ -850,8 +850,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Observe minimalistic UI setting changes - trigger window resize
         Defaults.publisher(.enableMinimalisticUI, options: []).sink { [weak self] _ in
-            // Update window size IMMEDIATELY (no debouncing) to prevent position shift
-            self?.updateWindowSizeIfNeeded()
+            // Defaults.publisher is raw KVO with no scheduler: the sink runs inside the
+            // `Defaults[...] = x` assignment's own stack frame — from a SwiftUI @Default
+            // binding, that is the middle of a SwiftUI update pass, and resizing an NSWindow
+            // (setFrame + displayIfNeeded) from there is the re-entrancy the
+            // FirstMouseHostingView sizing workaround exists to avoid. Hop like every other
+            // sink here; the next main-actor turn is still before the next frame.
+            Task { @MainActor [weak self] in
+                self?.updateWindowSizeIfNeeded()
+            }
         }.store(in: &cancellables)
         
         // Observe screen recording settings changes

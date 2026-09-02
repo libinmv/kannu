@@ -340,20 +340,40 @@ actor JSONLinesPipeHandler {
         }
     }
     
+    /// Guards the continuation handed to `readabilityHandler`: `close()` clearing the handler
+    /// before it fired left the awaiting task suspended forever (and leaked a checked
+    /// continuation). Whoever gets here first — data or close — resumes it exactly once.
+    private final class PendingRead: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<Data, Error>?
+        init(_ continuation: CheckedContinuation<Data, Error>) { self.continuation = continuation }
+        func resume(with result: Result<Data, Error>) {
+            lock.lock()
+            let pending = continuation
+            continuation = nil
+            lock.unlock()
+            pending?.resume(with: result)
+        }
+    }
+    private var pendingRead: PendingRead?
+
     private func readData() async throws -> Data {
         return try await withCheckedThrowingContinuation { continuation in
-            
+            let pending = PendingRead(continuation)
+            pendingRead = pending
             fileHandle.readabilityHandler = { handle in
                 let data = handle.availableData
                 handle.readabilityHandler = nil
-                continuation.resume(returning: data)
+                pending.resume(with: .success(data))
             }
         }
     }
-    
+
     func close() async {
         do {
             fileHandle.readabilityHandler = nil
+            pendingRead?.resume(with: .failure(CancellationError()))
+            pendingRead = nil
             try fileHandle.close()
             try pipe.fileHandleForWriting.close()
         } catch {

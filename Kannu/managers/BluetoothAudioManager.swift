@@ -286,21 +286,39 @@ class BluetoothAudioManager: ObservableObject {
         
         print("🎧 [BluetoothAudioManager] Found \(connectedAudioDevices.count) connected audio devices")
 
+        // No battery lookup on this queue: it reads batteryStatusByName/ByAddress and
+        // missingBatteryLog, which the main thread mutates concurrently from the pmset
+        // completion and the merge helpers — an unsynchronised Dictionary race. Battery is
+        // filled on main below from the cache this scan warms.
         let devices = connectedAudioDevices.compactMap { device in
-            createBluetoothAudioDevice(from: device)
+            createBluetoothAudioDevice(from: device, includeBattery: false)
+        }
+
+        // Warm the battery cache from here. updateBatteryStatuses collects on the calling
+        // thread and publishes every dictionary through DispatchQueue.main.sync, so this is a
+        // hopped write, not an off-main read; force: true also skips the unsynchronised
+        // lastBatteryStatusUpdate read.
+        if !devices.isEmpty {
+            updateBatteryStatuses(force: true)
         }
 
         // The IOBluetooth reads above may run on a background queue (first launch touch);
         // @Published state must still be mutated on the main thread.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.connectedDevices = devices
-            self.isBluetoothAudioConnected = !devices.isEmpty
+            // Merge on address rather than overwrite: the DistributedNotificationCenter
+            // observers are installed before this scan runs, so a device that connected while
+            // it was in flight has already been appended on main — and that copy owns the HUD
+            // battery-wait task keyed on its id. Assigning the T0 snapshot dropped it.
+            let knownAddresses = Set(self.connectedDevices.map(\.address))
+            let additions = devices.filter { !knownAddresses.contains($0.address) }
+            self.connectedDevices.append(contentsOf: additions)
+            self.isBluetoothAudioConnected = !self.connectedDevices.isEmpty
             // Read the cache the scan above just filled. Forcing here re-ran system_profiler and
             // pmset — seconds of blocking subprocess work — on the main thread, immediately after
             // 7b3e290 had moved the IOBluetooth first touch off it.
             self.refreshBatteryLevelsForConnectedDevices(forceCacheRefresh: false)
-            if let lastDevice = devices.last {
+            if let lastDevice = additions.last {
                 self.lastConnectedDevice = lastDevice
                 print("🎧 [BluetoothAudioManager] ✅ Bluetooth audio connected: \(lastDevice.name)")
             }
@@ -482,10 +500,12 @@ class BluetoothAudioManager: ObservableObject {
     }
     
     /// Creates a BluetoothAudioDevice model from IOBluetoothDevice
-    private func createBluetoothAudioDevice(from device: IOBluetoothDevice) -> BluetoothAudioDevice? {
+    /// `includeBattery: false` keeps the battery caches untouched — required when called off
+    /// the main thread, since those dictionaries are main-thread state.
+    private func createBluetoothAudioDevice(from device: IOBluetoothDevice, includeBattery: Bool = true) -> BluetoothAudioDevice? {
         let name = device.name ?? "Bluetooth Device"
         let address = device.addressString ?? "Unknown"
-        let batteryLevel = getBatteryLevel(from: device)
+        let batteryLevel = includeBattery ? getBatteryLevel(from: device) : nil
         let deviceType = detectDeviceType(from: device, name: name)
         
         return BluetoothAudioDevice(

@@ -22,10 +22,18 @@ final class CursorAgentStatusMonitor: ObservableObject {
     /// `trafficLightState` it also fires on same-state activity (executing → executing), so a
     /// window keyed off it stays open for the whole of a long run rather than expiring mid-way.
     @Published private(set) var activityPulse: Int = 0
-    /// Whether the most recent `activityPulse` bump was the running-agent heartbeat rather
-    /// than a real transition. Read synchronously by the pulse observer (same main-actor
-    /// turn as the publish) to keep heartbeats from refreshing time-boxed reveal windows.
-    private(set) var lastPulseWasHeartbeat = false
+    /// Whether every `activityPulse` bump since the reveal observer last consumed was the
+    /// running-agent heartbeat. A "was the last bump a heartbeat" flag was wrong here: one
+    /// `rescan()` publishes up to three bumps (session list, traffic light, then the heartbeat)
+    /// and SwiftUI delivers them as a single `onChange`, so the trailing heartbeat masked the
+    /// transition it rode in with and the island never revealed on idle → executing.
+    private var pulseLatch = AgentActivityPulseLatch()
+
+    /// For the reveal observer: true when nothing but heartbeats fired since its last call.
+    /// Consuming resets the window, so exactly one observer may call this per pulse.
+    func consumeActivityPulseWasHeartbeatOnly() -> Bool {
+        pulseLatch.consume()
+    }
 
     private var eventStream: FSEventStreamRef?
     private var statusDirectorySource: DispatchSourceFileSystemObject?
@@ -217,7 +225,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
             staleMinutes: staleMinutes,
             collapseSeconds: collapseSeconds,
             inactiveSeconds: inactiveSeconds,
-            now: now
+            now: now,
+            allowBackingDelete: !hooksOnly
         )
 
         let (passiveClaudeSessions, deadPIDConversationIDs) = buildClaudeSessions(
@@ -279,7 +288,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
         let sortedSessions = resolvedSessions.sorted { $0.updatedAt > $1.updatedAt }
         if sessions != sortedSessions {
             sessions = sortedSessions
-            lastPulseWasHeartbeat = false
+            pulseLatch.noteTransition()
             activityPulse &+= 1
         }
         hadHookFilesThisCycle = !hookSessions.isEmpty || hadRecentHookFiles(staleMinutes: staleMinutes)
@@ -369,14 +378,19 @@ final class CursorAgentStatusMonitor: ObservableObject {
         }
         isRefreshingClaudeUsage = true
 
-        Task.detached(priority: .userInitiated) {
+        // A GCD worker, not a Task: runUsageFetch is up to ~55 s of Thread.sleep, and a
+        // detached Task would pin one cooperative-pool thread (sized to core count) for the
+        // whole fetch, starving every other Task in the process on a small machine.
+        DispatchQueue.global(qos: .userInitiated).async {
             Self.runUsageFetch(binary: binary)
-            await MainActor.run {
-                // Order matters: refresh the cache first, then re-run the providers so the card
-                // renders the new numbers. Doing this at press time instead would race the fetch.
-                self.reloadClaudeUsageNow()
-                LLMUsageManager.shared.refreshAll(force: true)
-                self.isRefreshingClaudeUsage = false
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    // Order matters: refresh the cache first, then re-run the providers so the
+                    // card renders the new numbers. Doing this at press time would race the fetch.
+                    self.reloadClaudeUsageNow()
+                    LLMUsageManager.shared.refreshAll(force: true)
+                    self.isRefreshingClaudeUsage = false
+                }
             }
         }
     }
@@ -437,7 +451,16 @@ final class CursorAgentStatusMonitor: ObservableObject {
         // Drain the pty so the child never blocks on a full buffer; the output itself is unused.
         masterHandle.readabilityHandler = { _ = $0.availableData }
 
-        do { try process.run() } catch { return false }
+        do { try process.run() } catch {
+            // Reachable: Claude Code self-updates by reaping old version directories, so the
+            // binary resolved a moment ago can be gone. Every other exit path clears the
+            // handler before the handle is dropped — an armed readability source on a
+            // closing descriptor is FileHandle's documented crash — so this one must too.
+            masterHandle.readabilityHandler = nil
+            try? masterHandle.close()
+            try? slaveHandle.close()
+            return false
+        }
 
         // Give the TUI time to come up before typing, then issue the command.
         Thread.sleep(forTimeInterval: 3)
@@ -492,7 +515,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
             return
         }
         lastActivityPulseAt = now
-        lastPulseWasHeartbeat = true
+        pulseLatch.noteHeartbeat()
         activityPulse &+= 1
     }
 
@@ -525,7 +548,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
             changed = true
         }
         if changed {
-            lastPulseWasHeartbeat = false
+            pulseLatch.noteTransition()
             activityPulse &+= 1
         }
     }
@@ -789,11 +812,31 @@ final class CursorAgentStatusMonitor: ObservableObject {
         }
     }
 
+    /// Runs `body` under the hook script's directory lock without ever blocking the main
+    /// actor. Returns false, with `body` not run, when a hook currently holds the lock: the
+    /// file is mid-rewrite and any delete decision made from its previous contents is void
+    /// for this cycle. Mirrors the script's own fallback — if the lock file cannot be opened
+    /// at all, proceed unlocked rather than never deleting anything.
+    private static func withStatusLock(in directory: URL, _ body: () -> Void) -> Bool {
+        let lockPath = directory.appendingPathComponent(".kannu-status.lock").path
+        let fd = open(lockPath, O_WRONLY | O_CREAT | O_APPEND, 0o600)
+        guard fd >= 0 else { body(); return true }
+        defer { close(fd) }
+        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else { return false }
+        body()
+        return true
+    }
+
+    /// `allowBackingDelete` is false on the 50 ms hook-triggered rescan: that path does not
+    /// invalidate `CursorTranscriptParser`'s 2 s path cache (the FSEvents path does), so a
+    /// brand-new Cursor conversation's hook file would be judged "unbacked" against a listing
+    /// taken before it existed and deleted milliseconds after the hook wrote it.
     private func parseHookSessions(
         staleMinutes: Int,
         collapseSeconds: Int,
         inactiveSeconds: Int,
-        now: Date = Date()
+        now: Date = Date(),
+        allowBackingDelete: Bool = true
     ) -> [AgentSessionStatus] {
         let directory = AgentHookInstaller.statusDirectory
         guard let files = try? FileManager.default.contentsOfDirectory(
@@ -809,20 +852,26 @@ final class CursorAgentStatusMonitor: ObservableObject {
         var results: [AgentSessionStatus] = []
 
         for file in files where file.pathExtension == "json" {
-            guard let data = try? Data(contentsOf: file),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let state = json["state"] as? String else { continue }
-
             // The agent hook replaces this file atomically (mkstemp + os.replace) and can
             // do so between our read and a delete decision below. Deleting is only safe if
             // the file is still the one we judged — otherwise we destroy a status the
             // agent wrote milliseconds ago and its session vanishes until the next hook
-            // event, potentially minutes away.
+            // event, potentially minutes away. The stat must come BEFORE the read: sampled
+            // after it, a replace landing in between pairs the new file's mtime with the
+            // old file's contents and the guard deletes exactly what it exists to protect.
             let mtimeAtRead = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            guard let data = try? Data(contentsOf: file),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let state = json["state"] as? String else { continue }
+
             func removeIfUnchanged() {
-                let mtimeNow = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-                guard mtimeNow == mtimeAtRead else { return }
-                try? FileManager.default.removeItem(at: file)
+                // Under the script's lock so a hook mid-read-modify-write cannot have the file
+                // pulled out from under it (it would resurrect the card from its cached copy).
+                _ = Self.withStatusLock(in: directory) {
+                    let mtimeNow = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+                    guard mtimeNow == mtimeAtRead else { return }
+                    try? FileManager.default.removeItem(at: file)
+                }
             }
 
             var tsMs = (json["ts"] as? NSNumber)?.int64Value ?? 0
@@ -852,7 +901,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
             // or the per-scan session cap all destroyed hook files written seconds earlier.
             // Their freshness is already enforced by the staleMs check above.
             let providerKey = provider.lowercased()
-            if providerKey == "cursor",
+            if allowBackingDelete,
+               providerKey == "cursor",
                !hasHookSessionBacking(
                 conversationID: conversationID,
                 provider: provider,

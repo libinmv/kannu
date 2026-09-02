@@ -1,6 +1,6 @@
 #!/bin/bash
 # Installed by Kannu: reports AI agent status for the notch traffic light.
-# KANNU_HOOK_SCRIPT_VERSION=29
+# KANNU_HOOK_SCRIPT_VERSION=30
 # Usage: kannu-agent-status.sh <state> <provider> [hook_event] [matcher_key]
 #        (hook JSON arrives on stdin)
 
@@ -197,12 +197,17 @@ status_file = status_dir / f"{provider}-{conversation_id}.json"
 # outright — the exact downgrade (yellow "needs you" overwritten by green "running")
 # that the merge exists to prevent. Serialise the whole read-modify-write instead.
 #
-# The lock is advisory and per-conversation, held until this process exits, so it
-# cannot deadlock a hook for a different session. If flock is unavailable or the
-# wait fails we proceed unlocked: a possible lost update beats a hung hook, which
+# The lock is advisory and held until this process exits. It is one file for the whole
+# status directory, never truncated and never unlinked: a per-conversation lock had to
+# be unlinked at session end to avoid piling up, and unlinking a lock file while another
+# hook has opened but not yet locked it hands that hook a lock on a dead inode — two
+# hooks then run the merge unserialised, the exact race the lock exists to stop. Hooks
+# hold it for milliseconds, so serialising across sessions costs nothing. Kannu takes
+# the same lock (non-blocking) before deleting a status file. If flock is unavailable or
+# the wait fails we proceed unlocked: a possible lost update beats a hung hook, which
 # would stall the agent itself.
 try:
-    _lock_fh = open(status_dir / f".{provider}-{conversation_id}.lock", "w")
+    _lock_fh = open(status_dir / ".kannu-status.lock", "a")
     fcntl.flock(_lock_fh.fileno(), fcntl.LOCK_EX)
 except Exception:
     _lock_fh = None
@@ -221,9 +226,9 @@ if state == "session_end":
         status_file.unlink()
     except Exception:
         pass
-    # Otherwise one zero-byte lock file per conversation accumulates forever. Safe to
-    # remove while we hold it: flock lives on the open descriptor, not the directory
-    # entry, and the session is over so nothing else will contend for this one.
+    # Legacy per-conversation lock files from script versions < 30. Nothing locks them
+    # any more, so removing one cannot strand a concurrent hook; this just stops them
+    # accumulating on upgraded installs.
     try:
         (status_dir / f".{provider}-{conversation_id}.lock").unlink()
     except Exception:
@@ -245,7 +250,16 @@ if status_file.exists():
 # so the winner of the race cannot silently downgrade the light.
 STATE_PRIORITY = {"quota_exceeded": 50, "awaiting_input": 40, "stopped": 30, "executing": 20, "thinking": 10, "idle": 0}
 preserved_ts = None
-if existing_state and existing.get("hook_event") == hook_event:
+# The merge is scoped to one event's parallel group (same hook_event) so consecutive
+# events are not re-arbitrated against each other. One cross-event case is carried
+# deliberately: Claude issues parallel tool calls, so a PermissionRequest ("needs you")
+# for one tool and a PreToolUse ("running") for its sibling can land within the same
+# 2s window, and the generic gate let green overwrite yellow while the prompt was still
+# open. Cost of the carry: after approval the light can stay yellow for the remainder
+# of the 2s window before the next event clears it.
+same_group = existing.get("hook_event") == hook_event
+urgent_carry = existing_state == "awaiting_input" and existing.get("hook_event") == "PermissionRequest"
+if existing_state and (same_group or urgent_carry):
     _raw_ts = existing.get("ts")
     # A status file is untrusted input (any same-user process can write it). `or 0`
     # only defaults falsy values, so a truthy non-numeric ts reached the subtraction

@@ -7,8 +7,14 @@ struct RealTimeWaveformScrubberView: View {
     let progress: Double
     let minHeight: CGFloat
     
-    @State private var timer: Timer? = nil
     @State private var magnitudes: [Float] = Array(repeating: 0.1, count: 6)
+
+    // A SwiftUI-owned timer: the subscription is torn down with the view. The manual
+    // Timer.scheduledTimer it replaces captured the view strongly and was invalidated only in
+    // .onDisappear, which this codebase documents as unreliable for its borderless panels
+    // (see KannuViewModel.onViewTeardown) — a 60 Hz timer then ran on the main run loop in
+    // .common mode for the life of the process, writing @State on a dead view.
+    private let tick = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
 
     var body: some View {
         GeometryReader { geometry in
@@ -31,47 +37,34 @@ struct RealTimeWaveformScrubberView: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: minHeight / 2))
         }
-        .onAppear {
-            startTimer()
-        }
-        .onDisappear {
-            stopTimer()
+        .onReceive(tick) { _ in
+            updateMagnitudes()
         }
     }
-    
-    private func startTimer() {
-        timer?.invalidate()
-        let newTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { _ in
-            let tapMagnitudes = AudioTap.shared.getSmoothedMagnitudes()
-            let barCount = Defaults[.visualizerBarCount]
-            var newMags: [Float] = []
-            if tapMagnitudes.count >= barCount {
-                newMags = Array(tapMagnitudes.prefix(barCount))
+
+    private func updateMagnitudes() {
+        let tapMagnitudes = AudioTap.shared.getSmoothedMagnitudes()
+        let barCount = Defaults[.visualizerBarCount]
+        var newMags: [Float] = []
+        if tapMagnitudes.count >= barCount {
+            newMags = Array(tapMagnitudes.prefix(barCount))
+        } else {
+            newMags = tapMagnitudes
+        }
+
+        var smoothedMags = [Float](repeating: 0.1, count: newMags.count)
+        for i in 0..<newMags.count {
+            if i < magnitudes.count {
+                smoothedMags[i] = magnitudes[i] * 0.85 + newMags[i] * 0.15
             } else {
-                newMags = tapMagnitudes
-            }
-            
-            var smoothedMags = [Float](repeating: 0.1, count: newMags.count)
-            for i in 0..<newMags.count {
-                if i < magnitudes.count {
-                    smoothedMags[i] = magnitudes[i] * 0.85 + newMags[i] * 0.15
-                } else {
-                    smoothedMags[i] = newMags[i]
-                }
-            }
-            
-            // Smoothly animate the path update
-            withAnimation(.linear(duration: 1.0 / 60.0)) {
-                magnitudes = smoothedMags
+                smoothedMags[i] = newMags[i]
             }
         }
-        RunLoop.main.add(newTimer, forMode: .common)
-        timer = newTimer
-    }
-    
-    private func stopTimer() {
-        timer?.invalidate()
-        timer = nil
+
+        // Smoothly animate the path update
+        withAnimation(.linear(duration: 1.0 / 60.0)) {
+            magnitudes = smoothedMags
+        }
     }
 }
 

@@ -593,3 +593,28 @@ extension AgentSessionStatus {
         )
     }
 }
+
+/// Answers "did anything other than the running-agent heartbeat happen since the reveal
+/// observer last looked?" for `CursorAgentStatusMonitor.activityPulse`.
+///
+/// One `rescan()` can publish several bumps in a single main-actor turn — a session-list
+/// change, a traffic-light transition, and the heartbeat last — and SwiftUI collapses them
+/// into one `onChange`. A flag describing only the *last* bump therefore reported "heartbeat"
+/// for a turn that also carried the transition, and strict collapse dropped the reveal. The
+/// latch is monotonic within a window: a transition can never be masked by a later heartbeat.
+/// Lives here rather than on the monitor so the logic-only test target can pin it.
+struct AgentActivityPulseLatch {
+    private(set) var heartbeatOnly = true
+
+    /// A traffic-light transition or session-list change was published.
+    mutating func noteTransition() { heartbeatOnly = false }
+
+    /// A heartbeat was published. Never upgrades a window back to heartbeat-only.
+    mutating func noteHeartbeat() {}
+
+    /// The observer's verdict for the window that just closed; opens the next one.
+    mutating func consume() -> Bool {
+        defer { heartbeatOnly = true }
+        return heartbeatOnly
+    }
+}

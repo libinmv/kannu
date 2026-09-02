@@ -143,7 +143,7 @@ class KannuViewModel: NSObject, ObservableObject {
         enableLyricsPublisher
             .combineLatest(MusicManager.shared.$currentLyrics)
             .removeDuplicates { $0.0 == $1.0 && $0.1 == $1.1 }
-            .receive(on: RunLoop.main)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
                 guard Defaults[.enableMinimalisticUI] else { return }
@@ -165,7 +165,7 @@ class KannuViewModel: NSObject, ObservableObject {
 
         TimerManager.shared.$activeSource
             .combineLatest(TimerManager.shared.$isTimerActive)
-            .receive(on: RunLoop.main)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _, _ in
                 self?.handleMinimalisticTimerHeightChange()
             }
@@ -173,7 +173,7 @@ class KannuViewModel: NSObject, ObservableObject {
 
         coordinator.$statsSecondRowExpansion
             .removeDuplicates()
-            .receive(on: RunLoop.main)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
                 guard self.notchState == .open else { return }
@@ -194,7 +194,7 @@ class KannuViewModel: NSObject, ObservableObject {
 
         coordinator.$notesLayoutState
             .removeDuplicates()
-            .receive(on: RunLoop.main)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
                 guard self.notchState == .open else { return }
@@ -216,7 +216,7 @@ class KannuViewModel: NSObject, ObservableObject {
         Defaults.publisher(.openNotchWidth, options: [])
             .map { $0.newValue }
             .removeDuplicates()
-            .receive(on: RunLoop.main)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
                 guard self.notchState == .open else { return }
@@ -275,7 +275,7 @@ class KannuViewModel: NSObject, ObservableObject {
         Publishers.CombineLatest(statusPublisher, enabledPublisher)
             .map { status, enabled in enabled && status }
             .removeDuplicates()
-            .receive(on: RunLoop.main)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] shouldHide in
                 withAnimation(.smooth) {
                     self?.hideOnClosed = shouldHide
@@ -295,21 +295,17 @@ class KannuViewModel: NSObject, ObservableObject {
     func open() {
         let targetSize = calculateDynamicNotchSize()
 
-        let applyWindowResize: () -> Void = {
-            guard let delegate = AppDelegate.shared else { return }
+        // This type is @MainActor, so the resize is always synchronous here — which the
+        // force: true resize relies on: it must land before notchState flips to .open. The
+        // Thread.isMainThread branch that used to sit here was unreachable, and had it been
+        // reachable it would have hopped the resize while leaving the @Published writes below
+        // on the calling thread, inverting that ordering.
+        if let delegate = AppDelegate.shared {
             delegate.ensureWindowSize(
                 addShadowPadding(to: targetSize, isMinimalistic: Defaults[.enableMinimalisticUI]),
                 animated: false,
                 force: true
             )
-        }
-
-        if Thread.isMainThread {
-            applyWindowResize()
-        } else {
-            Task { @MainActor in
-                applyWindowResize()
-            }
         }
 
         notchSize = targetSize

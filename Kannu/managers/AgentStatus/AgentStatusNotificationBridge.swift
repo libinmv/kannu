@@ -78,6 +78,11 @@ final class AgentStatusNotificationBridge: ObservableObject {
             if !isTest {
                 lastNotifiedState = state
             }
+        } catch is CancellationError {
+            // A newer state change cancelled this debounce task while the request was already
+            // in flight; the replacement delivery reports its own outcome.
+        } catch let error as URLError where error.code == .cancelled {
+            // Same cancellation, surfaced through URLSession.
         } catch {
             lastError = error.localizedDescription
         }

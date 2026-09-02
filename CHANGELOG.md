@@ -4,6 +4,84 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-02 - Race-condition pass over PR #20
+- **Developer label:** fix everything according to need, avoid regressions and see if something is a specific ask
+- **Agent label:** Fix the confirmed races from the PR #20 concurrency review; keep every deliberate behaviour
+- **Changes:**
+  - The island now reveals on idle → executing and on a permission prompt again. `rescan()` publishes up
+    to three `activityPulse` bumps in one turn (session list, traffic light, then the heartbeat) and
+    SwiftUI coalesces them into one `onChange`, so the "last bump was a heartbeat" flag answered for the
+    heartbeat alone and strict collapse dropped the transition it rode in with. Replaced by
+    `AgentActivityPulseLatch` (heartbeat-only *since the observer last consumed*), pinned by 5 tests.
+    Strict collapse itself and the 7s hold are unchanged.
+  - Hook script v30, both copies (bodies diffed byte-identical after resolving interpolations):
+    one directory-wide lock `.kannu-status.lock` replaces the per-conversation locks — those had to be
+    unlinked at session end, and unlinking a lock file while another hook has opened but not yet locked
+    it hands that hook a lock on a dead inode, so two hooks ran the merge unserialised. The new lock is
+    never truncated and never unlinked; legacy per-conversation lock files are still cleaned up.
+  - Hook script: the `STATE_PRIORITY` merge, still scoped to one event's parallel group, now also
+    carries an `awaiting_input` written by `PermissionRequest` across a lower-priority event inside the
+    2s window. Parallel tool calls produce a `PermissionRequest` for one tool and a `PreToolUse` for its
+    sibling, and the same-event gate let green overwrite yellow while the prompt was open. Cost: yellow
+    can linger up to 2s after approval.
+  - New `HookScriptTests` (5) run the mirror script as a subprocess in a throwaway `HOME`: the
+    permission/PreToolUse carry inside and outside the window, the carry limited to PermissionRequest,
+    session-end cleanup keeping the directory lock, and 20 interleaved rounds with zero lost urgent
+    states — the "11/200" harness, finally committed.
+  - Kannu takes the same lock (non-blocking) before deleting a hook status file, skipping the delete
+    for that cycle if a hook holds it, and stats the file *before* reading it: sampled after the read,
+    an atomic replace landing in between paired the new file's mtime with the old contents and
+    `removeIfUnchanged` deleted exactly the fresh status it exists to protect.
+  - Hook-triggered (50ms) rescans no longer run Cursor's delete-on-no-backing check: that path does not
+    invalidate the transcript path cache the way the FSEvents path does, so a brand-new conversation's
+    hook file was judged against a listing taken before it existed and deleted milliseconds after the
+    hook wrote it. The 30s poll and the FSEvents rescan still delete.
+  - `install(.claude)` performs one read-modify-write of `settings.json` for both the hooks and the
+    statusLine key instead of three separate passes, each of which re-read the file and could discard a
+    write Claude Code made in between. `installClaudeUsageStatusLine()` remains for the version migration.
+  - `/usage` spawn: a `process.run()` failure (reachable when Claude Code reaps the version directory
+    just resolved) now clears the pty readability handler before the handle is dropped, matching every
+    other exit path; and the fetch runs on a GCD worker instead of a detached Task, since ~55s of
+    `Thread.sleep` was pinning a cooperative-pool thread.
+  - Hide-until-hover displays (code-reviewed and built; not runtime-verified here — no external display):
+    the hidden-edge poll keeps running while a hover is latched instead of stopping the moment it
+    succeeds, because an island that slides in under a stationary pointer never receives a tracking-area
+    exit and `isHovering` stuck true with the island stranded; the poll's exit test gained hysteresis (a
+    rect covering the hovered island, its wings and the pill offset) so it can no longer disagree with
+    `.onHover` at 20Hz in the band below the entry rect; hover-in no longer cancels the reveal countdown
+    (the expiry task already re-arms while hovering, and a cancel with no guaranteed hover-out to re-arm
+    it stranded the island); locking the screen now drops hover state and the global click monitor, so a
+    click anywhere after unlock no longer opens the notch; region hover cancels the outer hover task so
+    the two no longer race to choose the landing tab. Supersedes the earlier "region-hover also cancels
+    the reveal countdown" note.
+  - `enableMinimalisticUI` sink hops to the main actor like its neighbours instead of resizing the
+    window synchronously inside the Defaults setter's stack frame (a SwiftUI update pass when driven by
+    a `@Default` binding).
+  - `BluetoothAudioManager`: the launch scan on the utility queue no longer reads the battery
+    dictionaries the main thread mutates concurrently (device rows are created without battery and the
+    cache is warmed via the existing main-hopped write), and its completion merges on address instead of
+    overwriting `connectedDevices`, which dropped a device that connected while the scan was in flight.
+  - `ClaudeLocalAccountReader` no longer caches a failed parse under the pre-read mtime, which pinned an
+    empty account (no tier badge) after a torn read of `~/.claude.json` during Claude Code's rewrite.
+  - `HoverTooltip` tracks its 0.4s show as a cancellable work item; an uncancelled timer from an
+    earlier hover-in fired early for the next one.
+  - Removed `ClaudeQuotaClient.swift`: unreferenced since the statusline path landed, and the only home of
+    three latent races (keychain prompt stacking, the interactive cooldown bypass, a late 200 clearing a
+    429 backoff). `KeychainReader` stays (Cursor token store). `QuotaAction.grantClaudeKeychainAccess`
+    remains declared with nothing producing it — follow-up.
+  - Pre-existing, outside the PR diff: the waveform scrubber's 60Hz timer is now a SwiftUI-owned
+    `Timer.publish` subscription (the manual timer captured the view and outlived it when `.onDisappear`
+    did not fire); `KannuViewModel` sinks receive on `DispatchQueue.main` rather than `RunLoop.main`
+    (which stalls in tracking run-loop modes while the resize drain does not), and `open()` lost its
+    unreachable `Thread.isMainThread` branch; the notification bridge no longer reports a cancelled
+    in-flight send as `lastError`; `NowPlayingController.readData()` cannot leave its continuation
+    un-resumed when `close()` wins the race with the readability handler.
+  - Reviewed and deliberately left as designed: strict collapse (`physicalNotchAgentBandFollowsHeartbeat`),
+    `|| isHovering` in `showAgentTrafficLight`, the `removeIfUnchanged` guard, the 2s merge window and
+    never refreshing `ts` on preserve, Cursor-only delete-on-no-backing, the `drainingParkedRequest`
+    floor bypass, `hooksOnly` transcript retention, the pure-debounce `scheduleRescan`, and the two
+    forced battery refreshes at `checkForNewlyConnectedDevices`/`updateConnectedDevices`.
+
 ### 2026-09-01 - Address the open CodeRabbit findings
 - **Developer label:** check code rabbit comments in pr #20 and address valid ones
 - **Agent label:** Fix the four CodeRabbit findings that verified, reject two
