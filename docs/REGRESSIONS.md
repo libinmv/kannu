@@ -10,6 +10,11 @@ here has never cost a real bug, delete it.
 
 **Read this before touching anything under `Kannu/managers/AgentStatus/`.**
 
+> **The commit hashes cited below predate the 2026-09-03 history reset.** `main` was rebuilt that
+> day on a new root commit, so those hashes do not resolve in a fresh clone — they survive only in
+> archived copies of the pre-reset history. Every rule, failure mode and guard described here is
+> unaffected; treat the hashes as provenance for the story, not as something you can `git show`.
+
 ---
 
 ## How to use this
