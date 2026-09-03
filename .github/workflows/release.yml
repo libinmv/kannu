@@ -1,0 +1,229 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-dmg:
+    name: Build DMG
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: true
+
+      - name: Select Xcode Version
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Validate release secrets
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_NOTARIZATION_PASSWORD: ${{ secrets.APPLE_NOTARIZATION_PASSWORD }}
+          SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
+        run: |
+          missing=()
+          for var in \
+            APPLE_CERTIFICATE \
+            APPLE_CERTIFICATE_PASSWORD \
+            KEYCHAIN_PASSWORD \
+            APPLE_TEAM_ID \
+            APPLE_ID \
+            APPLE_NOTARIZATION_PASSWORD \
+            SPARKLE_EDDSA_PRIVATE_KEY
+          do
+            if [ -z "${!var:-}" ]; then
+              missing+=("$var")
+            fi
+          done
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Missing required release secrets: ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Download Metal Toolchain
+        run: |
+          sudo xcodebuild -runFirstLaunch || true
+          MAJOR=$(sw_vers -productVersion | cut -d. -f1)
+          if [ "$MAJOR" -ge 26 ]; then
+            downloaded=false
+            for i in 1 2 3 4 5; do
+              if sudo xcodebuild -downloadComponent MetalToolchain; then downloaded=true; break; fi
+              sleep 10
+            done
+            if [ "$downloaded" = false ] && ! xcrun -f metal >/dev/null 2>&1; then
+              echo "::error::Metal Toolchain download failed after 5 attempts and metal is unavailable."
+              exit 1
+            fi
+          else
+            echo "macOS $MAJOR: Metal ships with Xcode, skipping download."
+          fi
+
+      - name: Install Apple Certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          KEYCHAIN_PASSWORD="${KEYCHAIN_PASSWORD:-$RUNNER_TEMP}"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+      - name: Download Sparkle Tools
+        run: |
+          curl -sL "https://github.com/sparkle-project/Sparkle/releases/download/2.7.0/Sparkle-2.7.0.tar.xz" -o /tmp/Sparkle-2.7.0.tar.xz
+          mkdir -p /tmp/sparkle-tools
+          tar -xf /tmp/Sparkle-2.7.0.tar.xz -C /tmp/sparkle-tools
+          echo "SPARKLE_BIN_DIR=/tmp/sparkle-tools/bin" >> "$GITHUB_ENV"
+
+      - name: Archive and export Release app
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          sudo DevToolsSecurity -enable
+
+          SIGNING_IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | sed -n 's/.*"\(Developer ID Application:.*\)".*/\1/p' | head -1)"
+          if [ -z "$SIGNING_IDENTITY" ]; then
+            echo "::error::Developer ID Application identity not found in imported keychain."
+            exit 1
+          fi
+          echo "SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
+
+          if ! plutil_out=$(plutil -remove com.apple.security.mach-services Kannu/Kannu.entitlements 2>&1); then
+            if printf '%s' "$plutil_out" | grep -q "No value to remove"; then
+              echo "mach-services entitlement already absent, continuing."
+            else
+              echo "::error::plutil failed to modify entitlements: $plutil_out"
+              exit 1
+            fi
+          fi
+
+          xcodebuild archive \
+            -project Kannu.xcodeproj \
+            -scheme Kannu \
+            -configuration Release \
+            -destination "platform=macOS" \
+            -archivePath build/Kannu.xcarchive \
+            CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" \
+            CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID"
+
+          cp ExportOptions.plist build/ExportOptions.plist
+          /usr/libexec/PlistBuddy -c "Set :teamID $APPLE_TEAM_ID" build/ExportOptions.plist
+
+          xcodebuild -exportArchive \
+            -archivePath build/Kannu.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist build/ExportOptions.plist
+
+      - name: Create DMG
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          DMG_NAME="Kannu.${VERSION}.dmg"
+
+          chmod +x scripts/create-dmg.sh
+          ./scripts/create-dmg.sh build/export/Kannu.app "build/${DMG_NAME}"
+
+          echo "RELEASE_DMG=${DMG_NAME}" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=${VERSION}" >> "$GITHUB_ENV"
+          CODENAME="$(grep -o 'static let codename = "[^"]*"' Kannu/models/Constants.swift | head -1 | cut -d'"' -f2)"
+          echo "RELEASE_TITLE=Kannu ${VERSION}${CODENAME:+ — $CODENAME}" >> "$GITHUB_ENV"
+
+      - name: Notarize DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_NOTARIZATION_PASSWORD: ${{ secrets.APPLE_NOTARIZATION_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          chmod +x scripts/notarize-dmg.sh
+          ./scripts/notarize-dmg.sh "build/${RELEASE_DMG}"
+
+      - name: Export Sparkle Update Assets
+        env:
+          SPARKLE_EDDSA_PRIVATE_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+
+          chmod +x scripts/export-sparkle-update.sh
+          ./scripts/export-sparkle-update.sh \
+            "build/${RELEASE_DMG}" \
+            Updates \
+            "https://github.com/libinmv/kannu/releases/download/${TAG}/" \
+            "$SPARKLE_BIN_DIR"
+
+      - name: Upload Release Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Kannu-dmg
+          path: build/${{ env.RELEASE_DMG }}
+          if-no-files-found: error
+
+      - name: Upload Sparkle Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Kannu-sparkle
+          path: Updates/appcast.xml
+          if-no-files-found: warn
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          name: ${{ env.RELEASE_TITLE }}
+          files: |
+            build/${{ env.RELEASE_DMG }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update appcast on main
+        run: |
+          if [ ! -f Updates/appcast.xml ]; then
+            echo "No generated Updates/appcast.xml found; skipping main branch update."
+            exit 0
+          fi
+
+          TAG="${GITHUB_REF#refs/tags/}"
+          cp Updates/appcast.xml /tmp/kannu-appcast.xml
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout main
+          cp /tmp/kannu-appcast.xml Updates/appcast.xml
+          git add Updates/appcast.xml
+          if git diff --staged --quiet; then
+            echo "Updates/appcast.xml unchanged."
+          else
+            git commit -m "Update appcast for ${TAG}"
+            git push origin main
+          fi

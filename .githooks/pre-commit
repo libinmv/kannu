@@ -1,0 +1,211 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
+  exit 0
+fi
+
+# --- Hook-script mirror drift -------------------------------------------------
+# AgentHookInstaller.swift embeds the authoritative hook script;
+# scripts/kannu-agent-status.sh is a generated mirror that install-cursor-hooks.sh
+# copies to users. They have silently drifted three times (see docs/REGRESSIONS.md),
+# and users on the mirror ran without fixes that shipped in the embedded copy.
+# Prose alone did not hold this invariant, so it is checked here.
+installer_script="Kannu/managers/AgentStatus/AgentHookInstaller.swift"
+mirror_script="scripts/kannu-agent-status.sh"
+if [[ -f "${installer_script}" && -f "${mirror_script}" ]]; then
+  installer_version="$(grep -o 'KANNU_HOOK_SCRIPT_VERSION=[0-9]*' "${installer_script}" | head -1 || true)"
+  mirror_version="$(grep -o 'KANNU_HOOK_SCRIPT_VERSION=[0-9]*' "${mirror_script}" | head -1 || true)"
+  if [[ -n "${installer_version}" && "${installer_version}" != "${mirror_version}" ]]; then
+    cat <<EOF
+ERROR: Hook script mirror is out of sync.
+
+  embedded (authoritative): ${installer_version}  in ${installer_script}
+  mirror:                   ${mirror_version:-<none>}  in ${mirror_script}
+
+The mirror is what scripts/install-cursor-hooks.sh gives users. Regenerate it from
+the embedded copy so both carry the same version, then re-stage it.
+See docs/REGRESSIONS.md for why this check exists.
+EOF
+    exit 1
+  fi
+fi
+# The Claude statusline script has the same two-copy shape (writeUsageScript embeds it,
+# scripts/kannu-usage-status.sh mirrors it) and drifted unnoticed until v4 because only the
+# agent-status pair was checked. Same rule, same fix.
+usage_mirror_script="scripts/kannu-usage-status.sh"
+if [[ -f "${installer_script}" && -f "${usage_mirror_script}" ]]; then
+  usage_installer_version="$(grep -o 'KANNU_USAGE_SCRIPT_VERSION=[0-9]*' "${installer_script}" | head -1 || true)"
+  usage_mirror_version="$(grep -o 'KANNU_USAGE_SCRIPT_VERSION=[0-9]*' "${usage_mirror_script}" | head -1 || true)"
+  if [[ -n "${usage_installer_version}" && "${usage_installer_version}" != "${usage_mirror_version}" ]]; then
+    cat <<EOF
+ERROR: Usage statusline script mirror is out of sync.
+
+  embedded (authoritative): ${usage_installer_version}  in ${installer_script}
+  mirror:                   ${usage_mirror_version:-<none>}  in ${usage_mirror_script}
+
+Apply the same body edit to both copies and bump both markers, then re-stage.
+See docs/REGRESSIONS.md entry 1 for why this check exists.
+EOF
+    exit 1
+  fi
+fi
+# ------------------------------------------------------------------------------
+
+# --- Notch tooltip invariants -------------------------------------------------
+# SwiftUI's .help() compiles to NSView.toolTip, and AppKit only shows tooltips for the
+# ACTIVE app. Kannu is LSUIElement with a non-activating notch panel, so it is never
+# active and .help() is dead there — it silently does nothing. Eight call sites shipped
+# that way. Use .hoverTooltip(...) instead (docs/TOOLTIPS.md).
+# Strip the file:line: prefix before testing for a comment, or the doc comments that
+# explain this very rule trip the check.
+dead_help="$(grep -rn '\.help(' Kannu/components/Notch Kannu/components/AgentStatus 2>/dev/null \
+  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true)"
+if [[ -n "${dead_help}" ]]; then
+  cat <<EOF
+ERROR: .help(...) found in a notch view. It never renders there.
+
+${dead_help}
+
+Kannu is an accessory (LSUIElement) app whose notch is a non-activating panel, so the app
+is never frontmost and AppKit's tooltip manager never runs. Use .hoverTooltip(...) instead.
+See docs/TOOLTIPS.md.
+EOF
+  exit 1
+fi
+
+# The bubble is an overlay, so a relaxed horizontal axis makes it adopt the PARENT's width
+# — typically a ~14pt icon button — and it renders invisibly. `.fixedSize()` on both axes
+# is what lets it size to its own text. Relaxing it broke every tooltip in the app once.
+tooltip_file="Kannu/components/Notch/HoverTooltip.swift"
+if [[ -f "${tooltip_file}" ]]; then
+  if grep -q 'fixedSize(horizontal:' "${tooltip_file}"; then
+    cat <<EOF
+ERROR: ${tooltip_file} uses fixedSize(horizontal:...).
+
+The tooltip is an overlay: relaxing the horizontal axis makes it lay out at the parent
+control's width (often ~14pt) and disappear. Keep the bare .fixedSize().
+See docs/TOOLTIPS.md.
+EOF
+    exit 1
+  fi
+  if ! grep -q '\.fixedSize()' "${tooltip_file}"; then
+    echo "ERROR: ${tooltip_file} must keep .fixedSize() — see docs/TOOLTIPS.md."
+    exit 1
+  fi
+fi
+# ------------------------------------------------------------------------------
+
+staged_files="$(git diff --cached --name-only --diff-filter=ACMR)"
+if [[ -z "${staged_files}" ]]; then
+  exit 0
+fi
+
+has_source_change=false
+while IFS= read -r file; do
+  [[ -z "${file}" ]] && continue
+  if [[ "${file}" =~ ^Kannu/ ]] \
+    || [[ "${file}" =~ ^scripts/ ]] \
+    || [[ "${file}" =~ \.xcodeproj/ ]] \
+    || [[ "${file}" == "CONTRIBUTING.md" ]] \
+    || [[ "${file}" == "ReadMe.md" ]] \
+    || [[ "${file}" == "README.md" ]] \
+    || [[ "${file}" =~ ^\.cursor/rules/ ]]; then
+    has_source_change=true
+    break
+  fi
+done <<< "${staged_files}"
+
+if [[ "${has_source_change}" != "true" ]]; then
+  exit 0
+fi
+
+if ! grep -qx 'CHANGELOG.md' <<< "${staged_files}"; then
+  cat <<'EOF'
+ERROR: Missing staged CHANGELOG update.
+
+When source files change, stage CHANGELOG.md with a new entry under [Unreleased]:
+
+### YYYY-MM-DD - <developer-feature-label>
+- **Developer label:** <label>
+- **Agent label:** <label>
+- **Changes:**
+  - <one concrete change>
+EOF
+  exit 1
+fi
+
+changelog_content="$(git show :CHANGELOG.md 2>/dev/null || true)"
+if [[ -z "${changelog_content}" ]]; then
+  echo "ERROR: Could not read staged CHANGELOG.md."
+  exit 1
+fi
+
+# awk must NOT exit early here: it would close the pipe while printf is still writing the
+# ~78 KB changelog, printf would take SIGPIPE, and pipefail+errexit would abort the hook with
+# exit 141 before any check ran. Read to EOF and gate with a flag instead.
+unreleased_section="$(printf '%s\n' "${changelog_content}" | awk '
+  /^## \[Unreleased\]/ { in_section=1; next }
+  /^## \[/ { if (in_section) { in_section=0; done=1 } }
+  in_section && !done { print }
+')"
+
+# Use grep, not "${var//[[:space:]]/}": that expansion is superlinear in bash 3.2
+# (macOS's /bin/bash) and the Unreleased section is already ~78 KB, which made this
+# check run for many minutes and effectively blocked every commit.
+if ! grep -q '[^[:space:]]' <<< "${unreleased_section}"; then
+  echo "ERROR: CHANGELOG.md must include a populated ## [Unreleased] section."
+  exit 1
+fi
+
+# Same SIGPIPE rule as above: no early exit.
+latest_entry="$(printf '%s\n' "${unreleased_section}" | awk '
+  /^### / {
+    if (found) done=1
+    found=1
+  }
+  found && !done { print }
+')"
+
+if ! grep -q '[^[:space:]]' <<< "${latest_entry}"; then
+  echo "ERROR: Add a latest entry heading under ## [Unreleased] (### YYYY-MM-DD - ...)."
+  exit 1
+fi
+
+if ! grep -q '^- \*\*Developer label:\*\*' <<< "${latest_entry}"; then
+  echo "ERROR: Latest changelog entry is missing '- **Developer label:**'."
+  exit 1
+fi
+
+if ! grep -q '^- \*\*Agent label:\*\*' <<< "${latest_entry}"; then
+  echo "ERROR: Latest changelog entry is missing '- **Agent label:**'."
+  exit 1
+fi
+
+if ! grep -q '^- \*\*Changes:\*\*' <<< "${latest_entry}"; then
+  echo "ERROR: Latest changelog entry is missing '- **Changes:**'."
+  exit 1
+fi
+
+has_change_bullet="$(printf '%s\n' "${latest_entry}" | awk '
+  BEGIN { in_changes=0; has_bullet=0 }
+  /^- \*\*Changes:\*\*/ { in_changes=1; next }
+  /^- \*\*/ { if (in_changes) in_changes=0 }
+  /^### / { if (in_changes) in_changes=0 }
+  {
+    if (in_changes && $0 ~ /^  - /) {
+      has_bullet=1
+    }
+  }
+  END {
+    if (has_bullet) print "true"
+    else print "false"
+  }
+')"
+
+if [[ "${has_change_bullet}" != "true" ]]; then
+  echo "ERROR: Latest changelog entry must include at least one indented bullet under Changes."
+  exit 1
+fi
+
+exit 0

@@ -1,0 +1,437 @@
+/*
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
+ *
+ * Originally from boring.notch project
+ * Modified and adapted for Kannu (കണ്ണ്)
+ * See NOTICE for details.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+import Defaults
+import Foundation
+import SwiftUI
+
+
+var openNotchSize: CGSize {
+    let storedWidth = Defaults[.openNotchWidth]
+    let minWidth = currentRecommendedMinimumNotchWidth()
+    let maxWidth = maxAllowedNotchWidth()
+    let width = min(max(storedWidth, minWidth), maxWidth)
+    return .init(width: width, height: 200)
+}
+
+/// Maximum notch width based on the current screen's point width.
+/// Prevents the notch from extending beyond the screen on scaled displays.
+func maxAllowedNotchWidth(for screenName: String? = nil) -> CGFloat {
+    let screen: NSScreen?
+    if let screenName {
+        screen = NSScreen.screens.first { $0.localizedName == screenName }
+    } else {
+        screen = NSScreen.main
+    }
+    guard let screenWidth = screen?.frame.width, screenWidth > 0 else {
+        return 900
+    }
+    return max(screenWidth - 60, 400)
+}
+
+/// Convenience for the main screen.
+func maxAllowedNotchWidth() -> CGFloat {
+    maxAllowedNotchWidth(for: nil)
+}
+
+// MARK: - Tab-Based Notch Width
+
+/// Counts the number of currently enabled standard notch tabs.
+/// Mirrors the tab-building logic in ``TabSelectionView``.
+func enabledStandardTabCount() -> Int {
+    var count = 0
+
+    // Home / Now Playing tab is always available.
+    count += 1
+
+    // Shelf tab
+    if Defaults[.dynamicShelf] {
+        count += 1
+    }
+
+    // Timer tab (only in .tab display mode)
+    if Defaults[.enableTimerFeature] && Defaults[.timerDisplayMode] == .tab {
+        count += 1
+    }
+
+    // Stats tab
+    if Defaults[.enableStatsFeature] {
+        count += 1
+    }
+
+    // LLM Usage tab
+    if Defaults[.enableLLMUsageFeature] {
+        count += 1
+    }
+
+    // Agent Status tab
+    if Defaults[.enableAgentStatusFeature] {
+        count += 1
+    }
+
+    // Notes / Clipboard tab
+    if Defaults[.enableNotes] || (Defaults[.enableClipboardManager] && Defaults[.clipboardDisplayMode] == .separateTab) {
+        count += 1
+    }
+
+    return count
+}
+
+/// Returns the recommended minimum notch width for the given tab count.
+func recommendedMinimumNotchWidth(forTabCount count: Int) -> CGFloat {
+    if count >= 6 { return 770 }
+    if count >= 5 { return 690 }
+    return 640
+}
+
+/// Returns the recommended minimum notch width for the current tab configuration.
+func currentRecommendedMinimumNotchWidth() -> CGFloat {
+    recommendedMinimumNotchWidth(forTabCount: enabledStandardTabCount())
+}
+
+/// Enforces the minimum notch width based on current tab count.
+/// Also clamps to screen width so the notch never exceeds the display.
+/// Only adjusts when not in minimalistic mode.
+func enforceMinimumNotchWidth() {
+    guard !Defaults[.enableMinimalisticUI] else { return }
+    let minWidth = currentRecommendedMinimumNotchWidth()
+    let maxWidth = maxAllowedNotchWidth()
+    var width = Defaults[.openNotchWidth]
+    if width < minWidth { width = minWidth }
+    if width > maxWidth { width = maxWidth }
+    if Defaults[.openNotchWidth] != width {
+        Defaults[.openNotchWidth] = width
+    }
+}
+private let minimalisticBaseOpenNotchSize: CGSize = .init(width: 420, height: 180)
+private let minimalisticLyricsExtraHeight: CGFloat = 40
+let minimalisticTimerCountdownTopPadding: CGFloat = 12
+let minimalisticTimerCountdownContentHeight: CGFloat = 82
+let minimalisticTimerCountdownBlockHeight: CGFloat = minimalisticTimerCountdownTopPadding + minimalisticTimerCountdownContentHeight
+let statsSecondRowContentHeight: CGFloat = 120
+let statsGridSpacingHeight: CGFloat = 12
+let notchShadowPaddingStandard: CGFloat = 18
+let notchShadowPaddingMinimalistic: CGFloat = 12
+
+@MainActor
+func minimalisticOpenNotchSize(isDynamicIslandMode: Bool) -> CGSize {
+    var size = minimalisticBaseOpenNotchSize
+
+    if isDynamicIslandMode {
+        size.width = 340 // Reduced from 420 for a narrower pill
+        size.height = 144 // Exact height of the minimalistic music player view
+    }
+
+    if Defaults[.enableLyrics] {
+        size.height += minimalisticLyricsExtraHeight
+    }
+
+    if KannuViewCoordinator.shared.timerLiveActivityEnabled && TimerManager.shared.isExternalTimerActive {
+        size.height += minimalisticTimerCountdownBlockHeight
+    }
+
+    return size
+}
+let cornerRadiusInsets: (opened: (top: CGFloat, bottom: CGFloat), closed: (top: CGFloat, bottom: CGFloat)) = (opened: (top: 19, bottom: 24), closed: (top: 6, bottom: 14))
+let minimalisticCornerRadiusInsets: (opened: (top: CGFloat, bottom: CGFloat), closed: (top: CGFloat, bottom: CGFloat)) = (opened: (top: 35, bottom: 35), closed: cornerRadiusInsets.closed)
+
+// MARK: - Terminal tab clip (notch surface)
+
+
+
+func statsAdjustedNotchSize(
+    from baseSize: CGSize,
+    isStatsTabActive: Bool,
+    secondRowProgress: CGFloat
+) -> CGSize {
+    guard isStatsTabActive, Defaults[.enableStatsFeature] else {
+        return baseSize
+    }
+
+    let enabledGraphsCount = [
+        Defaults[.showCpuGraph],
+        Defaults[.showMemoryGraph],
+        Defaults[.showGpuGraph],
+        Defaults[.showNetworkGraph],
+        Defaults[.showDiskGraph]
+    ].filter { $0 }.count
+
+    guard enabledGraphsCount >= 4 else {
+        return baseSize
+    }
+
+    let clampedProgress = max(0, min(secondRowProgress, 1))
+    guard clampedProgress > 0 else {
+        return baseSize
+    }
+
+    var adjustedSize = baseSize
+    let extraHeight = (statsSecondRowContentHeight + statsGridSpacingHeight) * clampedProgress
+    adjustedSize.height += extraHeight
+    return adjustedSize
+}
+
+func notchShadowPaddingValue(isMinimalistic: Bool) -> CGFloat {
+    isMinimalistic ? notchShadowPaddingMinimalistic : notchShadowPaddingStandard
+}
+
+func addShadowPadding(to size: CGSize, isMinimalistic: Bool) -> CGSize {
+    CGSize(width: size.width, height: size.height + notchShadowPaddingValue(isMinimalistic: isMinimalistic))
+}
+
+/// Determines whether a specific screen should render the Dynamic Island pill
+/// shape instead of the standard notch shape.
+///
+/// Returns `true` only when ALL of these conditions are met:
+/// 1. The user has selected `.dynamicIsland` in `externalDisplayStyle`
+/// 2. The screen does NOT have a physical notch (safeAreaInsets.top == 0)
+///
+/// Screens with a physical notch always use the standard notch shape.
+// MARK: - Display identity
+
+/// Whether `screen` is this Mac's own built-in display.
+///
+/// `CGDisplayIsBuiltin` is exact on every Mac and needs no model list — unlike matching
+/// `hw.model` against a hardcoded set, which would need updating for each new machine.
+func isBuiltInDisplay(_ screen: NSScreen) -> Bool {
+    guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+        return false
+    }
+    return CGDisplayIsBuiltin(CGDirectDisplayID(number.uint32Value)) != 0
+}
+
+/// Whether the built-in display has a notch, or `nil` when it isn't currently connected
+/// (clamshell mode, or an external-only Mac such as a Mini or Studio).
+func builtInDisplayNotchState() -> Bool? {
+    guard let builtIn = NSScreen.screens.first(where: isBuiltInDisplay) else { return nil }
+    return builtIn.safeAreaInsets.top > 0
+}
+
+/// Whether this Mac's own display has a notch, remembering the answer across launches.
+///
+/// Asking `NSScreen.main` instead — as onboarding used to — reads whichever screen holds the
+/// key window, so setting up while docked to an external monitor misclassified a notched
+/// MacBook as non-notched and handed its built-in display the wrong shape.
+@discardableResult
+func macHasNotchedBuiltInDisplay() -> Bool {
+    if let observed = builtInDisplayNotchState() {
+        if Defaults[.machineHasNotchedBuiltInDisplay] != observed {
+            Defaults[.machineHasNotchedBuiltInDisplay] = observed
+        }
+        return observed
+    }
+    // Built-in not visible right now — fall back to what we saw last time. A Mac that has
+    // never shown us one (Mini, Studio, or first run in clamshell) is treated as non-notched
+    // until the lid opens, at which point this corrects itself.
+    return Defaults[.machineHasNotchedBuiltInDisplay] ?? false
+}
+
+// MARK: - Per-display settings
+
+/// The style to use for `screenName`, preferring a per-display override over the global choice.
+func effectiveDisplayStyle(for screenName: String?) -> ExternalDisplayStyle {
+    if let screenName, let override = Defaults[.displayStyleOverrides][screenName] {
+        return override
+    }
+    return Defaults[.externalDisplayStyle]
+}
+
+
+func shouldUseDynamicIslandMode(for screenName: String?) -> Bool {
+    guard effectiveDisplayStyle(for: screenName) == .dynamicIsland else {
+        return false
+    }
+
+    var selectedScreen: NSScreen? = NSScreen.main
+    if let screenName {
+        selectedScreen = NSScreen.screens.first(where: { $0.localizedName == screenName })
+    }
+
+    guard let screen = selectedScreen else {
+        // No screen found — fallback to standard notch
+        return false
+    }
+
+    // Physical notch screens always use standard notch shape
+    return screen.safeAreaInsets.top <= 0
+}
+
+/// Corner radius insets for the Dynamic Island pill shape.
+/// - closed: half the closed notch height for a true capsule look
+/// - opened: generous radius for smooth expanded pill
+let dynamicIslandPillCornerRadiusInsets: (opened: CGFloat, closed: (standard: CGFloat, minimalistic: CGFloat)) = (
+    opened: 24,
+    closed: (standard: 16, minimalistic: 16)
+)
+
+/// Vertical offset from the top screen edge for the Dynamic Island pill.
+/// Creates a visual gap so the pill floats below the menu bar, mimicking
+/// the iPhone's Dynamic Island detachment from the physical screen edge.
+let dynamicIslandTopOffset: CGFloat = 6
+
+/// Extra horizontal padding applied OUTSIDE the pill clip shape in Dynamic
+/// Island mode so the drop shadow has room to render without being clipped
+/// by the outer frame constraint.
+let dynamicIslandShadowInset: CGFloat = 14
+
+/// The one reveal window: how long the island (and the agent traffic light, on every
+/// display type) stays visible after the most recent reason to show it, whether that
+/// reason was a hover ending or agent activity. Was two separate 3-second constants;
+/// unified into one window by explicit user decision, then raised to 7 because five
+/// seconds was too short to catch a transition you were not already looking at.
+let notchRevealHoldSeconds: TimeInterval = 7
+
+/// Strict collapse: when false, the running-agent heartbeat does not refresh the reveal
+/// window, so the traffic light shows on state transitions only and goes dark mid-run.
+/// Flip to true to keep the light lit for the whole active run instead.
+let physicalNotchAgentBandFollowsHeartbeat = false
+
+/// How often a still-running agent re-announces itself. With strict collapse above this
+/// no longer drives the reveal window; it still feeds other consumers of activityPulse.
+let agentActivityHeartbeatSeconds: TimeInterval = 2
+
+enum MusicPlayerImageSizes {
+    static let cornerRadiusInset: (opened: CGFloat, closed: CGFloat) = (opened: 13.0, closed: 4.0)
+    static let size = (opened: CGSize(width: 90, height: 90), closed: CGSize(width: 20, height: 20))
+}
+
+// MARK: - Agent traffic light (physical notch)
+
+private let agentTrafficLightIndicatorHeight: CGFloat = 10
+private let agentTrafficLightVerticalPadding: CGFloat = 10
+
+private func resolvedNotchScreen(named screenName: String?) -> NSScreen? {
+    if let screenName {
+        return NSScreen.screens.first(where: { $0.localizedName == screenName })
+    }
+    return NSScreen.main
+}
+
+/// Expanded closed-notch height on physical-notch displays when the agent
+/// traffic-light row is visible. Derived from the active screen's menu-bar band
+/// and safe-area inset so taller MacBook menu bars do not crop the indicator.
+func physicalNotchAgentTrafficLightHeight(
+    screenName: String?,
+    closedNotchHeight: CGFloat
+) -> CGFloat {
+    guard closedNotchHeight > 0 else { return 52 }
+
+    guard let screen = resolvedNotchScreen(named: screenName),
+          screen.safeAreaInsets.top > 0
+    else {
+        return closedNotchHeight + agentTrafficLightIndicatorHeight + agentTrafficLightVerticalPadding
+    }
+
+    let menuBarHeight = screen.frame.maxY - screen.visibleFrame.maxY
+    let safeAreaTop = screen.safeAreaInsets.top
+    let belowNotchClearance = agentTrafficLightIndicatorHeight + agentTrafficLightVerticalPadding
+
+    // Grow past the configured closed-notch height when the menu bar is taller
+    // than the notch setting (common on 14"/16" MacBook Pro with "Match Menu Bar").
+    let extraMenuBarBand = max(0, menuBarHeight - closedNotchHeight)
+    let menuBarRelativeHeight = closedNotchHeight + extraMenuBarBand + belowNotchClearance
+    let safeAreaRelativeHeight = safeAreaTop + belowNotchClearance
+
+    return max(
+        menuBarRelativeHeight,
+        safeAreaRelativeHeight,
+        closedNotchHeight + belowNotchClearance
+    )
+}
+
+/// Vertical offset that pushes the traffic-light row into the expansion band
+/// below the physical camera notch.
+func physicalNotchAgentTrafficLightVerticalOffset(
+    expandedHeight: CGFloat,
+    closedNotchHeight: CGFloat,
+    screenName: String?
+) -> CGFloat {
+    let expansion = max(0, expandedHeight - closedNotchHeight)
+    guard expansion > 0 else { return 0 }
+
+    let safeAreaTop = resolvedNotchScreen(named: screenName)?.safeAreaInsets.top ?? closedNotchHeight
+    let belowNotchStart = max(0, safeAreaTop - closedNotchHeight)
+    let legacyOffset = expansion / 1.26
+    let minimumOffset = belowNotchStart + agentTrafficLightVerticalPadding / 2
+    let maximumOffset = max(0, expansion - agentTrafficLightIndicatorHeight / 2)
+
+    return min(max(legacyOffset, minimumOffset), maximumOffset)
+}
+
+func getScreenFrame(_ screen: String? = nil) -> CGRect? {
+    var selectedScreen = NSScreen.main
+
+    if let customScreen = screen {
+        selectedScreen = NSScreen.screens.first(where: { $0.localizedName == customScreen })
+    }
+    
+    if let screen = selectedScreen {
+        return screen.frame
+    }
+    
+    return nil
+}
+
+func getClosedNotchSize(screen: String? = nil) -> CGSize {
+    // Default notch size, to avoid using optionals
+    var notchHeight: CGFloat = Defaults[.nonNotchHeight]
+    var notchWidth: CGFloat = Defaults[.closedNotchWidth]
+
+    var selectedScreen = NSScreen.main
+
+    if let customScreen = screen {
+        selectedScreen = NSScreen.screens.first(where: { $0.localizedName == customScreen })
+    }
+
+    // Check if the screen is available
+    if let screen = selectedScreen {
+        // Calculate and set the exact width of the notch
+        if let topLeftNotchpadding: CGFloat = screen.auxiliaryTopLeftArea?.width,
+           let topRightNotchpadding: CGFloat = screen.auxiliaryTopRightArea?.width
+        {
+            notchWidth = screen.frame.width - topLeftNotchpadding - topRightNotchpadding + 4
+            
+            if Defaults[.customizePhysicalNotchWidth] {
+                notchWidth = Defaults[.closedNotchWidth]
+            }
+        }
+
+        // Check if the Mac has a notch
+        if screen.safeAreaInsets.top > 0 {
+            // This is a display WITH a notch - use notch height settings
+            notchHeight = Defaults[.notchHeight]
+            if Defaults[.notchHeightMode] == .matchRealNotchSize {
+                notchHeight = screen.safeAreaInsets.top
+            } else if Defaults[.notchHeightMode] == .matchMenuBar {
+                notchHeight = screen.frame.maxY - screen.visibleFrame.maxY
+            }
+        } else {
+            // This is a display WITHOUT a notch - use non-notch height settings
+            notchHeight = Defaults[.nonNotchHeight]
+            if Defaults[.nonNotchHeightMode] == .matchMenuBar {
+                notchHeight = screen.frame.maxY - screen.visibleFrame.maxY
+            }
+        }
+    }
+
+    return .init(width: notchWidth, height: notchHeight)
+}

@@ -1,0 +1,430 @@
+/*
+ * Kannu (കണ്ണ്)
+ * Copyright (C) 2024-2026 Kannu Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+import Foundation
+import AppKit
+import os
+
+class SystemOSDManager {
+    private init() {}
+
+    // Tracks the PID we most recently suspended. macOS jetsam-exits OSDUIHelper
+    // when idle and launchd respawns it on the next media-key press as a fresh
+    // process, so we need to re-SIGSTOP every new incarnation.
+    private struct SuppressionState {
+        var task: Task<Void, Never>?
+        // The kickstart/poll/SIGSTOP bootstrap. Tracked so turning suppression off can
+        // cancel it — an orphaned copy used to SIGSTOP the helper up to ~16s after
+        // enableSystemHUD() had already restored it, leaving the user with no HUD at all.
+        var disableTask: Task<Void, Never>?
+        var lastSuspendedPID: Int32 = -1
+        // True while suppressing the native OSD (between disable/enableSystemHUD).
+        var active = false
+        // True while the Mac is asleep — watcher pauses, not cancelled.
+        var systemSleeping = false
+    }
+    private static let suppressionState = OSAllocatedUnfairLock(initialState: SuppressionState())
+    private static let osdSuppressionQueue = DispatchQueue(
+        label: "com.kannu.osd-suppression",
+        qos: .userInitiated
+    )
+
+    /// macOS 26 moved the volume/brightness OSD out of OSDUIHelper and into Control
+    /// Center — it is drawn from subsystem `com.apple.controlcenter`, category
+    /// `system-banners`, via `showOSD:`. On those releases OSDUIHelper is usually not
+    /// even running, so kickstarting it and then SIGSTOPing it every 150 ms burns
+    /// subprocesses and battery for no effect. Control Center itself cannot be
+    /// suspended — it is the menu bar — so media-key interception is the only
+    /// mechanism that suppresses the OSD there.
+    private static var osdHelperDrawsSystemHUD: Bool {
+        if #available(macOS 26, *) {
+            return false
+        }
+        return true
+    }
+
+    /// Call once at startup to register sleep/wake observers.
+    /// Safe to call multiple times — observers are registered only once.
+    private static let sleepWakeSetupOnce: Void = {
+        let nc = NSWorkspace.shared.notificationCenter
+        nc.addObserver(
+            forName: NSWorkspace.willSleepNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            handleSystemSleep()
+        }
+        nc.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            handleSystemWake()
+        }
+    }()
+
+    // MARK: - Sleep / Wake
+
+    private static func handleSystemSleep() {
+        // Mark as sleeping so the watcher loop exits its current poll immediately.
+        suppressionState.withLock { $0.systemSleeping = true }
+        // Stop the watcher task — no more pgrep spawns while sleeping.
+        stopSuppressionWatcher()
+    }
+
+    private static func handleSystemWake() {
+        suppressionState.withLock { $0.systemSleeping = false }
+        // If suppression was still active when we went to sleep, restart the watcher.
+        let active = suppressionState.withLock { $0.active }
+        if active, osdHelperDrawsSystemHUD {
+            // Reset the last-suspended PID so the watcher immediately re-suspends
+            // the fresh OSDUIHelper that launchd may have spawned during wake.
+            suppressionState.withLock { $0.lastSuspendedPID = -1 }
+            startSuppressionWatcher()
+        }
+    }
+
+    // MARK: - Public API
+
+    /// Re-enables the system HUD by restarting OSDUIHelper
+    public static func enableSystemHUD() {
+        suppressionState.withLock { state in
+            state.active = false
+            state.disableTask?.cancel()
+            state.disableTask = nil
+        }
+        stopSuppressionWatcher()
+        Task.detached(priority: .background) {
+            await enableSystemHUDAsync()
+        }
+    }
+    
+    /// Synchronous restore for applicationWillTerminate: SIGCONT the helper we
+    /// SIGSTOPed so the native HUD works again after Kannu quits. The async
+    /// enableSystemHUD() path detaches Tasks with sleeps that die with the
+    /// process, so it cannot be used at termination. SIGCONT (rather than
+    /// kill + kickstart) resumes the exact frozen process with no launchd
+    /// churn during app teardown.
+    public static func restoreSystemHUDForTermination() {
+        let wasActive = suppressionState.withLock { state -> Bool in
+            let active = state.active
+            state.active = false
+            state.disableTask?.cancel()
+            state.disableTask = nil
+            return active
+        }
+        guard wasActive else { return }
+        stopSuppressionWatcher()
+
+        let resume = Process()
+        resume.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+        resume.arguments = ["-CONT", "OSDUIHelper"]
+        resume.standardError = Pipe() // silence "no such process" stderr
+        do {
+            try resume.run()
+            resume.waitUntilExit()
+        } catch {
+            NSLog("❌ Failed to resume OSDUIHelper at termination: \(error)")
+        }
+    }
+
+    private static func enableSystemHUDAsync() async {
+        do {
+            // First, stop any existing OSDUIHelper process
+            let stopTask = Process()
+            stopTask.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+            stopTask.arguments = ["-9", "OSDUIHelper"]
+            stopTask.standardError = Pipe() // silence "no such process" stderr
+            try stopTask.run()
+            stopTask.waitUntilExit()
+            
+            // Small delay to ensure process is fully stopped
+            try await Task.sleep(nanoseconds: 200_000_000) // 200ms
+            
+            // Then kickstart it again to ensure it's running properly
+            let kickstart = Process()
+            kickstart.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+            kickstart.arguments = ["kickstart", "gui/\(getuid())/com.apple.OSDUIHelper"]
+            try kickstart.run()
+            kickstart.waitUntilExit()
+            
+            // Additional delay to ensure service is fully started
+            try await Task.sleep(nanoseconds: 300_000_000) // 300ms
+            
+            await MainActor.run {
+                print("✅ System HUD re-enabled")
+            }
+        } catch {
+            await MainActor.run {
+                NSLog("❌ Error while trying to re-enable OSDUIHelper: \(error)")
+            }
+            
+            // Fallback: Try to restart the service using launchctl load
+            do {
+                let fallbackTask = Process()
+                fallbackTask.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+                fallbackTask.arguments = ["load", "-w", "/System/Library/LaunchAgents/com.apple.OSDUIHelper.plist"]
+                try fallbackTask.run()
+                fallbackTask.waitUntilExit()
+                
+                await MainActor.run {
+                    print("✅ System HUD re-enabled via fallback method")
+                }
+            } catch {
+                await MainActor.run {
+                    NSLog("❌ Fallback method also failed: \(error)")
+                }
+            }
+        }
+    }
+
+    /// Disables the system HUD by stopping OSDUIHelper, and starts a
+    /// background watcher that re-suspends any future incarnation launchd
+    /// spawns (macOS auto-exits OSDUIHelper on idle).
+    public static func disableSystemHUD() {
+        // Ensure sleep/wake observers are registered.
+        _ = sleepWakeSetupOnce
+        suppressionState.withLock { $0.active = true }
+        guard osdHelperDrawsSystemHUD else {
+            NSLog("ℹ️ macOS 26+: the system HUD is drawn by Control Center, not OSDUIHelper — "
+                + "relying on media key interception instead of process suppression")
+            // Opportunistic only: freeze a helper that happens to be running (some
+            // other OSD may still use it), but never start one and never poll for it.
+            osdSuppressionQueue.async {
+                if osduiHelperPID() != nil {
+                    suspendOSDUIHelper()
+                }
+            }
+            return
+        }
+        let disableTask = Task.detached(priority: .background) {
+            await disableSystemHUDAsync()
+        }
+        suppressionState.withLock { state in
+            state.disableTask?.cancel()
+            state.disableTask = disableTask
+        }
+        startSuppressionWatcher()
+    }
+
+    /// Immediately SIGSTOPs OSDUIHelper, bypassing the 150ms watcher poll. The
+    /// CoreAudio volume write wakes/respawns the helper to draw the native OSD,
+    /// and the watcher can lose that race. Dispatched asynchronously so callers
+    /// on the event tap or main thread are never blocked.
+    /// No-op unless suppression is active.
+    public static func suppressNativeOSDNow() {
+        guard osdHelperDrawsSystemHUD else { return }
+        let active = suppressionState.withLock { $0.active }
+        guard active else { return }
+        osdSuppressionQueue.async {
+            suspendOSDUIHelper()
+            if let pid = osduiHelperPID() {
+                suppressionState.withLock { $0.lastSuspendedPID = pid }
+            }
+        }
+    }
+    
+    private static func disableSystemHUDAsync() async {
+        do {
+            let kickstart = Process()
+            kickstart.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+            // When macOS boots, OSDUIHelper does not start until a volume button is pressed. We can workaround this by kickstarting it.
+            kickstart.arguments = ["kickstart", "gui/\(getuid())/com.apple.OSDUIHelper"]
+            try kickstart.run()
+            kickstart.waitUntilExit()
+
+            // launchctl kickstart returns once the request is queued, not after
+            // OSDUIHelper has actually forked. At cold boot the helper can take
+            // a while to appear — a fixed sleep races and the SIGSTOP misses,
+            // letting the native OSD render on the first volume/brightness key.
+            // Poll for the PID up to ~5s, then suspend, and retry if launchd
+            // respawned a fresh copy between kickstart and SIGSTOP.
+            var attempts = 0
+            while attempts < 3 {
+                let appeared = await waitForOSDUIHelper(timeoutMillis: 5000)
+                if !appeared {
+                    await MainActor.run {
+                        NSLog("⚠️ OSDUIHelper did not appear within timeout; retrying SIGSTOP anyway")
+                    }
+                }
+
+                guard suppressionState.withLock({ $0.active }), !Task.isCancelled else { return }
+                suspendOSDUIHelper()
+
+                // Settle, then confirm a process is actually present (and thus
+                // suspended). If none is running, launchd hasn't spawned it yet
+                // or the prior STOP raced — loop and try again.
+                try await Task.sleep(nanoseconds: 250_000_000) // 250ms
+                if let pid = osduiHelperPID() {
+                    suppressionState.withLock { $0.lastSuspendedPID = pid }
+                    break
+                }
+                attempts += 1
+            }
+
+            await MainActor.run {
+                print("✅ System HUD disabled")
+            }
+        } catch {
+            await MainActor.run {
+                NSLog("❌ Error while trying to hide OSDUIHelper: \(error)")
+            }
+        }
+    }
+
+    /// Polls for an OSDUIHelper process, returning true as soon as one appears
+    /// or false if `timeoutMillis` elapses with no match.
+    private static func waitForOSDUIHelper(timeoutMillis: Int) async -> Bool {
+        let pollIntervalNanos: UInt64 = 200_000_000 // 200ms
+        let maxAttempts = max(1, timeoutMillis / 200)
+        for _ in 0..<maxAttempts {
+            if isOSDUIHelperRunning() {
+                return true
+            }
+            try? await Task.sleep(nanoseconds: pollIntervalNanos)
+        }
+        return isOSDUIHelperRunning()
+    }
+
+    /// Background loop that catches OSDUIHelper respawns. macOS exits the
+    /// helper after a short idle period (JETSAM_REASON_MEMORY_IDLE_EXIT) and
+    /// launchd spins up a brand-new process on the next volume/brightness
+    /// keypress — that fresh PID renders the native OSD before any one-shot
+    /// SIGSTOP can hit it. Polling every 150ms is cheap (a single pgrep per
+    /// tick when nothing changed) and shrinks the visible-OSD window enough
+    /// to feel instant.
+    ///
+    /// The loop exits immediately when the Mac sleeps (systemSleeping == true)
+    /// and is restarted by handleSystemWake() when the machine wakes up again.
+    /// This prevents the ~192,000 pgrep subprocess spawns that would otherwise
+    /// accumulate over an 8-hour sleep and exhaust the process table / fd limits.
+    private static func startSuppressionWatcher() {
+        let newTask = Task.detached(priority: .background) {
+            while !Task.isCancelled {
+                // Pause the watcher entirely while the system is asleep.
+                // handleSystemWake() will cancel this task and spawn a fresh one.
+                let sleeping = suppressionState.withLock { $0.systemSleeping }
+                if sleeping {
+                    // Sleep in larger chunks so we respond to cancellation promptly.
+                    try? await Task.sleep(nanoseconds: 1_000_000_000) // 1s
+                    continue
+                }
+
+                let currentPID = osduiHelperPID()
+                let lastPID = suppressionState.withLock { $0.lastSuspendedPID }
+
+                // Re-STOP on a new PID, and also when the same PID was resumed
+                // behind our back (e.g. an external SIGCONT) — PID comparison
+                // alone would miss that for the rest of the session.
+                if let pid = currentPID, pid != lastPID || isPIDStopped(pid) == false {
+                    suspendOSDUIHelper()
+                    suppressionState.withLock { $0.lastSuspendedPID = pid }
+                }
+                try? await Task.sleep(nanoseconds: 150_000_000) // 150ms
+            }
+        }
+
+        let previous = suppressionState.withLock { state -> Task<Void, Never>? in
+            let prior = state.task
+            state.task = newTask
+            return prior
+        }
+        previous?.cancel()
+    }
+
+    private static func stopSuppressionWatcher() {
+        let previous = suppressionState.withLock { state -> Task<Void, Never>? in
+            let prior = state.task
+            state.task = nil
+            state.lastSuspendedPID = -1
+            return prior
+        }
+        previous?.cancel()
+    }
+
+    // sys/proc.h run states (not exported to Swift): SIDL=1 SRUN=2 SSLEEP=3 SSTOP=4 SZOMB=5
+    private static let procStatusStopped: UInt32 = 4
+
+    /// Whether the process is currently SIGSTOPed; nil if it no longer exists.
+    /// One syscall — no subprocess spawn per watcher tick.
+    private static func isPIDStopped(_ pid: Int32) -> Bool? {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+        return info.pbi_status == procStatusStopped
+    }
+
+    /// Returns the newest OSDUIHelper PID, or nil if none. In-process sysctl walk —
+    /// the previous pgrep subprocess cost a fork/exec per 150 ms watcher tick.
+    private static func osduiHelperPID() -> Int32? {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
+        var size = 0
+        guard sysctl(&mib, UInt32(mib.count), nil, &size, nil, 0) == 0, size > 0 else { return nil }
+        // Headroom for processes spawned between the two calls.
+        size += MemoryLayout<kinfo_proc>.stride * 16
+        var procs = [kinfo_proc](repeating: kinfo_proc(), count: size / MemoryLayout<kinfo_proc>.stride)
+        guard sysctl(&mib, UInt32(mib.count), &procs, &size, nil, 0) == 0 else { return nil }
+        let count = size / MemoryLayout<kinfo_proc>.stride
+
+        var newestPID: Int32?
+        var newestStart: (Int, Int32) = (0, 0)
+        for index in 0..<count {
+            var proc = procs[index]
+            let name = withUnsafeBytes(of: &proc.kp_proc.p_comm) { raw in
+                String(decoding: raw.prefix(while: { $0 != 0 }), as: UTF8.self)
+            }
+            guard name == "OSDUIHelper" else { continue }
+            let start = (proc.kp_proc.p_starttime.tv_sec, proc.kp_proc.p_starttime.tv_usec)
+            if newestPID == nil || start.0 > newestStart.0
+                || (start.0 == newestStart.0 && start.1 > newestStart.1) {
+                newestPID = proc.kp_proc.p_pid
+                newestStart = start
+            }
+        }
+        return newestPID
+    }
+
+    /// Sends SIGSTOP to all OSDUIHelper processes. Idempotent.
+    private static func suspendOSDUIHelper() {
+        let stop = Process()
+        stop.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+        stop.arguments = ["-STOP", "OSDUIHelper"]
+        stop.standardError = Pipe() // silence "no such process" stderr
+        do {
+            try stop.run()
+            stop.waitUntilExit()
+        } catch {
+            NSLog("Suppression watcher: failed to SIGSTOP OSDUIHelper: \(error)")
+        }
+    }
+
+    /// Check if OSDUIHelper is currently running
+    public static func isOSDUIHelperRunning() -> Bool {
+        osduiHelperPID() != nil
+    }
+    
+    /// Async version of status checking to avoid main thread blocking
+    public static func isOSDUIHelperRunningAsync() async -> Bool {
+        return await withCheckedContinuation { continuation in
+            Task.detached(priority: .background) {
+                let result = isOSDUIHelperRunning()
+                continuation.resume(returning: result)
+            }
+        }
+    }
+}
