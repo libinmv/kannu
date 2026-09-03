@@ -4,6 +4,21 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-03 - Sign the release DMG; flag that REGRESSIONS hashes predate the history reset
+- **Developer label:** raise pr for this
+- **Agent label:** Sign the disk image before notarization; note the 2026-09-03 reset in REGRESSIONS
+- **Changes:**
+  - `create-dmg.sh` now signs the disk image with a Developer ID identity before it is handed to
+    notarization. The app inside was already signed and `notarize-dmg.sh` already staples the ticket,
+    but the DMG itself carried no signature at all, so signature-based checks (`spctl -a -t open`,
+    some enterprise tooling) reported "no usable signature" on a published build. Signing is optional
+    by design: CI has a Developer ID cert in its temporary keychain, a local `build-dmg.sh` run
+    usually does not, so the script skips with a notice instead of failing. Order matters and is
+    unchanged — sign, then notarize, then staple, which leaves the signature valid.
+  - `docs/REGRESSIONS.md` says up front that the commit hashes it cites predate the 2026-09-03
+    history reset and no longer resolve in a fresh clone. The rules and guards are unaffected; only
+    the provenance links are dead.
+
 ### 2026-09-03 - Name releases after watchers; 1.2.0 is Argus
 - **Developer label:** avoid atoll style naming and do something else we made first version fiji mistakenly
 - **Agent label:** Replace the inherited island codename with a Kannu scheme, shown in About and the release title
