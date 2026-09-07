@@ -13,9 +13,10 @@ final class ClaudeReconcilerTests: XCTestCase {
         updatedAt: Date = Date(timeIntervalSince1970: 1_000),
         visible: Bool = true,
         cwd: String? = nil,
-        hostPID: Int? = nil
+        hostPID: Int? = nil,
+        toolErrorCount: Int = 0
     ) -> AgentSessionStatus {
-        AgentSessionStatus(
+        var session = AgentSessionStatus(
             id: "\(provider)-\(conversation)",
             provider: provider,
             conversationID: conversation,
@@ -29,6 +30,8 @@ final class ClaudeReconcilerTests: XCTestCase {
             cwd: cwd,
             hostPID: hostPID
         )
+        session.toolErrorCount = toolErrorCount
+        return session
     }
 
     private func reconcile(
@@ -54,7 +57,7 @@ final class ClaudeReconcilerTests: XCTestCase {
         let passive = session(chatName: "Fix the parser", projectName: "kannu",
                               rawState: "stopped", display: .stopped,
                               updatedAt: Date(timeIntervalSince1970: 1_500),
-                              cwd: "/tmp/proj", hostPID: 4242)
+                              cwd: "/tmp/proj", hostPID: 4242, toolErrorCount: 2)
         let out = reconcile(hooks: [hook], passive: [passive])
         XCTAssertEqual(out.count, 1)
         let merged = out[0]
@@ -65,6 +68,7 @@ final class ClaudeReconcilerTests: XCTestCase {
         XCTAssertEqual(merged.projectName, "kannu")
         XCTAssertEqual(merged.cwd, "/tmp/proj")
         XCTAssertEqual(merged.hostPID, 4242)
+        XCTAssertEqual(merged.toolErrorCount, 2, "the tool-error count keeps the larger side")
     }
 
     func testInheritedFieldsCarryAcrossOnUnchangedSession() {

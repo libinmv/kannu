@@ -122,6 +122,15 @@ final class CursorAgentStatusMonitor: ObservableObject {
             AgentSessionLogParser.claudeProjectsDirectory.path,
             AgentSessionLogParser.claudeSessionsDirectory.path
         ]
+        // Passive-only sources, watched only when present. Warp's WAL changes on every write
+        // (agent or not); the store caches its query for 2 s so a busy terminal costs one read.
+        if let warpDB = WarpAgentStore.databaseURL {
+            watchedPaths.append(warpDB.deletingLastPathComponent().path)
+        }
+        let desktopRoot = ClaudeDesktopAgentSessionStore.defaultRoot
+        if FileManager.default.fileExists(atPath: desktopRoot.path) {
+            watchedPaths.append(desktopRoot.path)
+        }
 
         installStatusDirectoryWatcher()
 
@@ -266,12 +275,16 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 staleMinutes: staleMinutes,
                 collapseSeconds: collapseSeconds,
                 inactiveSeconds: inactiveSeconds
+            ) + buildExtraPassiveSessions(
+                staleMinutes: staleMinutes, collapseSeconds: collapseSeconds, inactiveSeconds: inactiveSeconds, now: now
             )
         } else {
             transcriptAnalysis = [:]
             cachedTranscriptAnalysisBySession = [:]
             cachedTranscriptAnalysisAt = now
-            transcriptSessions = []
+            transcriptSessions = buildExtraPassiveSessions(
+                staleMinutes: staleMinutes, collapseSeconds: collapseSeconds, inactiveSeconds: inactiveSeconds, now: now
+            )
         }
 
         let mergedSessions = collapseSubagentSessions(
@@ -626,7 +639,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
             executionStartedAt: winner.executionStartedAt ?? loser.executionStartedAt,
             cwd: winner.cwd ?? loser.cwd,
             hostPID: winner.hostPID ?? loser.hostPID
-        )
+        ).carryingExtras(from: winner).carryingExtras(from: loser)
     }
 
     /// Hook state is authoritative while it is fresh: transcript `hasPendingToolApproval`
@@ -681,7 +694,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     executionStartedAt: session.executionStartedAt,
                     cwd: session.cwd,
                     hostPID: session.hostPID
-                )
+                ).carryingExtras(from: session)
             } else {
                 candidate = session
             }
@@ -701,7 +714,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     executionStartedAt: merged.executionStartedAt ?? existing.executionStartedAt ?? candidate.executionStartedAt,
                     cwd: existing.cwd ?? candidate.cwd,
                     hostPID: existing.hostPID ?? candidate.hostPID
-                )
+                ).carryingExtras(from: existing).carryingExtras(from: candidate)
             } else {
                 rolledUp[targetID] = candidate
             }
@@ -782,7 +795,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     executionStartedAt: session.executionStartedAt,
                     cwd: session.cwd,
                     hostPID: session.hostPID
-                )
+                ).carryingExtras(from: session)
             }
 
             if analysis?.hasPendingToolApproval == true,
@@ -800,7 +813,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     executionStartedAt: session.executionStartedAt,
                     cwd: session.cwd,
                     hostPID: session.hostPID
-                )
+                ).carryingExtras(from: session)
             }
 
             // Transcript `turn_ended` lags behind live hooks. Never demote a fresh
@@ -823,7 +836,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     executionStartedAt: session.executionStartedAt,
                     cwd: session.cwd,
                     hostPID: session.hostPID
-                )
+                ).carryingExtras(from: session)
             }
 
             return session
@@ -942,21 +955,22 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 inactiveMs: inactiveMs
             )
 
-            results.append(
-                AgentSessionStatus(
-                    id: file.deletingPathExtension().lastPathComponent,
-                    provider: provider,
-                    conversationID: conversationID,
-                    chatName: chatName,
-                    projectName: projectName,
-                    rawState: state,
-                    displayState: resolved.state,
-                    updatedAt: Date(timeIntervalSince1970: TimeInterval(tsMs) / 1000),
-                    isVisible: resolved.visible,
-                    executionStartedAt: nil,
-                    cwd: hookCwd
-                )
+            var session = AgentSessionStatus(
+                id: file.deletingPathExtension().lastPathComponent,
+                provider: provider,
+                conversationID: conversationID,
+                chatName: chatName,
+                projectName: projectName,
+                rawState: state,
+                displayState: resolved.state,
+                updatedAt: Date(timeIntervalSince1970: TimeInterval(tsMs) / 1000),
+                isVisible: resolved.visible,
+                executionStartedAt: nil,
+                cwd: hookCwd
             )
+            // Additive field the script writes beside the state (v31+). Untrusted input: clamped.
+            session.toolErrorCount = max(0, min(999, (json["tool_errors"] as? NSNumber)?.intValue ?? 0))
+            results.append(session)
         }
 
         let enriched = enrichChatNames(fromComposerStore: results)
@@ -1457,7 +1471,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 executionStartedAt: session.executionStartedAt,
                 cwd: session.cwd,
                 hostPID: session.hostPID
-            )
+            ).carryingExtras(from: session)
         }
     }
 
@@ -1518,7 +1532,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 executionStartedAt: executionStartForSession,
                 cwd: session.cwd,
                 hostPID: session.hostPID
-            )
+            ).carryingExtras(from: session)
         }
     }
 
@@ -1696,6 +1710,41 @@ final class CursorAgentStatusMonitor: ObservableObject {
             return url
         }
         return nil
+    }
+
+    /// Passive-only providers with no hook and no session file: Warp (SQLite) and Claude
+    /// Desktop's agent mode (audit logs). Built on full rescans only; the hook-triggered quick
+    /// rescan retains the previous cycle's non-hook sessions, so they persist between them.
+    private func buildExtraPassiveSessions(
+        staleMinutes: Int,
+        collapseSeconds: Int,
+        inactiveSeconds: Int,
+        now: Date
+    ) -> [AgentSessionStatus] {
+        var results = ClaudeDesktopAgentSessionStore.sessions(
+            staleMinutes: staleMinutes,
+            collapseSeconds: collapseSeconds,
+            inactiveSeconds: inactiveSeconds,
+            now: now
+        )
+        if let databaseURL = WarpAgentStore.databaseURL {
+            results += WarpAgentStore.sessions(
+                databaseURL: databaseURL,
+                staleMinutes: staleMinutes,
+                collapseSeconds: collapseSeconds,
+                inactiveSeconds: inactiveSeconds,
+                warpRunning: isWarpRunning(),
+                now: now
+            )
+        }
+        return results
+    }
+
+    private func isWarpRunning() -> Bool {
+        NSWorkspace.shared.runningApplications.contains { app in
+            guard let bundleID = app.bundleIdentifier else { return false }
+            return WarpAgentStore.bundleIdentifiers.contains(bundleID)
+        }
     }
 
     private func isCursorRunning() -> Bool {

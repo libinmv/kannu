@@ -86,6 +86,9 @@ struct AgentSessionStatus: Identifiable, Equatable {
     /// PID of the agent process itself (Claude passive sessions). The parent chain of this
     /// PID leads to the hosting terminal or IDE, which is what click-through activates.
     var hostPID: Int? = nil
+    /// Tool failures the hook has counted since the last user prompt. Shown beside a red light
+    /// as "Stopped · N tool errors"; zero is a clean finish. Additive: see `carryingExtras(from:)`.
+    var toolErrorCount: Int = 0
 
     /// True when the hook that produced this session reported work in progress, regardless of
     /// what the staleness ladder later concluded about its age.
@@ -110,16 +113,20 @@ struct AgentSessionStatus: Identifiable, Equatable {
             executionStartedAt: executionStartedAt,
             cwd: cwd,
             hostPID: hostPID
-        )
+        ).carryingExtras(from: self)
     }
 
-    var providerLabel: String {
+    var providerLabel: String { Self.providerLabel(for: provider) }
+
+    static func providerLabel(for provider: String) -> String {
         switch provider.lowercased() {
         case "cursor": return "Cursor"
         case "vscode": return "VS Code"
         case "codex": return "Codex"
         case "claude": return "Claude"
         case "antigravity": return "Antigravity"
+        case "warp": return "Warp"
+        case "claudedesktop": return "Claude Desktop"
         default: return provider.capitalized
         }
     }
@@ -256,6 +263,8 @@ enum AgentTrafficLightMapper {
                 if repaired.hostPID == nil, let hostPID = passive.hostPID {
                     repaired.hostPID = hostPID
                 }
+                // The tool-error count is additive on both sides; keep the larger.
+                repaired = repaired.carryingExtras(from: passive)
                 return repaired
             }
 
@@ -573,7 +582,7 @@ extension AgentSessionStatus {
             executionStartedAt: executionStartedAt,
             cwd: cwd,
             hostPID: hostPID
-        )
+        ).carryingExtras(from: self)
     }
 
     func replacingProjectName(_ projectName: String) -> AgentSessionStatus {
@@ -590,7 +599,17 @@ extension AgentSessionStatus {
             executionStartedAt: executionStartedAt,
             cwd: cwd,
             hostPID: hostPID
-        )
+        ).carryingExtras(from: self)
+    }
+
+    /// Copies the additive field — the tool-error count — that a memberwise reconstruction
+    /// silently drops. Every site that rebuilds a session from another one must call this:
+    /// docs/REGRESSIONS.md entry 7 is exactly this failure, for cwd and hostPID. The larger
+    /// count wins across a merge seam.
+    func carryingExtras(from source: AgentSessionStatus) -> AgentSessionStatus {
+        var copy = self
+        copy.toolErrorCount = max(copy.toolErrorCount, source.toolErrorCount)
+        return copy
     }
 }
 

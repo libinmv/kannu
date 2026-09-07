@@ -218,6 +218,13 @@ remain untestable until they grow a seam.
 populate, add it to `inheritingPassiveData` (now in `AgentTrafficLightState.swift`) AND to
 the field assertions in `ClaudeReconcilerTests` in the same commit.
 
+**2026-09-08 addendum — additive fields.** `toolErrorCount` is a `var` with a default, so the
+memberwise initialiser compiles happily without it and *silently drops it* at every one of the
+~14 reconstruction sites. The rule: any `AgentSessionStatus(...)` built from another session
+ends in `.carryingExtras(from:)` (max of the two counts); `inheritingPassiveData` calls it too.
+Guard: `ClaudeReconcilerTests` asserts the count survives the demote path. When you add another
+additive field, extend `carryingExtras`, not the call sites.
+
 ---
 
 ## 8. Never add a flag or env var to the usage spawn without proving a real fetch

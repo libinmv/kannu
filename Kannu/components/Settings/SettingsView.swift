@@ -7927,6 +7927,8 @@ struct AgentStatusSettings: View {
             (.cursor, "Cursor", fm.fileExists(atPath: home.appendingPathComponent("Library/Application Support/Cursor/User/globalStorage/state.vscdb").path)),
             (.claude, "Claude Code", fm.fileExists(atPath: home.appendingPathComponent(".claude/projects").path)),
             (.codex, "Codex", fm.fileExists(atPath: home.appendingPathComponent(".codex/sessions").path)),
+            (.warp, "Warp", WarpAgentStore.databaseURL != nil),
+            (.claudeDesktop, "Claude Desktop", fm.fileExists(atPath: ClaudeDesktopAgentSessionStore.defaultRoot.path)),
         ]
     }
 

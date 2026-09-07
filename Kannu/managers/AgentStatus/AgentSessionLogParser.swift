@@ -328,7 +328,7 @@ enum AgentSessionLogParser {
         return formatter
     }()
 
-    private static func recordTimestamp(from json: [String: Any]) -> Date? {
+    static func recordTimestamp(from json: [String: Any]) -> Date? {
         guard let raw = json["timestamp"] as? String else { return nil }
         return recordTimestampFormatter.date(from: raw)
             ?? recordTimestampFallbackFormatter.date(from: raw)
@@ -450,7 +450,7 @@ enum AgentSessionLogParser {
         return .unknown
     }
 
-    private static func readLeadingLines(at url: URL) -> String? {
+    static func readLeadingLines(at url: URL) -> String? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
 
@@ -466,7 +466,7 @@ enum AgentSessionLogParser {
         return String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
     }
 
-    private static func readTrailingLines(at url: URL, limit: Int = trailingByteLimit) -> String? {
+    static func readTrailingLines(at url: URL, limit: Int = trailingByteLimit) -> String? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         guard let fileSize = try? handle.seekToEnd() else { return nil }

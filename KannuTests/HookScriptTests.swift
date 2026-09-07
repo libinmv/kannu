@@ -59,7 +59,8 @@ final class HookScriptTests: XCTestCase {
 
     /// Launches one hook invocation. Returns the process so callers can overlap several.
     @discardableResult
-    private func launch(state: String, event: String, conversation: String, toolName: String = "Bash") throws -> Process {
+    private func launch(state: String, event: String, conversation: String, toolName: String = "Bash",
+                        extra: [String: Any] = [:]) throws -> Process {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = [Self.scriptURL.path, state, "claude", event]
@@ -70,18 +71,31 @@ final class HookScriptTests: XCTestCase {
         let stdin = Pipe()
         process.standardInput = stdin
         process.standardOutput = Pipe()
-        process.standardError = Pipe()
+        let stderr = Pipe()
+        process.standardError = stderr
+        stderrByProcess[ObjectIdentifier(process)] = stderr
         try process.run()
-        let payload = #"{"session_id":"\#(conversation)","tool_name":"\#(toolName)","hook_event_name":"\#(event)"}"#
-        stdin.fileHandleForWriting.write(Data(payload.utf8))
+        var object: [String: Any] = ["session_id": conversation, "tool_name": toolName, "hook_event_name": event]
+        object.merge(extra) { _, new in new }
+        // Serialized, not hand-written: a raw-string literal ending in a quote loses that quote
+        // to its own terminator, which silently produced invalid JSON here once.
+        let payload = try JSONSerialization.data(withJSONObject: object)
+        stdin.fileHandleForWriting.write(payload)
         try stdin.fileHandleForWriting.close()
         return process
     }
 
-    private func run(state: String, event: String, conversation: String) throws {
-        let process = try launch(state: state, event: event, conversation: conversation)
+    private var stderrByProcess: [ObjectIdentifier: Pipe] = [:]
+
+    private func run(state: String, event: String, conversation: String, extra: [String: Any] = [:]) throws {
+        let process = try launch(state: state, event: event, conversation: conversation, extra: extra)
         process.waitUntilExit()
         XCTAssertEqual(process.terminationStatus, 0, "hook exited \(process.terminationStatus)")
+        // The wrapper always exits 0; a Python traceback is the only sign the writer died.
+        if let pipe = stderrByProcess.removeValue(forKey: ObjectIdentifier(process)) {
+            let text = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            XCTAssertTrue(text.isEmpty, "hook wrote to stderr for \(event): \(text)")
+        }
     }
 
     private func statusFile(_ conversation: String) -> URL {
@@ -93,6 +107,16 @@ final class HookScriptTests: XCTestCase {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         let json = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
         return json?["state"] as? String
+    }
+
+    private func readJSON(_ conversation: String) throws -> [String: Any]? {
+        let url = statusFile(conversation)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
+    }
+
+    private func readToolErrors(_ conversation: String) throws -> Int {
+        (try readJSON(conversation)?["tool_errors"] as? NSNumber)?.intValue ?? 0
     }
 
     private func writeStatus(_ conversation: String, state: String, event: String, tsMs: Int64) throws {
@@ -151,5 +175,20 @@ final class HookScriptTests: XCTestCase {
             second.waitUntilExit()
             XCTAssertEqual(try readState(conversation), "awaiting_input", "round \(round) lost the urgent state")
         }
+    }
+
+    // MARK: - Turn outcome
+
+    func testToolErrorsCountPerTurnAndIgnoreInterrupts() throws {
+        try run(state: "thinking", event: "UserPromptSubmit", conversation: "e1", extra: ["prompt": "go"])
+        try run(state: "thinking", event: "PostToolUseFailure", conversation: "e1", extra: ["error": "exit 1"])
+        try run(state: "thinking", event: "PostToolUseFailure", conversation: "e1", extra: ["error": "esc", "is_interrupt": true])
+        try run(state: "thinking", event: "PostToolUseFailure", conversation: "e1", extra: ["error": "exit 2"])
+        try run(state: "stopped", event: "Stop", conversation: "e1")
+        XCTAssertEqual(try readState("e1"), "stopped")
+        XCTAssertEqual(try readToolErrors("e1"), 2, "two real failures, one Esc interrupt")
+        try run(state: "thinking", event: "UserPromptSubmit", conversation: "e1", extra: ["prompt": "next"])
+        XCTAssertEqual(try readToolErrors("e1"), 0, "a new prompt starts a clean turn")
+        XCTAssertNil(try readJSON("e1")?["tool_errors"], "zero is expressed by omitting the key")
     }
 }

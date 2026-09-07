@@ -4,6 +4,38 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-08 - Warp and Claude Desktop agent mode as sources; tool errors on a red light
+- **Developer label:** also just checks its coverage for the agents and see what all we can upgrade for the ones that we cover now; add Warp; does that mean we have way to show errors happening and success-full end
+- **Agent label:** Add Warp and Claude Desktop agent mode as passive sources; count tool failures per turn so a stopped light says whether the turn went well
+- **Changes:**
+  - `WarpAgentStore` (new): passive source over `warp.sqlite` (read-only, WAL honoured — never
+    `immutable=1`, the WAL was 173 MB here). `ai_queries.output_status` maps Pending → executing only
+    while younger than the 360 s active window *and* Warp is running (stale Pending rows are
+    interrupted runs), Completed → stopped, Cancelled → aborted, Failed → stopped with one tool error.
+    Newest exchange per conversation; the prompt's first 60 characters name the chat (Warp has no
+    titles). 2 s query cache because the WAL fires FSEvents on every write. Warp has no hook API, so
+    yellow is never claimed.
+  - `ClaudeDesktopAgentSessionStore` (new): passive source over `local-agent-mode-sessions/**/audit.jsonl`
+    (interactive `local_<uuid>/`, dispatch `agent/local_ditto_<uuid>/`). `system:init` gives model and
+    cwd; the newest conversational record gives the state; `result` `is_error` and `tool_result`
+    `is_error` count tool errors per turn; a `rate_limit_event` with status `rejected` →
+    `quota_exceeded`. **No utilization percent exists in that payload (verified in CLI 2.1.263), so
+    this does not replace `/usage`.** Runtime-unverified: no agent-mode data on this Mac; fixture
+    tests only.
+  - Turn outcome: hook script v31 (embedded + mirror, byte-identical) counts `PostToolUseFailure` /
+    `postToolUseFailure` / `StopFailure` into `tool_errors` (reset on `UserPromptSubmit` /
+    `beforeSubmitPrompt`, `is_interrupt` excluded), and the Claude hook table gains
+    `PostToolUseFailure`. A red light now reads "Stopped" or "Stopped · N tool errors". Antigravity's
+    `Stop` with an `error` counts too. `AgentSessionStatus.toolErrorCount` is additive, so every
+    memberwise reconstruction goes through `carryingExtras(from:)` and the reconciler carries it
+    across the hook/passive seam (REGRESSIONS entry 7 field set grows).
+  - Both new providers get icons, click-through (activate/launch by bundle id; Claude Desktop is
+    never handed a folder), a "Detected Editors" entry, a place in the notch's empty state, and
+    FSEvents watches on their directories when present.
+  - Tests: 1 new hook-script case (payloads now serialized, not hand-written — a raw-string literal
+    ending in a quote lost that quote to its terminator and produced invalid JSON), 7 Claude Desktop,
+    10 Warp (fixture DB), plus the reconciler's inheritance assertion.
+
 ### 2026-09-03 - Sign the release DMG; flag that REGRESSIONS hashes predate the history reset
 - **Developer label:** raise pr for this
 - **Agent label:** Sign the disk image before notarization; note the 2026-09-03 reset in REGRESSIONS

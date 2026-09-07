@@ -7,6 +7,8 @@ enum AgentProviderIconSource: Equatable {
     case codex
     case vscode
     case antigravity
+    case warp
+    case claudeDesktop
     case unknown(String)
 
     init(providerID: ProviderID) {
@@ -25,6 +27,8 @@ enum AgentProviderIconSource: Equatable {
         case "codex": self = .codex
         case "vscode": self = .vscode
         case "antigravity": self = .antigravity
+        case "warp": self = .warp
+        case "claudedesktop", "claude-desktop", "claude_desktop": self = .claudeDesktop
         default: self = .unknown(rawProvider)
         }
     }
@@ -79,6 +83,10 @@ extension AgentProviderIconSource {
             return ["com.microsoft.VSCode", "com.visualstudio.code.oss"]
         case .antigravity:
             return ["com.google.antigravity", "com.google.Antigravity"]
+        case .warp:
+            return WarpAgentStore.bundleIdentifiers
+        case .claudeDesktop:
+            return [ClaudeDesktopAgentSessionStore.bundleIdentifier]
         case .unknown:
             return []
         }
@@ -96,6 +104,10 @@ extension AgentProviderIconSource {
             return ["/Applications/Visual Studio Code.app", "/Applications/Code.app"]
         case .antigravity:
             return ["/Applications/Antigravity.app", "/Applications/Google Antigravity.app"]
+        case .warp:
+            return ["/Applications/Warp.app"]
+        case .claudeDesktop:
+            return ["/Applications/Claude.app"]
         case .unknown:
             return []
         }
@@ -108,6 +120,8 @@ extension AgentProviderIconSource {
         case .codex: return "terminal"
         case .vscode: return "chevron.left.forwardslash.chevron.right"
         case .antigravity: return "atom"
+        case .warp: return "terminal.fill"
+        case .claudeDesktop: return "sparkles"
         case .unknown: return "app.fill"
         }
     }
@@ -119,6 +133,8 @@ extension AgentProviderIconSource {
         case .codex: return .green
         case .vscode: return Color(red: 0.27, green: 0.51, blue: 0.85)
         case .antigravity: return Color(red: 0.26, green: 0.52, blue: 0.96)
+        case .warp: return Color(red: 0.55, green: 0.40, blue: 0.95)
+        case .claudeDesktop: return Color(red: 0.85, green: 0.47, blue: 0.36)
         case .unknown: return .secondary
         }
     }

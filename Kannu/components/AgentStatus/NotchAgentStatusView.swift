@@ -97,6 +97,14 @@ struct NotchAgentStatusView: View {
                 source: .antigravity, name: "Antigravity",
                 detected: fm.fileExists(atPath: home.appendingPathComponent(".gemini").path)
             ),
+            ProviderInstallStatus(
+                source: .warp, name: "Warp",
+                detected: WarpAgentStore.databaseURL != nil
+            ),
+            ProviderInstallStatus(
+                source: .claudeDesktop, name: "Desktop",
+                detected: fm.fileExists(atPath: ClaudeDesktopAgentSessionStore.defaultRoot.path)
+            ),
         ]
     }
 
@@ -140,7 +148,7 @@ struct NotchAgentStatusView: View {
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.center)
-            Text("Fire up Cursor, Claude Code, Codex, or Antigravity and start a session — we'll watch the lights for you.")
+            Text("Fire up Cursor, Claude Code, Codex, Antigravity, Warp, or Claude Desktop and start a session — we'll watch the lights for you.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -403,10 +411,25 @@ struct NotchAgentStatusView: View {
                 .monospacedDigit()
             }
         } else {
-            Text(session.displayState.displayName)
-                .font(font)
-                .foregroundStyle(stateColor(session.displayState))
+            (
+                Text(session.displayState.displayName)
+                    .foregroundStyle(stateColor(session.displayState))
+                + Text(toolErrorSuffix(for: session))
+                    .foregroundStyle(.secondary)
+            )
+            .font(font)
         }
+    }
+
+    /// "Finished" versus "Finished · 2 tool errors": the hook counts failures per turn, so a red
+    /// light can say whether the turn went well. Empty unless the session has actually stopped.
+    private func toolErrorSuffix(for session: AgentSessionStatus) -> String {
+        guard session.displayState == .stopped, session.toolErrorCount > 0 else { return "" }
+        let count = session.toolErrorCount
+        let errors = count == 1
+            ? String(localized: "1 tool error")
+            : String(localized: "\(count) tool errors")
+        return " · " + errors
     }
 
     private func formattedElapsed(since start: Date, now: Date) -> String {

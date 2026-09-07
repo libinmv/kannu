@@ -48,7 +48,7 @@ final class AgentHookInstaller: ObservableObject {
     private static let logger = os.Logger(subsystem: "com.kannu.app", category: "AgentHookInstaller")
 
     static let scriptName = "kannu-agent-status.sh"
-    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=30"
+    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=31"
 
     private static var home: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -239,6 +239,9 @@ final class AgentHookInstaller: ObservableObject {
         // `claudeStyleEvents` passes. The argument is only a fallback for the no-python
         // branch, but a value the script contradicts is a trap for the next reader.
         ("PostToolUse", nil, "", "thinking"),
+        // The only turn-outcome signal Claude offers: Stop never says whether the turn went
+        // well. The script counts these into `tool_errors` (reset on UserPromptSubmit).
+        ("PostToolUseFailure", nil, "", "thinking"),
         ("PermissionRequest", nil, "", "awaiting_input"),
         ("Notification", "agent_completed", "completed", "stopped"),
         ("Notification", "permission_prompt|idle_prompt|agent_needs_input", "needs_input", "awaiting_input"),
@@ -421,7 +424,7 @@ final class AgentHookInstaller: ObservableObject {
             state = "executing"
         elif hook_event in {"PermissionRequest"}:
             state = "awaiting_input"
-        elif hook_event in {"postToolUse", "postToolUseFailure", "PostToolUse", "PostInvocation"}:
+        elif hook_event in {"postToolUse", "postToolUseFailure", "PostToolUse", "PostToolUseFailure", "PostInvocation"}:
             state = "thinking"
         elif hook_event in {"stop", "Stop", "StopFailure"}:
             state = "stopped"
@@ -515,6 +518,20 @@ final class AgentHookInstaller: ObservableObject {
             except Exception:
                 existing = {}
 
+        # Tool failures since the last prompt. Stop never says whether the turn went well; the
+        # failure events do. Reset when the user submits, so a red light reads "Finished" or
+        # "Finished, N tool errors" for THIS turn. An Esc interrupt is not an error.
+        _raw_errors = existing.get("tool_errors")
+        tool_errors = _raw_errors if isinstance(_raw_errors, int) and not isinstance(_raw_errors, bool) and _raw_errors >= 0 else 0
+        if hook_event in {"UserPromptSubmit", "beforeSubmitPrompt"}:
+            tool_errors = 0
+        elif hook_event in {"PostToolUseFailure", "postToolUseFailure", "StopFailure"}:
+            if data.get("is_interrupt") is not True:
+                tool_errors = min(tool_errors + 1, 999)
+        elif provider == "antigravity" and hook_event == "Stop" and state != "quota_exceeded":
+            if pick_str(data.get("error")):
+                tool_errors = min(tool_errors + 1, 999)
+
         # Claude runs the matcher-scoped and generic groups for one event in parallel with no
         # ordering guarantee. If both land within the same instant, keep the more urgent verdict
         # so the winner of the race cannot silently downgrade the light.
@@ -582,7 +599,7 @@ final class AgentHookInstaller: ObservableObject {
         if state == "quota_exceeded":
             name = "Quota exceeded"  # more useful than whatever chat title was already cached
 
-        if hook_event in {"preToolUse", "beforeMCPExecution", "postToolUse", "postToolUseFailure", "PreToolUse", "PostToolUse"}:
+        if hook_event in {"preToolUse", "beforeMCPExecution", "postToolUse", "postToolUseFailure", "PreToolUse", "PostToolUse", "PostToolUseFailure"}:
             if normalize_token(name) == normalize_token(tool):
                 name = ""
 
@@ -605,6 +622,10 @@ final class AgentHookInstaller: ObservableObject {
                         existing["project"] = project
                     if workdir:
                         existing["cwd"] = workdir
+                    if tool_errors:
+                        existing["tool_errors"] = tool_errors
+                    else:
+                        existing.pop("tool_errors", None)
                     write_status(status_file, existing)
                     print('{"permission":"allow","continue":true}')
                     raise SystemExit(0)
@@ -621,6 +642,8 @@ final class AgentHookInstaller: ObservableObject {
             payload["project"] = project
         if workdir:
             payload["cwd"] = workdir
+        if tool_errors:
+            payload["tool_errors"] = tool_errors
         write_status(status_file, payload)
         print('{"permission":"allow","continue":true}')
         PY

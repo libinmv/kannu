@@ -65,7 +65,8 @@ enum AgentSessionOpener {
     static func target(for session: AgentSessionStatus) -> OpenTarget? {
         let source = AgentProviderIconSource(rawProvider: session.provider)
         switch source {
-        case .cursor, .vscode, .antigravity:
+        case .cursor, .vscode, .antigravity, .warp, .claudeDesktop:
+            // Warp and Claude Desktop are GUI apps too: activate when running, launch when not.
             if let running = runningApplication(for: source) {
                 return OpenTarget(appName: running.localizedName ?? session.providerLabel,
                                   kind: .ide(running: running, appURL: running.bundleURL, source: source))
@@ -124,7 +125,7 @@ enum AgentSessionOpener {
             host.activate()
             return true
 
-        case .ide(let running, let appURL, _):
+        case .ide(let running, let appURL, let source):
             if let running {
                 log.notice("activating IDE \(running.localizedName ?? "?", privacy: .public)")
                 raiseMatchingWindow(in: running, session: session)
@@ -134,7 +135,9 @@ enum AgentSessionOpener {
             guard let appURL else { return false }
             let configuration = NSWorkspace.OpenConfiguration()
             configuration.activates = true
-            if let cwd = session.cwd, FileManager.default.fileExists(atPath: cwd) {
+            // Claude Desktop is not a project editor: handing it a folder would import it as
+            // a new chat, not focus the existing one. Launch it bare.
+            if source != .claudeDesktop, let cwd = session.cwd, FileManager.default.fileExists(atPath: cwd) {
                 // Launch the IDE on the session's project rather than bare — lands the user
                 // in the right workspace even from cold.
                 log.notice("launching \(appURL.lastPathComponent, privacy: .public) on \(cwd, privacy: .public)")
