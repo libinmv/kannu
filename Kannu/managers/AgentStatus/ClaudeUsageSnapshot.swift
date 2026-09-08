@@ -121,27 +121,41 @@ struct ClaudeUsageSnapshot: Equatable {
         displayWindows(now: now).isEmpty
     }
 
-    /// Combines several sources, best first, one window key at a time: each key is taken from the
-    /// first source in which it is live (per `displayWindows`), and sources further down fill only
-    /// the keys nothing above them could. One lapsed window in a good source therefore neither
-    /// hides that source's live siblings nor blocks a lesser source from covering the gap — the
-    /// whole-snapshot fallthrough this replaces dropped a live per-model window the moment the
-    /// same source's five-hour window rolled over.
+    /// Combines several sources one window key at a time: each key is taken from the source whose
+    /// live copy (per `displayWindows`) was observed most recently; source order (statusline,
+    /// cache, desktop history) only breaks ties. One lapsed window in a good source therefore
+    /// neither hides that source's live siblings nor blocks a lesser source from covering the gap.
     ///
-    /// A nil-reset window counts as live, as everywhere else, so it fills a key only when no
-    /// better source has that key live. Lapsed copies are dropped, not carried. Severity is never
-    /// borrowed across sources for one key: `accent(severity:fraction:)` gives it precedence, so a
-    /// stale "normal" would suppress the red band on a fresher value. `observedAt` is the newest
-    /// among the sources that contributed a window.
+    /// Freshness, not rank, because "live" only means the reset has not passed: a weekly window
+    /// fetched six days ago is still live for the rest of its week, and ranking by source let it
+    /// beat the desktop app's sample from half an hour ago — the weekly bar sat at 20 % while the
+    /// account was at 31 %. A percentage is a reading, and the newer reading is the truer one.
+    ///
+    /// A nil-reset window counts as live, as everywhere else. Lapsed copies are dropped, not
+    /// carried. Severity is never borrowed across sources for one key: `accent(severity:fraction:)`
+    /// gives it precedence, so a stale "normal" would suppress the red band on a fresher value.
+    /// Output order follows the winning sources in rank order, then each source's own order, so
+    /// the gauges do not reshuffle between reads. `observedAt` is the newest among the sources
+    /// that contributed a window.
     ///
     /// Returns nil when nothing is live anywhere. Pure in its inputs, so repeated merges of
     /// unchanged files compare equal and do not republish.
     static func merged(_ sources: [ClaudeUsageSnapshot?], now: Date) -> ClaudeUsageSnapshot? {
+        let present = sources.compactMap { $0 }
+        // Winner per key: newest observedAt, ties to the earlier (higher-ranked) source.
+        var winnerIndex: [String: Int] = [:]
+        for (index, source) in present.enumerated() {
+            for window in source.displayWindows(now: now) {
+                if let current = winnerIndex[window.key], present[current].observedAt >= source.observedAt {
+                    continue
+                }
+                winnerIndex[window.key] = index
+            }
+        }
         var windows: [Window] = []
-        var seen: Set<String> = []
         var observedAt: Date?
-        for source in sources.compactMap({ $0 }) {
-            for window in source.displayWindows(now: now) where seen.insert(window.key).inserted {
+        for (index, source) in present.enumerated() {
+            for window in source.displayWindows(now: now) where winnerIndex[window.key] == index {
                 windows.append(window)
                 observedAt = max(observedAt ?? source.observedAt, source.observedAt)
             }

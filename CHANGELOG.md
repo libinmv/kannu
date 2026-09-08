@@ -4,6 +4,23 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-08 - Weekly usage bar takes the freshest reading, not the highest-ranked source
+- **Developer label:** also see if there is a regression for 5 hour session bar in claude
+- **Agent label:** Merge Claude usage windows per key by newest observation; source order only breaks ties
+- **Changes:**
+  - The 5-hour bar itself had not regressed: with the real files on this Mac, HEAD's merge ladder
+    yields five_hour 11 % from the desktop history with a 13:14 reset, matching the app's own samples
+    (0 % right after wake, 11 % fifteen minutes later). What was on screen was an old debug build
+    from 2026-09-02 03:41 (`com.kannu.app.dev`, hook script v29, usage script v3, "Session" label,
+    codename Fiji) that predates every usage-card change since — replaced by a current dev build.
+  - The trace did find a real bug: `ClaudeUsageSnapshot.merged` took each window from the first
+    source in which it was live, and "live" only means the reset has not passed. The cache's
+    `seven_day` fetched six days earlier (20 %) therefore beat the desktop history's sample from
+    thirty minutes earlier (31 %) until the cache lapsed on 09-09. Each key now goes to the source
+    with the newest `observedAt`; rank (statusline, cache, desktop) only breaks ties, lapsed copies
+    still never win, and output order still follows rank so the gauges do not reshuffle. Three new
+    `ClaudeUsageSnapshotTests` cases pin it; the existing rank test already used equal timestamps.
+
 ### 2026-09-08 - Warp and Claude Desktop agent mode as sources; tool errors on a red light
 - **Developer label:** also just checks its coverage for the agents and see what all we can upgrade for the ones that we cover now; add Warp; does that mean we have way to show errors happening and success-full end
 - **Agent label:** Add Warp and Claude Desktop agent mode as passive sources; count tool failures per turn so a stopped light says whether the turn went well
