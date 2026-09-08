@@ -131,26 +131,12 @@ enum AgentSessionLogParser {
         guard let text = readLeadingLines(at: path) else { return nil }
         let lines = text.split(separator: "\n", omittingEmptySubsequences: true)
 
-        // Claude Code writes ai-title records with a clean model-generated title — prefer those.
-        // Search both leading and trailing bytes since the record may appear late in long sessions.
+        // Claude Code keeps two title records, rewritten every turn: `custom-title` is what the
+        // desktop app and `/resume` display (user-renamable), `ai-title` the model's own name.
+        // Read both from the leading and trailing bytes — they land late in long sessions —
+        // and let custom win, or Kannu names a chat differently from Claude itself.
         if provider == .claude {
-            let searchChunks: [Substring.SubSequence] = {
-                var chunks = lines
-                if let tail = readTrailingLines(at: path) {
-                    chunks += tail.split(separator: "\n", omittingEmptySubsequences: true)
-                }
-                return chunks
-            }()
-            var lastAiTitle: String? = nil
-            for line in searchChunks {
-                guard let data = line.data(using: .utf8),
-                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      (json["type"] as? String) == "ai-title",
-                      let title = json["aiTitle"] as? String,
-                      !title.isEmpty else { continue }
-                lastAiTitle = String(title.prefix(72))
-            }
-            if let title = lastAiTitle { return title }
+            if let title = cachedClaudeTitle(at: path, leadingText: text) { return title }
         }
 
         for line in lines {
@@ -163,6 +149,67 @@ enum AgentSessionLogParser {
             return title
         }
         return nil
+    }
+
+    private static var titleCache: [String: (mtime: Date, size: Int, title: String?)] = [:]
+
+    /// Title records are rewritten each turn, but a turn's last records are often large tool
+    /// results, so the newest copy can sit hundreds of KB before EOF. Escalate through the same
+    /// windows as the tail-state reader until a tail chunk carries a title record, then remember
+    /// the verdict against (mtime, size) so quiet sessions cost a stat, not a megabyte read.
+    private static func cachedClaudeTitle(at url: URL, leadingText: String) -> String? {
+        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        if let mtime = values?.contentModificationDate, let size = values?.fileSize,
+           let cached = titleCache[url.path], cached.mtime == mtime, cached.size == size {
+            return cached.title
+        }
+
+        var tailTitle: String?
+        for limit in tailWindowLimits {
+            guard let tail = readTrailingLines(at: url, limit: limit) else { continue }
+            if let title = claudeTitle(fromRecordText: tail) {
+                tailTitle = title
+                break
+            }
+            if let size = values?.fileSize, limit >= size { break }
+        }
+        // The tail holds the newest copy; the head only serves a session too short to have
+        // reached the tail window at all.
+        let title = tailTitle ?? claudeTitle(fromRecordText: leadingText)
+
+        if let mtime = values?.contentModificationDate, let size = values?.fileSize {
+            if titleCache.count > 2 * maxSessionsPerScan { titleCache.removeAll() }
+            titleCache[url.path] = (mtime, size, title)
+        }
+        return title
+    }
+
+    /// The title Claude shows for a session, from its bookkeeping records: the last
+    /// `custom-title` wins, else the last `ai-title`. Nil when neither is present, so callers fall
+    /// back to a prompt-derived name. Pure so the precedence is testable.
+    static func claudeTitle(fromRecordText text: String) -> String? {
+        var customTitle: String?
+        var aiTitle: String?
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            guard let data = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let type = json["type"] as? String else { continue }
+            switch type {
+            case "custom-title":
+                if let title = cleanTitle(json["customTitle"]) { customTitle = title }
+            case "ai-title":
+                if let title = cleanTitle(json["aiTitle"]) { aiTitle = title }
+            default:
+                continue
+            }
+        }
+        return customTitle ?? aiTitle
+    }
+
+    private static func cleanTitle(_ value: Any?) -> String? {
+        guard let raw = value as? String else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : String(trimmed.prefix(72))
     }
 
     static func displayChatNamesBySessionID(

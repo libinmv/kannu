@@ -4,6 +4,24 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-08 - Name Claude chats the way Claude does
+- **Developer label:** also chat names, why do they not match the labels in claude
+- **Agent label:** Read `custom-title` before `ai-title` when naming a Claude session
+- **Changes:**
+  - Claude Code keeps two title records per transcript, rewritten every turn: `custom-title`
+    (`customTitle`, what the desktop app and `/resume` display, user-renamable) and `ai-title`
+    (`aiTitle`, the model's own name). Kannu read only `ai-title` and otherwise fell back to the first
+    prompt, so a renamed chat showed the model's name and a chat with only a custom title showed a
+    prompt fragment — three of the four newest transcripts on this Mac had no `ai-title` at all.
+  - `AgentSessionLogParser.claudeTitle(fromRecordText:)` (new, pure) scans both records from the
+    leading and trailing bytes as before and returns the last custom title, else the last AI title;
+    `displayChatName` keeps the prompt fallback. Five tests pin the precedence.
+  - The tail read escalates through the tail-state reader's windows (16 KB → 256 KB → 1 MB) until a
+    chunk carries a title record: a turn's last records are often large tool results, and on this
+    Mac the newest title sat 7–31 KB before EOF, so the fixed 16 KB window returned an older copy or
+    nothing. The verdict is cached per file against (mtime, size), like the tail state, so quiet
+    sessions cost a stat. Verified on the four newest transcripts: all four names now equal Claude's.
+
 ### 2026-09-08 - Weekly usage bar takes the freshest reading, not the highest-ranked source
 - **Developer label:** also see if there is a regression for 5 hour session bar in claude
 - **Agent label:** Merge Claude usage windows per key by newest observation; source order only breaks ties

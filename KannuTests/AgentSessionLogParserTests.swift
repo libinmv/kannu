@@ -83,6 +83,42 @@ final class AgentSessionLogParserTests: XCTestCase {
         XCTAssertEqual(AgentSessionLogParser.claudeTailState(fromTailText: text).state, .working)
     }
 
+    // MARK: - Claude titles
+
+    func testCustomTitleBeatsAITitle() {
+        let text = line(#"{"type":"ai-title","aiTitle":"Fix Claude token usage and chat status detection","sessionId":"s"}"#)
+            + line(#"{"type":"custom-title","customTitle":"Claude token usage and agent chat detection","sessionId":"s"}"#)
+        XCTAssertEqual(AgentSessionLogParser.claudeTitle(fromRecordText: text),
+                       "Claude token usage and agent chat detection")
+    }
+
+    func testAITitleUsedWhenNoCustomTitle() {
+        let text = line(#"{"type":"user","message":{"role":"user","content":"hi"}}"#)
+            + line(#"{"type":"ai-title","aiTitle":"Fix healthcheck","sessionId":"s"}"#)
+        XCTAssertEqual(AgentSessionLogParser.claudeTitle(fromRecordText: text), "Fix healthcheck")
+    }
+
+    func testLatestTitleRecordWins() {
+        // Both records are rewritten every turn; the newest copy is the current name.
+        let text = line(#"{"type":"custom-title","customTitle":"first name"}"#)
+            + line(#"{"type":"ai-title","aiTitle":"model name"}"#)
+            + line(#"{"type":"custom-title","customTitle":"renamed by user"}"#)
+        XCTAssertEqual(AgentSessionLogParser.claudeTitle(fromRecordText: text), "renamed by user")
+    }
+
+    func testBlankTitleRecordsAreIgnoredAndLongOnesCapped() {
+        let long = String(repeating: "x", count: 100)
+        let text = line(#"{"type":"custom-title","customTitle":"   "}"#)
+            + line(#"{"type":"ai-title","aiTitle":"\#(long)"}"#)
+        XCTAssertEqual(AgentSessionLogParser.claudeTitle(fromRecordText: text)?.count, 72)
+    }
+
+    func testNoTitleRecordsYieldsNil() {
+        let text = line(#"{"type":"user","message":{"role":"user","content":"hi"}}"#)
+            + line(#"{"type":"last-prompt","lastPrompt":"hi"}"#)
+        XCTAssertNil(AgentSessionLogParser.claudeTitle(fromRecordText: text))
+    }
+
     // MARK: - bookkeeping and truncation
 
     func testBookkeepingAfterEndTurnIsStillTurnFinished() {
