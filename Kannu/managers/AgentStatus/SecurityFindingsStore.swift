@@ -65,6 +65,7 @@ final class SecurityFindingsStore: ObservableObject {
     private var directorySource: DispatchSourceFileSystemObject?
     private var reloadTask: Task<Void, Never>?
     private var watchedPath: String?
+    private var reloadGeneration = 0
 
     private init() {
         acknowledgedIDs = Set(Defaults[.adrAcknowledgedFindingIDs])
@@ -130,8 +131,10 @@ final class SecurityFindingsStore: ObservableObject {
 
     // MARK: - Ingest
 
-    /// Reads the newest snapshot in the watched directory, if any. Safe to call often: the
-    /// decode is a few hundred KB at most and only runs when the directory changed.
+    /// Reads the newest snapshot in the watched directory, if any. A real snapshot from a
+    /// developer Mac is ~7 MB (every asset carries its evidence, and the coverage block lists
+    /// every swept root), so the read and both decode passes run on a utility queue and only
+    /// the result crosses back to the main actor. Runs only when the directory changed.
     func reloadNewestSnapshot() {
         let directory = Self.snapshotDirectory
         guard let url = ADRSnapshot.newestSnapshotURL(in: directory) else {
@@ -139,13 +142,24 @@ final class SecurityFindingsStore: ObservableObject {
             snapshotError = nil
             return
         }
-        do {
-            let snapshot = try ADRSnapshot.load(from: url)
-            ingest(snapshot, origin: .watched, fileName: url.lastPathComponent)
-            snapshotError = nil
-        } catch {
-            snapshotError = error.localizedDescription
-            Self.logger.error("snapshot unreadable: \(error.localizedDescription, privacy: .public)")
+        let generation = reloadGeneration &+ 1
+        reloadGeneration = generation
+        DispatchQueue.global(qos: .utility).async {
+            let outcome: Result<ADRSnapshot, Error> = Result { try ADRSnapshot.load(from: url) }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    // A newer reload superseded this one while it was decoding.
+                    guard self.reloadGeneration == generation else { return }
+                    switch outcome {
+                    case .success(let snapshot):
+                        self.ingest(snapshot, origin: .watched, fileName: url.lastPathComponent)
+                        self.snapshotError = nil
+                    case .failure(let error):
+                        self.snapshotError = error.localizedDescription
+                        Self.logger.error("snapshot unreadable: \(error.localizedDescription, privacy: .public)")
+                    }
+                }
+            }
         }
     }
 

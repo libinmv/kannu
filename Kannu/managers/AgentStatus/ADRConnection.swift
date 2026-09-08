@@ -147,7 +147,7 @@ final class ADRConnection: ObservableObject {
                     results[tool] = Status(state: .notFound)
                     continue
                 }
-                let version = Self.readVersion(of: executable)
+                let version = Self.readVersion(of: executable) ?? Self.readVersionFromUVToolList(tool)
                 results[tool] = Status(state: .found(executable: executable, version: version))
             }
             DispatchQueue.main.async {
@@ -163,7 +163,8 @@ final class ADRConnection: ObservableObject {
     }
 
     /// `<tool> --version`, bounded. A tool that hangs or prints nothing is still "found";
-    /// the version is decoration.
+    /// the version is decoration. `adr-discovery` 0.2.0 has no such flag (argparse prints usage
+    /// to stderr and exits 2), so stdout is empty and the uv fallback below answers instead.
     private nonisolated static func readVersion(of executable: URL) -> String? {
         let process = Process()
         process.executableURL = executable
@@ -180,5 +181,37 @@ final class ADRConnection: ObservableObject {
         // `adr-sensor --version` prints the bare number; be tolerant of "name 1.2.3" too.
         let last = text.split(separator: " ").last.map(String.init) ?? text
         return last.isEmpty ? nil : String(last.prefix(32))
+    }
+
+    static let uvToolListArguments = ["tool", "list"]
+
+    /// `uv tool list` prints one `name vX.Y.Z` line per installed tool. Read-only, bounded,
+    /// and only consulted when the tool itself would not say.
+    private nonisolated static func readVersionFromUVToolList(_ tool: Tool) -> String? {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let candidates = [
+            home.appendingPathComponent(".local/bin/uv"),
+            URL(fileURLWithPath: "/opt/homebrew/bin/uv"),
+            URL(fileURLWithPath: "/usr/local/bin/uv")
+        ]
+        guard let uv = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0.path) }) else { return nil }
+        let process = Process()
+        process.executableURL = uv
+        process.arguments = uvToolListArguments
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = Pipe()
+        do { try process.run() } catch { return nil }
+        let deadline = Date().addingTimeInterval(5)
+        while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
+        if process.isRunning { process.terminate() }
+        let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        for line in text.split(separator: "\n") {
+            let parts = line.split(separator: " ")
+            guard parts.count >= 2, parts[0] == Substring(tool.rawValue) else { continue }
+            let version = parts[1].hasPrefix("v") ? String(parts[1].dropFirst()) : String(parts[1])
+            return String(version.prefix(32))
+        }
+        return nil
     }
 }
