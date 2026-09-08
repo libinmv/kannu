@@ -141,20 +141,51 @@ struct ADRSnapshot: Codable, Equatable {
         }
     }
 
-    static func decode(_ data: Data) throws -> ADRSnapshot {
-        // Read the version before committing to the shape: a future major must fail with a
-        // message, not with a key-not-found deep inside a nested type.
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              object["assets"] != nil || object["findings"] != nil || object["schema_version"] != nil else {
-            throw DecodeError.notASnapshot
-        }
-        let version = (object["schema_version"] as? String) ?? "1.0"
-        guard let major = version.split(separator: ".").first.flatMap({ Int($0) }), major == supportedSchemaMajor else {
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, catalogVersion, hostname, username, platform, timestamp
+        case assets, findings, reviewQueue, coverage
+    }
+
+    /// One pass over the document. The schema major is checked before any nested type is
+    /// touched, so a future major fails with a message rather than a key-not-found deep
+    /// inside a nested type — and a real snapshot (7 MB, most of it coverage entries) is not
+    /// parsed twice. Missing lists decode as empty; `schema_version` defaults to 1.0.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let version = try container.decodeIfPresent(String.self, forKey: .schemaVersion) ?? "1.0"
+        guard let major = version.split(separator: ".").first.flatMap({ Int($0) }),
+              major == Self.supportedSchemaMajor else {
             throw DecodeError.unsupportedSchema(version)
         }
+        schemaVersion = version
+        catalogVersion = try container.decodeIfPresent(String.self, forKey: .catalogVersion) ?? "unknown"
+        hostname = try container.decodeIfPresent(String.self, forKey: .hostname) ?? ""
+        username = try container.decodeIfPresent(String.self, forKey: .username) ?? ""
+        platform = try container.decodeIfPresent(String.self, forKey: .platform) ?? ""
+        timestamp = try container.decodeIfPresent(String.self, forKey: .timestamp) ?? ""
+        assets = try container.decodeIfPresent([Asset].self, forKey: .assets) ?? []
+        findings = try container.decodeIfPresent([Finding].self, forKey: .findings) ?? []
+        reviewQueue = try container.decodeIfPresent([ReviewItem].self, forKey: .reviewQueue) ?? []
+        coverage = try container.decodeIfPresent(Coverage.self, forKey: .coverage)
+            ?? Coverage(rootsSwept: [], boundariesHit: [], denied: [], unavailable: [], truncated: [], probes: [], outOfScope: [])
+        // A JSON object with none of the snapshot's keys is some other file, not an old snapshot.
+        if container.allKeys.isEmpty
+            || !(container.contains(.assets) || container.contains(.findings) || container.contains(.schemaVersion)) {
+            throw DecodeError.notASnapshot
+        }
+    }
+
+    static func decode(_ data: Data) throws -> ADRSnapshot {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        return try decoder.decode(ADRSnapshot.self, from: data)
+        do {
+            return try decoder.decode(ADRSnapshot.self, from: data)
+        } catch let error as DecodeError {
+            throw error
+        } catch {
+            // Not JSON, or JSON of some other shape.
+            throw DecodeError.notASnapshot
+        }
     }
 
     static func load(from url: URL) throws -> ADRSnapshot {

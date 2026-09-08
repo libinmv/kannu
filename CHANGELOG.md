@@ -36,8 +36,9 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     included in Kannu, so NOTICE is unchanged.
   - Verified against this Mac: `uv tool install` of Discovery, a 17 s scan writing a 7 MB snapshot
     (99 % of it `coverage.boundaries_hit`, 31,808 entries; assets are 27 KB), one real finding —
-    `notion` resolves its package at launch. The decode therefore runs on a utility queue and only
-    the result reaches the main actor; the snapshot is dropped after ingest. `adr-discovery` has no
+    `notion` resolves its package at launch. The decode is one pass (schema major checked inside
+    `init(from:)`, 0.10 s measured even unoptimised), runs on a utility queue, and only the result
+    reaches the main actor; the snapshot is dropped after ingest. `adr-discovery` has no
     `--version` flag, so the version comes from `uv tool list` when the tool will not say.
   - Tests: `ADRSnapshotTests` (6) and `AgentSecurityFindingTests` (7).
 ### 2026-09-09 - Read Warp's database off the main actor
