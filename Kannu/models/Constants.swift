@@ -1183,6 +1183,9 @@ extension Defaults.Keys {
     static let agentStoppedCollapseSeconds = Key<Int>("agentStoppedCollapseSeconds", default: 5)
     static let agentInactiveDisplaySeconds = Key<Int>("agentInactiveDisplaySeconds", default: 5)
     static let agentHooksAutoInstallAttempted = Key<Bool>("agentHooksAutoInstallAttempted", default: false)
+    /// Conversation ids of Kannu's own `/usage` probe sessions, so they never show as chats —
+    /// persisted because the probe's dead session file outlives the process that spawned it.
+    static let claudeUsageProbeConversationIDs = Key<[String]>("claudeUsageProbeConversationIDs", default: [])
     static let showAgentStoppedIndicator = Key<Bool>("showAgentStoppedIndicator", default: false)
     /// Closed-notch traffic light shape. Defaults to `.classic` so existing installs keep the
     /// three-dot look they already have — only fresh installs are asked to choose in onboarding.

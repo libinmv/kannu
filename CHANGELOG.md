@@ -4,6 +4,25 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-08 - Hide Kannu's own /usage probe; keep ended chats listed for 69 seconds
+- **Developer label:** write condition to ignore our /usage call from our chat detection of cluade; also when something is red and ended, persist it in recent chats for 69 seconds
+- **Agent label:** Recognise the usage probe by process ancestry and remember its id; retain a red-then-gone chat as a dim card for 69 s
+- **Changes:**
+  - The manual usage refresh spawns an interactive `claude` and types `/usage`; that session
+    registered like any other and showed as a phantom "Untitled chat" while it ran and a stopped
+    card afterwards. The passive Claude path now recognises a session whose process descends from
+    Kannu itself (parent-chain walk, same sysctl idiom as the click-through host lookup), skips it,
+    and records its conversation id in `Defaults[.claudeUsageProbeConversationIDs]` (capped at 32)
+    so the dead session file and the probe's own hook file are ignored afterwards too. The spawn is
+    untouched — REGRESSIONS entry 8 — and deliberately so: giving the probe its own working directory
+    would raise Claude Code's "trust this folder?" dialog, which would swallow the typed `/usage`.
+  - A chat that was visibly red and then vanished (SessionEnd deleted its file, or its collapse and
+    dim windows elapsed) now stays in Recent chats as a dim inactive card for 69 seconds
+    (`AgentTrafficLightMapper.retainEndedSessions`, pure). The copy is `.inactive`, so the traffic
+    light, caffeinate and the primary-session pick ignore it; it is dropped the moment the
+    conversation is live or red again. The retained card keeps its "· N tool errors" suffix.
+  - Tests: `RecentChatsRetentionTests` (7) and `UsageProbeExclusionTests` (3).
+
 ### 2026-09-08 - Name Claude chats the way Claude does
 - **Developer label:** also chat names, why do they not match the labels in claude
 - **Agent label:** Read `custom-title` before `ai-title` when naming a Claude session

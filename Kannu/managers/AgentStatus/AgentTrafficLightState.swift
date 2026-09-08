@@ -565,6 +565,77 @@ enum AgentTrafficLightMapper {
     static func aggregate(_ sessions: [AgentSessionStatus]) -> AgentTrafficLightState {
         resolveDisplayState(from: sessions)
     }
+
+    // MARK: - Kannu's own /usage probe
+
+    /// The manual usage refresh spawns an interactive `claude` and types `/usage`. That session
+    /// registers like any other (session file, hook file, transcript), so it would show up as a
+    /// phantom chat. The monitor recognises it by process ancestry while it runs and remembers
+    /// its conversation id, capped, so the dead session file is ignored afterwards too.
+    static let usageProbeIDCap = 32
+
+    static func isUsageProbeSession(conversationID: String, probeIDs: [String]) -> Bool {
+        probeIDs.contains(conversationID)
+    }
+
+    /// Appends `id` (moving it to the newest slot if already present) and trims the oldest.
+    static func rememberingProbeConversationID(_ id: String, in ids: [String], cap: Int = usageProbeIDCap) -> [String] {
+        var out = ids.filter { $0 != id }
+        out.append(id)
+        if out.count > cap { out.removeFirst(out.count - cap) }
+        return out
+    }
+
+    // MARK: - Ended chats stay listed
+
+    /// How long a chat that went red and then ended stays in Recent chats as a dim card.
+    static let endedChatRetentionSeconds: TimeInterval = 69
+
+    struct RetainedEndedSession: Equatable {
+        let session: AgentSessionStatus
+        let endedAt: Date
+    }
+
+    /// Keeps a conversation that was visibly red (`.stopped`) in `previous` and has since gone —
+    /// its status file deleted by SessionEnd, or its collapse+dim window elapsed — on the list as
+    /// an inactive, visible card for `retention`. Purely a list concern: the copy is `.inactive`,
+    /// so the traffic light, caffeinate and the primary-session pick ignore it. A retained
+    /// conversation is dropped the moment it shows up live (or red) again, and after `retention`.
+    static func retainEndedSessions(
+        previous: [AgentSessionStatus],
+        current: [AgentSessionStatus],
+        retained: [String: RetainedEndedSession],
+        now: Date,
+        retention: TimeInterval = endedChatRetentionSeconds
+    ) -> (sessions: [AgentSessionStatus], retained: [String: RetainedEndedSession]) {
+        var map = retained.filter { now.timeIntervalSince($0.value.endedAt) < retention }
+        let currentByID = Dictionary(current.map { ($0.conversationID, $0) }, uniquingKeysWith: { first, _ in first })
+
+        // Live or red again: the real session owns the row.
+        for (id, session) in currentByID where session.isVisible && session.displayState != .inactive {
+            map.removeValue(forKey: id)
+        }
+
+        for prior in previous
+        where prior.isVisible && prior.displayState == .stopped && !isSimulationSession(prior) && map[prior.conversationID] == nil {
+            let nowEntry = currentByID[prior.conversationID]
+            guard nowEntry == nil || nowEntry?.isVisible == false else { continue }
+            map[prior.conversationID] = RetainedEndedSession(
+                session: prior.withDisplayState(.inactive, visible: true, updatedAt: now),
+                endedAt: now
+            )
+        }
+
+        var out = current.map { session -> AgentSessionStatus in
+            guard !session.isVisible, let kept = map[session.conversationID] else { return session }
+            return kept.session
+        }
+        let listed = Set(out.map(\.conversationID))
+        for (id, kept) in map where !listed.contains(id) {
+            out.append(kept.session)
+        }
+        return (out, map)
+    }
 }
 
 extension AgentSessionStatus {

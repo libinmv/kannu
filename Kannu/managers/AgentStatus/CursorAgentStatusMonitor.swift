@@ -52,6 +52,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
     private var cachedTranscriptAnalysisAt: Date?
     private var lastActivityPulseAt: Date?
     private var lastClaudeUsageReadAt: Date?
+    /// Chats that went red and then ended, kept on the list for a while (see
+    /// `AgentTrafficLightMapper.retainEndedSessions`).
+    private var endedRetention: [String: AgentTrafficLightMapper.RetainedEndedSession] = [:]
     private var lastPublishedTrafficLightState: AgentTrafficLightState?
     private var lastPublishedShouldShowTrafficLight: Bool?
 
@@ -103,6 +106,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
         cachedTranscriptAnalysisAt = nil
         lastPublishedTrafficLightState = nil
         lastPublishedShouldShowTrafficLight = nil
+        endedRetention.removeAll()
         CursorTranscriptParser.invalidatePathCache()
         AgentSessionLogParser.invalidatePathCache()
     }
@@ -298,7 +302,16 @@ final class CursorAgentStatusMonitor: ObservableObject {
             ),
             staleMinutes: staleMinutes
         )
-        let resolvedSessions = enrichChatNames(fromComposerStore: mergedSessions)
+        // Keep chats that were red and have now gone on the list a while longer. Uses the
+        // previously published list as "before", so the pure helper sees exactly what the user saw.
+        let retention = AgentTrafficLightMapper.retainEndedSessions(
+            previous: sessions,
+            current: enrichChatNames(fromComposerStore: mergedSessions),
+            retained: endedRetention,
+            now: now
+        )
+        endedRetention = retention.retained
+        let resolvedSessions = retention.sessions
 
         let sortedSessions = resolvedSessions.sorted { $0.updatedAt > $1.updatedAt }
         if sessions != sortedSessions {
@@ -921,6 +934,15 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 .replacingOccurrences(of: "\(provider)-", with: "")
 
             if AgentTrafficLightMapper.isSimulationConversationID(conversationID) {
+                removeIfUnchanged()
+                continue
+            }
+            // Kannu's own /usage probe fires SessionStart/Stop hooks like any session; its id is
+            // learned from the passive path (process ancestry) and remembered in Defaults.
+            if AgentTrafficLightMapper.isUsageProbeSession(
+                conversationID: conversationID,
+                probeIDs: Defaults[.claudeUsageProbeConversationIDs]
+            ) {
                 removeIfUnchanged()
                 continue
             }
@@ -1588,7 +1610,19 @@ final class CursorAgentStatusMonitor: ObservableObject {
 
             guard json["kind"] as? String == "interactive" else { continue }
 
+            // Kannu's own /usage probe: a child of this process. Remember its id so the dead
+            // session file (and the probe's hook file) stay ignored after it exits.
+            var probeIDs = Defaults[.claudeUsageProbeConversationIDs]
+            if AgentTrafficLightMapper.isUsageProbeSession(conversationID: sessionId, probeIDs: probeIDs) {
+                continue
+            }
+
             let processAlive = isClaudeProcessAlive(pid: pid, startedAtMs: startedAtMs)
+            if processAlive, isDescendantOfThisProcess(pid: pid) {
+                probeIDs = AgentTrafficLightMapper.rememberingProbeConversationID(sessionId, in: probeIDs)
+                Defaults[.claudeUsageProbeConversationIDs] = probeIDs
+                continue
+            }
             // Skip stale check for live processes — a session may run for many hours.
             if processAlive {
                 liveConversationIDs.insert(sessionId)
@@ -1752,6 +1786,26 @@ final class CursorAgentStatusMonitor: ObservableObject {
             guard let bundleID = app.bundleIdentifier else { return false }
             return bundleID.hasPrefix("com.todesktop.") || bundleID == "com.cursor.Cursor"
         }
+    }
+
+    /// True when `pid`'s parent chain reaches this process within a few hops — the shape of the
+    /// `/usage` probe (`Process` → `claude` launcher → `claude` session). Same sysctl idiom as
+    /// `isClaudeProcessAlive` and `AgentSessionOpener.terminalHostApplication`.
+    private func isDescendantOfThisProcess(pid: Int) -> Bool {
+        let selfPID = ProcessInfo.processInfo.processIdentifier
+        var current = pid_t(pid)
+        for _ in 0..<6 {
+            guard current > 1 else { return false }
+            var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, Int32(current)]
+            var info = kinfo_proc()
+            var size = MemoryLayout<kinfo_proc>.size
+            guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return false }
+            let parent = info.kp_eproc.e_ppid
+            if parent == selfPID { return true }
+            guard parent != current else { return false }
+            current = parent
+        }
+        return false
     }
 
     // Returns true only if the process is alive AND its start time matches startedAtMs

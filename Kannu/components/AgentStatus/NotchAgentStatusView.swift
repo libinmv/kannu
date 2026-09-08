@@ -421,10 +421,12 @@ struct NotchAgentStatusView: View {
         }
     }
 
-    /// "Finished" versus "Finished · 2 tool errors": the hook counts failures per turn, so a red
-    /// light can say whether the turn went well. Empty unless the session has actually stopped.
+    /// "Stopped" versus "Stopped · 2 tool errors": the hook counts failures per turn, so a red
+    /// light can say whether the turn went well. Empty unless the session has stopped — including
+    /// the dim, retained card an ended chat leaves behind.
     private func toolErrorSuffix(for session: AgentSessionStatus) -> String {
-        guard session.displayState == .stopped, session.toolErrorCount > 0 else { return "" }
+        guard session.displayState == .stopped || session.displayState == .inactive,
+              session.toolErrorCount > 0 else { return "" }
         let count = session.toolErrorCount
         let errors = count == 1
             ? String(localized: "1 tool error")
