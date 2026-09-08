@@ -4,6 +4,37 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-09 - Connect a separately installed ADR and show its security findings
+- **Developer label:** plan how we could integrate adr uber changes to our system to setup that feature … plan it on based on seperate connect do not install with kannu, but support easy integration
+- **Agent label:** Phase 0 of the ADR integration: detect the user's ADR install, guide the install, watch a snapshot folder, list Discovery findings with acknowledge and snooze
+- **Changes:**
+  - ADR (github.com/uber/ADR, Apache-2.0) stays a separate install the user owns. `ADRConnection`
+    looks for `adr-discovery` / `adr-sensor` in `~/.local/bin`, uv's tool directory, Homebrew and
+    `/usr/local/bin` (plus a user-set directory), reads their versions on demand, and hands Settings
+    the exact `uv tool install …` / `pipx install …` lines with a Copy button when they are missing.
+    Kannu ships no Python, runs no package manager, and never writes into the user's tool
+    directories.
+  - `ADRSnapshot` decodes Discovery's schema-1.0 JSON — assets, findings, review queue and the
+    coverage block — strictly on the schema major (a 2.x file fails with a message, a 1.x minor
+    keeps working) and leniently on everything else. The fixture is a real snapshot from this Mac,
+    sanitised. `AgentSecurityFinding` joins each finding to its asset, gives it a stable id (digest
+    of source, rule, subject and evidence, so acknowledgements survive re-scans and changed evidence
+    is new again) and a human title; `SecurityFindingPriority` orders by severity then recency and
+    picks the pinned high finding.
+  - `SecurityFindingsStore` watches the snapshot folder (`~/.kannu/adr/discovery` by default, `0700`,
+    changeable) with a dispatch source and shows the newest `snapshot-*.json`, whoever wrote it —
+    the user by hand, a launchd job, or a fleet scheduler. Partial coverage (upstream exit code 2)
+    is shown as such, never as "clean". Acknowledge and Snooze 24 h persist in Defaults and are
+    dropped for findings that vanish.
+  - Settings › Agents › **Security findings**: connection rows for Discovery and Sensor, install
+    guidance callout, snapshot folder picker with Reveal, last-snapshot summary (assets, findings,
+    coverage, catalog version), the findings list with severity glyphs and evidence, review-queue
+    count, and a way to un-acknowledge. Three searchable entries. `docs/ADR.md` walks through
+    installing, producing a snapshot, an optional launchd schedule (copyable, never installed by
+    Kannu), the policy file, and what Kannu does and does not do with findings.
+  - Nothing touches the traffic light or the notch yet; that is the next phase. No ADR code is
+    included in Kannu, so NOTICE is unchanged.
+  - Tests: `ADRSnapshotTests` (6) and `AgentSecurityFindingTests` (7).
 ### 2026-09-09 - Read Warp's database off the main actor
 - **Developer label:** (found while verifying the next build: Kannu froze at launch)
 - **Agent label:** Move the Warp SQLite read to a worker so the "access data from other apps" prompt cannot block the app

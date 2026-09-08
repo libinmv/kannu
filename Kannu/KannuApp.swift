@@ -903,15 +903,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             CursorAgentStatusMonitor.shared.start()
             AgentStatusNotificationBridge.shared.start()
+            SecurityFindingsStore.shared.start()
         }
         Defaults.publisher(.enableAgentStatusFeature, options: []).sink { change in
             Task { @MainActor in
                 if change.newValue {
                     CursorAgentStatusMonitor.shared.start()
                     AgentStatusNotificationBridge.shared.start()
+                    SecurityFindingsStore.shared.start()
                 } else {
                     CursorAgentStatusMonitor.shared.stop()
                     AgentStatusNotificationBridge.shared.stop()
+                    SecurityFindingsStore.shared.stop()
                 }
             }
         }.store(in: &cancellables)

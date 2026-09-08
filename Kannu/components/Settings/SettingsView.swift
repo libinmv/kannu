@@ -919,6 +919,9 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .agentStatus, title: "Show a red light when no agents are running", keywords: ["red", "light", "idle", "no agents", "stopped", "indicator", "always"], highlightID: SettingsTab.agentStatus.highlightID(for: "Show a red light when no agents are running")),
             SettingsSearchEntry(tab: .agentStatus, title: "Reset traffic light colors", keywords: ["reset", "color", "traffic", "light", "default"], highlightID: SettingsTab.agentStatus.highlightID(for: "Reset traffic light colors")),
             SettingsSearchEntry(tab: .agentStatus, title: "Editor Hooks", keywords: ["agent", "cursor", "vscode", "copilot", "codex", "claude", "hook", "install", "integration"], highlightID: SettingsTab.agentStatus.highlightID(for: "Cursor Hook")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Connect ADR", keywords: ["adr", "uber", "security", "discovery", "sensor", "connect", "install", "uv", "pipx"], highlightID: SettingsTab.agentStatus.highlightID(for: "Connect ADR")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Security findings", keywords: ["security", "finding", "mcp", "unpinned", "plaintext", "undeclared", "acknowledge", "snooze", "shield"], highlightID: SettingsTab.agentStatus.highlightID(for: "Security findings")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Snapshot folder", keywords: ["snapshot", "folder", "directory", "adr", "discovery", "output"], highlightID: SettingsTab.agentStatus.highlightID(for: "Snapshot folder")),
             SettingsSearchEntry(tab: .agentStatus, title: "Mobile notifications", keywords: ["mobile", "push", "ntfy", "pushover", "webhook", "iphone", "android"], highlightID: SettingsTab.agentStatus.highlightID(for: "Mobile notifications")),
             SettingsSearchEntry(tab: .agentStatus, title: "Send test notification", keywords: ["test", "mobile", "push", "notification"], highlightID: SettingsTab.agentStatus.highlightID(for: "Send test notification")),
         ]
@@ -7608,6 +7611,10 @@ struct AgentStatusSettings: View {
     @ObservedObject private var accessibilityPermission = AccessibilityPermissionStore.shared
     @ObservedObject var hookInstaller = AgentHookInstaller.shared
     @ObservedObject private var notificationBridge = AgentStatusNotificationBridge.shared
+    @ObservedObject private var adr = ADRConnection.shared
+    @ObservedObject private var findingsStore = SecurityFindingsStore.shared
+    @Default(.adrSnapshotDirectory) var adrSnapshotDirectory
+    @Default(.adrToolDirectory) var adrToolDirectory
     @Default(.enableAgentStatusFeature) var enableAgentStatusFeature
     @Default(.agentStatusStaleMinutes) var agentStatusStaleMinutes
     @Default(.agentStoppedCollapseSeconds) var agentStoppedCollapseSeconds
@@ -7823,6 +7830,8 @@ struct AgentStatusSettings: View {
                     Text("Install hooks for Cursor, VS Code Copilot, Codex CLI, or Claude Code. Each hook writes agent status into ~/.kannu/agent-status for the notch traffic light and Recent chats list.")
                 }
 
+                securityFindingsSection
+
                 Section {
                     Defaults.Toggle(key: .enableAgentStatusMobileNotifications) {
                         Text("Enable mobile notifications")
@@ -7949,6 +7958,204 @@ struct AgentStatusSettings: View {
             }
         }
         .padding(.vertical, 2)
+    }
+
+    // MARK: - Security findings (ADR connection)
+
+    /// ADR is a separate install (uv / pipx); Kannu connects to it, never installs it. This
+    /// section is the whole connection: status, the exact command when missing, where snapshots
+    /// are read from, what the last scan said, and the findings with acknowledge / snooze.
+    @ViewBuilder
+    private var securityFindingsSection: some View {
+        Section {
+            adrConnectionRow(.discovery)
+                .settingsHighlight(id: highlightID("Connect ADR"))
+            if !adr.discovery.isFound && adr.discovery.state != .unchecked {
+                adrInstallGuidance(.discovery)
+            }
+            adrConnectionRow(.sensor)
+
+            HStack {
+                Text("Snapshot folder")
+                Spacer()
+                Text(SecurityFindingsStore.snapshotDirectory.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Button("Choose…") { chooseSnapshotDirectory() }
+                Button("Reveal") {
+                    NSWorkspace.shared.activateFileViewerSelecting([SecurityFindingsStore.snapshotDirectory])
+                }
+            }
+            .settingsHighlight(id: highlightID("Snapshot folder"))
+
+            adrLastScanRow
+
+            if let error = findingsStore.snapshotError {
+                Text(error).font(.caption).foregroundColor(.red)
+            }
+
+            let ranking = findingsStore.ranking
+            if ranking.visible.isEmpty {
+                Text(findingsStore.lastScan == nil
+                     ? String(localized: "No findings yet. Findings appear here as soon as a snapshot lands in the folder above.")
+                     : String(localized: "No open findings."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(ranking.visible) { finding in
+                    adrFindingRow(finding)
+                }
+            }
+            if !findingsStore.reviewQueue.isEmpty {
+                Text("Needs review: \(findingsStore.reviewQueue.count) uncatalogued AI tool(s) — see the snapshot for paths.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if !findingsStore.acknowledgedIDs.isEmpty || !findingsStore.snoozes.isEmpty {
+                Button("Show acknowledged and snoozed again") { findingsStore.clearAcknowledgements() }
+                    .controlSize(.small)
+            }
+        } header: {
+            Text("Security findings")
+                .settingsHighlight(id: highlightID("Security findings"))
+        } footer: {
+            Text("Reads findings from ADR Discovery (github.com/uber/ADR, Apache-2.0), installed separately with uv or pipx. Kannu never installs it, never edits your MCP configs, and never sends findings anywhere unless you turn on push. Run `adr-discovery --json --output-dir <snapshot folder>` yourself or on a schedule; the newest snapshot is what you see here. Details: docs/ADR.md.")
+        }
+        .onAppear {
+            if adr.discovery.state == .unchecked { adr.checkAgain() }
+        }
+    }
+
+    @ViewBuilder
+    private func adrConnectionRow(_ tool: ADRConnection.Tool) -> some View {
+        let status = tool == .discovery ? adr.discovery : adr.sensor
+        HStack(spacing: 10) {
+            Circle()
+                .fill(status.isFound ? Color.green : Color.secondary.opacity(0.5))
+                .frame(width: 8, height: 8)
+            Image(systemName: "shield.lefthalf.filled")
+                .foregroundStyle(status.isFound ? Color.blue : Color.secondary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(tool.displayName)
+                Text(adrStatusCaption(status))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer()
+            if tool == .discovery {
+                Button(adr.isChecking ? "Checking…" : "Check again") { adr.checkAgain() }
+                    .disabled(adr.isChecking)
+            }
+        }
+    }
+
+    private func adrStatusCaption(_ status: ADRConnection.Status) -> String {
+        switch status.state {
+        case .unchecked: return String(localized: "Not checked yet")
+        case .notFound: return String(localized: "Not installed")
+        case .found(let executable, let version):
+            let shortPath = executable.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+            return version.map { "\($0) · \(shortPath)" } ?? shortPath
+        }
+    }
+
+    @ViewBuilder
+    private func adrInstallGuidance(_ tool: ADRConnection.Tool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SettingsPermissionCallout(
+                title: String(localized: "Connect ADR"),
+                message: String(localized: "Install ADR Discovery once with uv (or pipx), then press Check again. Requires Python 3.11 or newer; uv brings its own."),
+                icon: "shield.lefthalf.filled",
+                iconColor: .blue,
+                requestButtonTitle: String(localized: "Copy install command"),
+                openSettingsButtonTitle: String(localized: "Open ADR on GitHub"),
+                requestAction: {
+                    let pasteboard = NSPasteboard.general
+                    pasteboard.clearContents()
+                    pasteboard.setString(tool.installCommand, forType: .string)
+                },
+                openSettingsAction: { NSWorkspace.shared.open(ADRConnection.projectURL) }
+            )
+            Text(tool.installCommand)
+                .font(.system(.caption, design: .monospaced))
+                .textSelection(.enabled)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var adrLastScanRow: some View {
+        HStack {
+            Text("Last snapshot")
+            Spacer()
+            if let scan = findingsStore.lastScan {
+                let coverage = scan.coverageComplete
+                    ? String(localized: "full coverage")
+                    : String(localized: "partial coverage (\(scan.coverageGaps) gaps)")
+                Text("\(scan.date.formatted(date: .abbreviated, time: .shortened)) · \(scan.assetCount) assets · \(scan.findingCount) findings · \(coverage) · catalog \(scan.catalogVersion)")
+                    .font(.caption)
+                    .foregroundStyle(scan.coverageComplete ? Color.secondary : Color.orange)
+                    .multilineTextAlignment(.trailing)
+            } else {
+                Text("none yet")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func adrFindingRow(_ finding: AgentSecurityFinding) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: finding.severity == .high ? "exclamationmark.shield.fill" : "exclamationmark.shield")
+                .foregroundStyle(finding.severity == .high ? Color.orange : Color.secondary)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(finding.title).font(.subheadline.weight(.semibold))
+                    Text(finding.severity.label)
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                }
+                Text(finding.summary).font(.caption)
+                ForEach(finding.evidence, id: \.self) { line in
+                    Text(line).font(.caption2).foregroundStyle(.secondary).lineLimit(2).truncationMode(.middle)
+                }
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 4) {
+                Button("Acknowledge") { findingsStore.acknowledge(finding.id) }
+                Button("Snooze 24h") { findingsStore.snooze(finding.id, for: 24 * 3600) }
+                if let path = finding.assetPath {
+                    Button("Reveal") {
+                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                    }
+                }
+            }
+            .controlSize(.small)
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Security finding, \(finding.severity.label): \(finding.title). \(finding.summary)")
+    }
+
+    private func chooseSnapshotDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = SecurityFindingsStore.snapshotDirectory
+        panel.prompt = String(localized: "Use folder")
+        if panel.runModal() == .OK, let url = panel.url {
+            adrSnapshotDirectory = url.path
+            findingsStore.directoryChanged()
+        }
     }
 
     @ViewBuilder

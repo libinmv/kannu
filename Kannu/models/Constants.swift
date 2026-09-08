@@ -1186,6 +1186,18 @@ extension Defaults.Keys {
     /// Conversation ids of Kannu's own `/usage` probe sessions, so they never show as chats —
     /// persisted because the probe's dead session file outlives the process that spawned it.
     static let claudeUsageProbeConversationIDs = Key<[String]>("claudeUsageProbeConversationIDs", default: [])
+
+    // MARK: Security findings (connection to a separately installed ADR — github.com/uber/ADR)
+    /// Extra directory searched for the `adr-discovery` / `adr-sensor` executables, before the
+    /// uv, pipx and Homebrew defaults. Empty = defaults only.
+    static let adrToolDirectory = Key<String>("adrToolDirectory", default: "")
+    /// Where `adr-discovery --output-dir` snapshots are read from. Empty = `~/.kannu/adr/discovery`.
+    static let adrSnapshotDirectory = Key<String>("adrSnapshotDirectory", default: "")
+    /// Where `adr-sensor --save-sessions` files are read from. Empty = `~/.cache/adr_sensor`.
+    static let adrSensorDirectory = Key<String>("adrSensorDirectory", default: "")
+    static let adrAcknowledgedFindingIDs = Key<[String]>("adrAcknowledgedFindingIDs", default: [])
+    static let adrFindingSnoozes = Key<[SecurityFindingSnooze]>("adrFindingSnoozes", default: [])
+    static let adrLastScan = Key<ADRScanRecord?>("adrLastScan", default: nil)
     static let showAgentStoppedIndicator = Key<Bool>("showAgentStoppedIndicator", default: false)
     /// Closed-notch traffic light shape. Defaults to `.classic` so existing installs keep the
     /// three-dot look they already have — only fresh installs are asked to choose in onboarding.
