@@ -180,6 +180,36 @@ enum ClaudeDesktopAgentSessionStore {
 
     // MARK: - Sessions
 
+    // Main-thread-only state, for the same reason AgentSessionLogParser's caches are: this file
+    // compiles into the logic-only test target (whose synchronous tests could not call isolated
+    // statics), while every production caller is the @MainActor monitor. Keep it that way, or add
+    // isolation here and migrate the tests, before this parsing moves off-main.
+    private static var parseCache: [String: (mtime: Date, size: Int, parsed: Parsed)] = [:]
+    private static let parseCacheCap = 48
+
+    /// `parse(head:tail:)` for a file, remembered against `(mtime, size)`.
+    ///
+    /// `sessions(...)` runs on the main actor from every full rescan, and an appending session
+    /// drives FSEvents on this root as well, so re-reading 48 KB per file per pass would put real
+    /// filesystem I/O in front of the UI — the reason the tail-state and title readers next door
+    /// are cached the same way. Nothing in `Parsed` depends on the clock (the age ladder is
+    /// applied by the caller, from the file's mtime), so a cache hit is exact rather than stale.
+    private static func cachedParse(at url: URL, mtime: Date?, size: Int?) -> Parsed {
+        if let mtime, let size, let cached = parseCache[url.path],
+           cached.mtime == mtime, cached.size == size {
+            return cached.parsed
+        }
+        let parsed = parse(
+            head: AgentSessionLogParser.readLeadingLines(at: url),
+            tail: AgentSessionLogParser.readTrailingLines(at: url)
+        )
+        if let mtime, let size {
+            if parseCache.count > parseCacheCap { parseCache.removeAll() }
+            parseCache[url.path] = (mtime, size, parsed)
+        }
+        return parsed
+    }
+
     static func sessions(
         root: URL = defaultRoot,
         staleMinutes: Int,
@@ -193,11 +223,9 @@ enum ClaudeDesktopAgentSessionStore {
 
         return listRecentAuditLogs(root: root, maxAgeMinutes: staleMinutes, now: now).compactMap { url in
             guard let identity = sessionIdentity(forAuditLog: url) else { return nil }
-            let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? now
-            let parsed = parse(
-                head: AgentSessionLogParser.readLeadingLines(at: url),
-                tail: AgentSessionLogParser.readTrailingLines(at: url)
-            )
+            let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+            let mtime = values?.contentModificationDate ?? now
+            let parsed = cachedParse(at: url, mtime: values?.contentModificationDate, size: values?.fileSize)
             // The file's age, not the record's: SDK stream records rarely carry timestamps,
             // and a quiet "thinking" must age out through the same ladder the hooks use.
             let tsMs = Int64(mtime.timeIntervalSince1970 * 1000)

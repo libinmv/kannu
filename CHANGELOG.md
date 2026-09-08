@@ -4,6 +4,25 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-08 - Cache Claude Desktop audit reads; review follow-ups
+- **Developer label:** can you look at the code rabbit comments
+- **Agent label:** Act on the CodeRabbit review of PR #23
+- **Changes:**
+  - `ClaudeDesktopAgentSessionStore` now caches each parsed `audit.jsonl` against `(mtime, size)`,
+    the same shape `AgentSessionLogParser` uses for its tail-state and title reads. Every full
+    rescan was re-reading 32 KB leading + 16 KB trailing per file, up to 24 files, synchronously on
+    the main actor — and FSEvents watches that root, so an appending session scheduled another pass
+    every 0.35 s. Nothing in `Parsed` depends on the clock (the age ladder is applied by the caller
+    from the file's mtime), so a hit is exact; a new test pins both the hit and the invalidation.
+  - `scripts/create-dmg.sh` warns when an explicit `DMG_SIGN_IDENTITY` is not a Developer ID
+    Application certificate, and the comment now records why the override is deliberately
+    unfiltered: the release workflow never sets it — it resolves its own Developer ID identity and
+    calls this script bare — so the override serves local runs, where the documented identity is the
+    self-signed "Kannu Dev" cert. Refusing anything but Developer ID would break that case.
+  - Three title fixtures in `AgentSessionLogParserTests` spelled the field `title`; Claude writes
+    `aiTitle` / `customTitle`. The tests assert tail state and pass either way, but a fixture that
+    misstates the schema misleads the next reader.
+
 ### 2026-09-08 - Hide Kannu's own /usage probe; keep ended chats listed for 69 seconds
 - **Developer label:** write condition to ignore our /usage call from our chat detection of cluade; also when something is red and ended, persist it in recent chats for 69 seconds
 - **Agent label:** Recognise the usage probe by process ancestry and remember its id; retain a red-then-gone chat as a dim card for 69 s

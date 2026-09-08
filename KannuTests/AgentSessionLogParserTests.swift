@@ -123,8 +123,8 @@ final class AgentSessionLogParserTests: XCTestCase {
 
     func testBookkeepingAfterEndTurnIsStillTurnFinished() {
         let text = line(#"{"type":"assistant","timestamp":"2026-08-21T10:00:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"done"}],"stop_reason":"end_turn"}}"#)
-            + line(#"{"type":"ai-title","title":"Fix healthcheck"}"#)
-            + line(#"{"type":"custom-title","title":"my session"}"#)
+            + line(#"{"type":"ai-title","aiTitle":"Fix healthcheck"}"#)
+            + line(#"{"type":"custom-title","customTitle":"my session"}"#)
         XCTAssertEqual(AgentSessionLogParser.claudeTailState(fromTailText: text).state, .turnFinished)
     }
 
@@ -141,7 +141,7 @@ final class AgentSessionLogParserTests: XCTestCase {
 
     func testInterruptTimestampIsReturned() {
         let text = line(#"{"type":"user","timestamp":"2026-08-21T10:00:00.000Z","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}"#)
-            + line(#"{"type":"ai-title","title":"whatever"}"#)
+            + line(#"{"type":"ai-title","aiTitle":"whatever"}"#)
         let result = AgentSessionLogParser.claudeTailState(fromTailText: text)
         XCTAssertEqual(result.state, .turnFinished)
         let expected = ISO8601DateFormatter().date(from: "2026-08-21T10:00:00Z")

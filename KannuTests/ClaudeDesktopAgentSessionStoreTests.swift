@@ -107,6 +107,32 @@ final class ClaudeDesktopAgentSessionStoreTests: XCTestCase {
         XCTAssertEqual(sessions[1].chatName, "Dispatch agent")
     }
 
+    func testParsedLogsAreCachedButInvalidateWhenTheFileGrows() throws {
+        // The cache is keyed on (mtime, size): a repeat scan must return the same verdict, and an
+        // appended record must still be seen. Pinning both halves, since a cache that never
+        // invalidated would freeze a session's state on the main actor's next pass.
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("kannu-desktop-cache-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let dir = root.appendingPathComponent("u1/o1/local_33333333-3333-3333-3333-333333333333")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let log = dir.appendingPathComponent("audit.jsonl")
+        try join([initLine, userPrompt, assistantToolUse]).write(to: log, atomically: true, encoding: .utf8)
+
+        func scan() -> AgentSessionStatus? {
+            Store.sessions(root: root, staleMinutes: 30, collapseSeconds: 60, inactiveSeconds: 60, now: Date()).first
+        }
+        XCTAssertEqual(scan()?.displayState, .executing)
+        XCTAssertEqual(scan()?.displayState, .executing, "a second pass must agree with the first")
+
+        // Append a finished turn. Same path, new size — the cached parse must be discarded.
+        let handle = try FileHandle(forWritingTo: log)
+        handle.seekToEndOfFile()
+        handle.write(Data(join([assistantText, resultLine]).utf8))
+        try handle.close()
+        XCTAssertEqual(scan()?.displayState, .stopped, "an appended record must invalidate the cache")
+    }
+
     func testMissingRootYieldsNothing() {
         let missing = URL(fileURLWithPath: "/nonexistent/kannu-\(UUID().uuidString)")
         XCTAssertEqual(Store.sessions(root: missing, staleMinutes: 30, collapseSeconds: 5, inactiveSeconds: 5), [])

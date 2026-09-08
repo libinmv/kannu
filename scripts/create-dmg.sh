@@ -45,6 +45,18 @@ hdiutil create \
 SIGN_IDENTITY="${DMG_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null \
   | awk -F'"' '/Developer ID Application/{print $2; exit}')}"
 
+# An explicit DMG_SIGN_IDENTITY is deliberately NOT filtered. The release workflow never sets it —
+# it resolves its own Developer ID identity and calls this script bare — so the override exists for
+# local runs, where the documented signing identity is the self-signed "Kannu Dev" cert. Refusing
+# anything but Developer ID would break exactly that. Warn instead: only a Developer ID Application
+# signature survives notarization, and saying so here beats a rejection from notarytool later.
+# Matched against the whole find-identity line, so a certificate hash is accepted as readily as a name.
+if [ -n "${DMG_SIGN_IDENTITY:-}" ] \
+  && ! security find-identity -v -p codesigning 2>/dev/null \
+     | grep 'Developer ID Application' | grep -qF "$DMG_SIGN_IDENTITY"; then
+  echo "Warning: DMG_SIGN_IDENTITY does not name a Developer ID Application certificate; this DMG will not pass notarization. Signing anyway." >&2
+fi
+
 if [ -n "$SIGN_IDENTITY" ]; then
   echo "Signing $DMG_PATH as $SIGN_IDENTITY"
   codesign --sign "$SIGN_IDENTITY" --timestamp "$DMG_PATH"
