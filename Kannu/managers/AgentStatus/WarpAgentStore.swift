@@ -201,6 +201,15 @@ enum WarpAgentStore {
 
     // MARK: - Sessions
 
+    /// The window of exchanges worth reading for a given staleness.
+    static func since(staleMinutes: Int, now: Date) -> Date {
+        now.addingTimeInterval(-TimeInterval(staleMinutes * 60))
+    }
+
+    /// Read + map, in one call. Convenient for tests and one-shot readers; the monitor reads on a
+    /// worker and maps on the main actor instead (see `sessions(exchanges:)`), because the
+    /// database sits in Warp's group container and the first open raises macOS's "access data
+    /// from other apps" prompt, which blocks the calling thread until it is answered.
     static func sessions(
         databaseURL: URL? = databaseURL,
         staleMinutes: Int,
@@ -210,12 +219,24 @@ enum WarpAgentStore {
         now: Date = Date()
     ) -> [AgentSessionStatus] {
         guard let databaseURL else { return [] }
+        let exchanges = loadRecentExchanges(databaseURL: databaseURL, since: since(staleMinutes: staleMinutes, now: now), now: now)
+        return sessions(exchanges: exchanges, collapseSeconds: collapseSeconds, inactiveSeconds: inactiveSeconds,
+                        warpRunning: warpRunning, now: now)
+    }
+
+    /// Pure: exchanges already read → sessions as of `now`. No I/O, safe on the main actor.
+    static func sessions(
+        exchanges: [Exchange],
+        collapseSeconds: Int,
+        inactiveSeconds: Int,
+        warpRunning: Bool,
+        now: Date = Date()
+    ) -> [AgentSessionStatus] {
         let nowMs = Int64(now.timeIntervalSince1970 * 1000)
         let collapseMs = Int64(collapseSeconds) * 1_000
         let inactiveMs = Int64(inactiveSeconds) * 1_000
-        let since = now.addingTimeInterval(-TimeInterval(staleMinutes * 60))
 
-        let newest = newestExchangePerConversation(loadRecentExchanges(databaseURL: databaseURL, since: since, now: now))
+        let newest = newestExchangePerConversation(exchanges)
         guard !newest.isEmpty else { return [] }
 
         return newest.map { exchange in

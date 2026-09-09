@@ -303,6 +303,25 @@ exactly one consumer of the latch.
 
 ---
 
+## 11. A passive source never does its I/O on the main actor
+
+**What happened (2026-09-09).** `WarpAgentStore.sessions` opened `warp.sqlite` synchronously
+inside `rescan()`. The database lives in Warp's *group container*, and the first `open()` of another
+app's container raises the macOS "access data from other apps" prompt — `open()` blocks until the
+user answers. Every launch that morning froze the whole app (timers, hovers, the notch) for as long
+as the dialog stayed up, and killing the app to rebuild dismissed the dialog unanswered, so the next
+launch prompted again. `sample` showed 100 % of main-thread samples in `guarded_open_np`.
+
+**The rule.** Reads of anything under `~/Library/Group Containers`, `~/Library/Containers`, Desktop,
+Documents, Downloads, or any other TCC-protected path run on a worker queue, one at a time, with the
+result handed to the main actor (`refreshWarpExchangesIfNeeded` is the shape: a cached result the
+rescan maps, a refresh that schedules the next rescan only when the result changed). Same rule for
+any new passive source. CLAUDE.md's "first touches of protected resources" trap is this rule stated
+for `AppDelegate.init`; it applies to every later touch too.
+
+**Guard.** `WarpAgentStoreTests.testSessionsFromExchangesNeedNoDatabase` pins the pure mapping, so
+the split cannot quietly grow a file read again.
+
 ## Danger zones
 
 Commit counts across all branches (`--follow`, so pre-rename history counts):

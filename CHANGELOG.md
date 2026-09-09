@@ -4,6 +4,23 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-09 - Read Warp's database off the main actor
+- **Developer label:** (found while verifying the next build: Kannu froze at launch)
+- **Agent label:** Move the Warp SQLite read to a worker so the "access data from other apps" prompt cannot block the app
+- **Changes:**
+  - `warp.sqlite` lives in Warp's group container; the first `open()` raises macOS's
+    `kTCCServiceSystemPolicyAppData` prompt and blocks until it is answered. `rescan()` did that open
+    on the main actor, so every launch of the Warp-source builds froze the whole app for as long as
+    the dialog was up (100 % of main-thread samples in `guarded_open_np`), and killing the app to
+    rebuild dismissed the dialog unanswered, so the next launch asked again.
+  - `WarpAgentStore.sessions` is split into the read (`loadRecentExchanges`, unchanged) and a pure
+    `sessions(exchanges:…)` mapping; the one-call form stays for tests. The monitor keeps the last
+    exchanges, refreshes them on a utility worker one at a time, and schedules a rescan when they
+    changed. Warp users still see the prompt once — Kannu keeps working while it is up, and a
+    "Don't Allow" simply leaves the Warp source empty.
+  - `docs/REGRESSIONS.md` entry 11 records the rule for every passive source; a test pins the
+    mapping as file-free.
+
 ### 2026-09-08 - Cache Claude Desktop audit reads; review follow-ups
 - **Developer label:** can you look at the code rabbit comments
 - **Agent label:** Act on the CodeRabbit review of PR #23

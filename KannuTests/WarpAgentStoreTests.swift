@@ -168,4 +168,28 @@ final class WarpAgentStoreTests: XCTestCase {
         try insertExchange("e1", conversation: "c1", secondsAgo: 2 * 3600, status: "Completed")
         XCTAssertEqual(sessions(), [])
     }
+
+    // MARK: - Pure mapping
+
+    /// The monitor reads on a worker and maps on the main actor; the mapping must need no file.
+    func testSessionsFromExchangesNeedNoDatabase() {
+        let now = Date()
+        let exchanges = [
+            WarpAgentStore.Exchange(exchangeID: "e2", conversationID: "c1", startedAt: now.addingTimeInterval(-5),
+                                    status: "Pending", workingDirectory: "/tmp/proj", inputPrefix: "{\"text\":\"fix the tests\"}"),
+            WarpAgentStore.Exchange(exchangeID: "e1", conversationID: "c1", startedAt: now.addingTimeInterval(-60),
+                                    status: "Completed", workingDirectory: "/tmp/proj", inputPrefix: nil)
+        ]
+        let running = WarpAgentStore.sessions(exchanges: exchanges, collapseSeconds: 5, inactiveSeconds: 5,
+                                              warpRunning: true, now: now)
+        XCTAssertEqual(running.count, 1, "one session per conversation, newest exchange wins")
+        XCTAssertEqual(running.first?.displayState, .executing)
+        XCTAssertEqual(running.first?.projectName, "proj")
+        // Warp gone: a pending exchange is an interrupted one, never a running one.
+        let stopped = WarpAgentStore.sessions(exchanges: exchanges, collapseSeconds: 5, inactiveSeconds: 5,
+                                              warpRunning: false, now: now)
+        XCTAssertNotEqual(stopped.first?.displayState, .executing)
+        XCTAssertTrue(WarpAgentStore.sessions(exchanges: [], collapseSeconds: 5, inactiveSeconds: 5,
+                                              warpRunning: true, now: now).isEmpty)
+    }
 }

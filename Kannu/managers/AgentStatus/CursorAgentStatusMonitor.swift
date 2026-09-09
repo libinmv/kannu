@@ -57,6 +57,10 @@ final class CursorAgentStatusMonitor: ObservableObject {
     private var endedRetention: [String: AgentTrafficLightMapper.RetainedEndedSession] = [:]
     private var lastPublishedTrafficLightState: AgentTrafficLightState?
     private var lastPublishedShouldShowTrafficLight: Bool?
+    /// Warp's recent exchanges, read on a worker (see `refreshWarpExchangesIfNeeded`) and
+    /// mapped here on every rescan. Empty until the first read returns.
+    private var warpExchanges: [WarpAgentStore.Exchange] = []
+    private var warpRefreshInFlight = false
 
     private init() {}
 
@@ -96,6 +100,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
             FSEventStreamRelease(eventStream)
             self.eventStream = nil
         }
+        warpExchanges = []
         trafficLightState = .inactive
         shouldShowTrafficLight = false
         sessions = []
@@ -1761,17 +1766,42 @@ final class CursorAgentStatusMonitor: ObservableObject {
             inactiveSeconds: inactiveSeconds,
             now: now
         )
-        if let databaseURL = WarpAgentStore.databaseURL {
-            results += WarpAgentStore.sessions(
-                databaseURL: databaseURL,
-                staleMinutes: staleMinutes,
-                collapseSeconds: collapseSeconds,
-                inactiveSeconds: inactiveSeconds,
-                warpRunning: isWarpRunning(),
-                now: now
-            )
-        }
+        refreshWarpExchangesIfNeeded(staleMinutes: staleMinutes, now: now)
+        results += WarpAgentStore.sessions(
+            exchanges: warpExchanges,
+            collapseSeconds: collapseSeconds,
+            inactiveSeconds: inactiveSeconds,
+            warpRunning: isWarpRunning(),
+            now: now
+        )
         return results
+    }
+
+    /// Warp's database lives in its group container, so the first open raises the macOS
+    /// "access data from other apps" prompt — and `open()` blocks until the user answers. On the
+    /// main actor that froze the whole app (every timer, every hover) for as long as the dialog
+    /// stayed up. So the read runs on a worker, one at a time; the result lands here and, when it
+    /// changed, schedules the rescan that maps it. Rescans meanwhile map the last result.
+    private func refreshWarpExchangesIfNeeded(staleMinutes: Int, now: Date) {
+        guard !warpRefreshInFlight else { return }
+        warpRefreshInFlight = true
+        let since = WarpAgentStore.since(staleMinutes: staleMinutes, now: now)
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            // `databaseURL` stats the container path; the store's 2 s query cache is touched by
+            // this one worker only.
+            let exchanges = WarpAgentStore.databaseURL.map {
+                WarpAgentStore.loadRecentExchanges(databaseURL: $0, since: since, now: now)
+            } ?? []
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.warpRefreshInFlight = false
+                    guard self.isRunning, exchanges != self.warpExchanges else { return }
+                    self.warpExchanges = exchanges
+                    self.scheduleRescan(delay: 0)
+                }
+            }
+        }
     }
 
     private func isWarpRunning() -> Bool {
