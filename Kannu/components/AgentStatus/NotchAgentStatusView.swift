@@ -397,7 +397,7 @@ struct NotchAgentStatusView: View {
                 content()
             }
             .buttonStyle(.plain)
-            .hoverTooltip(String(localized: "Open in \(target.appName)"), pointingHandCursor: true)
+            .hoverTooltip(target.actionLabel, pointingHandCursor: true)
             .accessibilityHint("Opens \(target.appName)")
         } else {
             content()

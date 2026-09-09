@@ -16,7 +16,8 @@ final class ClaudeReconcilerTests: XCTestCase {
         hostPID: Int? = nil,
         toolErrorCount: Int = 0,
         unattended: Bool = false,
-        runError: RunError? = nil
+        runError: RunError? = nil,
+        desktopSessionID: String? = nil
     ) -> AgentSessionStatus {
         var session = AgentSessionStatus(
             id: "\(provider)-\(conversation)",
@@ -35,6 +36,7 @@ final class ClaudeReconcilerTests: XCTestCase {
         session.toolErrorCount = toolErrorCount
         session.isUnattended = unattended
         session.runError = runError
+        session.desktopSessionID = desktopSessionID
         return session
     }
 
@@ -76,6 +78,20 @@ final class ClaudeReconcilerTests: XCTestCase {
         XCTAssertEqual(merged.toolErrorCount, 2, "the tool-error count keeps the larger side")
         XCTAssertTrue(merged.isUnattended, "the unattended flag rides the seam too")
         XCTAssertEqual(merged.runError, .apiError(status: 429), "the transcript's verdict fills a hook that has none")
+    }
+
+    func testDesktopSessionIDCarriesAcrossBothReconcilerArms() {
+        // Entry 7's field set grows: the Desktop chat locator is passive-only, like hostPID.
+        let passiveStopped = session(rawState: "stopped", display: .stopped,
+                                     updatedAt: Date(timeIntervalSince1970: 1_500), desktopSessionID: "local_x")
+        let demoted = reconcile(hooks: [session(rawState: "executing", display: .executing)], passive: [passiveStopped])
+        XCTAssertEqual(demoted[0].displayState, .stopped)
+        XCTAssertEqual(demoted[0].desktopSessionID, "local_x", "demote arm")
+        let passiveActive = session(rawState: "executing", display: .executing, desktopSessionID: "local_x")
+        let unchanged = reconcile(hooks: [session(rawState: "executing", display: .executing)], passive: [passiveActive])
+        XCTAssertEqual(unchanged[0].desktopSessionID, "local_x", "pass-through arm")
+        let promoted = reconcile(hooks: [session(rawState: "thinking", display: .inactive)], passive: [passiveActive])
+        XCTAssertEqual(promoted[0].desktopSessionID, "local_x", "promote arm")
     }
 
     func testRunVerdictSeamPrefersTheHookThenTheMoreSpecificReason() {

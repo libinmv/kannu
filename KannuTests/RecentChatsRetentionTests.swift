@@ -26,7 +26,8 @@ final class RecentChatsRetentionTests: XCTestCase {
     private let t0 = Date(timeIntervalSince1970: 1_000)
 
     private func session(_ id: String, _ state: AgentTrafficLightState, visible: Bool = true,
-                         toolErrors: Int = 0, runError: RunError? = nil) -> AgentSessionStatus {
+                         toolErrors: Int = 0, runError: RunError? = nil,
+                         desktopSessionID: String? = nil) -> AgentSessionStatus {
         var s = AgentSessionStatus(
             id: "claude-\(id)", provider: "claude", conversationID: id, chatName: "Chat \(id)",
             projectName: "proj", rawState: state == .stopped ? "stopped" : "executing",
@@ -35,11 +36,13 @@ final class RecentChatsRetentionTests: XCTestCase {
         )
         s.toolErrorCount = toolErrors
         s.runError = runError
+        s.desktopSessionID = desktopSessionID
         return s
     }
 
     func testRedThenGoneIsRetainedAsADimVisibleCard() {
-        let out = Mapper.retainEndedSessions(previous: [session("a", .stopped, toolErrors: 2, runError: .failed)],
+        let out = Mapper.retainEndedSessions(previous: [session("a", .stopped, toolErrors: 2, runError: .failed,
+                                                                 desktopSessionID: "local_x")],
                                              current: [], retained: [:], now: t0.addingTimeInterval(10))
         XCTAssertEqual(out.sessions.count, 1)
         XCTAssertEqual(out.sessions[0].conversationID, "a")
@@ -47,6 +50,7 @@ final class RecentChatsRetentionTests: XCTestCase {
         XCTAssertTrue(out.sessions[0].isVisible)
         XCTAssertEqual(out.sessions[0].toolErrorCount, 2, "the count survives on the retained card")
         XCTAssertEqual(out.sessions[0].runError, .failed, "so does the verdict — the dim card still says why")
+        XCTAssertEqual(out.sessions[0].desktopSessionID, "local_x", "and the dim card still opens the exact Desktop chat")
         XCTAssertEqual(out.sessions[0].chatName, "Chat a")
         XCTAssertEqual(out.retained["a"]?.endedAt, t0.addingTimeInterval(10))
     }

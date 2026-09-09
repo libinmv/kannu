@@ -25,17 +25,23 @@ import os
 /// Click-through from an agent session row to the app that hosts it.
 ///
 /// Tiered, degrading gracefully:
-/// 1. Stopped Claude sessions — which have no live host to activate — open through Claude
-///    Desktop's `claude://resume?session=<uuid>` deep link, which shows that exact chat
-///    where it left off without running anything. Live sessions are deliberately never
-///    deep-linked: Desktop imports rather than focuses, spawning a second consumer of a
-///    transcript that already has one (verified against Desktop 2.1.222).
-/// 2. Otherwise activate the right app. GUI IDE sessions (Cursor / VS Code / Antigravity)
+/// 1. Claude chats Desktop knows — hosted in its Code tab, or imported earlier — open through
+///    `claude://claude.ai/epitaxy/<local id>`, Desktop's in-app route for that exact chat; it
+///    navigates and creates nothing (verified against Desktop 1.46388.4: `setFocusedSession`
+///    in its log, no new host). Live and stopped rows alike; the id comes from Desktop's
+///    on-disk index via `ClaudeDesktopSessionIndex`.
+/// 2. Stopped Claude chats Desktop has never seen open through `claude://resume?session=<cli
+///    uuid>`, which imports the on-disk transcript and shows it where it left off. NEVER for a
+///    live session: Desktop's id diverges from the CLI id after a resume, so `resume` imports a
+///    second `claude --resume` host for a transcript that already has one (verified against
+///    Desktop 2.1.222 and 1.46388.4).
+/// 3. Otherwise activate the right app. GUI IDE sessions (Cursor / VS Code / Antigravity)
 ///    activate by bundle id, or — when not running and the session knows its working
 ///    directory — launch the IDE *on that project*. Claude Code sessions running in a real
 ///    terminal walk the agent process's parent chain to whatever GUI app hosts it (Terminal,
-///    iTerm2, Ghostty, Warp, or an IDE's integrated terminal) and activate that.
-/// 3. When Accessibility is already granted, additionally raise the specific window whose
+///    iTerm2, Ghostty, Warp, or an IDE's integrated terminal) and activate that. A
+///    Desktop-hosted session the index has not resolved yet lands here too — activation only.
+/// 4. When Accessibility is already granted, additionally raise the specific window whose
 ///    title matches the session's project. Silently skipped when not granted — the row's
 ///    click still lands in the right app, and the Agents settings callout is where users
 ///    grant AX if they want window-level precision. No prompts from here.
@@ -56,8 +62,15 @@ enum AgentSessionOpener {
             case ide(running: NSRunningApplication?, appURL: URL?, source: AgentProviderIconSource)
             /// The GUI app hosting a CLI agent's terminal, found via parent-walk.
             case terminalHost(NSRunningApplication)
-            /// A specific Claude Code chat, reachable via Claude Desktop's resume deep link.
+            /// A specific Claude Code chat, via a Claude Desktop deep link: the session route
+            /// (focus) or `resume` (import).
             case claudeDeepLink(url: URL)
+        }
+
+        /// Tooltip text: a deep link lands on the chat itself, the others on its app.
+        var actionLabel: String {
+            if case .claudeDeepLink = kind { return String(localized: "Open chat in \(appName)") }
+            return String(localized: "Open in \(appName)")
         }
     }
 
@@ -77,10 +90,18 @@ enum AgentSessionOpener {
             }
             return nil
         case .claude:
-            // Live session: activate its host. NEVER deep-link a live session — verified
-            // against Claude Desktop 2.1.222: `claude://resume` spawns a fresh
-            // `claude --resume=<id>` host even when the session already has one, creating a
-            // second consumer of the same transcript.
+            // Desktop knows this chat: its session route focuses it in the Code tab and creates
+            // nothing, so it serves live and stopped rows alike.
+            if let desktopID = session.desktopSessionID,
+               let url = ClaudeDesktopSessionIndex.focusDeepLink(desktopSessionID: desktopID),
+               let handler = claudeDesktopAppURL {
+                return OpenTarget(appName: FileManager.default.displayName(atPath: handler.path),
+                                  kind: .claudeDeepLink(url: url))
+            }
+            // Live session elsewhere (or Desktop-hosted but not in the index yet): activate its
+            // host. NEVER `resume` a live session — verified against Claude Desktop 2.1.222 and
+            // 1.46388.4: it spawns a fresh `claude --resume=<id>` host even when the session
+            // already has one, creating a second consumer of the same transcript.
             if let pid = session.hostPID, let host = terminalHostApplication(agentPID: pid) {
                 return OpenTarget(appName: host.localizedName ?? "Terminal", kind: .terminalHost(host))
             }
@@ -115,13 +136,22 @@ enum AgentSessionOpener {
 
         switch target.kind {
         case .claudeDeepLink(let url):
-            log.notice("opening chat via resume deep link (\(url.absoluteString, privacy: .private))")
+            log.notice("opening chat via Claude Desktop deep link (\(url.absoluteString, privacy: .private))")
             NSWorkspace.shared.open(url)
+            // Desktop's handler focuses the window itself; activating too covers a handler
+            // disabled by policy, which drops the link silently.
+            NSRunningApplication.runningApplications(withBundleIdentifier: claudeDesktopBundleID).first?.activate()
             return true
 
         case .terminalHost(let host):
             log.notice("activating terminal host \(host.localizedName ?? "?", privacy: .public) (pid \(host.processIdentifier))")
-            raiseMatchingWindow(in: host, session: session)
+            if host.bundleIdentifier == claudeDesktopBundleID {
+                // Desktop-hosted but unresolved in the index: its window titles never carry
+                // the project, so the raise would only ever miss.
+                log.notice("Desktop-hosted session not in the index yet; activating only")
+            } else {
+                raiseMatchingWindow(in: host, session: session)
+            }
             host.activate()
             return true
 

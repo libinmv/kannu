@@ -7673,12 +7673,13 @@ struct AgentStatusSettings: View {
 
                 // Optional, not required: without it clicking a chat still activates the
                 // right app — it just can't raise the specific window for terminal- and
-                // IDE-hosted sessions. Claude Desktop chats deep-link and don't need it.
+                // IDE-hosted sessions. Chats Claude Desktop knows deep-link to the exact chat
+                // (its session route, see ClaudeDesktopSessionIndex) and don't need it.
                 if !accessibilityPermission.isAuthorized {
                     Section {
                         SettingsPermissionCallout(
                             title: "Accessibility improves click-through",
-                            message: "Clicking a recent chat brings its app forward. With Accessibility access, Kannu can also raise the exact window for sessions running in a terminal or IDE.",
+                            message: "Clicking a recent chat brings its app forward — Claude Desktop chats open on the exact chat. With Accessibility access, Kannu can also raise the exact window for sessions running in a terminal or IDE.",
                             requestAction: { accessibilityPermission.requestAuthorizationPrompt() },
                             openSettingsAction: { accessibilityPermission.openSystemSettings() }
                         )

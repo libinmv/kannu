@@ -61,6 +61,11 @@ final class CursorAgentStatusMonitor: ObservableObject {
     /// mapped here on every rescan. Empty until the first read returns.
     private var warpExchanges: [WarpAgentStore.Exchange] = []
     private var warpRefreshInFlight = false
+    /// Claude Desktop's index of the chats its Code tab hosts, read on a worker (see
+    /// `refreshDesktopSessionIndexIfNeeded`) and reduced to CLI session id → Desktop id.
+    private let desktopSessionIndexLoader = ClaudeDesktopSessionIndex.Loader()
+    private var desktopSessionIDByCLISessionID: [String: String] = [:]
+    private var desktopIndexRefreshInFlight = false
 
     private init() {}
 
@@ -101,6 +106,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
             self.eventStream = nil
         }
         warpExchanges = []
+        desktopSessionIDByCLISessionID = [:]
         trafficLightState = .inactive
         shouldShowTrafficLight = false
         sessions = []
@@ -1594,6 +1600,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 at: sessionsDir,
                 includingPropertiesForKeys: [.contentModificationDateKey]
               ) else { return ([], []) }
+        refreshDesktopSessionIndexIfNeeded()
 
         let staleMs = Int64(staleMinutes) * 60_000
         let nowMs = Int64(now.timeIntervalSince1970 * 1000)
@@ -1726,6 +1733,14 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 hostPID: processAlive ? pid : nil
             )
             session.runError = runError
+            // Claude Desktop's own id for this chat, so click-through can land on it. A live
+            // session must say it is Desktop-hosted; a dead process takes any match.
+            session.desktopSessionID = ClaudeDesktopSessionIndex.resolvedDesktopSessionID(
+                cliSessionID: sessionId,
+                processAlive: processAlive,
+                sessionFile: json,
+                idMap: desktopSessionIDByCLISessionID
+            )
             results.append(session)
         }
 
@@ -1807,6 +1822,28 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     self.warpRefreshInFlight = false
                     guard self.isRunning, exchanges != self.warpExchanges else { return }
                     self.warpExchanges = exchanges
+                    self.scheduleRescan(delay: 0)
+                }
+            }
+        }
+    }
+
+    /// Desktop's session records are 100+ KB each and rewritten on every Desktop turn, so they
+    /// are read on a worker, one read at a time, and only the reduced id map crosses back —
+    /// compared as a map, so an activity timestamp bump alone never schedules a rescan.
+    private func refreshDesktopSessionIndexIfNeeded() {
+        guard !desktopIndexRefreshInFlight else { return }
+        desktopIndexRefreshInFlight = true
+        let loader = desktopSessionIndexLoader
+        let root = ClaudeDesktopSessionIndex.defaultRoot
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let map = ClaudeDesktopSessionIndex.desktopSessionIDsByCLISessionID(loader.records(root: root))
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.desktopIndexRefreshInFlight = false
+                    guard self.isRunning, map != self.desktopSessionIDByCLISessionID else { return }
+                    self.desktopSessionIDByCLISessionID = map
                     self.scheduleRescan(delay: 0)
                 }
             }

@@ -216,7 +216,11 @@ remain untestable until they grow a seam.
 
 **Still true:** when you add a field to `AgentSessionStatus` that a passive session can
 populate, add it to `inheritingPassiveData` (now in `AgentTrafficLightState.swift`) AND to
-the field assertions in `ClaudeReconcilerTests` in the same commit.
+the field assertions in `ClaudeReconcilerTests` in the same commit. The field set as of
+2026-09-10: `chatName`, `projectName`, `cwd`, `hostPID`, `desktopSessionID` (Claude Desktop's own
+id for the chat, the click-through locator — carried by `carryingExtras` as `self ?? source`;
+guards: `ClaudeReconcilerTests.testDesktopSessionIDCarriesAcrossBothReconcilerArms`,
+`ClaudeDesktopSessionIndexTests.testDesktopSessionIDSurvivesReconstruction`, the retention test).
 
 **2026-09-08 addendum — additive fields.** `toolErrorCount` and `isUnattended` are `var`s with
 defaults, so the memberwise initialiser compiles happily without them and *silently drops them*
@@ -333,6 +337,12 @@ for `AppDelegate.init`; it applies to every later touch too.
 
 **Guard.** `WarpAgentStoreTests.testSessionsFromExchangesNeedNoDatabase` pins the pure mapping, so
 the split cannot quietly grow a file read again.
+
+**2026-09-10 addendum.** The same shape now reads Claude Desktop's session index
+(`ClaudeDesktopSessionIndex.Loader` on a utility worker, `refreshDesktopSessionIndexIfNeeded`):
+not for TCC — `~/Library/Application Support/Claude` is not protected — but because the records
+are 100+ KB each and rewritten on every Desktop turn. Only the reduced id map crosses back, and
+it is compared as a map so a timestamp bump alone never schedules a rescan.
 
 ## Danger zones
 

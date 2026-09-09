@@ -86,6 +86,11 @@ struct AgentSessionStatus: Identifiable, Equatable {
     /// PID of the agent process itself (Claude passive sessions). The parent chain of this
     /// PID leads to the hosting terminal or IDE, which is what click-through activates.
     var hostPID: Int? = nil
+    /// Claude Desktop's own id for a Code-tab chat (`local_…`), resolved from Desktop's on-disk
+    /// index by CLI session id (`ClaudeDesktopSessionIndex`). A locator like `hostPID`:
+    /// click-through opens Desktop's session route (`ClaudeDesktopSessionIndex.focusDeepLink`),
+    /// which focuses the chat and creates nothing, so it is safe for live and stopped sessions.
+    var desktopSessionID: String? = nil
     /// Tool failures the hook has counted since the last user prompt. Diagnostic only since
     /// hook v33: a failure the agent recovered from is not the turn's outcome, so nothing
     /// displays it — `runError` is what the card reports. Additive: see `carryingExtras(from:)`.
@@ -274,9 +279,10 @@ enum AgentTrafficLightMapper {
                 if repaired.hostPID == nil, let hostPID = passive.hostPID {
                     repaired.hostPID = hostPID
                 }
-                // The additive fields and the run verdict ride the seam here: the count keeps
-                // the larger side, the flag ORs, and the verdict is the hook's unless it has
-                // none — then the transcript's (`RunError.preferred`).
+                // The additive fields, the run verdict and the Desktop chat locator ride the
+                // seam here: the count keeps the larger side, the flag ORs, the verdict is the
+                // hook's unless it has none (`RunError.preferred`), and `desktopSessionID` —
+                // passive-only, like hostPID — fills in when the hook side has none.
                 repaired = repaired.carryingExtras(from: passive)
                 return repaired
             }
@@ -694,15 +700,17 @@ extension AgentSessionStatus {
     }
 
     /// Copies the fields a memberwise reconstruction silently drops — the tool-error count, the
-    /// unattended flag, the run verdict. Every site that rebuilds a session from another one
-    /// must call this: docs/REGRESSIONS.md entry 7 is exactly this failure, for cwd and hostPID.
-    /// Across a merge seam the larger count wins and the flag is an OR (both are monotone within
-    /// a session); the verdict is `self` unless it has none — see `RunError.preferred`.
+    /// unattended flag, the run verdict, the Desktop chat locator. Every site that rebuilds a
+    /// session from another one must call this: docs/REGRESSIONS.md entry 7 is exactly this
+    /// failure, for cwd and hostPID. Across a merge seam the larger count wins and the flag is an
+    /// OR (both are monotone within a session); the verdict is `self` unless it has none — see
+    /// `RunError.preferred`; the locator is `self` unless nil.
     func carryingExtras(from source: AgentSessionStatus) -> AgentSessionStatus {
         var copy = self
         copy.toolErrorCount = max(copy.toolErrorCount, source.toolErrorCount)
         copy.isUnattended = copy.isUnattended || source.isUnattended
         copy.runError = RunError.preferred(copy.runError, source.runError)
+        copy.desktopSessionID = copy.desktopSessionID ?? source.desktopSessionID
         return copy
     }
 }

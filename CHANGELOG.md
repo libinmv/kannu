@@ -4,6 +4,42 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-10 - Click-through lands on the exact chat inside Claude Desktop
+- **Developer label:** also can we make the clickthrough redirect not just to app, but the actual chat they are clicking on … Claude Desktop live Code session this is the most important one, research on internet to see how it could be done
+- **Agent label:** Open a Claude Code chat hosted by Claude Desktop's Code tab through Desktop's own session route (`claude://claude.ai/epitaxy/local_…`), resolved from its on-disk session index
+- **Changes:**
+  - Research (Desktop 1.46388.4 bundle + docs/issues): Desktop's URL handler has two focus routes
+    for its own `local_` id, both creating nothing — `claude://code/continue?session=<id>` (roster
+    lookup, behind a feature gate: on this machine it logged "code entry deep link gated off" and
+    did nothing) and `claude://claude.ai/epitaxy/<id>` (direct in-app navigation, ungated —
+    verified: `setFocusedSession` for the id in Desktop's log, no new `claude` host). Kannu uses
+    the second. `claude://resume?session=<cli uuid>` — what Kannu used for stopped chats —
+    imports the transcript unless a Desktop chat with that exact id exists, and Desktop's id
+    diverges from the CLI id after a resume/clear/compaction: that is why a live-session `resume`
+    spawned a duplicate host. There is no other door (no port, no socket, no AppleScript
+    dictionary, remote debugging stripped); Accessibility needs `AXManualAccessibility` on the
+    Electron app and stays a possible later fallback.
+  - New `ClaudeDesktopSessionIndex` (Foundation only, in the logic test target): reads
+    `~/Library/Application Support/Claude/claude-code-sessions/<account>/<org>/local_*.json`
+    (records are 100+ KB, so on a utility worker with a per-file `(mtime, size)` cache), maps every
+    CLI session id — `cliSessionId` plus the lineage keys — to Desktop's `local_…` id (direct match
+    beats lineage, non-archived beats archived, newest activity wins; an archived-only match still
+    resolves because `continue` on it is a safe no-op), classifies a live session as Desktop-hosted
+    from `~/.claude/sessions/<pid>.json`'s `entrypoint`, and builds the link (rejects `last`, bare
+    UUIDs and anything outside Desktop's regex, so the path carries only id characters). No
+    process environment is read.
+  - `AgentSessionStatus.desktopSessionID` — a locator like `hostPID`, set in `buildClaudeSessions`
+    (a live session only when Desktop-hosted, so a terminal session once imported into Desktop keeps
+    opening its terminal; a dead process takes any match), carried by `carryingExtras` as
+    `self ?? source` (REGRESSIONS entry 7 field set grows).
+  - `AgentSessionOpener`: chats Desktop knows open via the session route (live and stopped), stopped
+    chats it has never seen still `resume` (import), never a live one; a Desktop-hosted session
+    the index has not resolved yet activates the app without the pointless AX title raise. After
+    the link Kannu also activates Desktop, covering a handler disabled by policy. Tooltip reads
+    "Open chat in Claude" for deep links.
+  - Tests: `ClaudeDesktopSessionIndexTests` (records, resolver precedence, id map, attach rule,
+    link, file enumeration, cache), reconciler arms, retention, reconstruction.
+
 ### 2026-09-09 - A stopped card names only the error that ended the run
 - **Developer label:** so now a chat completed successfully, that shows as stopped and shows 1 tool error, that tool error gives the user a wrong impression that the task also was not successful, so only report errors that made the process stop, else that error is irrelevant for the user right
 - **Agent label:** Replace the per-turn tool-error count on the card with a run verdict set only by run-terminating signals
