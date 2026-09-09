@@ -354,6 +354,9 @@ enum AgentSessionLogParser {
     struct ClaudeTailResult: Equatable {
         let state: ClaudeTailState
         let recordTimestamp: Date?
+        /// Set only with `.turnFinished`, when the newest conversational record is the API error
+        /// that ended the turn.
+        var runError: RunError? = nil
 
         static let unknown = ClaudeTailResult(state: .unknown, recordTimestamp: nil)
     }
@@ -469,6 +472,15 @@ enum AgentSessionLogParser {
                 let message = json["message"] as? [String: Any]
                 let content = message?["content"] as? [[String: Any]] ?? []
                 let timestamp = recordTimestamp(from: json)
+                // The turn died on the API — rate limit, overload, auth, a too-long prompt. The
+                // record is synthesised (`stop_reason` "stop_sequence"), so decide it first, and
+                // only on a literal `true`: `isApiErrorMessage: false` is written too. The
+                // `system`/`api_error` records that precede it are retries and stay bookkeeping.
+                if (json["isApiErrorMessage"] as? Bool) == true {
+                    let status = (json["apiErrorStatus"] as? NSNumber)?.intValue
+                    return ClaudeTailResult(state: .turnFinished, recordTimestamp: timestamp,
+                                            runError: .apiError(status: status))
+                }
                 if content.contains(where: { ($0["type"] as? String) == "tool_use" }) {
                     return ClaudeTailResult(state: .toolInFlight, recordTimestamp: timestamp)
                 }

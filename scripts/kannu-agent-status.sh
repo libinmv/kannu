@@ -1,6 +1,6 @@
 #!/bin/bash
 # Installed by Kannu: reports AI agent status for the notch traffic light.
-# KANNU_HOOK_SCRIPT_VERSION=32
+# KANNU_HOOK_SCRIPT_VERSION=33
 # Usage: kannu-agent-status.sh <state> <provider> [hook_event] [matcher_key]
 #        (hook JSON arrives on stdin)
 
@@ -256,18 +256,28 @@ unattended = bool(existing.get("unattended")) or normalize_token(_mode) in {
 }
 
 # Tool failures since the last prompt. Stop never says whether the turn went well; the
-# failure events do. Reset when the user submits, so a red light reads "Finished" or
-# "Finished, N tool errors" for THIS turn. An Esc interrupt is not an error.
+# failure events do. Reset when the user submits. Diagnostic only since v33: a failure the
+# agent recovered from is not the turn's outcome, so nothing displays the count. An Esc
+# interrupt is not an error.
 _raw_errors = existing.get("tool_errors")
 tool_errors = _raw_errors if isinstance(_raw_errors, int) and not isinstance(_raw_errors, bool) and _raw_errors >= 0 else 0
+antigravity_stop_error = provider == "antigravity" and hook_event == "Stop" and state != "quota_exceeded" and bool(pick_str(data.get("error")))
 if hook_event in {"UserPromptSubmit", "beforeSubmitPrompt"}:
     tool_errors = 0
 elif hook_event in {"PostToolUseFailure", "postToolUseFailure", "StopFailure"}:
     if data.get("is_interrupt") is not True:
         tool_errors = min(tool_errors + 1, 999)
-elif provider == "antigravity" and hook_event == "Stop" and state != "quota_exceeded":
-    if pick_str(data.get("error")):
-        tool_errors = min(tool_errors + 1, 999)
+elif antigravity_stop_error:
+    tool_errors = min(tool_errors + 1, 999)
+
+# What the card reports is a run that ENDED on an error, decided from this event's own
+# state before the parallel-group merge below can substitute a held yellow. A StopFailure,
+# or an Antigravity Stop carrying an error, is one; a later stopped write that learns
+# nothing new (Notification/agent_completed landing after Stop) keeps the verdict on disk
+# so the label cannot flicker. Any non-stopped write is a new turn: cleared.
+ended_on_error = state == "stopped" and (
+    hook_event == "StopFailure" or antigravity_stop_error or existing.get("ended_on_error") is True
+)
 
 # Claude runs the matcher-scoped and generic groups for one event in parallel with no
 # ordering guarantee. If both land within the same instant, keep the more urgent verdict
@@ -365,6 +375,8 @@ if existing_state == "awaiting_input" and state not in {"awaiting_input", "stopp
                 existing.pop("tool_errors", None)
             if unattended:
                 existing["unattended"] = True
+            # Not a stopped write: whatever verdict the file held is over.
+            existing.pop("ended_on_error", None)
             write_status(status_file, existing)
             print('{"permission":"allow","continue":true}')
             raise SystemExit(0)
@@ -385,6 +397,8 @@ if tool_errors:
     payload["tool_errors"] = tool_errors
 if unattended:
     payload["unattended"] = True
+if ended_on_error:
+    payload["ended_on_error"] = True
 write_status(status_file, payload)
 print('{"permission":"allow","continue":true}')
 PY

@@ -200,8 +200,54 @@ final class HookScriptTests: XCTestCase {
         try run(state: "stopped", event: "Stop", conversation: "e1")
         XCTAssertEqual(try readState("e1"), "stopped")
         XCTAssertEqual(try readToolErrors("e1"), 2, "two real failures, one Esc interrupt")
+        XCTAssertNil(try readJSON("e1")?["ended_on_error"], "a count is never a verdict")
         try run(state: "thinking", event: "UserPromptSubmit", conversation: "e1", extra: ["prompt": "next"])
         XCTAssertEqual(try readToolErrors("e1"), 0, "a new prompt starts a clean turn")
         XCTAssertNil(try readJSON("e1")?["tool_errors"], "zero is expressed by omitting the key")
+    }
+
+    // MARK: - Run outcome (v33): only a run-terminating signal is a verdict
+
+    func testRecoveredToolFailureLeavesTheStopClean() throws {
+        try run(state: "thinking", event: "UserPromptSubmit", conversation: "o1", extra: ["prompt": "go"])
+        try run(state: "thinking", event: "PostToolUseFailure", conversation: "o1", extra: ["error": "exit 1"])
+        try run(state: "thinking", event: "PostToolUse", conversation: "o1")
+        try run(state: "stopped", event: "Stop", conversation: "o1")
+        XCTAssertEqual(try readToolErrors("o1"), 1, "the count is still kept")
+        XCTAssertNil(try readJSON("o1")?["ended_on_error"], "a recovered failure is not the turn's outcome")
+    }
+
+    func testTrailingToolFailureStillLeavesTheStopClean() throws {
+        // Strict by decision: the last tool call failing and the agent then finishing is not a
+        // verdict — grep exits 1 on no match, and the agent still answered.
+        try run(state: "thinking", event: "UserPromptSubmit", conversation: "o2", extra: ["prompt": "go"])
+        try run(state: "thinking", event: "PostToolUseFailure", conversation: "o2", extra: ["error": "exit 1"])
+        try run(state: "stopped", event: "Stop", conversation: "o2")
+        XCTAssertEqual(try readToolErrors("o2"), 1)
+        XCTAssertNil(try readJSON("o2")?["ended_on_error"])
+    }
+
+    func testStopFailureEndsOnErrorUntilTheNextTurn() throws {
+        try run(state: "thinking", event: "UserPromptSubmit", conversation: "o3", extra: ["prompt": "go"])
+        try run(state: "stopped", event: "StopFailure", conversation: "o3", extra: ["error": "API Error: 529 Overloaded"])
+        XCTAssertEqual(try readState("o3"), "stopped")
+        XCTAssertEqual(try readJSON("o3")?["ended_on_error"] as? Bool, true)
+        // A stopped write that learns nothing new keeps the verdict, so the label cannot flicker.
+        try run(state: "stopped", event: "Stop", conversation: "o3")
+        XCTAssertEqual(try readJSON("o3")?["ended_on_error"] as? Bool, true)
+        // A new turn clears it — on the prompt, and on the first tool event alike.
+        try run(state: "thinking", event: "UserPromptSubmit", conversation: "o3", extra: ["prompt": "again"])
+        XCTAssertNil(try readJSON("o3")?["ended_on_error"])
+        try run(state: "stopped", event: "StopFailure", conversation: "o3", extra: ["error": "x"])
+        try run(state: "executing", event: "PreToolUse", conversation: "o3")
+        XCTAssertNil(try readJSON("o3")?["ended_on_error"], "a running session has not ended on anything")
+    }
+
+    func testInterruptedStopFailureIsStillAVerdict() throws {
+        // `is_interrupt` exempts the COUNT (an Esc is not a tool error); the run still ended failing.
+        try run(state: "thinking", event: "UserPromptSubmit", conversation: "o4", extra: ["prompt": "go"])
+        try run(state: "stopped", event: "StopFailure", conversation: "o4", extra: ["error": "x", "is_interrupt": true])
+        XCTAssertEqual(try readToolErrors("o4"), 0)
+        XCTAssertEqual(try readJSON("o4")?["ended_on_error"] as? Bool, true)
     }
 }

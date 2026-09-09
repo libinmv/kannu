@@ -998,6 +998,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
             // Additive field the script writes beside the state (v31+). Untrusted input: clamped.
             session.toolErrorCount = max(0, min(999, (json["tool_errors"] as? NSNumber)?.intValue ?? 0))
             session.isUnattended = (json["unattended"] as? Bool) ?? false
+            // v33: the run ended on an error (StopFailure, or an Antigravity Stop carrying one).
+            // Only a literal `true` counts — the file is untrusted input.
+            if (json["ended_on_error"] as? Bool) == true { session.runError = .failed }
             results.append(session)
         }
 
@@ -1662,6 +1665,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
             let rawState: String
             let resolved: (state: AgentTrafficLightState, visible: Bool)
             var updatedAtMs = tsMs
+            var runError: RunError? = nil
             if processAlive {
                 // The transcript tail, not mtime, decides — a multi-minute tool writes its
                 // `tool_use` record up front and then stays silent, while post-turn bookkeeping
@@ -1680,6 +1684,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 rawState = passive.rawState
                 resolved = (passive.state, passive.visible)
                 updatedAtMs = passive.updatedAtMs
+                // Set only with `.turnFinished`, which the ladder maps to "stopped".
+                runError = tail.runError
             } else {
                 rawState = "stopped"
                 resolved = AgentTrafficLightMapper.resolveHookState(
@@ -1702,7 +1708,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 projectName = nil
             }
 
-            results.append(AgentSessionStatus(
+            var session = AgentSessionStatus(
                 id: "claude-\(sessionId)",
                 provider: "claude",
                 conversationID: sessionId,
@@ -1718,7 +1724,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 // process is provably alive — a dead pid must not make the row clickable.
                 cwd: json["cwd"] as? String,
                 hostPID: processAlive ? pid : nil
-            ))
+            )
+            session.runError = runError
+            results.append(session)
         }
 
         // A live process for a conversation id always beats a stale orphan file for the same

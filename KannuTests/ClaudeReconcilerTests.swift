@@ -15,7 +15,8 @@ final class ClaudeReconcilerTests: XCTestCase {
         cwd: String? = nil,
         hostPID: Int? = nil,
         toolErrorCount: Int = 0,
-        unattended: Bool = false
+        unattended: Bool = false,
+        runError: RunError? = nil
     ) -> AgentSessionStatus {
         var session = AgentSessionStatus(
             id: "\(provider)-\(conversation)",
@@ -33,6 +34,7 @@ final class ClaudeReconcilerTests: XCTestCase {
         )
         session.toolErrorCount = toolErrorCount
         session.isUnattended = unattended
+        session.runError = runError
         return session
     }
 
@@ -59,7 +61,8 @@ final class ClaudeReconcilerTests: XCTestCase {
         let passive = session(chatName: "Fix the parser", projectName: "kannu",
                               rawState: "stopped", display: .stopped,
                               updatedAt: Date(timeIntervalSince1970: 1_500),
-                              cwd: "/tmp/proj", hostPID: 4242, toolErrorCount: 2, unattended: true)
+                              cwd: "/tmp/proj", hostPID: 4242, toolErrorCount: 2, unattended: true,
+                              runError: .apiError(status: 429))
         let out = reconcile(hooks: [hook], passive: [passive])
         XCTAssertEqual(out.count, 1)
         let merged = out[0]
@@ -72,6 +75,21 @@ final class ClaudeReconcilerTests: XCTestCase {
         XCTAssertEqual(merged.hostPID, 4242)
         XCTAssertEqual(merged.toolErrorCount, 2, "the tool-error count keeps the larger side")
         XCTAssertTrue(merged.isUnattended, "the unattended flag rides the seam too")
+        XCTAssertEqual(merged.runError, .apiError(status: 429), "the transcript's verdict fills a hook that has none")
+    }
+
+    func testRunVerdictSeamPrefersTheHookThenTheMoreSpecificReason() {
+        // Both sides describe the same stop: the more specific reason wins.
+        let hookFailed = session(rawState: "stopped", display: .stopped, runError: .failed)
+        let passiveApi = session(rawState: "stopped", display: .stopped, runError: .apiError(status: 429))
+        XCTAssertEqual(reconcile(hooks: [hookFailed], passive: [passiveApi])[0].runError, .apiError(status: 429))
+        // Stop never says whether the turn went well; the transcript saw the API error.
+        let hookClean = session(rawState: "stopped", display: .stopped)
+        XCTAssertEqual(reconcile(hooks: [hookClean], passive: [passiveApi])[0].runError, .apiError(status: 429))
+        // The hook's verdict stands when the transcript has none.
+        let passiveClean = session(rawState: "stopped", display: .stopped)
+        XCTAssertEqual(reconcile(hooks: [hookFailed], passive: [passiveClean])[0].runError, .failed)
+        XCTAssertNil(reconcile(hooks: [hookClean], passive: [passiveClean])[0].runError)
     }
 
     func testInheritedFieldsCarryAcrossOnUnchangedSession() {

@@ -152,7 +152,10 @@ final class WarpAgentStoreTests: XCTestCase {
         XCTAssertEqual(byConversation["c1"]?.toolErrorCount, 0)
         XCTAssertEqual(byConversation["c2"]?.displayState, .stopped)
         XCTAssertEqual(byConversation["c2"]?.toolErrorCount, 1)
+        XCTAssertEqual(byConversation["c2"]?.runError, .failed, "a failed exchange is the run's verdict")
         XCTAssertEqual(byConversation["c3"]?.displayState, .stopped)
+        XCTAssertNil(byConversation["c1"]?.runError)
+        XCTAssertNil(byConversation["c3"]?.runError, "a cancel is the user's choice, not a failure")
     }
 
     func testNewestExchangeWinsPerConversation() throws {

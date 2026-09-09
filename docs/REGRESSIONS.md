@@ -227,6 +227,16 @@ demote path and `AgentSecurityFindingTests.testUnattendedFlagSurvivesReconstruct
 three helper initialisers. When you add another additive field, extend `carryingExtras`, not the
 call sites.
 
+**2026-09-09 addendum — the run verdict is not additive.** `runError` (why the run ended, nil for
+a clean finish) is a per-turn *verdict*, replaced by every stopped write. It rides the same
+`carryingExtras` seam but merges as `RunError.preferred` — `self` unless it has none, then the more
+specific reason — never as an OR or a max: under those nil is the identity, so one stale verdict
+would pin "failed" onto every later clean turn. The only things that may set it are run-terminating
+signals (hook `ended_on_error`, the transcript's `isApiErrorMessage`, Warp `Failed`, Desktop
+`result.is_error`); `toolErrorCount` is a count of recovered failures and must never become one.
+Guards: `ClaudeReconcilerTests.testRunVerdictSeamPrefersTheHookThenTheMoreSpecificReason`,
+`RunErrorTests`, and the hook-script cases that pin a recovered or trailing tool failure as clean.
+
 ---
 
 ## 8. Never add a flag or env var to the usage spawn without proving a real fetch

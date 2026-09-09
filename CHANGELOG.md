@@ -4,6 +4,32 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-09 - A stopped card names only the error that ended the run
+- **Developer label:** so now a chat completed successfully, that shows as stopped and shows 1 tool error, that tool error gives the user a wrong impression that the task also was not successful, so only report errors that made the process stop, else that error is irrelevant for the user right
+- **Agent label:** Replace the per-turn tool-error count on the card with a run verdict set only by run-terminating signals
+- **Changes:**
+  - "Stopped · N tool errors" is gone. `tool_errors` was an unordered per-turn sum of
+    `PostToolUseFailure` events, and on this Mac a failed tool result occurred 748 times inside turns
+    the agent recovered from versus 4 times at the end of one — it measured recoveries, not outcomes.
+    The hook still counts it (diagnostic, pinned by tests) but nothing displays it.
+  - New `AgentSessionStatus.runError: RunError?` (`.apiError(status:)`, `.failed`; nil = clean),
+    rendered as "Stopped · rate limited (429)", "· API overloaded (529)", "· signed out (401)",
+    "· API error N", "· failed" — only on stopped and retained cards. Set by: hook v33's
+    `ended_on_error` (Claude `StopFailure`, an Antigravity `Stop` carrying an error; kept across a
+    later stopped write so the label cannot flicker, cleared by any non-stopped write), the Claude
+    transcript's `assistant` record with `isApiErrorMessage: true` (`system`/`api_error` retries stay
+    bookkeeping; a newer user prompt clears it by construction), Warp `Failed` (`Cancelled` stays
+    clean), and Claude Desktop's newest `result` with `is_error` (`terminal_reason` deliberately not
+    read — a cancel is not a failure). A tool failure never becomes a verdict, even when it was the
+    last event before the stop (decided with the developer).
+  - Seam rule: the verdict crosses `carryingExtras` as `RunError.preferred` — hook wins, the
+    transcript fills a hook that has none, the more specific reason wins when both describe the same
+    stop — never OR/max (REGRESSIONS entry 7 addendum explains why).
+  - Tests: hook-script cases for recovered and trailing failures (clean), `StopFailure` (verdict,
+    kept, cleared), interrupted `StopFailure`; parser cases for the API-error record with/without
+    status, `isApiErrorMessage: false`, trailing bookkeeping, a new prompt, retry records; reconciler
+    seam cases; `RunErrorTests`; Warp, Desktop and retention updates.
+
 ### 2026-09-09 - Kannu-run ADR scans, and a high finding that stays in the notch until acknowledged
 - **Developer label:** also tell me how we can show that in ui, and how important is it, do we color code chats and also show something instead of traffic lights … make this persist until user action by default with control for user in settings
 - **Agent label:** Phase 1 of the ADR integration: scan runner and cadence, priority UX in the notch and panel, push, and Kannu's own bypass-permissions finding

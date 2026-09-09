@@ -268,7 +268,9 @@ enum WarpAgentStore {
                 hostPID: nil
             )
             if exchange.status == "Failed" {
+                // A failed exchange is the run's outcome; a cancelled one is the user's choice.
                 session.toolErrorCount = 1
+                session.runError = .failed
             }
             return session
         }

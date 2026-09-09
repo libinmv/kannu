@@ -33,6 +33,8 @@ final class ClaudeDesktopAgentSessionStoreTests: XCTestCase {
     private let toolResultOK = #"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}}"#
     private let assistantText = #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"done"}],"stop_reason":"end_turn"}}"#
     private let resultLine = #"{"type":"result","subtype":"success","is_error":false,"duration_ms":1200}"#
+    private let resultError = #"{"type":"result","subtype":"error_during_execution","is_error":true,"duration_ms":10}"#
+    private let resultApiError = #"{"type":"result","subtype":"error","is_error":true,"api_error_status":529,"terminal_reason":"error"}"#
     private let rateWarning = #"{"type":"rate_limit_event","rate_limit_info":{"status":"allowed_warning","rateLimitType":"five_hour"}}"#
     private let rateRejected = #"{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","rateLimitType":"five_hour","resetsAt":1788900000}}"#
 
@@ -69,6 +71,21 @@ final class ClaudeDesktopAgentSessionStoreTests: XCTestCase {
         let twoTurns = join([userPrompt, assistantToolUse, toolResultError, assistantText, resultLine,
                              userPrompt, assistantToolUse, toolResultOK, assistantText, resultLine])
         XCTAssertEqual(Store.parse(head: nil, tail: twoTurns).toolErrorCount, 0)
+    }
+
+    func testOnlyAFailedResultIsAVerdict() {
+        XCTAssertNil(Store.parse(head: nil, tail: join([userPrompt, assistantText, resultLine])).runError)
+        let recovered = join([userPrompt, assistantToolUse, toolResultError, assistantToolUse, toolResultOK,
+                              assistantText, resultLine])
+        let parsed = Store.parse(head: nil, tail: recovered)
+        XCTAssertEqual(parsed.toolErrorCount, 1)
+        XCTAssertNil(parsed.runError, "a recovered tool error is a count, not the outcome")
+        XCTAssertEqual(Store.parse(head: nil, tail: join([userPrompt, assistantToolUse, resultError])).runError, .failed)
+        XCTAssertEqual(Store.parse(head: nil, tail: join([userPrompt, assistantToolUse, resultApiError])).runError,
+                       .apiError(status: 529))
+        // An older failed result is a previous turn's verdict, not this one's.
+        let laterTurn = join([userPrompt, assistantToolUse, resultError, userPrompt, assistantText, resultLine])
+        XCTAssertNil(Store.parse(head: nil, tail: laterTurn).runError)
     }
 
     func testSessionIdentityFromDirectoryNames() {

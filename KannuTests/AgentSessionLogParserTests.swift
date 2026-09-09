@@ -198,4 +198,45 @@ final class AgentSessionLogParserTests: XCTestCase {
         try data.write(to: url)
         XCTAssertEqual(AgentSessionLogParser.claudeTailState(at: url).state, .turnFinished)
     }
+
+    // MARK: - API-error records: the run ended on the API
+
+    private let apiError529 = #"{"type":"assistant","timestamp":"2026-08-21T10:00:00.000Z","isApiErrorMessage":true,"apiErrorStatus":529,"error":"overloaded","message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"API Error: 529 Overloaded"}],"stop_reason":"stop_sequence"}}"#
+
+    func testApiErrorRecordIsTurnFinishedWithTheStatus() {
+        let result = AgentSessionLogParser.claudeTailState(fromTailText: line(apiError529))
+        XCTAssertEqual(result.state, .turnFinished)
+        XCTAssertEqual(result.runError, .apiError(status: 529))
+        XCTAssertNotNil(result.recordTimestamp)
+    }
+
+    func testApiErrorWithoutStatusIsStillAnApiError() {
+        let text = line(#"{"type":"assistant","timestamp":"2026-08-21T10:00:00.000Z","isApiErrorMessage":true,"error":"Request timed out","message":{"role":"assistant","content":[{"type":"text","text":"Request timed out"}],"stop_reason":"stop_sequence"}}"#)
+        XCTAssertEqual(AgentSessionLogParser.claudeTailState(fromTailText: text).runError, .apiError(status: nil))
+    }
+
+    func testApiErrorFalseIsAnOrdinaryFinish() {
+        let text = line(#"{"type":"assistant","timestamp":"2026-08-21T10:00:00.000Z","isApiErrorMessage":false,"message":{"role":"assistant","content":[{"type":"text","text":"done"}],"stop_reason":"end_turn"}}"#)
+        let result = AgentSessionLogParser.claudeTailState(fromTailText: text)
+        XCTAssertEqual(result.state, .turnFinished)
+        XCTAssertNil(result.runError)
+    }
+
+    func testApiErrorSurvivesTrailingBookkeepingButNotANewPrompt() {
+        let bookkeeping = line(#"{"type":"last-prompt","lastPrompt":"x"}"#) + line(#"{"type":"queue-operation","operation":"dequeue"}"#)
+        XCTAssertEqual(AgentSessionLogParser.claudeTailState(fromTailText: line(apiError529) + bookkeeping).runError,
+                       .apiError(status: 529))
+        let prompt = line(#"{"type":"user","timestamp":"2026-08-21T10:01:00.000Z","message":{"role":"user","content":"try again"}}"#)
+        let result = AgentSessionLogParser.claudeTailState(fromTailText: line(apiError529) + prompt)
+        XCTAssertEqual(result.state, .working)
+        XCTAssertNil(result.runError, "a new turn clears the verdict by construction")
+    }
+
+    func testApiRetryRecordIsBookkeeping() {
+        let toolUse = line(#"{"type":"assistant","timestamp":"2026-08-21T10:00:00.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}],"stop_reason":"tool_use"}}"#)
+        let retry = line(#"{"type":"system","subtype":"api_error","level":"error","error":"overloaded","retryAttempt":2,"maxRetries":10}"#)
+        let result = AgentSessionLogParser.claudeTailState(fromTailText: toolUse + retry)
+        XCTAssertEqual(result.state, .toolInFlight)
+        XCTAssertNil(result.runError)
+    }
 }

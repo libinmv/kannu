@@ -50,8 +50,10 @@ enum ClaudeDesktopAgentSessionStore {
         /// conversational record yet.
         var rawState: String = "idle"
         var recordTimestamp: Date?
-        /// Failed tool results and error results since the last user prompt.
+        /// Failed tool results and error results since the last user prompt. Diagnostic only.
         var toolErrorCount: Int = 0
+        /// The newest `result` record failed: the run's verdict.
+        var runError: RunError? = nil
     }
 
     // MARK: - Parsing (pure)
@@ -94,6 +96,13 @@ enum ClaudeDesktopAgentSessionStore {
                 if !decided {
                     parsed.rawState = "stopped"
                     parsed.recordTimestamp = AgentSessionLogParser.recordTimestamp(from: json)
+                    // The newest record is this run's verdict. `terminal_reason` is deliberately
+                    // not read: a user cancel is not a failure.
+                    let subtype = json["subtype"] as? String ?? ""
+                    if (json["is_error"] as? Bool) == true || subtype.hasPrefix("error") {
+                        parsed.runError = ((json["api_error_status"] as? NSNumber)?.intValue)
+                            .map { RunError.apiError(status: $0) } ?? .failed
+                    }
                     decided = true
                 }
             case "assistant":
@@ -251,6 +260,7 @@ enum ClaudeDesktopAgentSessionStore {
                 hostPID: nil
             )
             session.toolErrorCount = parsed.toolErrorCount
+            session.runError = parsed.runError
             return session
         }
     }

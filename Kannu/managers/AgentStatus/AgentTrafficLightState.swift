@@ -86,14 +86,20 @@ struct AgentSessionStatus: Identifiable, Equatable {
     /// PID of the agent process itself (Claude passive sessions). The parent chain of this
     /// PID leads to the hosting terminal or IDE, which is what click-through activates.
     var hostPID: Int? = nil
-    /// Tool failures the hook has counted since the last user prompt. Shown beside a red light
-    /// as "Stopped · N tool errors"; zero is a clean finish. Additive: see `carryingExtras(from:)`.
+    /// Tool failures the hook has counted since the last user prompt. Diagnostic only since
+    /// hook v33: a failure the agent recovered from is not the turn's outcome, so nothing
+    /// displays it — `runError` is what the card reports. Additive: see `carryingExtras(from:)`.
     var toolErrorCount: Int = 0
     /// The session runs with permission checks bypassed (`--dangerously-skip-permissions`,
     /// Codex `approval_policy = never`), as reported by the hook. Sticky for the session's life;
     /// additive like the error count. ADR Discovery cannot see this on macOS (its process
     /// listing carries no argv), so it is Kannu's own finding.
     var isUnattended: Bool = false
+    /// Why the run ended, when it ended on an error; nil is a clean finish. A per-turn verdict —
+    /// replaced by every stopped write, never accumulated — unlike the two additive fields above.
+    /// Sources: the hook's `ended_on_error` (StopFailure, an Antigravity Stop with an error), the
+    /// Claude transcript's API-error record, Warp `Failed`, Claude Desktop's `result.is_error`.
+    var runError: RunError? = nil
 
     /// True when the hook that produced this session reported work in progress, regardless of
     /// what the staleness ladder later concluded about its age.
@@ -268,7 +274,9 @@ enum AgentTrafficLightMapper {
                 if repaired.hostPID == nil, let hostPID = passive.hostPID {
                     repaired.hostPID = hostPID
                 }
-                // The tool-error count is additive on both sides; keep the larger.
+                // The additive fields and the run verdict ride the seam here: the count keeps
+                // the larger side, the flag ORs, and the verdict is the hook's unless it has
+                // none — then the transcript's (`RunError.preferred`).
                 repaired = repaired.carryingExtras(from: passive)
                 return repaired
             }
@@ -678,14 +686,23 @@ extension AgentSessionStatus {
         ).carryingExtras(from: self)
     }
 
-    /// Copies the additive fields — the tool-error count and the unattended flag — that a
-    /// memberwise reconstruction silently drops. Every site that rebuilds a session from another
-    /// one must call this: docs/REGRESSIONS.md entry 7 is exactly this failure, for cwd and
-    /// hostPID. The larger count wins across a merge seam; the flag is an OR.
+    /// "Stopped · rate limited (429)": the verdict, rendered only once the run has stopped —
+    /// including the dim, retained card an ended chat leaves behind. Empty for a clean finish.
+    var runOutcomeSuffix: String {
+        guard displayState == .stopped || displayState == .inactive, let runError else { return "" }
+        return " · " + runError.label
+    }
+
+    /// Copies the fields a memberwise reconstruction silently drops — the tool-error count, the
+    /// unattended flag, the run verdict. Every site that rebuilds a session from another one
+    /// must call this: docs/REGRESSIONS.md entry 7 is exactly this failure, for cwd and hostPID.
+    /// Across a merge seam the larger count wins and the flag is an OR (both are monotone within
+    /// a session); the verdict is `self` unless it has none — see `RunError.preferred`.
     func carryingExtras(from source: AgentSessionStatus) -> AgentSessionStatus {
         var copy = self
         copy.toolErrorCount = max(copy.toolErrorCount, source.toolErrorCount)
         copy.isUnattended = copy.isUnattended || source.isUnattended
+        copy.runError = RunError.preferred(copy.runError, source.runError)
         return copy
     }
 }
@@ -712,5 +729,53 @@ struct AgentActivityPulseLatch {
     mutating func consume() -> Bool {
         defer { heartbeatOnly = true }
         return heartbeatOnly
+    }
+}
+
+// MARK: - Run outcome
+
+/// Why a run ended, when it ended on an error. Only a run-terminating signal becomes one: a tool
+/// failure the agent recovered from is a count (`toolErrorCount`), never a verdict.
+enum RunError: Equatable, Hashable {
+    /// The model's turn died on the API — `isApiErrorMessage` in a Claude transcript, or a
+    /// Claude Desktop `result` carrying `api_error_status`. `status` is the HTTP status when known.
+    case apiError(status: Int?)
+    /// A run that ended failing without saying why: the hook's `StopFailure`, an Antigravity
+    /// `Stop` carrying an error, a Warp `Failed` exchange, a Claude Desktop `result` with `is_error`.
+    case failed
+
+    /// Short and user-facing, appended to "Stopped".
+    var label: String {
+        switch self {
+        case .failed:
+            return String(localized: "failed")
+        case .apiError(let status):
+            switch status {
+            case 429: return String(localized: "rate limited (429)")
+            case 529: return String(localized: "API overloaded (529)")
+            case 401: return String(localized: "signed out (401)")
+            case .some(let code): return String(localized: "API error \(code)")
+            case .none: return String(localized: "API error")
+            }
+        }
+    }
+
+    /// The more specific reason wins when two sources describe the same stop.
+    var specificity: Int {
+        switch self {
+        case .apiError: return 2
+        case .failed: return 1
+        }
+    }
+
+    /// `own ?? other`, refined: nil yields to the other side, and when both carry a verdict the
+    /// more specific one wins (a tie keeps `own`). Never an OR or a max: the verdict must reset
+    /// to nil every turn, and under OR/max nil is the identity, so one stale verdict would pin
+    /// "failed" onto every later clean turn. The passive side is fresh by construction — its
+    /// verdict exists only while the newest conversational record is the error.
+    static func preferred(_ own: RunError?, _ other: RunError?) -> RunError? {
+        guard let own else { return other }
+        guard let other else { return own }
+        return other.specificity > own.specificity ? other : own
     }
 }
