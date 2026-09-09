@@ -4,6 +4,40 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-09 - Kannu-run ADR scans, and a high finding that stays in the notch until acknowledged
+- **Developer label:** also tell me how we can show that in ui, and how important is it, do we color code chats and also show something instead of traffic lights … make this persist until user action by default with control for user in settings
+- **Agent label:** Phase 1 of the ADR integration: scan runner and cadence, priority UX in the notch and panel, push, and Kannu's own bypass-permissions finding
+- **Changes:**
+  - `ADRDiscoveryCommand` holds the invocation as data (`--json --output-dir <folder>`, `--policy`
+    only when configured; never `--dry-run`, `--root`, `--diff`, `--explain`), pinned by tests in the
+    REGRESSIONS entry 8 discipline. `SecurityFindingsStore.runScanNow` runs the connected binary on a
+    utility queue with stdout discarded (the file is what matters), a 180 s cap, and exit 2 treated as
+    a valid partial snapshot. Cadence: once a day, sooner when one of the five MCP config files changes
+    on disk (mtime, checked once a minute, 5-minute debounce), and on "Scan now". "Let Kannu run
+    scans" (default on once connected) turns the runner off for people who schedule Discovery
+    themselves. A snapshot written by Kannu's own run is recorded with origin `kannu` even when the
+    directory watcher ingests it first.
+  - Security has its own vocabulary in the notch — a **monochrome shield**, never a fourth light
+    colour and never a recoloured row, so red keeps meaning "finished". An unacknowledged high finding
+    shows a shield glyph beside the dots (it follows the dots into the music pill too) and, by
+    default, a **pill that persists until acknowledged** in the standalone light, laid out beside the
+    dots rather than as a sneak peek (those auto-hide). Settings › "High-severity alerts in the
+    notch": Until acknowledged (default) · For 5 seconds, then glyph · Glyph only · Off. Deferred to
+    glyph-only while a Focus mode is active; no animation under Reduce Motion. The light branch now
+    also renders when no agent is on screen but a cue is pending. Clicking the pill opens the panel.
+  - Panel: the high finding is pinned above the primary session with Details (deep link to
+    Settings › Security findings) and Acknowledge; other open findings appear as a count beside
+    "Recent chats". Push: each new high finding once at priority 5, medium at 4 only when enabled;
+    the webhook body carries rule, severity, source, asset and summary.
+  - Kannu's own finding: hook script v32 remembers `permission_mode: bypassPermissions` (or a Codex
+    `approval_policy` of `never`) for the session as `unattended`, the monitor lifts it onto
+    `AgentSessionStatus.isUnattended` (additive — carried by `carryingExtras`, OR across the seam),
+    and the store derives a high `.kannu` finding per visible session, dropped when the session is.
+    ADR Discovery cannot see this on macOS: its process listing has no argv.
+  - Tests: `ADRDiscoveryCommandTests` (5), native-finding and flag-carry cases, a hook-script case for
+    the sticky flag, the reconciler asserts the flag rides the seam. `docs/ADR.md` gains the
+    Kannu-run and attention sections.
+
 ### 2026-09-09 - Connect a separately installed ADR and show its security findings
 - **Developer label:** plan how we could integrate adr uber changes to our system to setup that feature … plan it on based on seperate connect do not install with kannu, but support easy integration
 - **Agent label:** Phase 0 of the ADR integration: detect the user's ADR install, guide the install, watch a snapshot folder, list Discovery findings with acknowledge and snooze

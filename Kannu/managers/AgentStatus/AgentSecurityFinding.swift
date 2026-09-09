@@ -128,6 +128,38 @@ struct AgentSecurityFinding: Equatable, Hashable, Identifiable, Codable {
     }
 }
 
+extension AgentSecurityFinding {
+    /// Kannu's own findings, derived from what the hooks see and ADR cannot on macOS: a visible
+    /// session running with permission checks bypassed. One finding per session, gone when the
+    /// session is; `existing` keeps `firstSeen` stable across rescans.
+    static func nativeFindings(
+        from sessions: [AgentSessionStatus],
+        existing: [AgentSecurityFinding] = [],
+        now: Date = Date()
+    ) -> [AgentSecurityFinding] {
+        let firstSeenByID = Dictionary(existing.map { ($0.id, $0.firstSeen) }, uniquingKeysWith: { a, _ in a })
+        return sessions
+            .filter { $0.isVisible && $0.isUnattended }
+            .map { session in
+                let evidence = ["\(AgentSessionStatus.providerLabel(for: session.provider)) session \(session.conversationID.prefix(8)) started without permission prompts"]
+                let id = stableID(source: .kannu, rule: "unattended_execution", subject: session.conversationID, evidence: evidence)
+                return AgentSecurityFinding(
+                    id: id,
+                    source: .kannu,
+                    rule: "unattended_execution",
+                    severity: .high,
+                    title: title(forRule: "unattended_execution"),
+                    summary: String(localized: "\(session.displayChatName) runs with permission checks bypassed"),
+                    evidence: evidence,
+                    assetName: session.displayProjectName,
+                    assetPath: session.cwd,
+                    sessionID: session.conversationID,
+                    firstSeen: firstSeenByID[id] ?? now
+                )
+            }
+    }
+}
+
 /// A snooze on one finding id. Lives here (Foundation-only) so the priority logic is testable;
 /// the app target adds `Defaults.Serializable` next to its key.
 struct SecurityFindingSnooze: Codable, Equatable, Hashable {

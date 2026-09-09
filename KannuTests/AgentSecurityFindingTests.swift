@@ -77,6 +77,47 @@ final class AgentSecurityFindingTests: XCTestCase {
         XCTAssertEqual(AgentSecurityFinding.title(forRule: "brand_new_rule"), "Brand new rule")
     }
 
+    // MARK: - Kannu-native findings
+
+    private func session(_ id: String, unattended: Bool, visible: Bool = true) -> AgentSessionStatus {
+        var s = AgentSessionStatus(
+            id: "claude-\(id)", provider: "claude", conversationID: id, chatName: "Chat \(id)", projectName: "proj",
+            rawState: "executing", displayState: .executing, updatedAt: t0, isVisible: visible,
+            executionStartedAt: nil, cwd: "/Users/dev/proj", hostPID: nil
+        )
+        s.isUnattended = unattended
+        return s
+    }
+
+    func testUnattendedSessionsBecomeHighNativeFindingsWhileVisible() {
+        let sessions = [session("a", unattended: true), session("b", unattended: false), session("c", unattended: true, visible: false)]
+        let findings = AgentSecurityFinding.nativeFindings(from: sessions, now: t0)
+        XCTAssertEqual(findings.count, 1)
+        let f = findings[0]
+        XCTAssertEqual(f.source, .kannu)
+        XCTAssertEqual(f.rule, "unattended_execution")
+        XCTAssertEqual(f.severity, .high)
+        XCTAssertEqual(f.sessionID, "a")
+        XCTAssertEqual(f.assetPath, "/Users/dev/proj")
+        XCTAssertEqual(f.title, "Permission checks bypassed")
+        // Same session next cycle: same id, original firstSeen.
+        let again = AgentSecurityFinding.nativeFindings(from: sessions, existing: findings, now: t0.addingTimeInterval(60))
+        XCTAssertEqual(again[0].id, f.id)
+        XCTAssertEqual(again[0].firstSeen, t0)
+        // Session gone: finding gone.
+        XCTAssertTrue(AgentSecurityFinding.nativeFindings(from: [session("b", unattended: false)], existing: findings, now: t0).isEmpty)
+    }
+
+    func testUnattendedFlagSurvivesReconstruction() {
+        let flagged = session("a", unattended: true)
+        XCTAssertTrue(flagged.withDisplayState(.stopped, visible: true).isUnattended)
+        XCTAssertTrue(flagged.replacingChatName("x").isUnattended)
+        XCTAssertTrue(flagged.replacingProjectName("y").isUnattended)
+        let plain = session("a", unattended: false)
+        XCTAssertTrue(plain.carryingExtras(from: flagged).isUnattended, "the flag is an OR across a merge seam")
+        XCTAssertFalse(plain.carryingExtras(from: plain).isUnattended)
+    }
+
     // MARK: - Priority
 
     func testRankingOrdersBySeverityThenRecency() {

@@ -179,6 +179,19 @@ final class HookScriptTests: XCTestCase {
 
     // MARK: - Turn outcome
 
+    func testBypassPermissionModeIsRememberedForTheSession() throws {
+        try run(state: "thinking", event: "UserPromptSubmit", conversation: "u1",
+                extra: ["permission_mode": "bypassPermissions", "prompt": "go"])
+        XCTAssertEqual(try readJSON("u1")?["unattended"] as? Bool, true)
+        // Later events carry no permission_mode; the flag must persist for the session.
+        try run(state: "executing", event: "PreToolUse", conversation: "u1")
+        XCTAssertEqual(try readJSON("u1")?["unattended"] as? Bool, true)
+        // A plain session never gets the key at all.
+        try run(state: "thinking", event: "UserPromptSubmit", conversation: "u2",
+                extra: ["permission_mode": "default", "prompt": "go"])
+        XCTAssertNil(try readJSON("u2")?["unattended"])
+    }
+
     func testToolErrorsCountPerTurnAndIgnoreInterrupts() throws {
         try run(state: "thinking", event: "UserPromptSubmit", conversation: "e1", extra: ["prompt": "go"])
         try run(state: "thinking", event: "PostToolUseFailure", conversation: "e1", extra: ["error": "exit 1"])

@@ -46,6 +46,8 @@ struct ContentView: View {
     @ObservedObject var statsManager = StatsManager.shared
     @ObservedObject var recordingManager = ScreenRecordingManager.shared
     @ObservedObject var agentStatusMonitor = CursorAgentStatusMonitor.shared
+    @ObservedObject private var securityFindings = SecurityFindingsStore.shared
+    @Default(.adrHighAlertMode) private var adrHighAlertMode
     @ObservedObject var easterEggManager = EasterEggAnimationManager.shared
     @ObservedObject var idleScheduleManager = IdleAnimationScheduleManager.shared
     @ObservedObject var idlePreviewManager = IdleAnimationPreviewManager.shared
@@ -480,8 +482,13 @@ struct ContentView: View {
     /// true for as long as a session is open — enough to pin the island on screen indefinitely.
     /// In hover mode we instead show the light only inside a window refreshed by actual agent
     /// activity, or while the pointer is on the island. Everywhere else the raw value stands.
+    /// An unacknowledged high finding shows the shield cue even with no agent on screen.
+    private var securityCueWanted: Bool {
+        enableAgentStatusFeature && securityFindings.ranking.pendingHighCount > 0 && adrHighAlertMode.showsGlyph
+    }
+
     private var showAgentTrafficLight: Bool {
-        guard enableAgentStatusFeature, agentStatusMonitor.shouldShowTrafficLight else { return false }
+        guard enableAgentStatusFeature, agentStatusMonitor.shouldShowTrafficLight || securityCueWanted else { return false }
         // Notched displays used to show the light for as long as a session existed; they now
         // share the same activity-refreshed window so the band collapses between events.
         guard hideUntilHoverAppliesHere || isPhysicalNotchScreen else { return true }
@@ -1216,6 +1223,9 @@ struct ContentView: View {
                                     ? physicalNotchAgentHeight
                                     : nil,
                                 trafficLightVerticalOffset: physicalNotchAgentVerticalOffset,
+                                onTapSecurityPill: {
+                                    openNotch(focus: .agentStatus)
+                                },
                                 onHoverAgentCenter: { hovering in
                                     handleRegionHoverOpen(hovering, focus: .agentStatus)
                                 }

@@ -13,6 +13,9 @@ final class AgentStatusNotificationBridge: ObservableObject {
     private var debounceTask: Task<Void, Never>?
     private var lastNotifiedState: AgentTrafficLightState?
     private let debounceInterval: TimeInterval = 2.0
+    /// Findings already pushed, persisted and pruned to what is still open so a relaunch stays
+    /// quiet and a finding that returns after vanishing is pushed once more.
+    private var pushedFindingIDs: Set<String> = Set(Defaults[.adrPushedFindingIDs])
 
     private init() {}
 
@@ -32,6 +35,13 @@ final class AgentStatusNotificationBridge: ObservableObject {
                 self?.lastNotifiedState = nil
             }
             .store(in: &cancellables)
+
+        // Security findings ride on the findings store, not on the traffic light.
+        let store = SecurityFindingsStore.shared
+        store.$findings.map { _ in () }
+            .merge(with: store.$acknowledgedIDs.map { _ in () }, store.$snoozes.map { _ in () })
+            .sink { [weak self] in self?.handleFindingsChange() }
+            .store(in: &cancellables)
     }
 
     func stop() {
@@ -39,6 +49,54 @@ final class AgentStatusNotificationBridge: ObservableObject {
         debounceTask = nil
         cancellables.removeAll()
         lastNotifiedState = nil
+    }
+
+    // MARK: - Security findings
+
+    private func handleFindingsChange() {
+        guard Defaults[.enableAgentStatusMobileNotifications], Defaults[.adrPushHighFindings] else { return }
+        let ranking = SecurityFindingsStore.shared.ranking
+        let candidates = ranking.visible.filter {
+            $0.severity == .high || ($0.severity == .medium && Defaults[.adrPushMediumFindings])
+        }
+        pushedFindingIDs.formIntersection(Set(candidates.map(\.id)))
+        let fresh = candidates.filter { !pushedFindingIDs.contains($0.id) }
+        pushedFindingIDs.formUnion(fresh.map(\.id))
+        let persisted = pushedFindingIDs.sorted()
+        if persisted != Defaults[.adrPushedFindingIDs] { Defaults[.adrPushedFindingIDs] = persisted }
+        guard !fresh.isEmpty else { return }
+        Task { [weak self] in
+            for finding in fresh { await self?.deliverFinding(finding) }
+        }
+    }
+
+    private func deliverFinding(_ finding: AgentSecurityFinding) async {
+        let payload = NotificationPayload(
+            title: String(localized: "Security finding: \(finding.title)"),
+            body: finding.summary,
+            priority: finding.severity == .high ? 5 : 4,
+            tag: "security-finding"
+        )
+        do {
+            switch Defaults[.agentStatusNotificationProvider] {
+            case .ntfy:
+                try await sendViaNtfy(payload: payload)
+            case .pushover:
+                try await sendViaPushover(payload: payload)
+            case .webhook:
+                try await sendViaWebhook(payload: payload, stateKey: "security_finding", extra: [
+                    "rule": finding.rule,
+                    "severity": finding.severity == .high ? "high" : "medium",
+                    "source": finding.source.rawValue,
+                    "asset": finding.assetName ?? "",
+                    "summary": finding.summary
+                ])
+            }
+            lastError = nil
+            lastSentAt = .now
+        } catch {
+            lastError = error.localizedDescription
+        }
     }
 
     func sendTestNotification() async {
@@ -71,7 +129,7 @@ final class AgentStatusNotificationBridge: ObservableObject {
             case .pushover:
                 try await sendViaPushover(payload: payload)
             case .webhook:
-                try await sendViaWebhook(payload: payload, state: state)
+                try await sendViaWebhook(payload: payload, stateKey: state.notificationKey)
             }
             lastError = nil
             lastSentAt = .now
@@ -206,7 +264,7 @@ final class AgentStatusNotificationBridge: ObservableObject {
         }
     }
 
-    private func sendViaWebhook(payload: NotificationPayload, state: AgentTrafficLightState) async throws {
+    private func sendViaWebhook(payload: NotificationPayload, stateKey: String, extra: [String: Any] = [:]) async throws {
         let webhook = SecureSecretsStore.value(for: .webhookURL).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !webhook.isEmpty, SecurityURLPolicy.isAllowedWebhookURL(webhook), let url = URL(string: webhook) else {
             throw BridgeError.missingConfiguration("Webhook URL is required")
@@ -215,13 +273,14 @@ final class AgentStatusNotificationBridge: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let body: [String: Any] = [
-            "state": state.notificationKey,
+        var body: [String: Any] = [
+            "state": stateKey,
             "title": payload.title,
             "body": payload.body,
             "timestamp": ISO8601DateFormatter().string(from: .now),
             "source": "Kannu"
         ]
+        body.merge(extra) { current, _ in current }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (_, response) = try await URLSession.shared.data(for: request)

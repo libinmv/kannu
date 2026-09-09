@@ -14,7 +14,8 @@ final class ClaudeReconcilerTests: XCTestCase {
         visible: Bool = true,
         cwd: String? = nil,
         hostPID: Int? = nil,
-        toolErrorCount: Int = 0
+        toolErrorCount: Int = 0,
+        unattended: Bool = false
     ) -> AgentSessionStatus {
         var session = AgentSessionStatus(
             id: "\(provider)-\(conversation)",
@@ -31,6 +32,7 @@ final class ClaudeReconcilerTests: XCTestCase {
             hostPID: hostPID
         )
         session.toolErrorCount = toolErrorCount
+        session.isUnattended = unattended
         return session
     }
 
@@ -57,7 +59,7 @@ final class ClaudeReconcilerTests: XCTestCase {
         let passive = session(chatName: "Fix the parser", projectName: "kannu",
                               rawState: "stopped", display: .stopped,
                               updatedAt: Date(timeIntervalSince1970: 1_500),
-                              cwd: "/tmp/proj", hostPID: 4242, toolErrorCount: 2)
+                              cwd: "/tmp/proj", hostPID: 4242, toolErrorCount: 2, unattended: true)
         let out = reconcile(hooks: [hook], passive: [passive])
         XCTAssertEqual(out.count, 1)
         let merged = out[0]
@@ -69,6 +71,7 @@ final class ClaudeReconcilerTests: XCTestCase {
         XCTAssertEqual(merged.cwd, "/tmp/proj")
         XCTAssertEqual(merged.hostPID, 4242)
         XCTAssertEqual(merged.toolErrorCount, 2, "the tool-error count keeps the larger side")
+        XCTAssertTrue(merged.isUnattended, "the unattended flag rides the seam too")
     }
 
     func testInheritedFieldsCarryAcrossOnUnchangedSession() {

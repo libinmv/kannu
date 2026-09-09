@@ -997,6 +997,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
             )
             // Additive field the script writes beside the state (v31+). Untrusted input: clamped.
             session.toolErrorCount = max(0, min(999, (json["tool_errors"] as? NSNumber)?.intValue ?? 0))
+            session.isUnattended = (json["unattended"] as? Bool) ?? false
             results.append(session)
         }
 

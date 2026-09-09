@@ -389,6 +389,43 @@ enum ScreenAssistantDisplayMode: String, CaseIterable, Codable, Defaults.Seriali
     }
 }
 
+/// How an unacknowledged high-severity security finding is shown in the closed notch. Never a
+/// traffic-light colour: the light keeps meaning working / needs input / finished, and a finding
+/// gets a shield beside it.
+enum ADRHighAlertMode: String, CaseIterable, Defaults.Serializable, Identifiable {
+    case untilAcknowledged = "Until acknowledged"
+    case fiveSeconds = "For 5 seconds, then glyph"
+    case glyphOnly = "Glyph only"
+    case off = "Off"
+
+    var id: String { rawValue }
+
+    var localizedName: String {
+        switch self {
+        case .untilAcknowledged: return String(localized: "Until acknowledged")
+        case .fiveSeconds: return String(localized: "For 5 seconds, then glyph")
+        case .glyphOnly: return String(localized: "Glyph only")
+        case .off: return String(localized: "Off")
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .untilAcknowledged:
+            return String(localized: "A shield pill stays beside the traffic light until you acknowledge the finding. Click it to open the panel.")
+        case .fiveSeconds:
+            return String(localized: "The pill shows for five seconds when a finding is new, then only a small shield remains until acknowledged.")
+        case .glyphOnly:
+            return String(localized: "Only a small shield beside the traffic light; no pill.")
+        case .off:
+            return String(localized: "Nothing in the closed notch. Findings still appear in the panel and in Settings.")
+        }
+    }
+
+    var showsGlyph: Bool { self != .off }
+    var showsPill: Bool { self == .untilAcknowledged || self == .fiveSeconds }
+}
+
 enum AgentStatusNotificationProvider: String, CaseIterable, Codable, Defaults.Serializable, Identifiable {
     case ntfy
     case pushover
@@ -1198,6 +1235,20 @@ extension Defaults.Keys {
     static let adrAcknowledgedFindingIDs = Key<[String]>("adrAcknowledgedFindingIDs", default: [])
     static let adrFindingSnoozes = Key<[SecurityFindingSnooze]>("adrFindingSnoozes", default: [])
     static let adrLastScan = Key<ADRScanRecord?>("adrLastScan", default: nil)
+    /// Let Kannu invoke the connected `adr-discovery` itself (daily, on config changes, on
+    /// demand). Off = Kannu only reads snapshots that someone else wrote.
+    static let adrRunScansEnabled = Key<Bool>("adrRunScansEnabled", default: true)
+    static let adrLastKannuScanAt = Key<Date?>("adrLastKannuScanAt", default: nil)
+    /// Optional `--policy` file for Discovery (tenant domains, approved, forbidden).
+    static let adrPolicyFile = Key<String>("adrPolicyFile", default: "")
+    /// How an unacknowledged high finding shows in the closed notch.
+    static let adrHighAlertMode = Key<ADRHighAlertMode>("adrHighAlertMode", default: .untilAcknowledged)
+    /// Push high findings through the mobile-notification provider (once per finding).
+    static let adrPushHighFindings = Key<Bool>("adrPushHighFindings", default: true)
+    static let adrPushMediumFindings = Key<Bool>("adrPushMediumFindings", default: false)
+    /// Finding ids already pushed, so a relaunch does not push the same open finding again.
+    /// Pruned to the ids still open, which lets a finding that vanishes and returns push once more.
+    static let adrPushedFindingIDs = Key<[String]>("adrPushedFindingIDs", default: [])
     static let showAgentStoppedIndicator = Key<Bool>("showAgentStoppedIndicator", default: false)
     /// Closed-notch traffic light shape. Defaults to `.classic` so existing installs keep the
     /// three-dot look they already have — only fresh installs are asked to choose in onboarding.

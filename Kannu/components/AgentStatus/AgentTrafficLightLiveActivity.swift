@@ -50,10 +50,32 @@ struct AgentTrafficLightDots: View {
     }
 }
 
+/// The closed-notch cue for an unacknowledged high-severity security finding. Deliberately
+/// monochrome: white on the notch, never one of the three light colours, so it cannot be read
+/// as an agent state and cannot collide with a custom palette. The *shape* carries the meaning.
+struct SecurityShieldGlyph: View {
+    var size: CGFloat = 9
+
+    var body: some View {
+        Image(systemName: "exclamationmark.shield.fill")
+            .font(.system(size: size, weight: .semibold))
+            .foregroundStyle(Color.white.opacity(0.9))
+            .accessibilityLabel(String(localized: "Unacknowledged high-severity security finding"))
+    }
+}
+
 struct AgentTrafficLightIndicator: View {
     @ObservedObject var agentStatusMonitor = CursorAgentStatusMonitor.shared
+    @ObservedObject private var findingsStore = SecurityFindingsStore.shared
     @Default(.showAgentStoppedIndicator) private var showAgentStoppedIndicator
     @Default(.agentTrafficLightStyle) private var trafficLightStyle
+    @Default(.adrHighAlertMode) private var highAlertMode
+
+    /// A pending high finding shows a shield beside the dots in every mode but Off. It rides
+    /// along wherever the dots are drawn (standalone, or inside the music pill).
+    private var showsSecurityGlyph: Bool {
+        highAlertMode.showsGlyph && findingsStore.ranking.pendingHighCount > 0
+    }
     /// Keyed by session ID — records when a session first became non-active (stopped/inactive),
     /// so a just-finished run can pulse red briefly before settling.
     @State private var completionTimestamps: [String: Date] = [:]
@@ -110,15 +132,20 @@ struct AgentTrafficLightIndicator: View {
         //
         // TimelineView ticks every second purely so the completion window above is re-evaluated.
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            AgentTrafficLightDots(
-                style: trafficLightStyle,
-                state: activeState,
-                isPulsing: shouldPulse(at: context.date)
-            )
-            // The dots carry the aggregate state in colour alone, and it is rendered as text
-            // nowhere — the panel shows per-session state, and only on hover.
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(accessibilityStateDescription)
+            HStack(spacing: 6) {
+                AgentTrafficLightDots(
+                    style: trafficLightStyle,
+                    state: activeState,
+                    isPulsing: shouldPulse(at: context.date)
+                )
+                // The dots carry the aggregate state in colour alone, and it is rendered as text
+                // nowhere — the panel shows per-session state, and only on hover.
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(accessibilityStateDescription)
+                if showsSecurityGlyph {
+                    SecurityShieldGlyph()
+                }
+            }
         }
         // Track when sessions leave an active run so the completion pulse has a start time.
         .onChange(of: visibleSessions) { _, newSessions in
@@ -151,6 +178,10 @@ struct AgentTrafficLightIndicator: View {
 struct AgentTrafficLightLiveActivity: View {
     @EnvironmentObject var vm: KannuViewModel
     @ObservedObject private var monitor = CursorAgentStatusMonitor.shared
+    @ObservedObject private var findingsStore = SecurityFindingsStore.shared
+    @ObservedObject private var doNotDisturb = DoNotDisturbManager.shared
+    @Default(.adrHighAlertMode) private var highAlertMode
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let isHovering: Bool
     let gestureProgress: CGFloat
@@ -161,6 +192,9 @@ struct AgentTrafficLightLiveActivity: View {
 
     /// Must remain zero on non-notch displays.
     var trafficLightVerticalOffset: CGFloat = 0
+
+    /// Clicking the security pill opens the panel on the agent tab, where the pinned card is.
+    var onTapSecurityPill: (() -> Void)? = nil
 
     var onHoverAgentCenter: ((Bool) -> Void)? = nil
 
@@ -200,16 +234,73 @@ struct AgentTrafficLightLiveActivity: View {
         )
     }
 
+    /// The pill is not a sneak peek: sneak peeks are timed HUDs that auto-hide. It lives here,
+    /// beside the light, and stays until the user acts (default) — or for five seconds in that
+    /// mode. Deferred to glyph-only while Focus is on, so a Do Not Disturb session is not
+    /// interrupted; it appears when Focus ends.
+    private func pillIsVisible(at now: Date, pinned: AgentSecurityFinding) -> Bool {
+        guard highAlertMode.showsPill, !doNotDisturb.isDoNotDisturbActive else { return false }
+        if highAlertMode == .fiveSeconds {
+            return now.timeIntervalSince(pinned.firstSeen) < 5
+        }
+        return true
+    }
+
     var body: some View {
-        AgentTrafficLightIndicator()
-            .offset(y: trafficLightVerticalOffset)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .frame(width: contentWidth, height: notchContentHeight)
-            .frame(height: outerHeight)
-            .contentShape(Rectangle())
-            .onHover { hovering in
-                onHoverAgentCenter?(hovering)
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let ranking = findingsStore.ranking
+            HStack(spacing: 8) {
+                AgentTrafficLightIndicator()
+                if let pinned = ranking.pinned, pillIsVisible(at: context.date, pinned: pinned) {
+                    SecurityAlertPill(
+                        finding: pinned,
+                        extraCount: max(0, ranking.pendingHighCount - 1),
+                        maxWidth: min(contentWidth * 0.62, 190)
+                    )
+                    .onTapGesture { onTapSecurityPill?() }
+                    .transition(reduceMotion ? .identity : .opacity)
+                }
             }
+        }
+        .offset(y: trafficLightVerticalOffset)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(width: contentWidth, height: notchContentHeight)
+        .frame(height: outerHeight)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            onHoverAgentCenter?(hovering)
+        }
+    }
+}
+
+/// "⚠ Running MCP server nobody declared  +2" — the one high finding that owns the closed
+/// notch, and how many more are waiting. Monochrome on purpose (see `SecurityShieldGlyph`).
+struct SecurityAlertPill: View {
+    let finding: AgentSecurityFinding
+    let extraCount: Int
+    let maxWidth: CGFloat
+
+    var body: some View {
+        HStack(spacing: 4) {
+            SecurityShieldGlyph(size: 9)
+            Text(finding.title)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.92))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if extraCount > 0 {
+                Text("+\(extraCount)")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.7))
+            }
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(Color.white.opacity(0.14)))
+        .frame(maxWidth: maxWidth, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(String(localized: "Security finding, high: \(finding.title). Click to open."))
     }
 }
 

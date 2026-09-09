@@ -1,6 +1,6 @@
 #!/bin/bash
 # Installed by Kannu: reports AI agent status for the notch traffic light.
-# KANNU_HOOK_SCRIPT_VERSION=31
+# KANNU_HOOK_SCRIPT_VERSION=32
 # Usage: kannu-agent-status.sh <state> <provider> [hook_event] [matcher_key]
 #        (hook JSON arrives on stdin)
 
@@ -245,6 +245,16 @@ if status_file.exists():
     except Exception:
         existing = {}
 
+# Permission checks bypassed: Claude sends permission_mode on every hook (bypassPermissions);
+# Codex hooks carry approval_policy when present. Sticky for the session — once seen, kept —
+# because it describes how the session was launched, not what it is doing right now. ADR
+# Discovery cannot observe this on macOS (its process listing has no argv), so this is the one
+# signal Kannu adds to a security finding itself.
+_mode = pick_str(data.get("permission_mode"), data.get("permissionMode"), data.get("approval_policy"))
+unattended = bool(existing.get("unattended")) or normalize_token(_mode) in {
+    "bypasspermissions", "dangerouslyskippermissions", "never", "yolo", "autoapprove",
+}
+
 # Tool failures since the last prompt. Stop never says whether the turn went well; the
 # failure events do. Reset when the user submits, so a red light reads "Finished" or
 # "Finished, N tool errors" for THIS turn. An Esc interrupt is not an error.
@@ -353,6 +363,8 @@ if existing_state == "awaiting_input" and state not in {"awaiting_input", "stopp
                 existing["tool_errors"] = tool_errors
             else:
                 existing.pop("tool_errors", None)
+            if unattended:
+                existing["unattended"] = True
             write_status(status_file, existing)
             print('{"permission":"allow","continue":true}')
             raise SystemExit(0)
@@ -371,6 +383,8 @@ if workdir:
     payload["cwd"] = workdir
 if tool_errors:
     payload["tool_errors"] = tool_errors
+if unattended:
+    payload["unattended"] = True
 write_status(status_file, payload)
 print('{"permission":"allow","continue":true}')
 PY

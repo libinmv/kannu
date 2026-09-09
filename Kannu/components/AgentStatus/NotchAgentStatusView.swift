@@ -8,6 +8,7 @@ struct NotchAgentStatusView: View {
     @ObservedObject private var monitor = CursorAgentStatusMonitor.shared
     @ObservedObject private var skinManager = NotchSkinManager.shared
     @ObservedObject private var caffeinate = CaffeinateManager.shared
+    @ObservedObject private var findingsStore = SecurityFindingsStore.shared
     /// Defaults-backed, not @State: this tab is torn down and rebuilt on every tab switch.
     @Default(.caffeinateEnabled) private var caffeinateEnabled
     @Default(.smartCaffeinate) private var smartCaffeinate
@@ -113,6 +114,10 @@ struct NotchAgentStatusView: View {
             VStack(alignment: .leading, spacing: 12) {
                 caffeinateRow
 
+                if let pinned = findingsStore.ranking.pinned {
+                    securityPinnedCard(pinned)
+                }
+
                 if let primary = primarySession {
                     clickableSession(primary) { primaryCard(primary) }
                 } else if dedupedSessions.isEmpty {
@@ -205,6 +210,23 @@ struct NotchAgentStatusView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
+            // Medium findings never interrupt: one count, one click to Settings.
+            if openFindingCount > 0 {
+                Button {
+                    SettingsWindowController.shared.showWindow(
+                        navigatingToAgentStatusHighlight: SettingsDeepLink.securityFindingsHighlightID
+                    )
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "exclamationmark.shield").font(.system(size: 9))
+                        Text(openFindingCount == 1 ? String(localized: "1 finding") : String(localized: "\(openFindingCount) findings"))
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .hoverTooltip(String(localized: "Security findings — click for Settings"), edge: .below, pointingHandCursor: true)
+            }
             Spacer(minLength: 0)
             if smartCaffeinate {
                 Button {
@@ -276,6 +298,68 @@ struct NotchAgentStatusView: View {
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// Open findings other than the pinned one (which has its own card).
+    private var openFindingCount: Int {
+        let ranking = findingsStore.ranking
+        return ranking.visible.count - (ranking.pinned == nil ? 0 : 1)
+    }
+
+    /// The one high finding that owns the closed-notch cue, pinned above the primary session.
+    /// Monochrome shield; the severity word is text, so nothing here competes with the lights.
+    @ViewBuilder
+    private func securityPinnedCard(_ finding: AgentSecurityFinding) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.shield.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.primary)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(finding.title)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Text(finding.severity.label)
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(Capsule().fill(Color.white.opacity(0.12)))
+                }
+                Text(finding.summary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                if let evidence = finding.evidence.first {
+                    Text(evidence)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                HStack(spacing: 8) {
+                    Button(String(localized: "Details")) {
+                        SettingsWindowController.shared.showWindow(
+                            navigatingToAgentStatusHighlight: SettingsDeepLink.securityFindingsHighlightID
+                        )
+                    }
+                    Button(String(localized: "Acknowledge")) {
+                        findingsStore.acknowledge(finding.id)
+                    }
+                }
+                .controlSize(.small)
+                .padding(.top, 2)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(hasSkin ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.white.opacity(0.08)))
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Color.white.opacity(0.22), lineWidth: 0.5)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Security finding, \(finding.severity.label): \(finding.title). \(finding.summary)")
     }
 
     /// Bare cup glyph, no tooltip — use inside a container that supplies its own `.help`.

@@ -179,6 +179,7 @@ private struct SettingsSearchEntry: Identifiable {
 /// so the string can never drift from the row's own `.settingsHighlight(id:)` registration.
 enum SettingsDeepLink {
     static let smartCaffeinateHighlightID = SettingsTab.agentStatus.highlightID(for: "Smart caffeinate")
+    static let securityFindingsHighlightID = SettingsTab.agentStatus.highlightID(for: "Security findings")
 }
 
 final class SettingsHighlightCoordinator: ObservableObject {
@@ -922,6 +923,12 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .agentStatus, title: "Connect ADR", keywords: ["adr", "uber", "security", "discovery", "sensor", "connect", "install", "uv", "pipx"], highlightID: SettingsTab.agentStatus.highlightID(for: "Connect ADR")),
             SettingsSearchEntry(tab: .agentStatus, title: "Security findings", keywords: ["security", "finding", "mcp", "unpinned", "plaintext", "undeclared", "acknowledge", "snooze", "shield"], highlightID: SettingsTab.agentStatus.highlightID(for: "Security findings")),
             SettingsSearchEntry(tab: .agentStatus, title: "Snapshot folder", keywords: ["snapshot", "folder", "directory", "adr", "discovery", "output"], highlightID: SettingsTab.agentStatus.highlightID(for: "Snapshot folder")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Let Kannu run scans", keywords: ["scan", "adr", "discovery", "automatic", "daily", "schedule"], highlightID: SettingsTab.agentStatus.highlightID(for: "Let Kannu run scans")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Scan now", keywords: ["scan", "adr", "discovery", "run", "now"], highlightID: SettingsTab.agentStatus.highlightID(for: "Scan now")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Policy file", keywords: ["policy", "tenant", "domains", "approved", "forbidden", "adr"], highlightID: SettingsTab.agentStatus.highlightID(for: "Policy file")),
+            SettingsSearchEntry(tab: .agentStatus, title: "High-severity alerts in the notch", keywords: ["alert", "notch", "pill", "shield", "security", "high", "acknowledge", "glyph"], highlightID: SettingsTab.agentStatus.highlightID(for: "High-severity alerts in the notch")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Push high security findings", keywords: ["push", "security", "finding", "high", "mobile", "ntfy", "pushover", "webhook"], highlightID: SettingsTab.agentStatus.highlightID(for: "Push high security findings")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Push medium security findings", keywords: ["push", "security", "finding", "medium", "mobile"], highlightID: SettingsTab.agentStatus.highlightID(for: "Push medium security findings")),
             SettingsSearchEntry(tab: .agentStatus, title: "Mobile notifications", keywords: ["mobile", "push", "ntfy", "pushover", "webhook", "iphone", "android"], highlightID: SettingsTab.agentStatus.highlightID(for: "Mobile notifications")),
             SettingsSearchEntry(tab: .agentStatus, title: "Send test notification", keywords: ["test", "mobile", "push", "notification"], highlightID: SettingsTab.agentStatus.highlightID(for: "Send test notification")),
         ]
@@ -7615,6 +7622,9 @@ struct AgentStatusSettings: View {
     @ObservedObject private var findingsStore = SecurityFindingsStore.shared
     @Default(.adrSnapshotDirectory) var adrSnapshotDirectory
     @Default(.adrToolDirectory) var adrToolDirectory
+    @Default(.adrHighAlertMode) var adrHighAlertMode
+    @Default(.adrPolicyFile) var adrPolicyFile
+    @Default(.adrRunScansEnabled) var adrRunScansEnabled
     @Default(.enableAgentStatusFeature) var enableAgentStatusFeature
     @Default(.agentStatusStaleMinutes) var agentStatusStaleMinutes
     @Default(.agentStoppedCollapseSeconds) var agentStoppedCollapseSeconds
@@ -7887,6 +7897,14 @@ struct AgentStatusSettings: View {
                         Defaults.Toggle(key: .agentStatusNotifyOnInactive) {
                             Text("Notify when inactive")
                         }
+                        Defaults.Toggle(key: .adrPushHighFindings) {
+                            Text("Push high security findings")
+                        }
+                        .settingsHighlight(id: highlightID("Push high security findings"))
+                        Defaults.Toggle(key: .adrPushMediumFindings) {
+                            Text("Push medium security findings")
+                        }
+                        .settingsHighlight(id: highlightID("Push medium security findings"))
 
                         HStack {
                             Button(isSendingTestNotification ? "Sending…" : "Send test notification") {
@@ -7991,6 +8009,58 @@ struct AgentStatusSettings: View {
             .settingsHighlight(id: highlightID("Snapshot folder"))
 
             adrLastScanRow
+
+            if adr.discovery.isFound {
+                Defaults.Toggle(key: .adrRunScansEnabled) {
+                    Text("Let Kannu run scans")
+                }
+                .settingsHighlight(id: highlightID("Let Kannu run scans"))
+                Text("Daily, and sooner after an MCP config changes. Off means Kannu only reads snapshots that something else wrote.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack {
+                    Button(findingsStore.isScanning ? "Scanning…" : "Scan now") {
+                        findingsStore.runScanNow(reason: "manual")
+                    }
+                    .disabled(findingsStore.isScanning)
+                    .settingsHighlight(id: highlightID("Scan now"))
+                    if let at = findingsStore.lastKannuScanAt {
+                        Text("Last run by Kannu \(at.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                if let error = findingsStore.lastScanError {
+                    Text(error).font(.caption).foregroundColor(.red)
+                }
+
+                HStack {
+                    Text("Policy file")
+                    Spacer()
+                    Text(adrPolicyFile.isEmpty ? String(localized: "none") : adrPolicyFile.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Button("Choose…") { choosePolicyFile() }
+                    if !adrPolicyFile.isEmpty {
+                        Button("Clear") { adrPolicyFile = "" }
+                    }
+                }
+                .settingsHighlight(id: highlightID("Policy file"))
+            }
+
+            Picker("High-severity alerts in the notch", selection: $adrHighAlertMode) {
+                ForEach(ADRHighAlertMode.allCases) { mode in
+                    Text(mode.localizedName).tag(mode)
+                }
+            }
+            .settingsHighlight(id: highlightID("High-severity alerts in the notch"))
+            Text(adrHighAlertMode.description)
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
             if let error = findingsStore.snapshotError {
                 Text(error).font(.caption).foregroundColor(.red)
@@ -8142,6 +8212,18 @@ struct AgentStatusSettings: View {
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Security finding, \(finding.severity.label): \(finding.title). \(finding.summary)")
+    }
+
+    private func choosePolicyFile() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.json]
+        panel.prompt = String(localized: "Use policy")
+        if panel.runModal() == .OK, let url = panel.url {
+            adrPolicyFile = url.path
+        }
     }
 
     private func chooseSnapshotDirectory() {

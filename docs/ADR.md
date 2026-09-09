@@ -48,7 +48,30 @@ It reports paths, metadata and allowlisted config keys — never file contents; 
 *names* only; credential-bearing flag values replaced; URLs stripped of user info and query strings;
 and no access at all under personal folders such as `~/.ssh`, `Documents`, `Mail` and `Messages`.
 
-## 3. Run it on a schedule (optional)
+## 3. Let Kannu run it (default once connected)
+
+With Discovery connected, Settings → Agents → Security findings → **Let Kannu run scans** makes
+Kannu invoke `adr-discovery --json --output-dir <snapshot folder>` itself: once a day, sooner
+after one of your MCP configuration files changes on disk (`~/.claude.json`, `~/.claude/mcp.json`,
+`~/.cursor/mcp.json`, `~/.codex/config.toml`, Claude Desktop's config), and whenever you press
+**Scan now**. The exact command is fixed in code and pinned by tests; Kannu never adds flags to it.
+Turn the toggle off if something else already schedules Discovery — Kannu then only reads.
+
+## 4. How a high-severity finding gets your attention
+
+- **In the closed notch:** a monochrome shield pill beside the traffic light — never a fourth
+  light colour — that stays until you acknowledge the finding (default). Settings offers
+  *For 5 seconds, then glyph*, *Glyph only* and *Off*. While a Focus mode is on, only the small
+  glyph shows; the pill appears when Focus ends. Clicking the pill opens the panel.
+- **In the panel:** the finding is pinned above the primary session with Details and Acknowledge;
+  medium findings appear as a count beside "Recent chats".
+- **On your phone:** with mobile notifications on, each new high finding is pushed once
+  (priority 5, the same as "needs input"); medium ones only if you enable that.
+- **Kannu's own finding:** a session started with permission checks bypassed
+  (`claude --dangerously-skip-permissions`, Codex `approval_policy = never`) is reported by Kannu
+  from the hook payload — Discovery cannot see process arguments on macOS.
+
+## 5. Run it on your own schedule (optional)
 
 Kannu does not install launch agents. If you want a daily scan, save this as
 `~/Library/LaunchAgents/dev.kannu.adr-discovery.plist` and load it with
@@ -79,13 +102,14 @@ Kannu does not install launch agents. If you want a daily scan, save this as
 Fleet deployments that already run Discovery from their own scheduler only need to point Kannu's
 snapshot folder at wherever those snapshots land.
 
-## 4. Tenant policy (optional)
+## 6. Tenant policy (optional)
 
 Discovery accepts `--policy policy.json` with `approved`, `forbidden` and `tenant_domains` lists;
 `tenant_domains` enables the *third-party destination* finding. See the upstream Discovery README
-for the format.
+for the format. Point Kannu at it with Settings → Security findings → **Policy file**; Kannu passes
+it to every scan it runs.
 
-## 5. ADR Sensor (optional)
+## 7. ADR Sensor (optional)
 
 `adr-sensor` exports normalised session records for Claude Code, Cursor, Codex, Warp, Claude
 Desktop, Cline and opencode. Kannu already reads those sources itself; the Sensor is useful when

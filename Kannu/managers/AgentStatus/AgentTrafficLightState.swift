@@ -89,6 +89,11 @@ struct AgentSessionStatus: Identifiable, Equatable {
     /// Tool failures the hook has counted since the last user prompt. Shown beside a red light
     /// as "Stopped · N tool errors"; zero is a clean finish. Additive: see `carryingExtras(from:)`.
     var toolErrorCount: Int = 0
+    /// The session runs with permission checks bypassed (`--dangerously-skip-permissions`,
+    /// Codex `approval_policy = never`), as reported by the hook. Sticky for the session's life;
+    /// additive like the error count. ADR Discovery cannot see this on macOS (its process
+    /// listing carries no argv), so it is Kannu's own finding.
+    var isUnattended: Bool = false
 
     /// True when the hook that produced this session reported work in progress, regardless of
     /// what the staleness ladder later concluded about its age.
@@ -673,13 +678,14 @@ extension AgentSessionStatus {
         ).carryingExtras(from: self)
     }
 
-    /// Copies the additive field — the tool-error count — that a memberwise reconstruction
-    /// silently drops. Every site that rebuilds a session from another one must call this:
-    /// docs/REGRESSIONS.md entry 7 is exactly this failure, for cwd and hostPID. The larger
-    /// count wins across a merge seam.
+    /// Copies the additive fields — the tool-error count and the unattended flag — that a
+    /// memberwise reconstruction silently drops. Every site that rebuilds a session from another
+    /// one must call this: docs/REGRESSIONS.md entry 7 is exactly this failure, for cwd and
+    /// hostPID. The larger count wins across a merge seam; the flag is an OR.
     func carryingExtras(from source: AgentSessionStatus) -> AgentSessionStatus {
         var copy = self
         copy.toolErrorCount = max(copy.toolErrorCount, source.toolErrorCount)
+        copy.isUnattended = copy.isUnattended || source.isUnattended
         return copy
     }
 }
