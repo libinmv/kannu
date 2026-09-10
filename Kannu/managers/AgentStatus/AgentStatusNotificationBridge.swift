@@ -87,7 +87,8 @@ final class AgentStatusNotificationBridge: ObservableObject {
                 try await sendViaWebhook(payload: payload, stateKey: "security_finding", extra: [
                     "rule": finding.rule,
                     "severity": finding.severity == .high ? "high" : "medium",
-                    "source": finding.source.rawValue,
+                    // Not "source": the base body's "source": "Kannu" wins that merge and dropped it.
+                    "finding_source": finding.source.rawValue,
                     "asset": finding.assetName ?? "",
                     "summary": finding.summary
                 ])

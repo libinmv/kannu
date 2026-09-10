@@ -48,10 +48,18 @@ the script got a version without the `flock` serialisation and without the atomi
 temp-then-`os.replace` write — the exact races later measured at 11/200 lost urgent states
 and 14/4825 torn reads.
 
-**Guard — exists, partial.** `.githooks/pre-commit` compares the two version markers and rejects the
-commit on mismatch. It does **not** compare bodies, so a body edit without a version bump ships
-silently — after any edit, diff the two Python bodies (extract each heredoc, strip the embedded
-copy's 8-space indent) and expect byte identity. Regenerate the mirror from the embedded literal
+**Guard — exists.** `.githooks/pre-commit` compares the two version markers and, since v34, the
+bodies too (the embedded literal de-indented by 8 spaces, the marker interpolation substituted,
+against the mirror byte for byte) — a body edit without a matching copy fails the commit.
+`HookScriptTests.testEmbeddedScriptMatchesTheMirror` runs the same comparison in CI.
+
+**v34 addendum — no backslash in the Python.** The embedded copy is a plain Swift string literal:
+`"\n"` in the Python becomes a real newline in the installed script, `"\U000E0000"` does not
+compile, and escaping them makes the two copies differ. Build code points and regex character
+classes with `chr()` (the hidden-text scan does exactly that). The pre-commit hook and the same
+test reject any backslash in the mirror's Python body. Before this guard existed, the rule was: diff
+the two Python bodies (extract each heredoc, strip the embedded copy's 8-space indent) and expect
+byte identity. Regenerate the mirror from the embedded literal
 rather than hand-editing it; hand-editing is how `quota_exceeded` had to be typed into both copies
 separately (`817f114`). Since v30, `KannuTests/HookScriptTests.swift` executes the mirror as a
 subprocess and pins the merge and lock behaviour, so a behavioural drift in the mirror fails CI even
@@ -231,6 +239,12 @@ another session ends in `.carryingExtras(from:)` (max of the two counts, OR of t
 demote path and `AgentSecurityFindingTests.testUnattendedFlagSurvivesReconstruction` covers the
 three helper initialisers. When you add another additive field, extend `carryingExtras`, not the
 call sites.
+
+**2026-09-11 addendum — `hiddenText`.** Hook-only sightings of hidden Unicode (hook v34). They ride
+`carryingExtras` as a set union keyed by (kind, location, first seen) — the newer copy of one sighting
+wins, the newest three are kept, empty is the identity — never a replace, or a reconstruction from a
+side that has not seen the sighting would erase it. Guards: `ClaudeReconcilerTests` (demote and
+pass-through arms carry it) and `HiddenTextIncidentTests.testReconstructionHelpersKeepTheField`.
 
 **2026-09-09 addendum — the run verdict is not additive.** `runError` (why the run ended, nil for
 a clean finish) is a per-turn *verdict*, replaced by every stopped write. It rides the same

@@ -45,6 +45,7 @@ struct ADRScanRecord: Codable, Equatable, Defaults.Serializable {
 
 extension SecurityFindingSnooze: Defaults.Serializable {}
 extension ADRSessionAnalysis: Defaults.Serializable {}
+extension HiddenTextIncident.Record: Defaults.Serializable {}
 
 /// Owns the findings the user sees, their acknowledgements and snoozes, and the watch on the
 /// snapshot directory. Watch mode is the whole of phase 0: whoever runs `adr-discovery` (a
@@ -76,6 +77,10 @@ final class SecurityFindingsStore: ObservableObject {
     private var discoveryFindings: [AgentSecurityFinding] = []
     private var nativeFindings: [AgentSecurityFinding] = []
     private var detectionFindings: [AgentSecurityFinding] = []
+    /// Hidden-text sightings, kept past their session until acknowledged (capped).
+    private var hiddenTextRecords: [HiddenTextIncident.Record] = []
+    private var hiddenTextFindings: [AgentSecurityFinding] = []
+    static let hiddenTextCap = 50
     /// ADR Detection verdicts, newest first, one per conversation (capped).
     @Published private(set) var analyses: [ADRSessionAnalysis] = []
     @Published private(set) var analyzingConversationIDs: Set<String> = []
@@ -101,6 +106,8 @@ final class SecurityFindingsStore: ObservableObject {
         lastKannuScanAt = Defaults[.adrLastKannuScanAt]
         analyses = Defaults[.adrSessionAnalyses]
         detectionFindings = analyses.compactMap { $0.finding() }
+        hiddenTextRecords = Defaults[.hiddenTextIncidents]
+        hiddenTextFindings = hiddenTextRecords.map(\.finding)
     }
 
     func analysis(for conversationID: String) -> ADRSessionAnalysis? {
@@ -154,8 +161,17 @@ final class SecurityFindingsStore: ObservableObject {
         CursorAgentStatusMonitor.shared.$sessions
             .sink { [weak self] sessions in
                 self?.updateNativeFindings(from: sessions)
+                self?.recordHiddenText(from: sessions)
             }
             .store(in: &cancellables)
+        // The hook reads two marker files for the hidden-text settings; keep them in step.
+        Defaults.publisher(.detectHiddenText, options: [])
+            .sink { [weak self] _ in Task { @MainActor in self?.syncHiddenTextSetting() } }
+            .store(in: &cancellables)
+        Defaults.publisher(.warnAgentAboutHiddenText, options: [])
+            .sink { [weak self] _ in Task { @MainActor in self?.syncHiddenTextSetting() } }
+            .store(in: &cancellables)
+        syncHiddenTextSetting()
         // Know whether the tool is there before the first cadence tick; cheap and bounded.
         ADRConnection.shared.checkAgain()
         configModificationDates = Self.currentConfigModificationDates()
@@ -163,6 +179,9 @@ final class SecurityFindingsStore: ObservableObject {
         cadenceTimer = Timer.scheduledTimer(withTimeInterval: Self.cadenceTickInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.evaluateAutomaticScan() }
         }
+        // Saved hidden-text sightings must show after a relaunch even when no ADR snapshot is
+        // ever ingested and the native findings never change.
+        publishFindings()
     }
 
     func stop() {
@@ -315,8 +334,49 @@ final class SecurityFindingsStore: ObservableObject {
         publishFindings()
     }
 
+    // MARK: - Hidden text (Kannu's own check, hook v34)
+
+    private func recordHiddenText(from sessions: [AgentSessionStatus]) {
+        guard Defaults[.detectHiddenText] else { return }
+        let updated = HiddenTextIncident.Record.upserting(sessions, into: hiddenTextRecords, cap: Self.hiddenTextCap)
+        guard updated != hiddenTextRecords else { return }
+        hiddenTextRecords = updated
+        Defaults[.hiddenTextIncidents] = updated
+        hiddenTextFindings = updated.map(\.finding)
+        publishFindings()
+    }
+
+    /// Writes or removes the hook's two marker files. Turning detection off also forgets saved
+    /// sightings: kept, their acknowledgements would be pruned and turning it back on would show
+    /// and push them all again.
+    private func syncHiddenTextSetting() {
+        let detect = Defaults[.detectHiddenText]
+        let warn = detect && Defaults[.warnAgentAboutHiddenText]
+        let directory = AgentHookInstaller.statusDirectory
+        let fileManager = FileManager.default
+        func place(_ name: String, present: Bool) {
+            let url = directory.appendingPathComponent(name)
+            if present {
+                guard !fileManager.fileExists(atPath: url.path) else { return }
+                try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true,
+                                                 attributes: [.posixPermissions: 0o700])
+                fileManager.createFile(atPath: url.path, contents: Data(), attributes: [.posixPermissions: 0o600])
+            } else if fileManager.fileExists(atPath: url.path) {
+                try? fileManager.removeItem(at: url)
+            }
+        }
+        place(HiddenTextIncident.detectionOffMarker, present: !detect)
+        place(HiddenTextIncident.warnAgentMarker, present: warn)
+        if !detect, !hiddenTextRecords.isEmpty {
+            hiddenTextRecords = []
+            Defaults[.hiddenTextIncidents] = []
+            hiddenTextFindings = []
+            publishFindings()
+        }
+    }
+
     private func publishFindings() {
-        let combined = discoveryFindings + nativeFindings + detectionFindings
+        let combined = discoveryFindings + nativeFindings + detectionFindings + hiddenTextFindings
         if combined != findings { findings = combined }
     }
 

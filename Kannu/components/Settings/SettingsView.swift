@@ -929,6 +929,8 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .agentStatus, title: "High-severity alerts in the notch", keywords: ["alert", "notch", "pill", "shield", "security", "high", "acknowledge", "glyph"], highlightID: SettingsTab.agentStatus.highlightID(for: "High-severity alerts in the notch")),
             SettingsSearchEntry(tab: .agentStatus, title: "Push high security findings", keywords: ["push", "security", "finding", "high", "mobile", "ntfy", "pushover", "webhook"], highlightID: SettingsTab.agentStatus.highlightID(for: "Push high security findings")),
             SettingsSearchEntry(tab: .agentStatus, title: "Push medium security findings", keywords: ["push", "security", "finding", "medium", "mobile"], highlightID: SettingsTab.agentStatus.highlightID(for: "Push medium security findings")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Look for hidden text in what agents read", keywords: ["hidden", "invisible", "unicode", "tag", "ascii smuggling", "zero-width", "bidi", "trojan source", "variation selector", "prompt injection"], highlightID: SettingsTab.agentStatus.highlightID(for: "Look for hidden text in what agents read")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Tell the agent when hidden text is found", keywords: ["hidden", "invisible", "unicode", "agent", "warn", "context", "note"], highlightID: SettingsTab.agentStatus.highlightID(for: "Tell the agent when hidden text is found")),
             SettingsSearchEntry(tab: .agentStatus, title: "Analyze chats with ADR Detection", keywords: ["adr", "detection", "analyze", "analysis", "session", "transcript", "malicious", "prompt injection"], highlightID: SettingsTab.agentStatus.highlightID(for: "Analyze chats with ADR Detection")),
             SettingsSearchEntry(tab: .agentStatus, title: "Detection checkout", keywords: ["adr", "detection", "checkout", "uv", "clone"], highlightID: SettingsTab.agentStatus.highlightID(for: "Detection checkout")),
             SettingsSearchEntry(tab: .agentStatus, title: "Reasoning model", keywords: ["adr", "detection", "model", "claude", "sonnet"], highlightID: SettingsTab.agentStatus.highlightID(for: "Reasoning model")),
@@ -7633,6 +7635,7 @@ struct AgentStatusSettings: View {
     @Default(.adrPolicyFile) var adrPolicyFile
     @Default(.adrRunScansEnabled) var adrRunScansEnabled
     @Default(.adrDetectionEnabled) var adrDetectionEnabled
+    @Default(.detectHiddenText) var detectHiddenText
     @Default(.adrDetectionConsentedAt) var adrDetectionConsentedAt
     @Default(.adrDetectionCheckout) var adrDetectionCheckout
     @Default(.adrDetectionConfirmEachRun) var adrDetectionConfirmEachRun
@@ -8087,6 +8090,23 @@ struct AgentStatusSettings: View {
                 .foregroundStyle(.secondary)
 
             Divider()
+            Defaults.Toggle(key: .detectHiddenText) {
+                Text("Look for hidden text in what agents read")
+            }
+            .settingsHighlight(id: highlightID("Look for hidden text in what agents read"))
+            Text("Some characters are invisible to you but readable by the AI, and can hide instructions. Kannu checks prompts and tool results on this Mac. No AI model is used and nothing is sent anywhere.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Defaults.Toggle(key: .warnAgentAboutHiddenText) {
+                Text("Tell the agent when hidden text is found")
+            }
+            .disabled(!detectHiddenText)
+            .settingsHighlight(id: highlightID("Tell the agent when hidden text is found"))
+            Text("Off by default. Adds one short, factual note to the agent's context saying hidden text was found and where — never the hidden text. Claude Code also shows you a one-line notice.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Divider()
             adrDetectionSection
 
             if let error = findingsStore.snapshotError {
@@ -8120,6 +8140,8 @@ struct AgentStatusSettings: View {
         } footer: {
             Text("""
             Findings come from ADR, Uber's open-source agent security toolkit (Apache-2.0). You install it; Kannu only reads its results.
+
+            Kannu also runs two checks of its own, on this Mac: sessions started with permission checks turned off, and hidden text in what agents read.
 
             Kannu never changes your agent or MCP settings. Nothing leaves this Mac unless you turn on push notifications or session analysis.
 

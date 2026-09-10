@@ -67,9 +67,16 @@ Turn the toggle off if something else already schedules Discovery — Kannu then
   medium findings appear as a count beside "Recent chats".
 - **On your phone:** with mobile notifications on, each new high finding is pushed once
   (priority 5, the same as "needs input"); medium ones only if you enable that.
-- **Kannu's own finding:** a session started with permission checks bypassed
+- **Kannu's own findings:** a session started with permission checks bypassed
   (`claude --dangerously-skip-permissions`, Codex `approval_policy = never`) is reported by Kannu
   from the hook payload — Discovery cannot see process arguments on macOS.
+- **Hidden text (Kannu's own, on by default, local):** the hook looks at what agents read and write
+  — prompts, tool results, tool input — for characters a person cannot see but a model reads:
+  Unicode tag characters ("ASCII smuggling"), bytes hidden in variation selectors, right-to-left
+  overrides on a line with no right-to-left letters (Trojan Source), long zero-width runs. No model,
+  nothing sent. A sighting is high when it decodes to readable text; the decoded text is only ever
+  shown inside Kannu, never pushed. "Tell the agent when hidden text is found" (off by default)
+  adds one factual sentence to the agent's context — never the hidden text.
 
 ## 5. Run it on your own schedule (optional)
 

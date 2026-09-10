@@ -4,6 +4,50 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - Hidden text in what agents read and write, checked locally in the hook
+- **Developer label:** The one inline thing worth adding cheaply, no model: the deterministic hidden-Unicode (ASCII-smuggling) check on tool results via hooks — local, instant, no data leaves. Say if you want that. add this too
+- **Agent label:** Hook v34 scans every hook payload for hidden Unicode and records sightings as Kannu-native security findings; telling the agent is opt-in
+- **Changes:**
+  - Hook script v34 (mirror and embedded copy, byte-identical): `scan_hidden_text` walks the
+    *decoded* payload (never the raw text, so escaped characters and Cursor's JSON-string
+    `tool_output` are judged by what they decode to), attributes each string to where it came from
+    (tool result, prompt, tool input, agent reply), and classifies four techniques written from their
+    public specifications — Unicode tag characters (UTS #51 flag sequences excluded), variation-
+    selector runs of 4+ (decoded, Butler 2025), right-to-left overrides on a line with no right-to-left
+    letters (Trojan Source), zero-width runs of 10+ (two-symbol runs decoded as bits, Rehberger's
+    Sneaky Bits). Nothing ported from ADR, so NOTICE is unchanged. Scanned before the directory lock;
+    ASCII payloads return in well under a millisecond, a 1 MB non-ASCII worst case in tens of ms.
+  - Status-file key `hidden_text`: up to three sightings (kind, where, tool, count, events, a
+    printable-ASCII preview, first/last seen, tool_use_id), carried on every write like `unattended`;
+    the same tool call never counts twice (Claude's parallel gated PreToolUse; PostToolUse after
+    PreToolUse) and the same hidden message merges.
+  - One `emit()` writes all stdout. Without the opt-in marker it prints today's line — except for
+    **Codex, which rejected that line on every event** (strict schemas; empty stdout is success) and
+    now gets nothing. With "Tell the agent when hidden text is found" on, a new sighting adds a
+    factual note: Claude Code `hookSpecificOutput.additionalContext` (+ a `systemMessage` for the
+    user) on PostToolUse/PostToolUseFailure/UserPromptSubmit/PreToolUse, VS Code and Codex on
+    PostToolUse, Cursor `additional_context` on postToolUse; never on Stop; never the decoded text.
+    Settings reach the script as two marker files in the status directory.
+  - Also fixed in the script: a non-object JSON payload (`[]`, `42`) and a deeply nested one crashed
+    it before its allow line.
+  - Swift: `HiddenTextIncident` (logic target) parses the entries as untrusted input and decides
+    severity (high when the text decodes to something readable), plain titles, a summary that never
+    holds the decoded text, and a finding id from what never changes for one sighting. The monitor
+    lifts it onto `AgentSessionStatus.hiddenText` (union in `carryingExtras`); `SecurityFindingsStore`
+    keeps sightings (cap 50) past their session until acknowledged and keeps the two marker files in
+    step with Settings ("Look for hidden text in what agents read", on; "Tell the agent when hidden
+    text is found", off). The webhook now sends the finding's source as `finding_source` (the base
+    body's `"source": "Kannu"` used to win the merge and drop it).
+  - Guards: `.githooks/pre-commit` now compares the two hook bodies and rejects a backslash in the
+    Python; `HookScriptTests` gains provider/stdout/raw-payload support and cases for every technique,
+    false-positive guard, location, carry, de-duplication, opt-in output per host, Codex silence and
+    malformed payloads, plus an embedded == mirror test; `HiddenTextIncidentTests` covers parsing,
+    severity, identity, wording, merging and persistence. REGRESSIONS entries 1 and 7 updated.
+  - Known limits: Claude's WebFetch hands hooks a summary, so smuggling in a raw web page may never
+    reach the hook (Bash `curl`, Read and MCP fetchers are covered); payloads over ~1 MB never reach
+    Python at all (the existing env-var hand-off hits ARG_MAX); Codex output verified against its
+    source, not a live Codex.
+
 ### 2026-09-10 - The media card opens the browser tab that is playing
 - **Developer label:** can media player like chromed tabs or safari tabs also open to the exact media screen playing
 - **Agent label:** After activating the browser, select the tab whose title carries the playing track (Safari and Chrome-family), best-effort

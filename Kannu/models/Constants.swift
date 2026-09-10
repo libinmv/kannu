@@ -1250,6 +1250,12 @@ extension Defaults.Keys {
     /// Pruned to the ids still open, which lets a finding that vanishes and returns push once more.
     static let adrPushedFindingIDs = Key<[String]>("adrPushedFindingIDs", default: [])
 
+    // Kannu's own hidden-text check (hook v34). Detection is local — no model, nothing sent — so
+    // it is on; telling the agent changes what it sees, so that is opt-in.
+    static let detectHiddenText = Key<Bool>("detectHiddenText", default: true)
+    static let warnAgentAboutHiddenText = Key<Bool>("warnAgentAboutHiddenText", default: false)
+    static let hiddenTextIncidents = Key<[HiddenTextIncident.Record]>("hiddenTextIncidents", default: [])
+
     // ADR Detection — session analysis. Everything off by default; the user opts in, picks each
     // chat, and by default confirms each run. Keys live in the Keychain (`SecureSecretsStore`).
     static let adrDetectionEnabled = Key<Bool>("adrDetectionEnabled", default: false)

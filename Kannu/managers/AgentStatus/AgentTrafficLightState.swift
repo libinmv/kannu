@@ -105,6 +105,9 @@ struct AgentSessionStatus: Identifiable, Equatable {
     /// Sources: the hook's `ended_on_error` (StopFailure, an Antigravity Stop with an error), the
     /// Claude transcript's API-error record, Warp `Failed`, Claude Desktop's `result.is_error`.
     var runError: RunError? = nil
+    /// Hidden Unicode the hook found in what this session read or wrote (hook v34+). Hook-only
+    /// and additive: carried by `carryingExtras` as a set union (`HiddenTextIncident.union`).
+    var hiddenText: [HiddenTextIncident] = []
 
     /// True when the hook that produced this session reported work in progress, regardless of
     /// what the staleness ladder later concluded about its age.
@@ -780,6 +783,7 @@ extension AgentSessionStatus {
         copy.isUnattended = copy.isUnattended || source.isUnattended
         copy.runError = RunError.preferred(copy.runError, source.runError)
         copy.desktopSessionID = copy.desktopSessionID ?? source.desktopSessionID
+        copy.hiddenText = HiddenTextIncident.union(copy.hiddenText, source.hiddenText)
         return copy
     }
 }

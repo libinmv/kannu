@@ -48,7 +48,7 @@ final class AgentHookInstaller: ObservableObject {
     private static let logger = os.Logger(subsystem: "com.kannu.app", category: "AgentHookInstaller")
 
     static let scriptName = "kannu-agent-status.sh"
-    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=33"
+    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=34"
 
     private static var home: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -291,7 +291,8 @@ final class AgentHookInstaller: ObservableObject {
         if ! command -v python3 >/dev/null 2>&1; then
           TS=$(($(date +%s) * 1000))
           printf '{"state":"%s","ts":%s,"provider":"%s"}' "$KANNU_STATE" "$TS" "$KANNU_PROVIDER" > "$KANNU_STATUS_DIR/$KANNU_PROVIDER-default.json"
-          echo '{"permission":"allow","continue":true}'
+          # Codex validates hook output strictly and rejects this line; empty stdout is its success.
+          [ "$KANNU_PROVIDER" = "codex" ] || echo '{"permission":"allow","continue":true}'
           exit 0
         fi
 
@@ -328,7 +329,11 @@ final class AgentHookInstaller: ObservableObject {
 
         try:
             data = json.loads(raw) if raw.strip() else {}
-        except json.JSONDecodeError:
+        except Exception:
+            # Not only JSONDecodeError: a deeply nested document raises RecursionError.
+            data = {}
+        if not isinstance(data, dict):
+            # `[]`, `"x"` or `42` is valid JSON with no .get(): it killed the script before the allow line.
             data = {}
 
         def pick_str(*values):
@@ -349,6 +354,300 @@ final class AgentHookInstaller: ObservableObject {
             return (value or "").strip().lower().replace("_", "").replace("-", "").replace(" ", "")
 
         TITLE_BEARING_EVENTS = {"beforeSubmitPrompt", "stop", "SessionStart", "UserPromptSubmit", "Stop", "PreInvocation"}
+
+        # --- Hidden Unicode (v34) ------------------------------------------------------------
+        # Local, model-free check for text an agent can read but a person cannot see: Unicode tag
+        # characters (ASCII smuggling), bytes hidden in variation selectors, right-to-left overrides on
+        # lines with no right-to-left letters (Trojan Source), long zero-width runs. A hit goes into
+        # this status file for Kannu to show; the agent is told only if the user opted in (marker).
+        # This file is embedded in a plain Swift string literal: NO backslash anywhere in it. Every
+        # code point, regex classes included, is built with chr().
+        HT_OFF_MARKER = ".kannu-hidden-text-off"
+        HT_WARN_MARKER = ".kannu-hidden-text-warn-agent"
+        HT_SKIP_EVENTS = {"SessionStart", "SessionEnd", "Notification", "PermissionRequest",
+                          "beforeShellExecution", "beforeMCPExecution"}
+        HT_POST_EVENTS = {"PostToolUse", "postToolUse", "PostToolUseFailure", "postToolUseFailure"}
+        HT_POST_SKIP_KEYS = {"tool_input", "input", "arguments", "tool"}
+        HT_WHERE = {
+            "tool_response": "tool_result", "tool_output": "tool_result", "result_json": "tool_result",
+            "output": "tool_result", "error": "tool_result", "error_message": "tool_result",
+            "prompt": "prompt",
+            "tool_input": "tool_input", "input": "tool_input", "arguments": "tool_input",
+            "tool": "tool_input", "command": "tool_input", "edits": "tool_input",
+            "last_assistant_message": "agent_reply", "text": "agent_reply",
+        }
+        HT_KIND_RANK = {"tags": 4, "variation_selectors": 3, "bidi": 2, "zero_width": 1}
+        HT_WHERE_RANK = {"tool_result": 5, "prompt": 4, "tool_input": 3, "agent_reply": 2, "other": 1}
+        HT_KIND_WORDS = {"tags": "Unicode tag", "variation_selectors": "variation selector",
+                         "bidi": "bidirectional control", "zero_width": "zero-width"}
+        HT_BIDI_NAMES = {0x202A: "LRE", 0x202B: "RLE", 0x202C: "PDF", 0x202D: "LRO", 0x202E: "RLO",
+                         0x2066: "LRI", 0x2067: "RLI", 0x2068: "FSI", 0x2069: "PDI"}
+        HT_TAGS = [(0xE0000, 0xE007F)]
+        HT_VS = [(0xFE00, 0xFE0F), (0xE0100, 0xE01EF)]
+        HT_BIDI = [(0x202A, 0x202E), (0x2066, 0x2069)]
+        HT_BIDI_RTL = [(0x202B, 0x202B), (0x202E, 0x202E), (0x2067, 0x2067)]  # RLE, RLO, RLI
+        HT_ZW = [(0x200B, 0x200D), (0x2060, 0x2064), (0xFEFF, 0xFEFF)]
+        HT_RTL_LETTERS = [(0x0590, 0x08FF), (0xFB1D, 0xFDFF), (0xFE70, 0xFEFC), (0x10800, 0x10FFF), (0x1E800, 0x1EFFF)]
+        HT_MAX_ENTRIES = 3
+        HT_WINDOW_MS = 600000
+        HT_BUDGET = 4000000
+        HT_PLAUSIBLE_MS = 1000000000000
+        HT_NL = chr(10)
+        HT_ESCAPED_U = chr(92) + "u"  # a JSON escape inside a string that is itself JSON
+        _ht_re = {}
+
+        def ht_class(ranges):
+            # A regex character class from (first, last) code points; chr() only, never an escape.
+            out = "["
+            for lo, hi in ranges:
+                out += chr(lo) if lo == hi else chr(lo) + "-" + chr(hi)
+            return out + "]"
+
+        def ht_re(name):
+            # Compiled on first need (about 1 ms): ASCII-only payloads never get here.
+            if not _ht_re:
+                _ht_re["any"] = re.compile(ht_class(HT_TAGS + HT_VS + HT_BIDI + HT_ZW))
+                _ht_re["tags"] = re.compile(ht_class(HT_TAGS) + "+")
+                # UTS #51 flag tag sequence: BLACK FLAG, optional VS16, 3-7 tag digits/lowercase, CANCEL TAG.
+                _ht_re["flag"] = re.compile(chr(0x1F3F4) + chr(0xFE0F) + "?"
+                                            + ht_class([(0xE0030, 0xE0039), (0xE0061, 0xE007A)]) + "{3,7}" + chr(0xE007F))
+                _ht_re["vs"] = re.compile(ht_class(HT_VS) + "{4,}")
+                _ht_re["bidi"] = re.compile(ht_class(HT_BIDI_RTL))
+                _ht_re["rtl"] = re.compile(ht_class(HT_RTL_LETTERS))
+                _ht_re["zw"] = re.compile(ht_class(HT_ZW) + "{10,}")
+            return _ht_re[name]
+
+        def printable_ascii(chars, limit=160):
+            out = []
+            for ch in chars:
+                if 32 <= ord(ch) < 127:
+                    out.append(ch)
+                    if len(out) >= limit:
+                        break
+            return "".join(out)
+
+        def ht_int(value, default=0):
+            return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else default
+
+        def ht_token(value, limit=64):
+            return re.sub("[^A-Za-z0-9_.:-]", "", value)[:limit] if isinstance(value, str) else ""
+
+        def ht_vs_text(run):
+            # Butler (2025): byte b -> U+FE00+b (b < 16) or U+E0100+(b-16).
+            data = bytes((ord(ch) - 0xFE00) if ord(ch) < 0xFE10 else (ord(ch) - 0xE0100 + 16) for ch in run[:4096])
+            return data.decode("utf-8", "replace")
+
+        def ht_zw_bits(run):
+            # Best effort for two-symbol binary runs (Rehberger's Sneaky Bits); "" when it does not read.
+            run = run[:1280]
+            symbols = sorted(set(run))
+            if len(symbols) != 2 or len(run) < 32:
+                return ""
+            run = run[:len(run) - len(run) % 8]
+            best = ""
+            for one in symbols:
+                data = bytearray()
+                for i in range(0, len(run), 8):
+                    value = 0
+                    for ch in run[i:i + 8]:
+                        value = value * 2 + (1 if ch == one else 0)
+                    data.append(value)
+                text = printable_ascii(data.decode("latin-1"))
+                if len(text) * 10 >= len(data) * 9 and len(text) > len(best):
+                    best = text
+            return best
+
+        def ht_bidi_preview(text, lo, hi):
+            out = []
+            for ch in text[lo:hi]:
+                name = HT_BIDI_NAMES.get(ord(ch))
+                if name:
+                    out.append("<" + name + ">")
+                elif 32 <= ord(ch) < 127:
+                    out.append(ch)
+            return "".join(out).strip()[:160]
+
+        def classify_hidden(text):
+            # [(kind, chars, preview)] for one string that tripped the prefilter.
+            found = []
+            tag_text = ht_re("flag").sub("", text) if chr(0x1F3F4) in text else text
+            count, preview = 0, ""
+            for m in ht_re("tags").finditer(tag_text):
+                count += len(m.group(0))
+                if len(preview) < 160:
+                    preview += printable_ascii((chr(ord(ch) - 0xE0000) for ch in m.group(0)[:400]), 160 - len(preview))
+            if count:
+                found.append(("tags", count, preview))
+            count, preview = 0, ""
+            for m in ht_re("vs").finditer(text):
+                count += len(m.group(0))
+                if len(preview) < 160:
+                    preview += printable_ascii(ht_vs_text(m.group(0)), 160 - len(preview))
+            if count:
+                found.append(("variation_selectors", count, preview))
+            count, preview, line_lo, line_hi, line_ok = 0, "", 0, -1, False
+            for m in ht_re("bidi").finditer(text):
+                if m.start() > line_hi:
+                    line_lo = text.rfind(HT_NL, 0, m.start()) + 1
+                    end = text.find(HT_NL, m.start())
+                    line_hi = len(text) if end < 0 else end
+                    line_ok = ht_re("rtl").search(text, line_lo, line_hi) is None
+                if line_ok:
+                    count += 1
+                    if not preview:
+                        preview = ht_bidi_preview(text, max(line_lo, m.start() - 60), min(line_hi, m.start() + 100))
+                    if count >= 1000:
+                        break
+            if count:
+                found.append(("bidi", count, preview))
+            count, preview = 0, ""
+            for m in ht_re("zw").finditer(text):
+                count += len(m.group(0))
+                if not preview:
+                    preview = ht_zw_bits(m.group(0))
+            if count:
+                found.append(("zero_width", count, preview))
+            return found
+
+        def ht_rank(hit):
+            kind, where, chars, preview = hit
+            return (kind != "bidi" and len(preview) >= 4, HT_KIND_RANK[kind], HT_WHERE_RANK[where], chars)
+
+        def scan_hidden_text(payload, event):
+            # One best hit per event, from the DECODED payload (never `raw`), or None.
+            skip = HT_POST_SKIP_KEYS if event in HT_POST_EVENTS else ()
+            stack = [(value, HT_WHERE.get(key, "other"), 0) for key, value in payload.items() if key not in skip]
+            best, budget, nodes = None, HT_BUDGET, 0
+            while stack and budget > 0 and nodes < 50000:
+                value, where, depth = stack.pop()
+                nodes += 1
+                if isinstance(value, dict):
+                    if depth < 8:
+                        stack.extend((item, where, depth + 1) for item in value.values())
+                    continue
+                if isinstance(value, list):
+                    if depth < 8:
+                        stack.extend((item, where, depth + 1) for item in value)
+                    continue
+                if not isinstance(value, str) or not value:
+                    continue
+                budget -= len(value)
+                suspect = not value.isascii() and ht_re("any").search(value) is not None
+                # Cursor hands tool output over as a JSON string: judge what it decodes to, which also
+                # turns an escaped surrogate pair into the real character.
+                if (suspect or HT_ESCAPED_U in value) and depth < 8 and len(value) <= 1000000 and value[:64].lstrip()[:1] in ("{", "["):
+                    try:
+                        inner = json.loads(value)
+                    except Exception:
+                        inner = None
+                    if isinstance(inner, (dict, list)):
+                        stack.append((inner, where, depth + 1))
+                        continue
+                if suspect:
+                    for kind, chars, preview in classify_hidden(value):
+                        hit = (kind, where, chars, preview)
+                        if best is None or ht_rank(hit) > ht_rank(best):
+                            best = hit
+            return best
+
+        def carried_hidden_text(value):
+            # The status file is untrusted input: well-typed entries only, re-sanitised, newest three.
+            out = []
+            for item in (value if isinstance(value, list) else [])[-HT_MAX_ENTRIES:]:
+                if not isinstance(item, dict):
+                    continue
+                kind, where, preview = item.get("kind"), item.get("where"), item.get("preview")
+                first = ht_int(item.get("first_ts"))
+                if not isinstance(kind, str) or kind not in HT_KIND_RANK or first < HT_PLAUSIBLE_MS:
+                    continue
+                out.append({
+                    "kind": kind,
+                    "where": where if isinstance(where, str) and where in HT_WHERE_RANK else "other",
+                    "tool": ht_token(item.get("tool")),
+                    "chars": min(ht_int(item.get("chars")), 999999),
+                    "events": max(1, min(ht_int(item.get("events"), 1), 999)),
+                    "preview": printable_ascii(preview if isinstance(preview, str) else ""),
+                    "first_ts": first,
+                    "last_ts": max(first, ht_int(item.get("last_ts"))),
+                    "tool_use_id": ht_token(item.get("tool_use_id")),
+                })
+            return out
+
+        def record_hidden_text(entries, hit, now_ms, tool_name, tool_use_id):
+            # True for a new sighting; False when it is the same tool call seen again (parallel
+            # PreToolUse groups, PostToolUse after PreToolUse).
+            kind, where, chars, preview = hit
+            for entry in reversed(entries):
+                if entry["kind"] != kind:
+                    continue
+                same_call = bool(tool_use_id) and entry["tool_use_id"] == tool_use_id
+                same_place = entry["where"] == where and (now_ms - entry["last_ts"] <= HT_WINDOW_MS
+                                                          or (preview != "" and preview == entry["preview"]))
+                if same_call or same_place:
+                    if not same_call:
+                        entry["events"] = min(entry["events"] + 1, 999)
+                    entry["chars"] = max(entry["chars"], min(chars, 999999))
+                    if len(preview) > len(entry["preview"]):
+                        entry["preview"] = preview
+                    entry["last_ts"] = now_ms
+                    if tool_use_id:
+                        entry["tool_use_id"] = tool_use_id
+                    return not same_call
+            entries.append({"kind": kind, "where": where,
+                            "tool": tool_name if where in ("tool_result", "tool_input") else "",
+                            "chars": min(chars, 999999), "events": 1, "preview": preview,
+                            "first_ts": now_ms, "last_ts": now_ms, "tool_use_id": tool_use_id})
+            del entries[:-HT_MAX_ENTRIES]
+            return True
+
+        def hidden_notes(hit, tool_name):
+            # (context for the model, line for the user). Factual: what, how many, where. Never the
+            # decoded text, nothing imperative.
+            kind, where, chars, preview = hit
+            what = str(chars) + " invisible " + HT_KIND_WORDS[kind] + (" character" if chars == 1 else " characters")
+            if where == "tool_result":
+                place, seen = ("the result of this " + tool_name + " call", "a " + tool_name + " result") if tool_name else ("this tool result", "a tool result")
+            elif where == "tool_input":
+                place, seen = ("the input of this " + tool_name + " call", "the input of a " + tool_name + " call") if tool_name else ("the input of this tool call", "a tool call")
+            elif where == "prompt":
+                place, seen = "this prompt", "your prompt"
+            else:
+                place, seen = "this hook input", "hook input"
+            if kind == "bidi":
+                effect = "Characters like these change the order in which text is displayed, so what the user sees can differ from the text itself."
+            else:
+                effect = "Characters like these do not render, so the user cannot see the text they encode."
+            return ("Kannu, a local monitor on this Mac, found " + what + " in " + place + ". " + effect,
+                    "Kannu found " + what + " in " + seen + ". Details are in Kannu's security findings.")
+
+        ALLOW_JSON = '{"permission":"allow","continue":true}'
+        # Events whose documented output carries context to the model. Never Stop (context there makes
+        # Claude keep going). Codex validates strictly: widen a set only after a live check on that host.
+        HT_NOTE_EVENTS = {
+            "claude": {"PostToolUse", "PostToolUseFailure", "UserPromptSubmit", "PreToolUse"},
+            "vscode": {"PostToolUse"},
+            "codex": {"PostToolUse"},
+            "cursor": {"postToolUse"},
+        }
+
+        def emit(notes=("", "")):
+            # The only stdout this script writes. Codex rejects unknown keys ("permission") and takes
+            # empty stdout with exit 0 as success; every other host keeps the historical line.
+            agent_note, user_note = notes
+            if not agent_note or hook_event not in HT_NOTE_EVENTS.get(provider, ()):
+                if provider != "codex":
+                    print(ALLOW_JSON)
+                return
+            context = {"hookEventName": hook_event, "additionalContext": agent_note}
+            if provider == "codex":
+                out = {"hookSpecificOutput": context}
+            elif provider == "cursor":
+                out = {"permission": "allow", "continue": True, "additional_context": agent_note}
+            else:
+                out = {"permission": "allow", "continue": True, "hookSpecificOutput": context}
+                if provider == "claude":
+                    out["systemMessage"] = user_note
+            print(json.dumps(out, separators=(",", ":")))
 
         tool = pick_str(
             data.get("tool_name"),
@@ -464,6 +763,16 @@ final class AgentHookInstaller: ObservableObject {
         conversation_id = conversation_id[:64]
         status_file = status_dir / f"{provider}-{conversation_id}.json"
 
+        # v34: scanned before the directory lock below (it serialises every session's hooks; this is
+        # the only non-trivial CPU work in the script).
+        hidden_off = os.path.exists(str(status_dir / HT_OFF_MARKER))
+        hidden_hit = None
+        if not hidden_off and hook_event not in HT_SKIP_EVENTS:
+            try:
+                hidden_hit = scan_hidden_text(data, hook_event)
+            except Exception:
+                hidden_hit = None
+
         # Claude runs the matcher-scoped and generic hook groups for one event as separate
         # processes, in parallel, with no ordering guarantee. The STATE_PRIORITY merge below
         # compares against what is on disk, so without a lock both processes read the same
@@ -490,7 +799,7 @@ final class AgentHookInstaller: ObservableObject {
         # writing "idle" there dims (or with the stopped-indicator on, reddens) a session that
         # is actively working. Only a genuine startup should seed the idle card.
         if hook_event == "SessionStart" and str(data.get("source", "")) in {"compact", "resume"}:
-            print('{"permission":"allow","continue":true}')
+            emit()
             raise SystemExit(0)
 
         # The session is gone: drop the card outright rather than leaving a terminal state to
@@ -507,7 +816,7 @@ final class AgentHookInstaller: ObservableObject {
                 (status_dir / f".{provider}-{conversation_id}.lock").unlink()
             except Exception:
                 pass
-            print('{"permission":"allow","continue":true}')
+            emit()
             raise SystemExit(0)
 
         existing_state = ""
@@ -528,6 +837,25 @@ final class AgentHookInstaller: ObservableObject {
         unattended = bool(existing.get("unattended")) or normalize_token(_mode) in {
             "bypasspermissions", "dangerouslyskippermissions", "never", "yolo", "autoapprove",
         }
+
+        # Carried like `unattended`: every write keeps it, so a clean event cannot erase a sighting
+        # before Kannu reads it. Detection off drops it.
+        hidden_text = []
+        hidden_notes_out = ("", "")
+        if not hidden_off:
+            try:
+                hidden_text = carried_hidden_text(existing.get("hidden_text"))
+            except Exception:
+                hidden_text = []
+            if hidden_hit:
+                try:
+                    _ht_tool = ht_token(tool)
+                    _ht_new = record_hidden_text(hidden_text, hidden_hit, int(time.time() * 1000), _ht_tool,
+                                                 ht_token(pick_str(data.get("tool_use_id"), data.get("toolUseId"))))
+                    if _ht_new and os.path.exists(str(status_dir / HT_WARN_MARKER)):
+                        hidden_notes_out = hidden_notes(hidden_hit, _ht_tool)
+                except Exception:
+                    pass
 
         # Tool failures since the last prompt. Stop never says whether the turn went well; the
         # failure events do. Reset when the user submits. Diagnostic only since v33: a failure the
@@ -651,8 +979,12 @@ final class AgentHookInstaller: ObservableObject {
                         existing["unattended"] = True
                     # Not a stopped write: whatever verdict the file held is over.
                     existing.pop("ended_on_error", None)
+                    if hidden_text:
+                        existing["hidden_text"] = hidden_text
+                    else:
+                        existing.pop("hidden_text", None)
                     write_status(status_file, existing)
-                    print('{"permission":"allow","continue":true}')
+                    emit(hidden_notes_out)
                     raise SystemExit(0)
 
         payload = {
@@ -673,8 +1005,10 @@ final class AgentHookInstaller: ObservableObject {
             payload["unattended"] = True
         if ended_on_error:
             payload["ended_on_error"] = True
+        if hidden_text:
+            payload["hidden_text"] = hidden_text
         write_status(status_file, payload)
-        print('{"permission":"allow","continue":true}')
+        emit(hidden_notes_out)
         PY
         exit 0
         """
