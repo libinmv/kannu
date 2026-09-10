@@ -4,6 +4,37 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-10 - An unanswered prompt stays yellow for as long as the session is still waiting
+- **Developer label:** the yellow shouldnt die out if not attended, like an active yellow became inactive chat in kannu since it was open for long time
+- **Agent label:** Hold `awaiting_input` on liveness evidence instead of a 5-minute clock; the clock stays only as the fallback for waits nothing can corroborate
+- **Changes:**
+  - Why it died: `resolveHookState` turned `awaiting_input` invisible after `awaitingInputStaleMs`
+    (300 s, a private constant with no test), the hook script preserves the file's `ts` while a
+    prompt is pending (by design — every earlier false-yellow fix made the clock yellow's only
+    exit), an aged yellow could never be promoted by passive evidence, and at 30 min the stale
+    deletion handed the card to the passive twin as a dim chat (or green, a pending `tool_use`
+    reading as a running tool).
+  - `resolveHookState(…, holdAwaitingInput:)` keeps yellow regardless of age when held. Pure rules:
+    `holdsAwaitingInput` (Claude: process alive and transcript tail `.toolInFlight`; Cursor:
+    `hasPendingToolApproval`; vscode/codex/antigravity: hold — nothing can corroborate or refute,
+    a newer event or the 30 min stale cap ends it; others: no) and `awaitingInputOutlivesStaleCap`
+    (Claude corroborated only). Passive paths still never claim yellow; the tail corroborates.
+  - Monitor: `buildClaudeSessions` runs before `parseHookSessions` and returns the live tail per
+    conversation; the parser computes the hold per file, passes it to the ladder, and exempts a
+    corroborated Claude prompt's file from the stale deletion (SessionEnd, a newer event, or the
+    process dying still end it). Cursor's corroboration is the previous cycle's transcript analysis.
+  - Caffeinate: yellow held the Mac awake only because it went invisible at 5 min; the bound is now
+    explicit (`awaitingInputCaffeinateSeconds`, derived from the same constant) and
+    `CaffeinateManager` arms an `awaiting window` recheck at the earliest qualifying yellow's
+    expiry, since the session list does not republish at that moment.
+  - Known: after a permission is approved, a long tool run shows yellow until `PostToolUse` (no
+    event fires at approval; nothing on disk separates "approved and running" from "still asking")
+    — yellow beats vanished. Hook-only providers closed with a pending prompt show yellow until the
+    stale cap instead of 5 min.
+  - Tests: ladder held/unheld, per-provider hold table, stale-cap exemption, reconciler (held yellow
+    survives passive tool-in-flight, dies with the process, aged yellow not promoted), caffeinate
+    window and recheck date. REGRESSIONS entry 12; entry 2 cross-reference; `docs/CAFFEINATE.md`.
+
 ### 2026-09-10 - Click-through lands on the exact chat inside Claude Desktop
 - **Developer label:** also can we make the clickthrough redirect not just to app, but the actual chat they are clicking on … Claude Desktop live Code session this is the most important one, research on internet to see how it could be done
 - **Agent label:** Open a Claude Code chat hosted by Claude Desktop's Code tab through Desktop's own session route (`claude://claude.ai/epitaxy/local_…`), resolved from its on-disk session index

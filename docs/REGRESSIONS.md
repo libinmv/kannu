@@ -76,7 +76,8 @@ tool's entire duration. A 15s window marks any tool call longer than 15 seconds 
 
 **The deeper lesson:** the real cause of that false-green was elsewhere (transcript tail
 parsing, `80ce9e1`; the demotion arm, `24b2ef2`). Shortening a timeout to fix a state bug
-trades one wrong colour for another. Fix the state machine, not the clock.
+trades one wrong colour for another. Fix the state machine, not the clock. (Entry 12 is the
+same lesson on the yellow light: its clock became the only exit, and a true yellow died on it.)
 
 **Guard — exists.** `RegressionGuardTests.testHookOnlyProviderMidToolCallStaysActiveAt*`.
 Verified to fail when the default is set back to `15_000`.
@@ -344,6 +345,41 @@ not for TCC — `~/Library/Application Support/Claude` is not protected — but 
 are 100+ KB each and rewritten on every Desktop turn. Only the reduced id map crosses back, and
 it is compared as a map so a timestamp bump alone never schedules a rescan.
 
+## 12. Yellow follows evidence, not the clock
+
+**Rule:** an `awaiting_input` hook state expires on the 300 s clock (`awaitingInputStaleMs`) only
+when nothing can say whether the prompt is still open. Where liveness evidence exists — a live
+Claude process whose transcript tail still shows the `tool_use` with no result, a Cursor transcript
+with a pending approval — the yellow and, for Claude, its hook file live as long as the evidence
+does. Yellow still *originates* from hooks only; evidence corroborates, never claims.
+
+**What happened (2026-09-10).** A Claude Code prompt left unanswered went dark at 5 minutes and,
+at 30, handed the card to the passive twin as a dim "inactive" chat (or green, when the pending
+`tool_use` read as a running tool). Every earlier yellow fix had made the clock stricter: the
+2026-08-06 sticky-latch fix stopped refreshing `ts` "so the 5-minute escape can still fire", and
+the parallel-group merge preserved `ts` again — after which the clock was yellow's only exit.
+Nobody asked whether a *true* yellow could outlive it.
+
+**How it works now.** `buildClaudeSessions` runs before `parseHookSessions` and hands over
+`liveTailByConversationID`; the parser computes `holdsAwaitingInput` per file, passes
+`holdAwaitingInput:` to `resolveHookState`, and exempts a corroborated Claude prompt from the stale
+deletion (`awaitingInputOutlivesStaleCap`). Hook-only providers (vscode/codex/antigravity) hold on
+display and keep the stale cap — it is the end of their yellow. Claude's `idle_prompt`, a dead
+process and Cursor's sticky yellow without an approval stay on the clock. Caffeinate keeps its own
+5-minute bound (`awaitingInputCaffeinateSeconds` + the `awaiting window` recheck), so a held
+yellow cannot keep the Mac awake all night.
+
+**Guards.** `RegressionGuardTests.testHeldAwaitingInputStaysYellowAtOneHour`,
+`…testUnheldAwaitingInputExpiresAfterFiveMinutes`, `…testAwaitingInputHoldFollowsEvidencePerProvider`,
+`…testOnlyACorroboratedClaudePromptOutlivesTheStaleCap`;
+`ClaudeReconcilerTests.testHeldYellowSurvivesPassiveToolInFlight`, `…testHeldYellowDemotesWhenTheProcessDies`,
+`…testAgedYellowIsNotPromotedByPassiveActivity`; `CaffeinateDecisionTests` window and recheck cases.
+**Missing:** the monitor-side ordering and the deletion exemption are not reachable from the logic
+target — manual check: the waiting session's file survives past 30 min in `~/.kannu/agent-status`.
+
+**Never** fix a false yellow by shortening `awaitingInputStaleMs` or by refreshing `ts` in the
+script. Add or remove evidence.
+
 ## Danger zones
 
 Commit counts across all branches (`--follow`, so pre-rename history counts):
@@ -351,7 +387,7 @@ Commit counts across all branches (`--follow`, so pre-rename history counts):
 | File | Commits | What edits here have historically broken |
 |---|---|---|
 | `CursorAgentStatusMonitor.swift` | 18 | The merge/reconcile seam. **Every** edit is chat-name resolution, hook-vs-transcript precedence, or session deletion/ageing. Entries 5 and 6 live here. |
-| `AgentTrafficLightState.swift` | 18 | The state ladder — staleness thresholds and verdict→colour mapping. Mostly *tuning numbers*, which is exactly how entry 2 happened. |
+| `AgentTrafficLightState.swift` | 18 | The state ladder — staleness thresholds and verdict→colour mapping. Mostly *tuning numbers*, which is exactly how entry 2 happened, and how the yellow clock became its only exit (entry 12). |
 | `AgentHookInstaller.swift` | 17 | Embedded script + event table + install/uninstall/migration. Grows monotonically; every growth episode has broken `checkInstalled` or a migration (entries 1 and 6). |
 | `CursorAgentStatusMonitor.swift` (usage spawn) | — | The `/usage` fetch invocation. Two silent breakages in one day from added flags/env (entry 8). |
 | `AgentSessionLogParser.swift` | 8 | `readTrailingLines` and the tail verdict. 4 of 8 commits touch the reader; **2 of those 4 fix the same failure mode** — the reader returning nil and silently sending callers down a wrong path (entry 4). |

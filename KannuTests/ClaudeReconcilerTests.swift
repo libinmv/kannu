@@ -80,6 +80,44 @@ final class ClaudeReconcilerTests: XCTestCase {
         XCTAssertEqual(merged.runError, .apiError(status: 429), "the transcript's verdict fills a hook that has none")
     }
 
+    // MARK: - Entry 12: a held yellow survives passive activity, dies with the process
+
+    func testHeldYellowSurvivesPassiveToolInFlight() {
+        // The hook's yellow is old (a prompt left open); the passive side sees a live process
+        // with an outstanding tool_use — an active run, so the demote arm must not fire.
+        let hook = session(rawState: "awaiting_input", display: .awaitingInput,
+                           updatedAt: Date(timeIntervalSince1970: 1_000))
+        let passive = session(chatName: "Ask", rawState: "executing", display: .executing,
+                              updatedAt: Date(timeIntervalSince1970: 1_900), hostPID: 4242)
+        let out = reconcile(hooks: [hook], passive: [passive])
+        XCTAssertEqual(out.count, 1)
+        XCTAssertEqual(out[0].displayState, .awaitingInput)
+        XCTAssertTrue(out[0].isVisible)
+        XCTAssertEqual(out[0].hostPID, 4242)
+        XCTAssertEqual(out[0].chatName, "Ask")
+    }
+
+    func testHeldYellowDemotesWhenTheProcessDies() {
+        let hook = session(rawState: "awaiting_input", display: .awaitingInput,
+                           updatedAt: Date(timeIntervalSince1970: 1_000))
+        let passive = session(rawState: "stopped", display: .stopped,
+                              updatedAt: Date(timeIntervalSince1970: 1_950))
+        XCTAssertEqual(reconcile(hooks: [hook], passive: [passive], dead: ["conv-1"])[0].displayState, .stopped)
+        XCTAssertFalse(reconcile(hooks: [hook], passive: [], dead: ["conv-1"])[0].displayState.isActiveRun)
+    }
+
+    func testAgedYellowIsNotPromotedByPassiveActivity() {
+        // An expired, unheld yellow stays out of the promote arm: one unreadable tail on a live
+        // process (entry 3 maps it to thinking) must not turn it green.
+        let hook = session(rawState: "awaiting_input", display: .inactive,
+                           updatedAt: Date(timeIntervalSince1970: 500), visible: false)
+        let passive = session(rawState: "thinking", display: .thinking,
+                              updatedAt: Date(timeIntervalSince1970: 1_900))
+        let out = reconcile(hooks: [hook], passive: [passive])
+        XCTAssertEqual(out[0].displayState, .inactive)
+        XCTAssertFalse(out[0].isVisible)
+    }
+
     func testDesktopSessionIDCarriesAcrossBothReconcilerArms() {
         // Entry 7's field set grows: the Desktop chat locator is passive-only, like hostPID.
         let passiveStopped = session(rawState: "stopped", display: .stopped,

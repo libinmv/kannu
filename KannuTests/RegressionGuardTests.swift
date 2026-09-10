@@ -42,6 +42,62 @@ final class RegressionGuardTests: XCTestCase {
         XCTAssertTrue(resolved.state.isActiveRun, "Five minutes is still within the 360s active window.")
     }
 
+    // MARK: - Entry 12: yellow follows evidence, not the clock
+
+    /// An unanswered prompt whose session is provably still waiting keeps its yellow however
+    /// long it sits. The 300 s window is only the fallback for waits nothing can corroborate.
+    func testHeldAwaitingInputStaysYellowAtOneHour() {
+        let resolved = AgentTrafficLightMapper.resolveHookState(
+            rawState: "awaiting_input", ageMs: 3_600_000, collapseMs: 5_000, inactiveMs: 5_000,
+            holdAwaitingInput: true
+        )
+        XCTAssertEqual(resolved.state, .awaitingInput)
+        XCTAssertTrue(resolved.visible)
+    }
+
+    func testUnheldAwaitingInputExpiresAfterFiveMinutes() {
+        let inside = AgentTrafficLightMapper.resolveHookState(
+            rawState: "awaiting_input", ageMs: 300_000, collapseMs: 5_000, inactiveMs: 5_000)
+        XCTAssertEqual(inside.state, .awaitingInput)
+        XCTAssertTrue(inside.visible)
+        let past = AgentTrafficLightMapper.resolveHookState(
+            rawState: "awaiting_input", ageMs: 300_001, collapseMs: 5_000, inactiveMs: 5_000)
+        XCTAssertEqual(past.state, .inactive, "Claude idle_prompt, a dead process, Cursor's sticky yellow: the clock still rules")
+        XCTAssertFalse(past.visible)
+    }
+
+    func testAwaitingInputHoldFollowsEvidencePerProvider() {
+        typealias M = AgentTrafficLightMapper
+        XCTAssertTrue(M.holdsAwaitingInput(provider: "claude", processAlive: true, tail: .toolInFlight, cursorPendingApproval: false))
+        for tail: AgentSessionLogParser.ClaudeTailState? in [.working, .turnFinished, .unknown, nil] {
+            XCTAssertFalse(M.holdsAwaitingInput(provider: "claude", processAlive: true, tail: tail, cursorPendingApproval: true),
+                           "a live Claude with no outstanding tool_use is not waiting on a prompt")
+        }
+        XCTAssertFalse(M.holdsAwaitingInput(provider: "claude", processAlive: false, tail: .toolInFlight, cursorPendingApproval: false))
+        XCTAssertTrue(M.holdsAwaitingInput(provider: "cursor", processAlive: false, tail: nil, cursorPendingApproval: true))
+        XCTAssertFalse(M.holdsAwaitingInput(provider: "cursor", processAlive: false, tail: nil, cursorPendingApproval: false))
+        for provider in ["vscode", "codex", "antigravity"] {
+            XCTAssertTrue(M.holdsAwaitingInput(provider: provider, processAlive: false, tail: nil, cursorPendingApproval: false),
+                          "\(provider): nothing can corroborate or refute; the stale cap ends it")
+        }
+        for provider in ["warp", "claudedesktop", "unknown"] {
+            XCTAssertFalse(M.holdsAwaitingInput(provider: provider, processAlive: true, tail: .toolInFlight, cursorPendingApproval: true))
+        }
+        XCTAssertTrue(M.isAwaitingInputRawState("awaiting_input"))
+        XCTAssertTrue(M.isAwaitingInputRawState("AwaitingInput"))
+        XCTAssertFalse(M.isAwaitingInputRawState("executing"))
+    }
+
+    func testOnlyACorroboratedClaudePromptOutlivesTheStaleCap() {
+        typealias M = AgentTrafficLightMapper
+        XCTAssertTrue(M.awaitingInputOutlivesStaleCap(provider: "claude", processAlive: true, tail: .toolInFlight))
+        XCTAssertFalse(M.awaitingInputOutlivesStaleCap(provider: "claude", processAlive: false, tail: .toolInFlight))
+        XCTAssertFalse(M.awaitingInputOutlivesStaleCap(provider: "claude", processAlive: true, tail: .turnFinished))
+        XCTAssertFalse(M.awaitingInputOutlivesStaleCap(provider: "cursor", processAlive: true, tail: .toolInFlight))
+        XCTAssertFalse(M.awaitingInputOutlivesStaleCap(provider: "vscode", processAlive: true, tail: .toolInFlight),
+                       "hook-only providers keep the cap: it is the end of their yellow")
+    }
+
     // MARK: - Chat-name sanitation
 
     /// A tool name must never survive as a chat title. Chat-name resolution has regressed

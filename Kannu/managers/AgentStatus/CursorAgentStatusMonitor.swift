@@ -247,19 +247,28 @@ final class CursorAgentStatusMonitor: ObservableObject {
         let collapseSeconds = Defaults[.agentStoppedCollapseSeconds]
         let inactiveSeconds = Defaults[.agentInactiveDisplaySeconds]
 
+        // Passive Claude facts first: the hook parser must know which prompts are provably still
+        // open (live process, tool_use outstanding) before it ages or deletes a file. No data
+        // flows the other way. Cursor's corroboration is the previous cycle's transcript
+        // analysis — a lag of a second is nothing to a hold that only matters after five minutes.
+        let (passiveClaudeSessions, deadPIDConversationIDs, liveClaudeTails) = buildClaudeSessions(
+            staleMinutes: staleMinutes,
+            collapseSeconds: collapseSeconds,
+            inactiveSeconds: inactiveSeconds,
+            now: now
+        )
+        let cursorPendingApprovalIDs = Set(
+            cachedTranscriptAnalysisBySession.filter { $0.value.hasPendingToolApproval }.map(\.key)
+        )
+
         var hookSessions = parseHookSessions(
             staleMinutes: staleMinutes,
             collapseSeconds: collapseSeconds,
             inactiveSeconds: inactiveSeconds,
             now: now,
-            allowBackingDelete: !hooksOnly
-        )
-
-        let (passiveClaudeSessions, deadPIDConversationIDs) = buildClaudeSessions(
-            staleMinutes: staleMinutes,
-            collapseSeconds: collapseSeconds,
-            inactiveSeconds: inactiveSeconds,
-            now: now
+            allowBackingDelete: !hooksOnly,
+            liveClaudeTails: liveClaudeTails,
+            cursorPendingApprovalIDs: cursorPendingApprovalIDs
         )
         // Extracted to AgentTrafficLightMapper.reconcileClaudeSessions (pure, tested):
         // this merge has regressed repeatedly while it lived inline here, unreachable by
@@ -891,7 +900,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
         collapseSeconds: Int,
         inactiveSeconds: Int,
         now: Date = Date(),
-        allowBackingDelete: Bool = true
+        allowBackingDelete: Bool = true,
+        liveClaudeTails: [String: AgentSessionLogParser.ClaudeTailState] = [:],
+        cursorPendingApprovalIDs: Set<String> = []
     ) -> [AgentSessionStatus] {
         let directory = AgentHookInstaller.statusDirectory
         guard let files = try? FileManager.default.contentsOfDirectory(
@@ -935,14 +946,32 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 tsMs = Int64(mtime.timeIntervalSince1970 * 1000)
             }
 
-            guard nowMs - tsMs <= staleMs else {
-                removeIfUnchanged()
-                continue
-            }
-
             let provider = (json["provider"] as? String) ?? "unknown"
             let conversationID = file.deletingPathExtension().lastPathComponent
                 .replacingOccurrences(of: "\(provider)-", with: "")
+
+            // A prompt nobody has answered keeps its yellow only while evidence says the wait
+            // is still open (REGRESSIONS entry 12). `claudeTail` exists only for a Claude process
+            // that is alive this rescan.
+            let claudeTail = liveClaudeTails[conversationID]
+            let holdsYellow = AgentTrafficLightMapper.holdsAwaitingInput(
+                provider: provider,
+                processAlive: claudeTail != nil,
+                tail: claudeTail,
+                cursorPendingApproval: cursorPendingApprovalIDs.contains(conversationID)
+            )
+            // A corroborated Claude prompt outlives the stale cap. Its file ends by SessionEnd
+            // (the hook deletes it), a newer event, or the process dying — the next rescan then
+            // finds no live tail and this guard deletes it. Every other provider keeps the cap;
+            // for the hook-only ones it is the end of their yellow.
+            let outlivesCap = AgentTrafficLightMapper.isAwaitingInputRawState(state)
+                && AgentTrafficLightMapper.awaitingInputOutlivesStaleCap(
+                    provider: provider, processAlive: claudeTail != nil, tail: claudeTail
+                )
+            guard nowMs - tsMs <= staleMs || outlivesCap else {
+                removeIfUnchanged()
+                continue
+            }
 
             if AgentTrafficLightMapper.isSimulationConversationID(conversationID) {
                 removeIfUnchanged()
@@ -985,7 +1014,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 rawState: state,
                 ageMs: ageMs,
                 collapseMs: collapseMs,
-                inactiveMs: inactiveMs
+                inactiveMs: inactiveMs,
+                holdAwaitingInput: holdsYellow
             )
 
             var session = AgentSessionStatus(
@@ -1593,13 +1623,19 @@ final class CursorAgentStatusMonitor: ObservableObject {
         collapseSeconds: Int,
         inactiveSeconds: Int,
         now: Date = Date()
-    ) -> (sessions: [AgentSessionStatus], deadPIDConversationIDs: Set<String>) {
+    ) -> (
+        sessions: [AgentSessionStatus],
+        deadPIDConversationIDs: Set<String>,
+        /// Tail verdict per conversation whose process is alive this rescan — the evidence the
+        /// hook parser needs to keep an unanswered prompt yellow (REGRESSIONS entry 12).
+        liveTailByConversationID: [String: AgentSessionLogParser.ClaudeTailState]
+    ) {
         let sessionsDir = AgentSessionLogParser.claudeSessionsDirectory
         guard FileManager.default.fileExists(atPath: sessionsDir.path),
               let files = try? FileManager.default.contentsOfDirectory(
                 at: sessionsDir,
                 includingPropertiesForKeys: [.contentModificationDateKey]
-              ) else { return ([], []) }
+              ) else { return ([], [], [:]) }
         refreshDesktopSessionIndexIfNeeded()
 
         let staleMs = Int64(staleMinutes) * 60_000
@@ -1615,6 +1651,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
         // have a live process so an orphaned file from a crashed earlier run cannot mark
         // the live one dead. See the subtraction before `return`.
         var liveConversationIDs: Set<String> = []
+        var liveTailByConversationID: [String: AgentSessionLogParser.ClaudeTailState] = [:]
 
         for file in files where file.pathExtension == "json" {
             guard let data = try? Data(contentsOf: file),
@@ -1665,6 +1702,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
             // Passive detection can see writes and process liveness — it cannot see whether Claude
             // is actually asking the user anything. It must therefore never claim yellow: a quiet
             // live session is shown as a dim idle card, and yellow is left to real hook signals.
+            // It may corroborate a hook's yellow, though: the live tail is handed to the hook
+            // parser (`holdsAwaitingInput`), never turned into a colour here.
             //
             // Live sessions bypass `resolveHookState` deliberately. Its staleness ladder maps a
             // long-running "thinking" to `.stopped`, which the old unconditional `visible: true`
@@ -1679,6 +1718,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 // keeps bumping mtime after the run ended.
                 let tail = jsonlURL.map { AgentSessionLogParser.claudeTailState(at: $0) }
                     ?? .unknown
+                liveTailByConversationID[sessionId] = tail.state
                 let passive = AgentTrafficLightMapper.passiveClaudeState(
                     tail: tail,
                     jsonlMtime: jsonlMtime,
@@ -1748,7 +1788,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
         // id. Without this, resuming a crashed session left it permanently "dead", and the
         // reconciler's `processDead ||` short-circuit bypasses the timestamp guard — flashing
         // red at the moment the user submits a prompt.
-        return (results, deadPIDConversationIDs.subtracting(liveConversationIDs))
+        return (results, deadPIDConversationIDs.subtracting(liveConversationIDs), liveTailByConversationID)
     }
 
     private func claudeJSONLURL(forSessionId sessionId: String) -> URL? {

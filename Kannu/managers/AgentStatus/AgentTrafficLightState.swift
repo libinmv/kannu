@@ -216,12 +216,32 @@ enum AgentTrafficLightMapper {
         }
     }
 
+    /// A prompt nobody answers must not hold the Mac awake all night: yellow is caffeinate-worthy
+    /// only inside its first 5 minutes — the window the light itself used before the evidence
+    /// hold (REGRESSIONS entry 12). Derived from the same constant so the two cannot drift.
+    static let awaitingInputCaffeinateSeconds: TimeInterval = TimeInterval(awaitingInputStaleMs) / 1000
+
     /// Whether any session justifies smart caffeinate holding the Mac awake: visible, not a
-    /// simulation, and in an active run — the same definition the traffic light uses.
-    static func hasCaffeinateWorthySession(_ sessions: [AgentSessionStatus]) -> Bool {
-        sessions.contains {
-            $0.isVisible && !isSimulationSession($0) && $0.displayState.isActiveRun
+    /// simulation, and in an active run — the same definition the traffic light uses, except
+    /// that a wait on the user only counts for its first five minutes.
+    static func hasCaffeinateWorthySession(_ sessions: [AgentSessionStatus], now: Date = Date()) -> Bool {
+        sessions.contains { session in
+            guard session.isVisible, !isSimulationSession(session), session.displayState.isActiveRun else { return false }
+            if session.displayState == .awaitingInput {
+                return now.timeIntervalSince(session.updatedAt) <= awaitingInputCaffeinateSeconds
+            }
+            return true
         }
+    }
+
+    /// When the earliest currently qualifying yellow stops qualifying; nil when none does. The
+    /// session list does not republish at that moment, so the caffeinate manager arms a recheck.
+    static func caffeinateRecheckDate(_ sessions: [AgentSessionStatus], now: Date = Date()) -> Date? {
+        sessions
+            .filter { $0.isVisible && !isSimulationSession($0) && $0.displayState == .awaitingInput }
+            .map { $0.updatedAt.addingTimeInterval(awaitingInputCaffeinateSeconds) }
+            .filter { $0 > now }
+            .min()
     }
 
     /// Merges Claude hook sessions with passive transcript/PID evidence. Pure — lives here
@@ -449,13 +469,17 @@ enum AgentTrafficLightMapper {
         ageMs: Int64,
         collapseMs: Int64,
         inactiveMs: Int64,
-        activeStaleMs: Int64 = 360_000
+        activeStaleMs: Int64 = 360_000,
+        holdAwaitingInput: Bool = false
     ) -> (state: AgentTrafficLightState, visible: Bool) {
         switch rawState.lowercased() {
         case "executing" where ageMs <= activeStaleMs:
             return (.executing, true)
         case "awaiting_input", "awaitinginput", "awaiting":
-            if ageMs <= awaitingInputStaleMs { return (.awaitingInput, true) }
+            // Held: live evidence says the prompt is still open (`holdsAwaitingInput`), so the
+            // clock does not apply. Unheld: the 5-minute window is the fallback for waits nothing
+            // can corroborate — REGRESSIONS entry 12.
+            if holdAwaitingInput || ageMs <= awaitingInputStaleMs { return (.awaitingInput, true) }
             return (.inactive, false)
         case "thinking" where ageMs <= activeStaleMs:
             return (.thinking, true)
@@ -480,6 +504,51 @@ enum AgentTrafficLightMapper {
             return (.inactive, true)
         }
         return (.inactive, false)
+    }
+
+    // MARK: - Yellow follows evidence, not the clock (REGRESSIONS entry 12)
+
+    /// The raw states `resolveHookState` reads as "waiting on the user". Keep in step with its
+    /// case list.
+    static func isAwaitingInputRawState(_ rawState: String) -> Bool {
+        switch rawState.lowercased() {
+        case "awaiting_input", "awaitinginput", "awaiting": return true
+        default: return false
+        }
+    }
+
+    /// Disk rule: may this awaiting_input hook file outlive the stale cap? Claude only — the one
+    /// provider whose liveness Kannu can see. A live process whose transcript tail still shows the
+    /// tool_use with no result is a prompt nobody has answered.
+    static func awaitingInputOutlivesStaleCap(
+        provider: String,
+        processAlive: Bool,
+        tail: AgentSessionLogParser.ClaudeTailState?
+    ) -> Bool {
+        provider.lowercased() == "claude" && processAlive && tail == .toolInFlight
+    }
+
+    /// Display rule: does this hook's awaiting_input keep its yellow past the 5-minute window?
+    /// Yellow still originates from hooks only — evidence here can corroborate one, never claim
+    /// one. Hook-only providers hold because nothing can corroborate or refute; a newer event or
+    /// the stale cap ends theirs. Claude's `idle_prompt` (tail `.turnFinished`), a dead process
+    /// and Cursor's sticky yellow without a pending approval all stay on the clock.
+    static func holdsAwaitingInput(
+        provider: String,
+        processAlive: Bool,
+        tail: AgentSessionLogParser.ClaudeTailState?,
+        cursorPendingApproval: Bool
+    ) -> Bool {
+        switch provider.lowercased() {
+        case "claude":
+            return awaitingInputOutlivesStaleCap(provider: provider, processAlive: processAlive, tail: tail)
+        case "cursor":
+            return cursorPendingApproval
+        case "vscode", "codex", "antigravity":
+            return true
+        default:
+            return false
+        }
     }
 
     /// A passive `.working` verdict stays green only this long past its last evidence.

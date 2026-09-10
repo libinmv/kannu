@@ -423,7 +423,8 @@ enum AgentSessionLogParser {
     ///
     /// Deliberately never reports "awaiting approval" — a pending `tool_use` looks the same
     /// whether the tool is running or a permission card is open, and guessing there is what
-    /// produced permanent false yellow. Yellow comes from hooks only.
+    /// produced permanent false yellow. Yellow originates from hooks only; `.toolInFlight` on a
+    /// live process may *corroborate* a hook's yellow (`holdsAwaitingInput`), never claim one.
     ///
     /// Records can exceed the first read window (real transcript lines reach hundreds of KB),
     /// which used to truncate the tail into `.unknown`; the window now escalates until it
