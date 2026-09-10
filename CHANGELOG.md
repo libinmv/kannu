@@ -39,6 +39,9 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     environment whitelist, embedded == mirror, the adapter's `--convert-only` conversion via
     python3), `ADRSessionAnalysisTests` (parse, adapter errors surfaced, finding mapping, titles).
     `docs/ADR.md` section 8. Sensor deferred.
+  - Follow-up: the consent moved from an `NSAlert` inside the toggle's binding setter (a nested
+    run loop there fought the toggle's own state update and the switch fell back) to a SwiftUI
+    `.alert`; consent and the section footer rewritten in plain sentences.
 
 ### 2026-09-10 - An unanswered prompt stays yellow for as long as the session is still waiting
 - **Developer label:** the yellow shouldnt die out if not attended, like an active yellow became inactive chat in kannu since it was open for long time

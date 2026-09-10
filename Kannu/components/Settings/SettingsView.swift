@@ -7647,6 +7647,7 @@ struct AgentStatusSettings: View {
     @Default(.adrDetectionMaxMessages) var adrDetectionMaxMessages
     @State private var adrOpenAIKeyText = ""
     @State private var adrAnthropicKeyText = ""
+    @State private var showDetectionConsent = false
     @Default(.enableAgentStatusFeature) var enableAgentStatusFeature
     @Default(.agentStatusStaleMinutes) var agentStatusStaleMinutes
     @Default(.agentStoppedCollapseSeconds) var agentStoppedCollapseSeconds
@@ -8117,7 +8118,13 @@ struct AgentStatusSettings: View {
             Text("Security findings")
                 .settingsHighlight(id: highlightID("Security findings"))
         } footer: {
-            Text("Reads findings from ADR Discovery (github.com/uber/ADR, Apache-2.0), installed separately with uv or pipx. Kannu never installs it, never edits your MCP configs, and never sends findings anywhere unless you turn on push. Run `adr-discovery --json --output-dir <snapshot folder>` yourself or on a schedule; the newest snapshot is what you see here. Details: docs/ADR.md.")
+            Text("""
+            Findings come from ADR, Uber's open-source agent security toolkit (Apache-2.0). You install it; Kannu only reads its results.
+
+            Kannu never changes your agent or MCP settings. Nothing leaves this Mac unless you turn on push notifications or session analysis.
+
+            Details: docs/ADR.md in the Kannu repository.
+            """)
         }
         .onAppear {
             if adr.discovery.state == .unchecked { adr.checkAgain() }
@@ -8128,11 +8135,16 @@ struct AgentStatusSettings: View {
     /// ADR Detection — off by default, behind a consent alert, and every run is the user's click.
     @ViewBuilder
     private var adrDetectionSection: some View {
+        // Consent is asked through a SwiftUI alert, not a modal inside the binding setter: a
+        // nested run loop there fought the toggle's own state update and the switch fell back.
         Toggle(isOn: Binding(
             get: { adrDetectionEnabled },
             set: { newValue in
                 guard newValue else { adrDetectionEnabled = false; return }
-                if adrDetectionConsentedAt == nil, !presentDetectionConsent() { return }
+                if adrDetectionConsentedAt == nil {
+                    showDetectionConsent = true
+                    return
+                }
                 adrDetectionEnabled = true
                 adr.checkDetection()
             }
@@ -8140,6 +8152,16 @@ struct AgentStatusSettings: View {
             Text("Analyze chats with ADR Detection")
         }
         .settingsHighlight(id: highlightID("Analyze chats with ADR Detection"))
+        .alert("Turn on ADR Detection session analysis?", isPresented: $showDetectionConsent) {
+            Button("Turn on") {
+                adrDetectionConsentedAt = Date()
+                adrDetectionEnabled = true
+                adr.checkDetection()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(detectionConsentText)
+        }
         Text("Opt-in, per chat. Right-click a finished Claude Code chat in the notch and choose \"Analyze with ADR Detection\". The transcript is sent to the model providers below under your own keys — nothing is ever sent automatically.")
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -8255,16 +8277,16 @@ struct AgentStatusSettings: View {
         }
     }
 
-    /// The one-time consent. Returns true only when the user accepted.
-    private func presentDetectionConsent() -> Bool {
-        let alert = NSAlert()
-        alert.messageText = String(localized: "Turn on ADR Detection session analysis?")
-        alert.informativeText = String(localized: "When you choose \"Analyze with ADR Detection\" on a finished chat, that chat's transcript leaves this Mac: to Anthropic through your Claude Code login (or an API key you store), and to OpenAI only if you turn triage on. Kannu never sends a chat you did not pick, and by default asks before every run.\n\nADR Detection is a research tool from Uber (Apache-2.0). It runs an unattended Claude session on this Mac with file edits disallowed; upstream recommends an isolated environment. Analyses use your Claude quota unless you supply an API key.")
-        alert.addButton(withTitle: String(localized: "Turn on"))
-        alert.addButton(withTitle: String(localized: "Cancel"))
-        guard alert.runModal() == .alertFirstButtonReturn else { return false }
-        adrDetectionConsentedAt = Date()
-        return true
+    /// The one-time consent, in plain words: what leaves the Mac, where, and when.
+    private var detectionConsentText: String {
+        String(localized: """
+        Nothing is analysed automatically. When you right-click a finished chat and choose "Analyze with ADR Detection", that one chat's transcript is sent out:
+
+        • to Anthropic, through your Claude Code login (uses your Claude quota) or an API key you store;
+        • to OpenAI, only if you turn triage on.
+
+        By default Kannu asks before every run. ADR Detection is a research tool from Uber (Apache-2.0); it runs an unattended Claude session on this Mac with file edits disallowed.
+        """)
     }
 
     private func chooseDetectionCheckout() {
