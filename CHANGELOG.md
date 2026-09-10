@@ -4,6 +4,23 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-10 - The media card opens the browser tab that is playing
+- **Developer label:** can media player like chromed tabs or safari tabs also open to the exact media screen playing
+- **Agent label:** After activating the browser, select the tab whose title carries the playing track (Safari and Chrome-family), best-effort
+- **Changes:**
+  - `BrowserTabMatcher` (pure, tested): which browsers can be asked (Safari; Chrome, Brave, Edge,
+    Vivaldi, Chromium — Firefox exposes no tabs, Arc speaks another dictionary), the two AppleScripts
+    (list `window\ttab\ttitle`; make a tab current, raise its window, activate), and the match: the
+    tab whose normalised title contains the track title, else most of its words, the artist breaking
+    ties, then the frontmost window; nothing convincing → no tab. Normalisation drops YouTube's
+    "(N) " counter and site suffixes ("- YouTube", "| Spotify", …).
+  - `BrowserTabLocator` runs it off the main actor after `MusicManager.openMusicApp()` has
+    activated the browser as before, so every failure — Automation refused (-1743, remembered for
+    the launch so the click never re-prompts), no match, a script error — leaves the user in the
+    browser on whatever tab it had. macOS asks "Kannu wants to control <browser>" once per browser;
+    the Apple Events usage text says why. `Defaults[.openPlayingBrowserTab]` (default on) turns
+    the tab step off.
+
 ### 2026-09-10 - Analyze a finished chat with ADR Detection — opt-in, per chat, off by default
 - **Developer label:** lets build this too … this needs to be supported but all this must be off by default and user has to manually opt in
 - **Agent label:** Phase 3 of the ADR integration: run Uber's Detection over one Claude Code transcript on explicit request, with every model/provider/context knob exposed and nothing automatic

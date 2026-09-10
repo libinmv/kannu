@@ -1266,6 +1266,10 @@ extension Defaults.Keys {
     static let adrDetectionTimeoutSeconds = Key<Int>("adrDetectionTimeoutSeconds", default: 300)
     static let adrDetectionMaxMessages = Key<Int>("adrDetectionMaxMessages", default: 400)
     static let adrSessionAnalyses = Key<[ADRSessionAnalysis]>("adrSessionAnalyses", default: [])
+
+    /// Clicking the media card lands on the browser tab that is playing (Safari, Chrome family),
+    /// which needs the one-time "control <browser>" Automation permission. Off = app only.
+    static let openPlayingBrowserTab = Key<Bool>("openPlayingBrowserTab", default: true)
     static let showAgentStoppedIndicator = Key<Bool>("showAgentStoppedIndicator", default: false)
     /// Closed-notch traffic light shape. Defaults to `.classic` so existing installs keep the
     /// three-dot look they already have — only fresh installs are asked to choose in onboarding.
