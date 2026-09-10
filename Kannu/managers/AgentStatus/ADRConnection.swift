@@ -96,6 +96,69 @@ final class ADRConnection: ObservableObject {
     @Published private(set) var isChecking = false
     @Published private(set) var lastCheckedAt: Date?
 
+    /// ADR Detection is a checkout the user prepares (`git clone`, `uv sync`), not a tool binary.
+    struct DetectionStatus: Equatable {
+        enum State: Equatable {
+            case unchecked
+            case notConfigured
+            case invalid(reason: String)
+            case ready(uv: URL)
+        }
+        var state: State = .unchecked
+        var isReady: Bool { if case .ready = state { return true }; return false }
+        var uv: URL? { if case .ready(let uv) = state { return uv }; return nil }
+        var caption: String {
+            switch state {
+            case .unchecked: return String(localized: "Not checked yet")
+            case .notConfigured: return String(localized: "No checkout chosen")
+            case .invalid(let reason): return reason
+            case .ready(let uv): return String(localized: "Ready — uv at \(uv.path)")
+            }
+        }
+    }
+    @Published private(set) var detection = DetectionStatus()
+
+    static let detectionCloneCommand = "git clone https://github.com/uber/ADR && cd ADR/Detection && uv sync"
+
+    /// `uv` where Homebrew, the uv installer or a user path put it.
+    static func uvExecutable(userDirectory: String = Defaults[.adrToolDirectory]) -> URL? {
+        candidateDirectories(userDirectory: userDirectory)
+            .map { $0.appendingPathComponent("uv") }
+            .first { FileManager.default.isExecutableFile(atPath: $0.path) }
+    }
+
+    /// Pure: what a usable Detection checkout must contain, and why it is not usable otherwise.
+    static func validateDetectionCheckout(_ path: String, uv: URL?, fileManager: FileManager = .default) -> DetectionStatus.State {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .notConfigured }
+        let root = URL(fileURLWithPath: (trimmed as NSString).expandingTildeInPath, isDirectory: true)
+        guard fileManager.fileExists(atPath: root.appendingPathComponent("pyproject.toml").path) else {
+            return .invalid(reason: String(localized: "No pyproject.toml here — choose the ADR/Detection folder"))
+        }
+        guard fileManager.fileExists(atPath: root.appendingPathComponent("guardrail/adr_agent/adr_baseline.py").path) else {
+            return .invalid(reason: String(localized: "This is not ADR's Detection folder (guardrail/adr_agent missing)"))
+        }
+        guard fileManager.fileExists(atPath: root.appendingPathComponent(".venv").path) else {
+            return .invalid(reason: String(localized: "Not synced yet — run `uv sync` in this folder"))
+        }
+        guard let uv else { return .invalid(reason: String(localized: "uv not found (brew install uv)")) }
+        return .ready(uv: uv)
+    }
+
+    /// Re-validates the configured checkout off the main actor (a few stats and one lookup).
+    func checkDetection() {
+        let path = Defaults[.adrDetectionCheckout]
+        let userDirectory = Defaults[.adrToolDirectory]
+        DispatchQueue.global(qos: .utility).async {
+            let state = Self.validateDetectionCheckout(path, uv: Self.uvExecutable(userDirectory: userDirectory))
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    if self.detection.state != state { self.detection = DetectionStatus(state: state) }
+                }
+            }
+        }
+    }
+
     static let projectURL = URL(string: "https://github.com/uber/ADR")!
     static let versionArguments = ["--version"]
 

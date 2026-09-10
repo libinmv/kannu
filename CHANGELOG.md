@@ -4,6 +4,42 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-10 - Analyze a finished chat with ADR Detection — opt-in, per chat, off by default
+- **Developer label:** lets build this too … this needs to be supported but all this must be off by default and user has to manually opt in
+- **Agent label:** Phase 3 of the ADR integration: run Uber's Detection over one Claude Code transcript on explicit request, with every model/provider/context knob exposed and nothing automatic
+- **Changes:**
+  - How upstream works (verified in `ADR/Detection` at df05577): `config_detector.yaml` is the knob
+    set — `enable_triage` (off = no OpenAI at all), triage model `gpt-4o`, reasoning model
+    `claude-sonnet-4-6`, `max_turns` 60, `timeout` 300 s, three local MCP context servers (threat
+    intel reads a bundled YAML; none touch the network). The reasoning agent is a headless
+    `claude -p … --mcp-config .mcp.json --disallowedTools file_edit,create_file,str_replace_editor
+    --dangerously-skip-permissions` under the CLI's own auth (`ANTHROPIC_API_KEY` if set, else the
+    login and its quota). `ADRBaseline` builds its OpenAI client eagerly, so Claude-only mode needs
+    a placeholder key — the adapter sets one that is never sent.
+  - Kannu-owned adapter `scripts/adr-analyze-session.py` (GPL; embedded in `ADRDetectionCommand`,
+    a test pins the two identical): converts a Claude Code JSONL exactly as upstream's
+    `_convert_conversation_to_messages` does, caps to the newest N messages, calls
+    `ADRBaseline(config_data:).analyze_conversation`, prints a small verdict JSON and writes the
+    full report. `ADRDetectionCommand` holds the `uv run --project` invocation and an environment
+    **whitelist** (PATH, HOME, LANG, and only the keys the user chose) as data — REGRESSIONS entry 8.
+  - `ADRSessionAnalysis`: the verdict record (persisted, capped at 50); a malicious verdict becomes
+    a `.detection` finding — high at confidence ≥ 0.8 (ADR's own triage threshold), medium below —
+    and rides the existing shield/pill/card/push path. Clean verdicts are records, not findings.
+  - Consent, twice: turning the feature on shows an alert naming what leaves the Mac and where;
+    each run confirms again (transcript name, message cap, providers, quota note) until the user
+    unticks "Confirm before every analysis". Nothing runs without a click on a finished chat's
+    context menu. `ADRConnection.validateDetectionCheckout` checks the checkout (pyproject,
+    `guardrail/adr_agent`, `.venv`, `uv`).
+  - Settings › Security findings gains the Detection block: checkout picker + clone/sync command,
+    reasoning model, "Use an Anthropic API key" (else the login's quota), triage toggle + model +
+    OpenAI key, three context toggles, timeout, message cap, confirm-each-run, recent analyses with
+    Reveal/Forget. Keys live in the Keychain (`SecureSecretsStore`, reusing `openaiAPIKey` and
+    `claudeAPIKey`). All defaults off/none.
+  - Tests: `ADRDetectionCommandTests` (arguments, validation rejects permission/tool flags,
+    environment whitelist, embedded == mirror, the adapter's `--convert-only` conversion via
+    python3), `ADRSessionAnalysisTests` (parse, adapter errors surfaced, finding mapping, titles).
+    `docs/ADR.md` section 8. Sensor deferred.
+
 ### 2026-09-10 - An unanswered prompt stays yellow for as long as the session is still waiting
 - **Developer label:** the yellow shouldnt die out if not attended, like an active yellow became inactive chat in kannu since it was open for long time
 - **Agent label:** Hold `awaiting_input` on liveness evidence instead of a 5-minute clock; the clock stays only as the fallback for waits nothing can corroborate

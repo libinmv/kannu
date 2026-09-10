@@ -109,6 +109,40 @@ Discovery accepts `--policy policy.json` with `approved`, `forbidden` and `tenan
 for the format. Point Kannu at it with Settings → Security findings → **Policy file**; Kannu passes
 it to every scan it runs.
 
+## 8. Session analysis with ADR Detection (opt-in, off by default)
+
+Detection (`ADR/Detection`) judges a *finished* chat's transcript: a local hidden-Unicode check,
+an optional gpt-4o triage pass (OpenAI), then a Claude reasoning agent that runs as an unattended
+`claude -p` session on your Mac with three local MCP context servers. It is Uber's research tool
+(Apache-2.0, "not for production"); Kannu only runs it when you ask, and never ships it.
+
+Setup, all yours:
+
+```bash
+git clone https://github.com/uber/ADR && cd ADR/Detection && uv sync   # Python 3.10–3.12
+npm install -g @anthropic-ai/claude-code && claude auth login           # if not already
+```
+
+Then Settings → Agents → Security findings → **Analyze chats with ADR Detection** (a consent
+alert names what leaves the Mac), choose the `Detection` folder, and optionally store keys:
+an OpenAI key if you turn **Triage with OpenAI first** on (off = Claude only), an Anthropic API
+key if you would rather spend API credits than your subscription's 5-hour/weekly quota.
+Model names, the three context servers, the reasoning timeout and the message cap (newest N
+messages, because upstream sends the whole transcript and a long one exceeds the model's
+context) are all editable.
+
+Run one: right-click a finished Claude Code chat in the notch → **Analyze with ADR Detection…**.
+By default a confirmation names the transcript and the providers every time. The verdict shows
+under the chat ("ADR: clean · 0.08" or the tactic and confidence); a malicious verdict becomes a
+finding — high when confidence ≥ 0.8, medium otherwise — and rides the same shield/pill/card/push
+path as every other finding. Reports are kept under `~/.kannu/adr/detection/` (reveal from the
+chat's menu or Settings).
+
+What leaves the Mac, exactly: the chosen transcript text, to Anthropic (your login or your key)
+and, only with triage on, to OpenAI. Nothing else, nothing automatic, nothing without your click.
+The adapter Kannu runs is its own GPL script (`scripts/adr-analyze-session.py`, written to
+`~/.kannu/adr/detection/` at run time); it imports ADR from your checkout and copies nothing.
+
 ## 7. ADR Sensor (optional)
 
 `adr-sensor` exports normalised session records for Claude Code, Cursor, Codex, Warp, Claude

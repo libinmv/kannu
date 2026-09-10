@@ -9,6 +9,9 @@ struct NotchAgentStatusView: View {
     @ObservedObject private var skinManager = NotchSkinManager.shared
     @ObservedObject private var caffeinate = CaffeinateManager.shared
     @ObservedObject private var findingsStore = SecurityFindingsStore.shared
+    @ObservedObject private var adrConnection = ADRConnection.shared
+    @Default(.adrDetectionEnabled) private var detectionEnabled
+    @Default(.adrDetectionConfirmEachRun) private var detectionConfirmEachRun
     /// Defaults-backed, not @State: this tab is torn down and rebuilt on every tab switch.
     @Default(.caffeinateEnabled) private var caffeinateEnabled
     @Default(.smartCaffeinate) private var smartCaffeinate
@@ -399,8 +402,75 @@ struct NotchAgentStatusView: View {
             .buttonStyle(.plain)
             .hoverTooltip(target.actionLabel, pointingHandCursor: true)
             .accessibilityHint("Opens \(target.appName)")
+            .contextMenu { analysisMenu(for: session) }
         } else {
             content()
+                .contextMenu { analysisMenu(for: session) }
+        }
+    }
+
+    // MARK: - ADR Detection (explicit request only)
+
+    private func canAnalyze(_ session: AgentSessionStatus) -> Bool {
+        detectionEnabled && adrConnection.detection.isReady
+            && session.provider.lowercased() == "claude"
+            && !session.displayState.isActiveRun
+            && !findingsStore.isAnalyzing(session.conversationID)
+    }
+
+    @ViewBuilder
+    private func analysisMenu(for session: AgentSessionStatus) -> some View {
+        if canAnalyze(session) {
+            Button(String(localized: "Analyze with ADR Detection…")) { requestAnalysis(session) }
+        }
+        if let analysis = findingsStore.analysis(for: session.conversationID) {
+            if let path = analysis.reportPath, FileManager.default.fileExists(atPath: path) {
+                Button(String(localized: "Reveal ADR report in Finder")) {
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                }
+            }
+            Button(String(localized: "Forget this analysis")) { findingsStore.forgetAnalysis(for: session.conversationID) }
+        }
+    }
+
+    /// "ADR: clean · 0.08" under the status line, once a chat has been analysed.
+    @ViewBuilder
+    private func analysisLine(for session: AgentSessionStatus) -> some View {
+        if findingsStore.isAnalyzing(session.conversationID) {
+            Text("ADR: analysing…").font(.caption2).foregroundStyle(.secondary)
+        } else if let analysis = findingsStore.analysis(for: session.conversationID) {
+            Text("ADR: \(analysis.shortLabel)")
+                .font(.caption2)
+                .foregroundStyle(analysis.isMalicious ? .primary : .secondary)
+        }
+    }
+
+    /// The consent moment: names what leaves the Mac and where, every time unless the user
+    /// turned that off. Nothing runs without this click.
+    private func requestAnalysis(_ session: AgentSessionStatus) {
+        switch findingsStore.analysisPlan(for: session) {
+        case .failure(let failure):
+            let alert = NSAlert()
+            alert.messageText = String(localized: "Cannot analyse this chat")
+            alert.informativeText = failure.message
+            alert.runModal()
+        case .success(let plan):
+            guard detectionConfirmEachRun else { findingsStore.runAnalysis(plan); return }
+            let options = SecurityFindingsStore.analysisOptions()
+            let alert = NSAlert()
+            alert.messageText = String(localized: "Send this chat to ADR Detection?")
+            var lines = [String(localized: "The transcript \"\(session.displayChatName)\" (up to \(options.maxMessages) messages) leaves this Mac:")]
+            lines.append(String(localized: "• Anthropic, via \(Defaults[.adrDetectionUseAnthropicAPIKey] ? "your API key" : "your Claude Code login (uses your quota)"), model \(options.reasoningModel)"))
+            if options.triageEnabled { lines.append(String(localized: "• OpenAI, via your API key, model \(options.triageModel) (triage first)")) }
+            lines.append(String(localized: "ADR runs an unattended Claude session on this Mac to reason about it (file edits disallowed). Nothing else is sent, and nothing runs automatically."))
+            alert.informativeText = lines.joined(separator: "\n")
+            alert.addButton(withTitle: String(localized: "Analyze"))
+            alert.addButton(withTitle: String(localized: "Cancel"))
+            alert.showsSuppressionButton = true
+            alert.suppressionButton?.title = String(localized: "Don't ask again for each chat")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            if alert.suppressionButton?.state == .on { detectionConfirmEachRun = false }
+            findingsStore.runAnalysis(plan)
         }
     }
 
@@ -420,6 +490,7 @@ struct NotchAgentStatusView: View {
                     marqueeWidth: 220
                 )
                 statusText(for: session, font: .subheadline)
+                analysisLine(for: session)
                 AgentChatNameLabel(
                     text: session.displayChatName,
                     font: .caption2,
@@ -461,6 +532,7 @@ struct NotchAgentStatusView: View {
                     )
                 }
                 statusText(for: session, font: .caption2)
+                analysisLine(for: session)
                 AgentChatNameLabel(
                     text: session.displayChatName,
                     marqueeWidth: 140

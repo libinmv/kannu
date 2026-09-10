@@ -45,6 +45,8 @@
 		AA1000000000000000000049 /* AgentSecurityFinding.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000048 /* AgentSecurityFinding.swift */; };
 		AA1000000000000000000051 /* ADRDiscoveryCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000050 /* ADRDiscoveryCommand.swift */; };
 		AA1000000000000000000053 /* ClaudeDesktopSessionIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000052 /* ClaudeDesktopSessionIndex.swift */; };
+		AA1000000000000000000057 /* ADRSessionAnalysis.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000056 /* ADRSessionAnalysis.swift */; };
+		AA1000000000000000000055 /* ADRDetectionCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000054 /* ADRDetectionCommand.swift */; };
 		AA1000000000000000000047 /* ADRSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000046 /* ADRSnapshot.swift */; };
 		AA1000000000000000000043 /* ClaudeDesktopAgentSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000042 /* ClaudeDesktopAgentSessionStore.swift */; };
 		F910B9C812C7AEFE2293F7D2 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4A9C58195E197C19F691DA62 /* Cocoa.framework */; };
@@ -95,6 +97,8 @@
 		AA1000000000000000000048 /* AgentSecurityFinding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentSecurityFinding.swift; path = Kannu/managers/AgentStatus/AgentSecurityFinding.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000050 /* ADRDiscoveryCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ADRDiscoveryCommand.swift; path = Kannu/managers/AgentStatus/ADRDiscoveryCommand.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000052 /* ClaudeDesktopSessionIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeDesktopSessionIndex.swift; path = Kannu/managers/AgentStatus/ClaudeDesktopSessionIndex.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000056 /* ADRSessionAnalysis.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ADRSessionAnalysis.swift; path = Kannu/managers/AgentStatus/ADRSessionAnalysis.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000054 /* ADRDetectionCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ADRDetectionCommand.swift; path = Kannu/managers/AgentStatus/ADRDetectionCommand.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000046 /* ADRSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ADRSnapshot.swift; path = Kannu/managers/AgentStatus/ADRSnapshot.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000042 /* ClaudeDesktopAgentSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeDesktopAgentSessionStore.swift; path = Kannu/managers/AgentStatus/ClaudeDesktopAgentSessionStore.swift; sourceTree = SOURCE_ROOT; };
 		DAA671E7B1B26733F02166C5 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -493,6 +497,8 @@
 				AA1000000000000000000049 /* AgentSecurityFinding.swift in Sources */,
 				AA1000000000000000000051 /* ADRDiscoveryCommand.swift in Sources */,
 				AA1000000000000000000053 /* ClaudeDesktopSessionIndex.swift in Sources */,
+				AA1000000000000000000057 /* ADRSessionAnalysis.swift in Sources */,
+				AA1000000000000000000055 /* ADRDetectionCommand.swift in Sources */,
 				AA1000000000000000000047 /* ADRSnapshot.swift in Sources */,
 				AA1000000000000000000043 /* ClaudeDesktopAgentSessionStore.swift in Sources */,
 			);

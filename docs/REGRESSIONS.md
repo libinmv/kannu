@@ -271,6 +271,12 @@ verified to turn the suite red before this was committed.
 
 ---
 
+**2026-09-10 addendum.** The ADR Detection run (`uv run --project <checkout> python
+<adapter> …`) is pinned the same way: `ADRDetectionCommand` holds the arguments and the
+environment whitelist as data, `ADRDetectionCommandTests` pins both, and the embedded adapter is
+tested identical to `scripts/adr-analyze-session.py`. Permission and tool flags never pass
+through Kannu — the adapter alone decides how upstream runs its Claude session.
+
 ## 9. Notch tooltips are custom; `.help()` is dead there
 
 **Rule:** never use SwiftUI `.help(...)` under `Kannu/components/Notch/` or

@@ -1791,6 +1791,12 @@ final class CursorAgentStatusMonitor: ObservableObject {
         return (results, deadPIDConversationIDs.subtracting(liveConversationIDs), liveTailByConversationID)
     }
 
+    /// The on-disk transcript of a Claude conversation, for features that act on a whole chat
+    /// (ADR session analysis). Same cache as the passive path.
+    func claudeTranscriptURL(forConversationID conversationID: String) -> URL? {
+        claudeJSONLURL(forSessionId: conversationID)
+    }
+
     private func claudeJSONLURL(forSessionId sessionId: String) -> URL? {
         // The projects-tree walk is expensive and session→JSONL mapping never changes,
         // so cache hits (validated by fileExists) skip the enumeration entirely.

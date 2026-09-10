@@ -1249,6 +1249,23 @@ extension Defaults.Keys {
     /// Finding ids already pushed, so a relaunch does not push the same open finding again.
     /// Pruned to the ids still open, which lets a finding that vanishes and returns push once more.
     static let adrPushedFindingIDs = Key<[String]>("adrPushedFindingIDs", default: [])
+
+    // ADR Detection — session analysis. Everything off by default; the user opts in, picks each
+    // chat, and by default confirms each run. Keys live in the Keychain (`SecureSecretsStore`).
+    static let adrDetectionEnabled = Key<Bool>("adrDetectionEnabled", default: false)
+    static let adrDetectionConsentedAt = Key<Date?>("adrDetectionConsentedAt", default: nil)
+    static let adrDetectionCheckout = Key<String>("adrDetectionCheckout", default: "")
+    static let adrDetectionConfirmEachRun = Key<Bool>("adrDetectionConfirmEachRun", default: true)
+    static let adrDetectionTriageEnabled = Key<Bool>("adrDetectionTriageEnabled", default: false)
+    static let adrDetectionTriageModel = Key<String>("adrDetectionTriageModel", default: "gpt-4o")
+    static let adrDetectionReasoningModel = Key<String>("adrDetectionReasoningModel", default: "claude-sonnet-4-6")
+    static let adrDetectionUseAnthropicAPIKey = Key<Bool>("adrDetectionUseAnthropicAPIKey", default: false)
+    static let adrDetectionContextThreatIntelligence = Key<Bool>("adrDetectionContextThreatIntelligence", default: true)
+    static let adrDetectionContextSourceCode = Key<Bool>("adrDetectionContextSourceCode", default: true)
+    static let adrDetectionContextPolicy = Key<Bool>("adrDetectionContextPolicy", default: true)
+    static let adrDetectionTimeoutSeconds = Key<Int>("adrDetectionTimeoutSeconds", default: 300)
+    static let adrDetectionMaxMessages = Key<Int>("adrDetectionMaxMessages", default: 400)
+    static let adrSessionAnalyses = Key<[ADRSessionAnalysis]>("adrSessionAnalyses", default: [])
     static let showAgentStoppedIndicator = Key<Bool>("showAgentStoppedIndicator", default: false)
     /// Closed-notch traffic light shape. Defaults to `.classic` so existing installs keep the
     /// three-dot look they already have — only fresh installs are asked to choose in onboarding.

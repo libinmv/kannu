@@ -929,6 +929,13 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .agentStatus, title: "High-severity alerts in the notch", keywords: ["alert", "notch", "pill", "shield", "security", "high", "acknowledge", "glyph"], highlightID: SettingsTab.agentStatus.highlightID(for: "High-severity alerts in the notch")),
             SettingsSearchEntry(tab: .agentStatus, title: "Push high security findings", keywords: ["push", "security", "finding", "high", "mobile", "ntfy", "pushover", "webhook"], highlightID: SettingsTab.agentStatus.highlightID(for: "Push high security findings")),
             SettingsSearchEntry(tab: .agentStatus, title: "Push medium security findings", keywords: ["push", "security", "finding", "medium", "mobile"], highlightID: SettingsTab.agentStatus.highlightID(for: "Push medium security findings")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Analyze chats with ADR Detection", keywords: ["adr", "detection", "analyze", "analysis", "session", "transcript", "malicious", "prompt injection"], highlightID: SettingsTab.agentStatus.highlightID(for: "Analyze chats with ADR Detection")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Detection checkout", keywords: ["adr", "detection", "checkout", "uv", "clone"], highlightID: SettingsTab.agentStatus.highlightID(for: "Detection checkout")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Reasoning model", keywords: ["adr", "detection", "model", "claude", "sonnet"], highlightID: SettingsTab.agentStatus.highlightID(for: "Reasoning model")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Use an Anthropic API key", keywords: ["adr", "detection", "anthropic", "api key", "quota"], highlightID: SettingsTab.agentStatus.highlightID(for: "Use an Anthropic API key")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Triage with OpenAI first", keywords: ["adr", "detection", "openai", "triage", "gpt"], highlightID: SettingsTab.agentStatus.highlightID(for: "Triage with OpenAI first")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Messages sent", keywords: ["adr", "detection", "messages", "cap", "transcript"], highlightID: SettingsTab.agentStatus.highlightID(for: "Messages sent")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Confirm before every analysis", keywords: ["adr", "detection", "confirm", "consent"], highlightID: SettingsTab.agentStatus.highlightID(for: "Confirm before every analysis")),
             SettingsSearchEntry(tab: .agentStatus, title: "Mobile notifications", keywords: ["mobile", "push", "ntfy", "pushover", "webhook", "iphone", "android"], highlightID: SettingsTab.agentStatus.highlightID(for: "Mobile notifications")),
             SettingsSearchEntry(tab: .agentStatus, title: "Send test notification", keywords: ["test", "mobile", "push", "notification"], highlightID: SettingsTab.agentStatus.highlightID(for: "Send test notification")),
         ]
@@ -7625,6 +7632,21 @@ struct AgentStatusSettings: View {
     @Default(.adrHighAlertMode) var adrHighAlertMode
     @Default(.adrPolicyFile) var adrPolicyFile
     @Default(.adrRunScansEnabled) var adrRunScansEnabled
+    @Default(.adrDetectionEnabled) var adrDetectionEnabled
+    @Default(.adrDetectionConsentedAt) var adrDetectionConsentedAt
+    @Default(.adrDetectionCheckout) var adrDetectionCheckout
+    @Default(.adrDetectionConfirmEachRun) var adrDetectionConfirmEachRun
+    @Default(.adrDetectionTriageEnabled) var adrDetectionTriageEnabled
+    @Default(.adrDetectionTriageModel) var adrDetectionTriageModel
+    @Default(.adrDetectionReasoningModel) var adrDetectionReasoningModel
+    @Default(.adrDetectionUseAnthropicAPIKey) var adrDetectionUseAnthropicAPIKey
+    @Default(.adrDetectionContextThreatIntelligence) var adrDetectionContextThreatIntelligence
+    @Default(.adrDetectionContextSourceCode) var adrDetectionContextSourceCode
+    @Default(.adrDetectionContextPolicy) var adrDetectionContextPolicy
+    @Default(.adrDetectionTimeoutSeconds) var adrDetectionTimeoutSeconds
+    @Default(.adrDetectionMaxMessages) var adrDetectionMaxMessages
+    @State private var adrOpenAIKeyText = ""
+    @State private var adrAnthropicKeyText = ""
     @Default(.enableAgentStatusFeature) var enableAgentStatusFeature
     @Default(.agentStatusStaleMinutes) var agentStatusStaleMinutes
     @Default(.agentStoppedCollapseSeconds) var agentStoppedCollapseSeconds
@@ -8063,6 +8085,9 @@ struct AgentStatusSettings: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+            Divider()
+            adrDetectionSection
+
             if let error = findingsStore.snapshotError {
                 Text(error).font(.caption).foregroundColor(.red)
             }
@@ -8096,6 +8121,162 @@ struct AgentStatusSettings: View {
         }
         .onAppear {
             if adr.discovery.state == .unchecked { adr.checkAgain() }
+            if adrDetectionEnabled, adr.detection.state == .unchecked { adr.checkDetection() }
+        }
+    }
+
+    /// ADR Detection — off by default, behind a consent alert, and every run is the user's click.
+    @ViewBuilder
+    private var adrDetectionSection: some View {
+        Toggle(isOn: Binding(
+            get: { adrDetectionEnabled },
+            set: { newValue in
+                guard newValue else { adrDetectionEnabled = false; return }
+                if adrDetectionConsentedAt == nil, !presentDetectionConsent() { return }
+                adrDetectionEnabled = true
+                adr.checkDetection()
+            }
+        )) {
+            Text("Analyze chats with ADR Detection")
+        }
+        .settingsHighlight(id: highlightID("Analyze chats with ADR Detection"))
+        Text("Opt-in, per chat. Right-click a finished Claude Code chat in the notch and choose \"Analyze with ADR Detection\". The transcript is sent to the model providers below under your own keys — nothing is ever sent automatically.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+        if adrDetectionEnabled {
+            HStack {
+                Text("Detection checkout")
+                Spacer()
+                Text(adrDetectionCheckout.isEmpty ? String(localized: "none") : adrDetectionCheckout.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                Button("Choose…") { chooseDetectionCheckout() }
+                Button("Check") { adr.checkDetection() }
+            }
+            .settingsHighlight(id: highlightID("Detection checkout"))
+            HStack(spacing: 6) {
+                Circle().fill(adr.detection.isReady ? Color.green : Color.secondary.opacity(0.5)).frame(width: 8, height: 8)
+                Text(adr.detection.caption).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            }
+            HStack {
+                Text(ADRConnection.detectionCloneCommand)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(ADRConnection.detectionCloneCommand, forType: .string)
+                }
+            }
+            Text("Needs uv and Python 3.10–3.12 (uv fetches one). ADR Detection is Uber's research tool (Apache-2.0); it runs an unattended Claude session on this Mac to reason about the chat, with file edits disallowed.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            TextField("Reasoning model (Claude)", text: $adrDetectionReasoningModel)
+                .settingsHighlight(id: highlightID("Reasoning model"))
+            Toggle("Use an Anthropic API key instead of your Claude Code login", isOn: $adrDetectionUseAnthropicAPIKey)
+                .settingsHighlight(id: highlightID("Use an Anthropic API key"))
+            if adrDetectionUseAnthropicAPIKey {
+                adrSecretRow(title: "Anthropic API key", key: .claudeAPIKey, text: $adrAnthropicKeyText)
+            } else {
+                Text("Analyses count against your Claude subscription's 5-hour and weekly limits.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Toggle("Triage with OpenAI first", isOn: $adrDetectionTriageEnabled)
+                .settingsHighlight(id: highlightID("Triage with OpenAI first"))
+            Text("Upstream's pipeline: a cheap gpt-4o pass decides whether the Claude reasoning agent runs at all. Off means Claude only — no OpenAI account needed.")
+                .font(.caption).foregroundStyle(.secondary)
+            if adrDetectionTriageEnabled {
+                TextField("Triage model (OpenAI)", text: $adrDetectionTriageModel)
+                adrSecretRow(title: "OpenAI API key", key: .openaiAPIKey, text: $adrOpenAIKeyText)
+            }
+
+            Toggle("Context: threat intelligence", isOn: $adrDetectionContextThreatIntelligence)
+            Toggle("Context: source code analyzer", isOn: $adrDetectionContextSourceCode)
+            Toggle("Context: policy store", isOn: $adrDetectionContextPolicy)
+            Text("ADR's three local MCP context servers; they read bundled data and this Mac only.")
+                .font(.caption).foregroundStyle(.secondary)
+
+            Picker("Reasoning timeout", selection: $adrDetectionTimeoutSeconds) {
+                Text("2 minutes").tag(120)
+                Text("5 minutes").tag(300)
+                Text("10 minutes").tag(600)
+            }
+            Picker("Messages sent (newest)", selection: $adrDetectionMaxMessages) {
+                Text("100").tag(100)
+                Text("200").tag(200)
+                Text("400").tag(400)
+                Text("800").tag(800)
+            }
+            .settingsHighlight(id: highlightID("Messages sent"))
+            Toggle("Confirm before every analysis", isOn: $adrDetectionConfirmEachRun)
+                .settingsHighlight(id: highlightID("Confirm before every analysis"))
+
+            if let error = findingsStore.lastAnalysisError {
+                Text(error).font(.caption).foregroundColor(.red)
+            }
+            if !findingsStore.analyses.isEmpty {
+                Text("Recent analyses").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                ForEach(findingsStore.analyses.prefix(5)) { analysis in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(analysis.chatName ?? analysis.conversationID).font(.caption).lineLimit(1)
+                            Text("\(analysis.date.formatted(date: .abbreviated, time: .shortened)) · \(analysis.shortLabel)\(analysis.costUSD.map { String(format: " · $%.3f", $0) } ?? "")")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if let path = analysis.reportPath, FileManager.default.fileExists(atPath: path) {
+                            Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+                        }
+                        Button("Forget") { findingsStore.forgetAnalysis(for: analysis.conversationID) }
+                    }
+                    .controlSize(.small)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func adrSecretRow(title: String, key: SecureSecretKey, text: Binding<String>) -> some View {
+        HStack {
+            SecureField(title, text: text)
+            Button("Save") {
+                SecureSecretsStore.set(text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines), for: key)
+                text.wrappedValue = ""
+            }
+            .disabled(text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            if !SecureSecretsStore.value(for: key).isEmpty {
+                Text("stored").font(.caption).foregroundStyle(.secondary)
+                Button("Remove") { SecureSecretsStore.removeValue(for: key) }
+            }
+        }
+    }
+
+    /// The one-time consent. Returns true only when the user accepted.
+    private func presentDetectionConsent() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Turn on ADR Detection session analysis?")
+        alert.informativeText = String(localized: "When you choose \"Analyze with ADR Detection\" on a finished chat, that chat's transcript leaves this Mac: to Anthropic through your Claude Code login (or an API key you store), and to OpenAI only if you turn triage on. Kannu never sends a chat you did not pick, and by default asks before every run.\n\nADR Detection is a research tool from Uber (Apache-2.0). It runs an unattended Claude session on this Mac with file edits disallowed; upstream recommends an isolated environment. Analyses use your Claude quota unless you supply an API key.")
+        alert.addButton(withTitle: String(localized: "Turn on"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        guard alert.runModal() == .alertFirstButtonReturn else { return false }
+        adrDetectionConsentedAt = Date()
+        return true
+    }
+
+    private func chooseDetectionCheckout() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = String(localized: "Use checkout")
+        panel.message = String(localized: "Choose the ADR/Detection folder you cloned and synced with uv")
+        if panel.runModal() == .OK, let url = panel.url {
+            adrDetectionCheckout = url.path
+            adr.checkDetection()
         }
     }
 

@@ -44,6 +44,7 @@ struct ADRScanRecord: Codable, Equatable, Defaults.Serializable {
 }
 
 extension SecurityFindingSnooze: Defaults.Serializable {}
+extension ADRSessionAnalysis: Defaults.Serializable {}
 
 /// Owns the findings the user sees, their acknowledgements and snoozes, and the watch on the
 /// snapshot directory. Watch mode is the whole of phase 0: whoever runs `adr-discovery` (a
@@ -74,6 +75,12 @@ final class SecurityFindingsStore: ObservableObject {
     private var reloadGeneration = 0
     private var discoveryFindings: [AgentSecurityFinding] = []
     private var nativeFindings: [AgentSecurityFinding] = []
+    private var detectionFindings: [AgentSecurityFinding] = []
+    /// ADR Detection verdicts, newest first, one per conversation (capped).
+    @Published private(set) var analyses: [ADRSessionAnalysis] = []
+    @Published private(set) var analyzingConversationIDs: Set<String> = []
+    @Published private(set) var lastAnalysisError: String?
+    private static let analysisCap = 50
     private var cancellables = Set<AnyCancellable>()
     private var cadenceTimer: Timer?
     /// When Kannu's own scan started, so the snapshot it writes is recorded as Kannu's even when
@@ -92,6 +99,16 @@ final class SecurityFindingsStore: ObservableObject {
         snoozes = Defaults[.adrFindingSnoozes]
         lastScan = Defaults[.adrLastScan]
         lastKannuScanAt = Defaults[.adrLastKannuScanAt]
+        analyses = Defaults[.adrSessionAnalyses]
+        detectionFindings = analyses.compactMap { $0.finding() }
+    }
+
+    func analysis(for conversationID: String) -> ADRSessionAnalysis? {
+        analyses.first { $0.conversationID == conversationID }
+    }
+
+    func isAnalyzing(_ conversationID: String) -> Bool {
+        analyzingConversationIDs.contains(conversationID)
     }
 
     /// The MCP configuration files whose edits should prompt a fresh scan. Read for mtime only.
@@ -299,8 +316,194 @@ final class SecurityFindingsStore: ObservableObject {
     }
 
     private func publishFindings() {
-        let combined = discoveryFindings + nativeFindings
+        let combined = discoveryFindings + nativeFindings + detectionFindings
         if combined != findings { findings = combined }
+    }
+
+    // MARK: - ADR Detection (session analysis, explicit request only)
+
+    private static let detectionLogger = os.Logger(subsystem: "com.kannu.app", category: "SessionAnalysis")
+
+    /// Everything the run needs, read on the main actor before the worker starts. Nil with a
+    /// reason when the feature is off, the checkout is not ready, or the chat has no transcript.
+    struct AnalysisFailure: LocalizedError, Equatable {
+        let message: String
+        init(_ message: String) { self.message = message }
+        var errorDescription: String? { message }
+    }
+
+    struct AnalysisPlan {
+        let conversationID: String
+        let chatName: String?
+        let transcript: URL
+        let arguments: [String]
+        let environment: [String: String]
+        let uv: URL
+        let checkout: URL
+        let report: URL
+        let timeout: TimeInterval
+    }
+
+    static func analysisOptions() -> ADRDetectionCommand.Options {
+        ADRDetectionCommand.Options(
+            triageEnabled: Defaults[.adrDetectionTriageEnabled],
+            triageModel: Defaults[.adrDetectionTriageModel].trimmingCharacters(in: .whitespaces),
+            reasoningModel: Defaults[.adrDetectionReasoningModel].trimmingCharacters(in: .whitespaces),
+            threatIntelligence: Defaults[.adrDetectionContextThreatIntelligence],
+            sourceCode: Defaults[.adrDetectionContextSourceCode],
+            policy: Defaults[.adrDetectionContextPolicy],
+            timeoutSeconds: max(60, Defaults[.adrDetectionTimeoutSeconds]),
+            maxTurns: 60,
+            maxMessages: max(20, Defaults[.adrDetectionMaxMessages])
+        )
+    }
+
+    func analysisPlan(for session: AgentSessionStatus) -> Result<AnalysisPlan, AnalysisFailure> {
+        guard Defaults[.adrDetectionEnabled] else { return .failure(AnalysisFailure(String(localized: "Session analysis is off (Settings › Security findings)."))) }
+        guard let uv = ADRConnection.shared.detection.uv else {
+            return .failure(AnalysisFailure(String(localized: "ADR Detection checkout is not ready: \(ADRConnection.shared.detection.caption)")))
+        }
+        guard session.provider.lowercased() == "claude",
+              let transcript = CursorAgentStatusMonitor.shared.claudeTranscriptURL(forConversationID: session.conversationID) else {
+            return .failure(AnalysisFailure(String(localized: "Only Claude Code chats with an on-disk transcript can be analysed.")))
+        }
+        let checkout = URL(fileURLWithPath: (Defaults[.adrDetectionCheckout] as NSString).expandingTildeInPath, isDirectory: true)
+        let directory = ADRDetectionCommand.defaultDirectory
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                                                 attributes: [.posixPermissions: 0o700])
+        let adapter = directory.appendingPathComponent(ADRDetectionCommand.adapterFileName)
+        let report = directory.appendingPathComponent("\(session.conversationID).json")
+        let options = Self.analysisOptions()
+        let arguments = ADRDetectionCommand.arguments(checkout: checkout, adapter: adapter, transcript: transcript,
+                                                      report: report, options: options)
+        guard ADRDetectionCommand.isValidAnalysis(arguments: arguments) else { return .failure(AnalysisFailure("invalid invocation")) }
+        let path = [uv.deletingLastPathComponent().path, "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin",
+                    FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin").path]
+            .joined(separator: ":")
+        let environment = ADRDetectionCommand.environment(
+            openAIKey: options.triageEnabled ? SecureSecretsStore.value(for: .openaiAPIKey) : nil,
+            anthropicKey: Defaults[.adrDetectionUseAnthropicAPIKey] ? SecureSecretsStore.value(for: .claudeAPIKey) : nil,
+            path: path,
+            home: FileManager.default.homeDirectoryForCurrentUser.path
+        )
+        if options.triageEnabled, environment["OPENAI_API_KEY"] == nil {
+            return .failure(AnalysisFailure(String(localized: "Triage is on but no OpenAI API key is stored.")))
+        }
+        if Defaults[.adrDetectionUseAnthropicAPIKey], environment["ANTHROPIC_API_KEY"] == nil {
+            return .failure(AnalysisFailure(String(localized: "\"Use an Anthropic API key\" is on but no key is stored.")))
+        }
+        return .success(AnalysisPlan(conversationID: session.conversationID, chatName: session.chatName, transcript: transcript,
+                                     arguments: arguments, environment: environment, uv: uv, checkout: checkout, report: report,
+                                     timeout: ADRDetectionCommand.processTimeout(forReasoningTimeout: options.timeoutSeconds)))
+    }
+
+    /// Runs one analysis. The adapter is (re)written first so the copy on disk is always this
+    /// build's; the process runs on a utility worker with a whitelisted environment.
+    func runAnalysis(_ plan: AnalysisPlan) {
+        guard !analyzingConversationIDs.contains(plan.conversationID) else { return }
+        analyzingConversationIDs.insert(plan.conversationID)
+        lastAnalysisError = nil
+        Self.detectionLogger.notice("session analysis starting (\(plan.conversationID.prefix(8), privacy: .public))")
+        let adapterURL = URL(fileURLWithPath: plan.arguments[4])
+        DispatchQueue.global(qos: .utility).async {
+            do {
+                try Data(ADRDetectionCommand.adapterSource.utf8).write(to: adapterURL, options: .atomic)
+                try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: adapterURL.path)
+            } catch {
+                self.finishAnalysis(plan, outcome: .failure(AnalysisFailure(error.localizedDescription)))
+                return
+            }
+            let process = Process()
+            process.executableURL = plan.uv
+            process.arguments = plan.arguments
+            process.currentDirectoryURL = plan.checkout
+            process.environment = plan.environment
+            let stdout = Pipe(), stderr = Pipe()
+            process.standardOutput = stdout
+            process.standardError = stderr
+            var out = Data(), err = Data()
+            stdout.fileHandleForReading.readabilityHandler = { h in let c = h.availableData; if out.count < 1_000_000 { out.append(c) } }
+            stderr.fileHandleForReading.readabilityHandler = { h in let c = h.availableData; if err.count < 64_000 { err.append(c) } }
+            do {
+                try process.run()
+            } catch {
+                self.finishAnalysis(plan, outcome: .failure(AnalysisFailure(error.localizedDescription)))
+                return
+            }
+            let deadline = Date().addingTimeInterval(plan.timeout)
+            while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.5) }
+            var timedOut = false
+            if process.isRunning {
+                timedOut = true
+                process.terminate()
+                let killDeadline = Date().addingTimeInterval(5)
+                while process.isRunning && Date() < killDeadline { Thread.sleep(forTimeInterval: 0.2) }
+                if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            }
+            process.waitUntilExit()
+            stdout.fileHandleForReading.readabilityHandler = nil
+            stderr.fileHandleForReading.readabilityHandler = nil
+            if timedOut {
+                self.finishAnalysis(plan, outcome: .failure(AnalysisFailure(String(localized: "Analysis did not finish within \(Int(plan.timeout)) s and was stopped."))))
+                return
+            }
+            // The verdict is the last JSON line on stdout; upstream may print progress above it.
+            let lastLine = String(decoding: out, as: UTF8.self)
+                .split(separator: "\n", omittingEmptySubsequences: true).last.map(String.init) ?? ""
+            do {
+                let analysis = try ADRSessionAnalysis.parse(Data(lastLine.utf8), conversationID: plan.conversationID,
+                                                            chatName: plan.chatName, reportPath: plan.report.path)
+                self.finishAnalysis(plan, outcome: .success(analysis))
+            } catch ADRSessionAnalysis.ParseError.adapterError(let reason) {
+                self.finishAnalysis(plan, outcome: .failure(AnalysisFailure(reason)))
+            } catch {
+                let tail = String(decoding: err.suffix(300), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+                self.finishAnalysis(plan, outcome: .failure(AnalysisFailure(String(localized: "adr adapter exited \(process.terminationStatus) without a verdict. \(tail)"))))
+            }
+        }
+    }
+
+    private nonisolated func finishAnalysis(_ plan: AnalysisPlan, outcome: Result<ADRSessionAnalysis, AnalysisFailure>) {
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                self.analyzingConversationIDs.remove(plan.conversationID)
+                switch outcome {
+                case .success(let analysis):
+                    self.record(analysis)
+                    Self.detectionLogger.notice("session analysis finished malicious=\(analysis.isMalicious, privacy: .public) confidence=\(analysis.confidence, privacy: .public)")
+                case .failure(let failure):
+                    self.lastAnalysisError = failure.message
+                    Self.detectionLogger.error("session analysis failed: \(failure.message, privacy: .public)")
+                }
+            }
+        }
+    }
+
+    private func record(_ analysis: ADRSessionAnalysis) {
+        var list = analyses.filter { $0.conversationID != analysis.conversationID }
+        list.insert(analysis, at: 0)
+        if list.count > Self.analysisCap { list = Array(list.prefix(Self.analysisCap)) }
+        analyses = list
+        Defaults[.adrSessionAnalyses] = list
+        let firstSeen = Dictionary(detectionFindings.map { ($0.id, $0.firstSeen) }, uniquingKeysWith: { a, _ in a })
+        detectionFindings = list.compactMap { $0.finding(existingFirstSeen: nil) }
+            .map { finding in
+                guard let seen = firstSeen[finding.id] else { return finding }
+                return AgentSecurityFinding(id: finding.id, source: finding.source, rule: finding.rule, severity: finding.severity,
+                                            title: finding.title, summary: finding.summary, evidence: finding.evidence,
+                                            assetName: finding.assetName, assetPath: finding.assetPath, sessionID: finding.sessionID,
+                                            firstSeen: seen)
+            }
+        publishFindings()
+    }
+
+    func forgetAnalysis(for conversationID: String) {
+        let list = analyses.filter { $0.conversationID != conversationID }
+        guard list.count != analyses.count else { return }
+        analyses = list
+        Defaults[.adrSessionAnalyses] = list
+        detectionFindings = list.compactMap { $0.finding() }
+        publishFindings()
     }
 
     // MARK: - Ingest
