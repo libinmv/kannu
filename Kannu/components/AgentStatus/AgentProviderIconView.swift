@@ -51,6 +51,7 @@ enum AgentProviderIconSource: Equatable {
         case .antigravity: self = .antigravity
         case .gemini: self = .gemini
         case .qwen: self = .qwen
+        case .opencode: self = .opencode
         }
     }
 }

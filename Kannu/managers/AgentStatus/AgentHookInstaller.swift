@@ -75,6 +75,7 @@ final class AgentHookInstaller: ObservableObject {
         migrateCursorHookEventArgumentIfNeeded()
         migrateClaudeStyleHookEventArgumentIfNeeded()
         migrateClaudeUsageStatusLineIfNeeded()
+        migrateOpencodePluginIfNeeded()
         refresh()
     }
 
@@ -129,6 +130,12 @@ final class AgentHookInstaller: ObservableObject {
             case .qwen:
                 try Self.installSharedSettingsHooks(for: .qwen, events: AgentHookLayout.qwenEvents,
                                                     handlerName: nil, timeout: 10)
+            case .opencode:
+                let files = Self.layout.files(for: .opencode)
+                try Self.writeScript(to: files.script)
+                if let plugin = files.configs.first?.url {
+                    try Self.writeOpencodePlugin(to: plugin, scriptPath: files.script.path)
+                }
             }
         } catch {
             lastError = "\(provider.displayName): \(error.localizedDescription)"
@@ -1880,6 +1887,7 @@ final class AgentHookInstaller: ObservableObject {
         case .antigravity: return antigravityEvents.map(\.event)
         case .gemini: return ["BeforeAgent", "BeforeTool", "AfterAgent"]
         case .qwen: return ["UserPromptSubmit", "PreToolUse", "Stop"]
+        case .opencode: return []
         }
     }
 
@@ -1888,8 +1896,29 @@ final class AgentHookInstaller: ObservableObject {
     private static func checkInstalled(_ provider: AgentHookProvider) -> Bool {
         let files = layout.files(for: provider)
         guard FileManager.default.fileExists(atPath: files.script.path) else { return false }
+        if provider == .opencode {
+            // The plugin file is Kannu's only if it carries Kannu's marker.
+            guard let plugin = files.configs.first?.url,
+                  let text = try? String(contentsOf: plugin, encoding: .utf8) else { return false }
+            return text.contains(OpencodePluginSource.markerPrefix)
+        }
         let events = requiredInstalledEvents(provider)
         return files.configs.contains { hasEntries(in: $0, events: events) }
+    }
+
+    private static func writeOpencodePlugin(to url: URL, scriptPath: String) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(OpencodePluginSource.source(scriptPath: scriptPath).utf8).write(to: url, options: .atomic)
+    }
+
+    /// Rewrites Kannu's opencode plugin when its own version marker moved (the shared script is
+    /// covered by the script-version migration like every other provider's).
+    private func migrateOpencodePluginIfNeeded() {
+        guard let plugin = Self.layout.files(for: .opencode).configs.first?.url,
+              let text = try? String(contentsOf: plugin, encoding: .utf8),
+              text.contains(OpencodePluginSource.markerPrefix),
+              !text.contains(OpencodePluginSource.versionMarker) else { return }
+        install(.opencode)
     }
 
     private static func hasEntries(in config: AgentHookLayout.ConfigFile, events: [String]) -> Bool {

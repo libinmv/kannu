@@ -57,6 +57,11 @@ final class AgentHookLayoutTests: XCTestCase {
         XCTAssertEqual(layout.files(for: .gemini).script.path, "/Users/u/.gemini/kannu-agent-status.sh",
                        "beside Antigravity's folder, not inside it")
         XCTAssertEqual(layout.files(for: .qwen).configs.map(\.url.path), ["/Users/u/.qwen/settings.json"])
+        let opencode = layout.files(for: .opencode)
+        XCTAssertEqual(opencode.configs.map(\.url.path), ["/Users/u/.config/opencode/plugins/kannu-agent-status.js"])
+        XCTAssertEqual(opencode.configs.map(\.shape), [.ownFile])
+        XCTAssertEqual(opencode.script.deletingLastPathComponent().lastPathComponent, "opencode",
+                       "outside plugins/, which opencode loads wholesale")
     }
 
     func testVSCodeTableGainsNotificationButCodexDoesNot() {

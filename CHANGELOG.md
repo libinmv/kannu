@@ -4,6 +4,31 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - opencode, through a small plugin
+- **Developer label:** More agents: opencode
+- **Agent label:** Add an opencode plugin that feeds the shared status script
+- **Changes:**
+  - New `OpencodePluginSource.swift` (logic target): the plugin as a raw literal with its own
+    version marker and the status script's path baked in as a JSON-quoted string. It maps
+    `session.created` (subagents with a `parentID` skipped), `chat.message`, `tool.execute.before`
+    / `after` (arguments carried to the post-tool event so the sensitive-file check sees them),
+    `permission.asked` / `permission.updated` (the pre-2026 name) / `question.asked`, their replies,
+    `session.idle`, `session.error` and `session.deleted` onto the Claude-style events the script
+    already understands; titles come from `session.updated`. Every call is `Bun.spawn` with an argv
+    array and the details on stdin, never awaited, always wrapped; text is capped at 200 KB.
+  - Installer: provider `opencode` — script `~/.config/opencode/kannu-agent-status.sh` (outside
+    `plugins/`, which opencode loads wholesale), plugin `~/.config/opencode/plugins/kannu-agent-status.js`.
+    Installed only when the plugin carries Kannu's marker; a plugin-version migration beside the
+    script-version one; uninstall removes both (the layout's own-file rule). Not auto-installed; the
+    row says "Not found on this Mac" until opencode has run here.
+  - Tests: `OpencodePluginTests` in JavaScriptCore with a recording `Bun.spawn` (factory and hooks,
+    the full event ladder, subagents skipped, argv never carries text, spawn failures swallowed,
+    quoting) plus `node --check` as an ES module. Also run by hand under node against the real
+    status script: title, working folder, yellow on a permission prompt, a secret in the prompt and
+    an SSH key read all landed in the status file.
+  - Unverified live: opencode is not installed here; the plugin API and the `plugins/` folder name
+    follow opencode's docs and source as of 2026-09.
+
 ### 2026-09-11 - Hook v36: Copilot CLI, Gemini CLI and Qwen Code
 - **Developer label:** More agents: Copilot CLI fix + support, Gemini CLI + Qwen Code
 - **Agent label:** Label Copilot CLI apart from VS Code and add Gemini CLI and Qwen Code hooks

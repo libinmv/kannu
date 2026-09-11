@@ -26,6 +26,7 @@ enum AgentHookProvider: String, CaseIterable, Identifiable {
     case antigravity
     case gemini
     case qwen
+    case opencode
 
     var id: String { rawValue }
 
@@ -38,6 +39,7 @@ enum AgentHookProvider: String, CaseIterable, Identifiable {
         case .antigravity: return "Antigravity"
         case .gemini: return "Gemini CLI"
         case .qwen: return "Qwen Code"
+        case .opencode: return "opencode"
         }
     }
 }
@@ -106,6 +108,9 @@ struct AgentHookLayout: Equatable {
     var geminiScript: URL { home.appendingPathComponent(".gemini/\(Self.scriptName)") }
     var qwenSettings: URL { home.appendingPathComponent(".qwen/settings.json") }
     var qwenScript: URL { home.appendingPathComponent(".qwen/\(Self.scriptName)") }
+    /// opencode loads every file in `plugins/`, so the shared script sits one level up.
+    var opencodePlugin: URL { home.appendingPathComponent(".config/opencode/plugins/\(OpencodePluginSource.fileName)") }
+    var opencodeScript: URL { home.appendingPathComponent(".config/opencode/\(Self.scriptName)") }
 
     func files(for provider: AgentHookProvider) -> Files {
         switch provider {
@@ -139,6 +144,10 @@ struct AgentHookLayout: Equatable {
             return Files(script: qwenScript,
                          configs: [ConfigFile(url: qwenSettings, shape: .matcherGroups, write: .always)],
                          sharedSettings: [])
+        case .opencode:
+            return Files(script: opencodeScript,
+                         configs: [ConfigFile(url: opencodePlugin, shape: .ownFile, write: .always)],
+                         sharedSettings: [])
         }
     }
 
@@ -152,6 +161,9 @@ struct AgentHookLayout: Equatable {
                 .contains { fileManager.fileExists(atPath: home.appendingPathComponent($0).path) }
         case .qwen:
             return fileManager.fileExists(atPath: home.appendingPathComponent(".qwen").path)
+        case .opencode:
+            return [".config/opencode", ".local/share/opencode"]
+                .contains { fileManager.fileExists(atPath: home.appendingPathComponent($0).path) }
         case .cursor, .vscode, .codex, .claude, .antigravity:
             return true
         }
