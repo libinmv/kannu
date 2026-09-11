@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-enum AgentProviderIconSource: Equatable {
+enum AgentProviderIconSource: Hashable {
     case cursor
     case claude
     case codex
@@ -56,13 +56,31 @@ enum AgentProviderIconSource: Equatable {
     }
 }
 
+/// App icons resolved once per source instead of on every render (each resolve checks the disk,
+/// asks NSWorkspace and redraws a thumbnail). Re-resolved after ten minutes so an app installed or
+/// updated meanwhile shows its icon.
+@MainActor
+enum AgentProviderIconCache {
+    private static var entries: [AgentProviderIconSource: (image: NSImage?, resolvedAt: Date)] = [:]
+    private static let lifetime: TimeInterval = 600
+
+    static func icon(for source: AgentProviderIconSource, now: Date = Date()) -> NSImage? {
+        if let entry = entries[source], now.timeIntervalSince(entry.resolvedAt) < lifetime {
+            return entry.image
+        }
+        let image = source.resolvedIconImage()
+        entries[source] = (image, now)
+        return image
+    }
+}
+
 struct AgentProviderIconView: View {
     let source: AgentProviderIconSource
     var size: CGFloat = 24
 
     var body: some View {
         Group {
-            if let icon = source.resolvedIconImage() {
+            if let icon = AgentProviderIconCache.icon(for: source) {
                 Image(nsImage: icon)
                     .resizable()
                     .scaledToFit()

@@ -4,6 +4,19 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - The open panel's red blink stops at 5 s; icons resolved once
+- **Developer label:** "how can we optimize that" (the notch's CPU while an agent works)
+- **Agent label:** Bound the 10 Hz red blink, honour Reduce Motion, cache provider icons
+- **Changes:**
+  - `NotchAgentStatusView`: the red badge's blink is a 10 Hz `TimelineView` that only checked its
+    5-second window when something else redrew the panel, so it could keep ticking indefinitely.
+    It now wakes once at the window's end (`AgentTrafficLightAttention.blinkChange`) and is removed;
+    under Reduce Motion it never blinks.
+  - `AgentProviderIconView` resolved each app icon on every render (a disk check, NSWorkspace and a
+    thumbnail redraw). New `AgentProviderIconCache` keeps one per source, re-resolved after ten
+    minutes so a newly installed or updated app shows its icon. `AgentProviderIconSource` is now
+    `Hashable`.
+
 ### 2026-09-11 - No periodic timers behind the traffic light
 - **Developer label:** "how can we optimize that" (the notch's CPU while an agent works)
 - **Agent label:** Replace the notch's 1 Hz timers with one-shot wakes at the exact deadline

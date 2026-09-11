@@ -23,6 +23,9 @@ struct NotchAgentStatusView: View {
     @State private var redBlinkStartTimes: [String: Date] = [:]
     /// The pinned finding whose "Copy for agent" was just pressed; cleared after 2 s.
     @State private var copiedFindingID: String?
+    /// Bumped once when a red badge's blink window ends, so the 10 Hz blink stops on time.
+    @State private var blinkWake = Date.distantPast
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let scrollSuppressionToken = UUID()
 
     private var hasSkin: Bool { skinManager.selectedSkinImage != nil }
@@ -623,8 +626,13 @@ struct NotchAgentStatusView: View {
         let width: CGFloat = large ? 28 : 20
         let height: CGFloat = large ? 36 : 28
         let dotSize: CGFloat = large ? 8 : 6
+        let _ = blinkWake
         let blinkStart = redBlinkStartTimes[sessionId]
-        let shouldBlink = state.showsRedTrafficLight && blinkStart.map { Date().timeIntervalSince($0) < 5 } ?? false
+        let now = Date()
+        // Bounded to its 5 s window by the one-shot wake below (the 10 Hz timeline used to keep
+        // ticking until something else redrew the panel), and off under Reduce Motion.
+        let shouldBlink = !reduceMotion && state.showsRedTrafficLight && AgentTrafficLightAttention.blinks(startedAt: blinkStart, now: now)
+        let blinkEnd = state.showsRedTrafficLight ? AgentTrafficLightAttention.blinkChange(startedAt: blinkStart, now: now) : nil
 
         VStack(spacing: 3) {
             if shouldBlink {
@@ -640,6 +648,11 @@ struct NotchAgentStatusView: View {
             neonDot(neonGreen, size: dotSize, opacity: state.showsGreenTrafficLight ? 1 : 0.2, glowRadius: state.showsGreenTrafficLight ? (large ? 5 : 3.5) : 0)
         }
         .frame(width: width, height: height)
+        .task(id: blinkEnd) {
+            guard let blinkEnd else { return }
+            try? await Task.sleep(for: .seconds(max(0, blinkEnd.timeIntervalSinceNow) + 0.05))
+            if !Task.isCancelled { blinkWake = Date() }
+        }
         .onChange(of: state.showsRedTrafficLight) { _, isRed in
             if isRed && (blinkStart == nil || Date().timeIntervalSince(blinkStart!) > 5) {
                 redBlinkStartTimes[sessionId] = Date()
