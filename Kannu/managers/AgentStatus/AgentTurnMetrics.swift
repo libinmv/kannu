@@ -108,3 +108,131 @@ struct HookTurn: Equatable {
         return number.int64Value
     }
 }
+
+// MARK: - What the card shows
+
+/// The run time a card shows for its request.
+enum AgentTurnDisplay: Equatable {
+    /// Still running: the view ticks from this date.
+    case live(since: Date)
+    /// Ended: "Ran …" for this long.
+    case ended(TimeInterval)
+
+    /// Writes after the end that still report work mean the request went on without a new prompt
+    /// and without a wake event (a stop hook's text-only continuation); a late completion lands
+    /// within this.
+    static let supersededAfter: TimeInterval = 2
+
+    /// - An ended turn shows how long it ran — also through the idle notice's yellow afterwards.
+    /// - An open turn ticks from the user's prompt while the card is running or waiting; a card that
+    ///   stopped without a Stop (Esc, a killed process) shows no time rather than a wrong one.
+    /// - Without a turn (hooks before v39, passive sources), the in-memory run start is the best
+    ///   there is, shown only while running.
+    static func duration(turn: HookTurn?, executionStartedAt: Date?, state: AgentTrafficLightState,
+                         hookReportsWork: Bool, updatedAt: Date) -> AgentTurnDisplay? {
+        guard let turn else {
+            guard state.isActiveRun, let executionStartedAt else { return nil }
+            return .live(since: executionStartedAt)
+        }
+        if let end = turn.endedAt, !(hookReportsWork && updatedAt.timeIntervalSince(end) > supersededAfter) {
+            return .ended(max(0, end.timeIntervalSince(turn.startedAt)))
+        }
+        return state.isActiveRun ? .live(since: turn.startedAt) : nil
+    }
+}
+
+/// Text for the run time, tool calls and tokens beside a Recent chats row.
+enum AgentTurnFormat {
+    /// "42s", "3m 24s", "1h 53m 54s".
+    static func duration(_ interval: TimeInterval) -> String {
+        let total = max(0, Int(interval.rounded(.down)))
+        let hours = total / 3600, minutes = total % 3600 / 60, seconds = total % 60
+        if hours > 0 { return String(localized: "\(hours)h \(minutes)m \(seconds)s") }
+        if minutes > 0 { return String(localized: "\(minutes)m \(seconds)s") }
+        return String(localized: "\(seconds)s")
+    }
+
+    /// The same without seconds once there are hours or minutes, for a narrow column: "1h 53m".
+    static func shortDuration(_ interval: TimeInterval) -> String {
+        let total = max(0, Int(interval.rounded(.down)))
+        let hours = total / 3600, minutes = total % 3600 / 60
+        if hours > 0 { return String(localized: "\(hours)h \(minutes)m") }
+        if minutes > 0 { return String(localized: "\(minutes)m") }
+        return duration(interval)
+    }
+
+    /// "Ran 2h 3m 12s".
+    static func ran(_ duration: String) -> String { String(localized: "Ran \(duration)") }
+
+    /// "1 tool", "212 tools"; nil for none.
+    static func tools(_ count: Int) -> String? {
+        guard count > 0 else { return nil }
+        return count == 1 ? String(localized: "1 tool") : String(localized: "\(count) tools")
+    }
+
+    /// "1.4M in · 45k out".
+    static func tokens(_ tokens: TurnTokens) -> String {
+        String(localized: "\(compact(tokens.input)) in · \(compact(tokens.output)) out")
+    }
+
+    /// Line 2 of the column, widest first; nil entries are left out.
+    static func metricsLines(toolCalls: Int, tokens: TurnTokens?) -> (full: String?, tokensOnly: String?, toolsOnly: String?) {
+        let toolsText = tools(toolCalls)
+        let tokensText = tokens.map(Self.tokens)
+        let full = [toolsText, tokensText].compactMap { $0 }.joined(separator: " · ")
+        return (full.isEmpty ? nil : full,
+                toolsText != nil ? tokensText : nil,
+                tokensText != nil ? toolsText : nil)
+    }
+
+    /// 812, 4.5k, 10k, 45k, 1M, 1.4M, 65M, 1.2B — rounding rolls over into the next unit.
+    static func compact(_ value: Int) -> String {
+        guard value >= 1000 else { return String(max(0, value)) }
+        let units: [(divisor: Double, suffix: String)] = [(1e3, "k"), (1e6, "M"), (1e9, "B")]
+        var index = 0
+        while true {
+            let scaled = Double(value) / units[index].divisor
+            let rounded = scaled < 10 ? (scaled * 10).rounded() / 10 : scaled.rounded()
+            if rounded >= 1000, index < units.count - 1 {
+                index += 1
+                continue
+            }
+            let digits = rounded < 10 && rounded != rounded.rounded(.down)
+                ? String(format: "%.1f", rounded) : String(Int(rounded))
+            return digits + units[index].suffix
+        }
+    }
+
+    /// Spoken form: "1.4 million", "45 thousand", "812".
+    static func spokenCount(_ value: Int) -> String {
+        let text = compact(value)
+        guard let suffix = text.last, "kMB".contains(suffix) else { return text }
+        let number = String(text.dropLast())
+        switch suffix {
+        case "k": return String(localized: "\(number) thousand")
+        case "M": return String(localized: "\(number) million")
+        default: return String(localized: "\(number) billion")
+        }
+    }
+
+    /// One VoiceOver phrase for the whole column.
+    static func accessibilityText(_ display: AgentTurnDisplay, now: Date, toolCalls: Int, tokens: TurnTokens?) -> String {
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .full
+        formatter.allowedUnits = [.hour, .minute, .second]
+        var parts: [String] = []
+        switch display {
+        case let .live(since):
+            parts.append(String(localized: "Running for \(formatter.string(from: max(0, now.timeIntervalSince(since))) ?? "")"))
+        case let .ended(interval):
+            parts.append(String(localized: "Ran for \(formatter.string(from: interval) ?? "")"))
+        }
+        if toolCalls > 0 {
+            parts.append(toolCalls == 1 ? String(localized: "1 tool call") : String(localized: "\(toolCalls) tool calls"))
+        }
+        if let tokens {
+            parts.append(String(localized: "\(spokenCount(tokens.input)) tokens in, \(spokenCount(tokens.output)) out"))
+        }
+        return parts.joined(separator: ", ")
+    }
+}

@@ -4,6 +4,30 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-12 - Recent chats show this request's run time, tool calls and tokens beside the light
+- **Developer label:** "could we change it to the full time with format 1h 53m 54 s format and also maybe the no of tokens , and maybe no of tools calls or something in a line, basically we have space in recent chats to maybe improve the glance there" (picked: trailing column)
+- **Agent label:** Follow-up 30, C4 — the notch half: a trailing column on each card, fed by the hook's turn and the token follower
+- **Changes:**
+  - New `AgentTurnMetricsView`: a right-aligned column between the chat text and the light. Line
+    one is the run time ("1h 53m 54s", ticking once a second only while the request runs; "Ran
+    2h 3m 12s" once it ended); line two is "212 tools · 1.4M in · 45k out", falling back to tokens
+    only, then tools only, then nothing — digits are never cut. It observes the token follower
+    itself, so token updates re-render the column only. One VoiceOver label with the numbers
+    spelled out. No `.help` and no nested tooltip (entry 9).
+  - `AgentTurnDisplay` (pure): an ended turn shows how long it ran (also through the idle notice's
+    yellow); an open turn ticks from the user's prompt while running or waiting; a chat that
+    stopped without a Stop (Esc, killed) shows no time rather than a wrong one; work reported more
+    than two seconds after the end counts as the same request; without a turn (hooks before v39,
+    Cursor's passive cards, Warp, Desktop) the old in-memory start, now with hours.
+  - `AgentTurnFormat` (pure): durations, "Ran …", "1 tool"/"212 tools", compact numbers that roll
+    into the next unit (9,960 → 10k, 999,600 → 1M), spoken forms.
+  - The minimalistic panels (420/340 pt) have no room for a column: the run time follows the
+    state word on the status line, as the MM:SS timer did; tools and tokens are left out there.
+  - The status line no longer carries the MM:SS timer in the full-size panel.
+  - DEBUG: a `recentChats` snapshot board renders the tab at the 640, 420 and 340 pt panel widths
+    with fixture chats (running for hours, ended, the pre-v39 fallback, a prompt, an interrupted chat).
+  - Tests: `AgentTurnFormatTests` (9).
+
 ### 2026-09-12 - Kannu adds up a Claude request's tokens from its transcripts, off the main actor
 - **Developer label:** "and also maybe the no of tokens" (picked: in and out, where in includes cached context)
 - **Agent label:** Follow-up 30, C3 — token totals per chat card, read on a utility queue and published on their own

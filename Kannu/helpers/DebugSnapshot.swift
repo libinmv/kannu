@@ -77,6 +77,19 @@ enum DebugSnapshots {
         if request.tabs == nil || request.tabs?.contains("notch") == true {
             await render(AnyView(notchBoard), name: "notch-dots", dark: true, width: 360, into: request.directory, scale: 4)
         }
+        if request.tabs == nil || request.tabs?.contains("recentChats") == true {
+            // The agent tab's width inside a 640 pt panel, a 420 pt minimalistic one and the 340 pt island.
+            let sessions = DebugSnapshotFixtures.recentChats(now: Date())
+            ClaudeTurnTokenFollower.shared.setSnapshotTokens(DebugSnapshotFixtures.turnTokens(for: sessions))
+            for (width, minimalistic) in [(CGFloat(612), false), (360, true), (280, true)] {
+                let view = NotchAgentStatusView(snapshotSessions: sessions, snapshotMinimalistic: minimalistic)
+                    .environmentObject(viewModel)
+                    .frame(height: 560)
+                    .background(Color.black)
+                    .environment(\.colorScheme, .dark)
+                await render(AnyView(view), name: "recentChats-\(Int(width))", dark: true, width: width, into: request.directory)
+            }
+        }
     }
 
     /// The shared Settings components beside the native controls they replace, enabled and disabled,
@@ -253,6 +266,44 @@ enum DebugSnapshots {
 /// Findings for the snapshot board only — never ingested into the store, whose ingest prunes the
 /// shared acknowledgements.
 enum DebugSnapshotFixtures {
+    /// Recent chats with and without a v39 turn: running for hours, ended, the pre-v39 fallback, a
+    /// prompt, and a chat that stopped without a Stop (no time shown).
+    static func recentChats(now: Date) -> [AgentSessionStatus] {
+        func card(_ id: String, _ provider: String, _ chat: String, _ raw: String, _ state: AgentTrafficLightState,
+                  ago: TimeInterval, turn: HookTurn?, started: Date? = nil) -> AgentSessionStatus {
+            var session = AgentSessionStatus(id: "\(provider)-\(id)", provider: provider, conversationID: id, chatName: chat,
+                                             projectName: "kannu", rawState: raw, displayState: state,
+                                             updatedAt: now.addingTimeInterval(-ago), isVisible: true, executionStartedAt: started)
+            session.turn = turn
+            return session
+        }
+        let path = "/Users/example/.claude/projects/-Users-example-kannu/a.jsonl"
+        return [
+            card("live", "claude", "Kannu settings rework", "executing", .executing, ago: 1,
+                 turn: HookTurn(startedAt: now.addingTimeInterval(-(1 * 3600 + 53 * 60 + 54)), toolCalls: 212,
+                                transcriptPath: path, transcriptOffset: 1000)),
+            card("ended", "claude", "Fix the login flow", "stopped", .stopped, ago: 20,
+                 turn: HookTurn(startedAt: now.addingTimeInterval(-8000), endedAt: now.addingTimeInterval(-8000 + 7392),
+                                toolCalls: 48, transcriptPath: path, transcriptOffset: 500)),
+            card("cursor", "cursor", "Refactor the parser", "executing", .executing, ago: 30, turn: nil,
+                 started: now.addingTimeInterval(-204)),
+            card("codex", "codex", "Add usage alerts", "awaiting_input", .awaitingInput, ago: 40,
+                 turn: HookTurn(startedAt: now.addingTimeInterval(-42), toolCalls: 1)),
+            card("esc", "claude", "Interrupted chat", "executing", .inactive, ago: 50,
+                 turn: HookTurn(startedAt: now.addingTimeInterval(-900), toolCalls: 9)),
+        ]
+    }
+
+    static func turnTokens(for sessions: [AgentSessionStatus]) -> [String: TurnTokens] {
+        let totals: [String: (input: Int, output: Int)] = ["live": (1_400_000, 45_000), "ended": (820_000, 22_300)]
+        var out: [String: TurnTokens] = [:]
+        for session in sessions {
+            guard let total = totals[session.conversationID], let turn = session.turn, let offset = turn.transcriptOffset else { continue }
+            out[session.conversationID] = TurnTokens(startedAt: turn.startedAt, startOffset: offset, input: total.input, output: total.output)
+        }
+        return out
+    }
+
     static var findings: [AgentSecurityFinding] {
         let now = Date(timeIntervalSince1970: 1_788_000_000)
         return [

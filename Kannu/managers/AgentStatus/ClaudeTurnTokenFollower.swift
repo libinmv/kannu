@@ -123,6 +123,11 @@ final class ClaudeTurnTokenFollower: ObservableObject {
         }
     }
 
+#if DEBUG
+    /// Snapshot boards only: the process that renders them never starts the monitor.
+    func setSnapshotTokens(_ map: [String: TurnTokens]) { tokens = map }
+#endif
+
     /// Complete totals replace what was shown; a chat still being caught up keeps its last numbers
     /// (the card checks they belong to its turn); chats no longer requested are dropped.
     private func publish(_ pass: ClaudeTurnTokenReader.Pass) {
