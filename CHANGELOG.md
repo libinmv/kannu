@@ -4,6 +4,30 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - Media, Live Activities, Lock Screen and Devices in the System Settings layout
+- **Developer label:** "the settings should be enginered like apple does settings" (scope picked: "Rework every tab")
+- **Agent label:** State notes become footers or descriptions, tooltips become visible text, packed rows split, one slider pattern
+- **Changes:**
+  - Media: the Dynamic Island and customizable-controls notes are footers instead of rows; the
+    Change Media Output, floating controls and live canvas explanations that only lived in
+    tooltips are visible, selectable descriptions; the three fullscreen-artwork toggles that
+    shared one row are three rows; parallax intensity and the inactivity timeout show their
+    value beside the control; the fullscreen hide option is a radio group under its own
+    header, so "Hide only when NowPlaying app is in fullscreen" no longer truncates.
+  - Live Activities: the Focus label and brief-toast explanations (tooltips) are descriptions;
+    every footer is selectable.
+  - Lock Screen: material, glass mode, timer surface, timer glass and AQI notes sit under the
+    control they explain; Preview and Copy Latest Crash Report sit on the trailing side; the
+    fullscreen toggles are separate rows; Positioning lists the three offsets as rows (value and
+    Reset trailing, Reset disabled at zero) and moves the width sliders to their own
+    **Widget Width** group with both resets on the trailing side — the empty Divider row and the
+    right-aligned help text are gone.
+  - Devices: footers selectable; the HUD icon style title reads like other row titles.
+  - Glass-variant sliders (Appearance and Lock Screen) share `variantSliderControl`: title on the
+    leading side, slider and "v11" trailing.
+  - Keys, bindings, side effects, disabled and dimmed conditions, the Media → Lock Screen mirror
+    and highlight ids are unchanged (inventory test).
+
 ### 2026-09-11 - General and Appearance in the System Settings layout; a mislabelled media toggle
 - **Developer label:** "the settings should be enginered like apple does settings" (scope picked: "Rework every tab")
 - **Agent label:** Captions under titles, composite rows split into rows, buttons trailing, footers left-aligned and selectable

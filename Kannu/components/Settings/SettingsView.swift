@@ -2664,8 +2664,6 @@ private struct DevicesSettingsView: View {
                 .settingsHighlight(id: highlightID("Show AirPods listening mode changes"))
                 VStack(alignment: .leading, spacing: 12) {
                     Text("HUD icon style")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.primary)
 
                     HStack(spacing: 16) {
                         Spacer(minLength: 0)
@@ -2688,9 +2686,7 @@ private struct DevicesSettingsView: View {
             } header: {
                 Text("Bluetooth Audio Devices")
             } footer: {
-                Text("Displays a HUD notification when Bluetooth audio devices (headphones, AirPods, speakers) connect, showing device name and battery level.")
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
+                SettingsFooter("Displays a HUD notification when Bluetooth audio devices (headphones, AirPods, speakers) connect, showing device name and battery level.")
             }
 
             Section {
@@ -2703,17 +2699,11 @@ private struct DevicesSettingsView: View {
                 Text("Battery Indicator Styling")
             } footer: {
                 if progressBarStyle == .segmented {
-                    Text("Color-coded fills are unavailable in Segmented mode. Switch to Hierarchical or Gradient inside Controls › Dynamic Island to adjust advanced options.")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
+                    SettingsFooter("Color-coded fills are unavailable in Segmented mode. Switch to Hierarchical or Gradient inside Controls › Dynamic Island to adjust advanced options.")
                 } else if Defaults[.useSmoothColorGradient] {
-                    Text("Smooth transitions blend Green (0–60%), Yellow (60–85%), and Red (85–100%) through the entire fill. Adjust gradient behavior from Controls › Dynamic Island.")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
+                    SettingsFooter("Smooth transitions blend Green (0–60%), Yellow (60–85%), and Red (85–100%) through the entire fill. Adjust gradient behavior from Controls › Dynamic Island.")
                 } else {
-                    Text("Discrete transitions snap between Green (0–60%), Yellow (60–85%), and Red (85–100%).")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
+                    SettingsFooter("Discrete transitions snap between Green (0–60%), Yellow (60–85%), and Red (85–100%).")
                 }
             }
         }
@@ -2941,21 +2931,15 @@ struct Media: View {
                 Text("Media Source")
             } footer: {
                 if MusicManager.shared.isNowPlayingDeprecated {
-                    HStack {
-                        Text("YouTube Music requires this third-party app to be installed: ")
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
+                    VStack(alignment: .leading, spacing: 2) {
+                        SettingsFooter("YouTube Music requires this third-party app to be installed: ")
                         Link("https://github.com/th-ch/youtube-music", destination: URL(string: "https://github.com/th-ch/youtube-music")!)
-                            .font(.caption)
-                            .foregroundColor(.blue) // Ensures it's visibly a link
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(String(localized: "'Now Playing' was the only option on previous versions and works with all media apps."))
-                        Text(String(localized: "Uses macOS Now Playing when Amazon Music is the active source. Timeline scrubbing may be unavailable."))
+                        SettingsFooter(String(localized: "'Now Playing' was the only option on previous versions and works with all media apps."))
+                        SettingsFooter(String(localized: "Uses macOS Now Playing when Amazon Music is the active source. Timeline scrubbing may be unavailable."))
                     }
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
                 }
             }
 
@@ -2975,22 +2959,16 @@ struct Media: View {
                 }
                 .disabled(enableMinimalisticUI || !showStandardMediaControls)
                 .settingsHighlight(id: highlightID("Auto-hide inactive notch media player"))
-
-                if enableMinimalisticUI {
-                    Text("Disable Minimalistic UI to configure the standard notch media controls.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else if standardControlsSuppressed {
-                    Text("Standard notch media controls are hidden. Re-enable the toggle above to restore them.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else if !autoHideInactiveNotchMediaPlayer {
-                    Text("When off, the notch player stays visible with placeholder info while nothing plays.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
             } header: {
                 Text("Dynamic Island Visibility")
+            } footer: {
+                if enableMinimalisticUI {
+                    SettingsFooter("Disable Minimalistic UI to configure the standard notch media controls.")
+                } else if standardControlsSuppressed {
+                    SettingsFooter("Standard notch media controls are hidden. Re-enable the toggle above to restore them.")
+                } else if !autoHideInactiveNotchMediaPlayer {
+                    SettingsFooter("When off, the notch player stays visible with placeholder info while nothing plays.")
+                }
             }
             Section {
                 Defaults.Toggle(key: .showShuffleAndRepeat) {
@@ -3000,60 +2978,61 @@ struct Media: View {
                     }
                 }
                 if showShuffleAndRepeat {
-                    Defaults.Toggle(key: .showMediaOutputControl) {
-                        Text("Show \"Change Media Output\" control")
+                    SettingsRow("Show \"Change Media Output\" control", description: "Adds the AirPlay/route picker button back to the customizable controls palette.") {
+                        Defaults.Toggle(key: .showMediaOutputControl) {
+                            Text("Show \"Change Media Output\" control")
+                        }
                     }
                     .settingsHighlight(id: highlightID("Show Change Media Output control"))
-                    .help("Adds the AirPlay/route picker button back to the customizable controls palette.")
                     MusicSlotConfigurationView()
-                } else {
-                    Text("Turn on customizable controls to rearrange media buttons.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, 4)
                 }
             } header: {
                 Text("Media controls")
+            } footer: {
+                if !showShuffleAndRepeat {
+                    SettingsFooter("Turn on customizable controls to rearrange media buttons.")
+                }
             }
 
             Section(header: Text("Lock Screen Media")) {
-                Defaults.Toggle(key: .lockScreenMusicAlbumParallaxEnabled) {
-                    Text("Enable album art parallax")
+                SettingsRow("Enable album art parallax", description: "Applies the notch-style parallax effect to the lock screen media widget album art.") {
+                    Defaults.Toggle(key: .lockScreenMusicAlbumParallaxEnabled) {
+                        Text("Enable album art parallax")
+                    }
                 }
                 .settingsHighlight(id: highlightID("Enable album art parallax"))
-                Text("Applies the notch-style parallax effect to the lock screen media widget album art.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
             if musicControlWindowEnabled {
                 Section {
-                    Picker("Skip buttons", selection: $musicSkipBehavior) {
-                        ForEach(MusicSkipBehavior.allCases) { behavior in
-                            Text(behavior.displayName).tag(behavior)
+                    SettingsRow("Skip buttons", description: musicSkipBehavior.description) {
+                        Picker("Skip buttons", selection: $musicSkipBehavior) {
+                            ForEach(MusicSkipBehavior.allCases) { behavior in
+                                Text(behavior.displayName).tag(behavior)
+                            }
                         }
+                        .pickerStyle(.segmented)
+                        .fixedSize()
                     }
-                    .pickerStyle(.segmented)
                     .settingsHighlight(id: highlightID("Skip buttons"))
-
-                    Text(musicSkipBehavior.description)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 } header: {
                     Text("Floating window panel skip behaviour")
                 }
             }
             Section {
-                Toggle(
-                    "Enable music live activity",
-                    isOn: $coordinator.musicLiveActivityEnabled.animation()
-                )
+                SettingsRow("Enable music live activity", description: standardControlsSuppressed
+                            ? Text("Standard notch media controls are hidden while this toggle is off.") : nil) {
+                    Toggle(
+                        "Enable music live activity",
+                        isOn: $coordinator.musicLiveActivityEnabled.animation()
+                    )
+                }
                 .disabled(standardControlsSuppressed)
-                .help(standardControlsSuppressed ? "Standard notch media controls are hidden while this toggle is off." : "")
-                Defaults.Toggle(key: .musicControlWindowEnabled) {
-                    Text("Show floating media controls")
+                SettingsRow("Show floating media controls", description: "Shows play/pause and skip buttons beside the notch while music is active.") {
+                    Defaults.Toggle(key: .musicControlWindowEnabled) {
+                        Text("Show floating media controls")
+                    }
                 }
                 .disabled(!coordinator.musicLiveActivityEnabled || standardControlsSuppressed)
-                .help("Shows play/pause and skip buttons beside the notch while music is active.")
                 Toggle("Enable sneak peek", isOn: $enableSneakPeek)
                 Toggle("Show sneak peek on playback changes", isOn: $showSneakPeekOnTrackChange)
                     .disabled(!enableSneakPeek)
@@ -3061,23 +3040,30 @@ struct Media: View {
                     Text("Enable lyrics")
                 }
                 .settingsHighlight(id: highlightID("Enable lyrics"))
-                Defaults.Toggle(key: .showLiveCanvasInDynamicIsland) {
-                    Text("Show live canvas in Dynamic Island")
-                }
-                .settingsHighlight(id: highlightID("Show live canvas in Dynamic Island"))
-                .help("Shows the app's live canvas in place of album art when one is available.")
-                
-                //Parallax Effect Intensity to control how much parallax is wanted
-                Slider(value: $parallaxEffectIntensity, in: 0...12, step: 1.0) {
-                    HStack {
-                        Text("Parallax Effect Intensity")
-                        Spacer()
-                        Text("\(parallaxEffectIntensity, specifier: "%0.1f")")
-                            .foregroundStyle(.secondary)
+                SettingsRow("Show live canvas in Dynamic Island", description: "Shows the app's live canvas in place of album art when one is available.") {
+                    Defaults.Toggle(key: .showLiveCanvasInDynamicIsland) {
+                        Text("Show live canvas in Dynamic Island")
                     }
                 }
+                .settingsHighlight(id: highlightID("Show live canvas in Dynamic Island"))
+
+                // How much the album art moves with the pointer.
+                LabeledContent("Parallax Effect Intensity") {
+                    HStack(spacing: 8) {
+                        Slider(value: $parallaxEffectIntensity, in: 0...12, step: 1.0) {
+                            Text("Parallax Effect Intensity")
+                        }
+                        .labelsHidden()
+                        Text("\(parallaxEffectIntensity, specifier: "%0.1f")")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(minWidth: 32, alignment: .trailing)
+                    }
+                    .frame(width: 220)
+                }
                 .settingsHighlight(id: highlightID("Enable album art parallax effect"))
-                
+
+
                 Picker("Sneak Peek Style", selection: $sneakPeekStyles){
                     ForEach(SneakPeekStyle.allCases) { style in
                         Text(style.rawValue).tag(style)
@@ -3086,17 +3072,19 @@ struct Media: View {
                 .disabled(!enableSneakPeek)
                 .settingsHighlight(id: highlightID("Sneak Peek Style"))
 
-                HStack {
-                    Stepper(value: $waitInterval, in: 0...10, step: 1) {
-                        HStack {
+                LabeledContent("Media inactivity timeout") {
+                    HStack(spacing: 6) {
+                        Text("\(waitInterval, specifier: "%.0f") seconds")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                        Stepper(value: $waitInterval, in: 0...10, step: 1) {
                             Text("Media inactivity timeout")
-                            Spacer()
-                            Text("\(Defaults[.waitInterval], specifier: "%.0f") seconds")
-                                .foregroundStyle(.secondary)
                         }
+                        .labelsHidden()
                     }
                 }
-                
+
+
                 Defaults.Toggle(key: .showSongMetadataInClosedNotch) {
                     Text("Show song title and artist on non-notch displays")
                 }
@@ -3129,7 +3117,7 @@ struct Media: View {
             } header: {
                 Text("Music Visualizer")
             } footer: {
-                Text("Shows a real-time audio spectrum synced to your music. Requires macOS 14.2 or later.")
+                SettingsFooter("Shows a real-time audio spectrum synced to your music. Requires macOS 14.2 or later.")
             }
 
             Section {
@@ -3172,46 +3160,50 @@ struct Media: View {
                         .opacity(enableLockScreenMediaWidget ? 1 : 0.5)
                         .settingsHighlight(id: highlightID("Enable media panel blur"))
                 }
-                VStack(alignment: .leading, spacing: 4) {
+                SettingsRow("Fullscreen artwork on right-click", description: "Right-click the lock screen album art to use it as the wallpaper; right-click again to restore.") {
                     Defaults.Toggle(key: .lockScreenMusicFullscreenArtworkEnabled) {
                         Text("Fullscreen artwork on right-click")
                     }
-                    .disabled(!enableLockScreenMediaWidget)
-                    .settingsHighlight(id: highlightID("Fullscreen artwork on right-click"))
-                    Defaults.Toggle(key: .lockScreenUseArtworkLayoutOverFullscreenCanvas) {
-                        Text("Use album art layout over fullscreen canvas")
-                    }
-                    .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
-                    .settingsHighlight(id: highlightID("Use album art layout over fullscreen canvas"))
-                    Defaults.Toggle(key: .lockScreenKeepAlbumArtVisibleDuringFullscreenArtwork) {
-                        Text("Keep album art visible during fullscreen artwork")
-                    }
-                    .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
-                    .settingsHighlight(id: highlightID("Keep album art visible during fullscreen artwork"))
-                    Text("Right-click the lock screen album art to use it as the wallpaper; right-click again to restore.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .disabled(!enableLockScreenMediaWidget)
+                .settingsHighlight(id: highlightID("Fullscreen artwork on right-click"))
+                Defaults.Toggle(key: .lockScreenUseArtworkLayoutOverFullscreenCanvas) {
+                    Text("Use album art layout over fullscreen canvas")
+                }
+                .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
+                .settingsHighlight(id: highlightID("Use album art layout over fullscreen canvas"))
+                Defaults.Toggle(key: .lockScreenKeepAlbumArtVisibleDuringFullscreenArtwork) {
+                    Text("Keep album art visible during fullscreen artwork")
+                }
+                .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
+                .settingsHighlight(id: highlightID("Keep album art visible during fullscreen artwork"))
             } header: {
                 Text("Lock Screen Integration")
             } footer: {
-                Text("These controls mirror the Lock Screen tab.")
+                SettingsFooter("These controls mirror the Lock Screen tab.")
             }
             .disabled(!showStandardMediaControls)
             .opacity(showStandardMediaControls ? 1 : 0.5)
 
-            Picker(selection: $hideNotchOption, label:
-                    HStack {
-                Text("Hide DynamicIsland Options")
-                customBadge(text: "Beta")
-            }) {
-                Text("Always hide in fullscreen").tag(HideNotchOption.always)
-                Text("Hide only when NowPlaying app is in fullscreen").tag(HideNotchOption.nowPlayingOnly)
-                Text("Never hide").tag(HideNotchOption.never)
-            }
-            .onChange(of: hideNotchOption) {
-                Defaults[.enableFullscreenMediaDetection] = hideNotchOption != .never
+            // A radio group: the options are too long for a menu at this width.
+            Section {
+                Picker(selection: $hideNotchOption) {
+                    Text("Always hide in fullscreen").tag(HideNotchOption.always)
+                    Text("Hide only when NowPlaying app is in fullscreen").tag(HideNotchOption.nowPlayingOnly)
+                    Text("Never hide").tag(HideNotchOption.never)
+                } label: {
+                    Text("Hide DynamicIsland Options")
+                }
+                .pickerStyle(.radioGroup)
+                .labelsHidden()
+                .onChange(of: hideNotchOption) {
+                    Defaults[.enableFullscreenMediaDetection] = hideNotchOption != .never
+                }
+            } header: {
+                HStack {
+                    Text("Hide DynamicIsland Options")
+                    customBadge(text: "Beta")
+                }
             }
         }
         .navigationTitle("Media")
@@ -3227,22 +3219,20 @@ struct Media: View {
     }
 
     private var unavailableBlurRow: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 2) {
             Text("Enable media panel blur")
                 .foregroundStyle(.secondary)
             Text("Only applies when Material is set to Frosted Glass.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .settingsDescriptionStyle()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
     private var customLiquidBlurRow: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 2) {
             Text("Enable media panel blur")
                 .foregroundStyle(.secondary)
             Text("Custom liquid glass already renders with Apple's liquid material, so this option is managed automatically.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .settingsDescriptionStyle()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -3663,7 +3653,7 @@ struct LiveActivitiesSettings: View {
             } header: {
                 Text("Screen Recording")
             } footer: {
-                Text("Uses event-driven private API for real-time screen recording detection")
+                SettingsFooter("Uses event-driven private API for real-time screen recording detection")
             }
 
             Section {
@@ -3691,19 +3681,23 @@ struct LiveActivitiesSettings: View {
                 .disabled(!enableDoNotDisturbDetection)
                 .settingsHighlight(id: highlightID("Show Focus Indicator"))
 
-                Defaults.Toggle(key: .showDoNotDisturbLabel) {
-                    Text("Show Focus Label")
+                SettingsRow("Show Focus Label", description: focusIndicatorNonPersistent
+                            ? Text("Labels are forced to compact on/off text while brief toast mode is enabled.")
+                            : Text("Show the active Focus name inside the indicator.")) {
+                    Defaults.Toggle(key: .showDoNotDisturbLabel) {
+                        Text("Show Focus Label")
+                    }
                 }
                 .disabled(!enableDoNotDisturbDetection || focusIndicatorNonPersistent)
-                .help(focusIndicatorNonPersistent ? "Labels are forced to compact on/off text while brief toast mode is enabled." : "Show the active Focus name inside the indicator.")
                 .settingsHighlight(id: highlightID("Show Focus Label"))
 
-                Defaults.Toggle(key: .focusIndicatorNonPersistent) {
-                    Text("Show Focus as brief toast")
+                SettingsRow("Show Focus as brief toast", description: "When enabled, Focus appears briefly (on/off) and then collapses instead of staying visible.") {
+                    Defaults.Toggle(key: .focusIndicatorNonPersistent) {
+                        Text("Show Focus as brief toast")
+                    }
                 }
                 .disabled(!enableDoNotDisturbDetection)
                 .settingsHighlight(id: highlightID("Show Focus as brief toast"))
-                .help("When enabled, Focus appears briefly (on/off) and then collapses instead of staying visible.")
 
                 if doNotDisturbManager.isMonitoring {
                     HStack {
@@ -3733,7 +3727,7 @@ struct LiveActivitiesSettings: View {
             } header: {
                 Text("Do Not Disturb")
             } footer: {
-                Text("Listens for Focus session changes via distributed notifications")
+                SettingsFooter("Listens for Focus session changes via distributed notifications")
             }
 
             Section {
@@ -3759,7 +3753,7 @@ struct LiveActivitiesSettings: View {
             } header: {
                 Text("Caps Lock Indicator")
             } footer: {
-                Text("Adds a notch HUD when Caps Lock is enabled, with optional label and tint controls.")
+                SettingsFooter("Adds a notch HUD when Caps Lock is enabled, with optional label and tint controls.")
             }
 
             Section {
@@ -3810,7 +3804,7 @@ struct LiveActivitiesSettings: View {
             } header: {
                 Text("Privacy Indicators")
             } footer: {
-                Text("Shows green camera icon and yellow microphone icon when in use. Uses event-driven CoreAudio and CoreMediaIO APIs.")
+                SettingsFooter("Shows green camera icon and yellow microphone icon when in use. Uses event-driven CoreAudio and CoreMediaIO APIs.")
             }
 
             Section {
@@ -3822,7 +3816,7 @@ struct LiveActivitiesSettings: View {
             } header: {
                 Text("Media Live Activity")
             } footer: {
-                Text("Use the Media tab to configure sneak peek, lyrics, and floating media controls.")
+                SettingsFooter("Use the Media tab to configure sneak peek, lyrics, and floating media controls.")
             }
         }
         .navigationTitle("Live Activities")
@@ -4006,14 +4000,10 @@ struct Appearance: View {
 
                     if lockScreenGlassCustomizationMode == .customLiquid {
                         VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text("Music panel variant")
-                                Spacer()
-                                Text("v\(lockScreenMusicLiquidGlassVariant.rawValue)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                            LabeledContent("Music panel variant") {
+                                variantSliderControl(value: appearanceMusicVariantBinding, current: lockScreenMusicLiquidGlassVariant.rawValue,
+                                                     range: liquidVariantRange, title: String(localized: "Music panel variant"))
                             }
-                            Slider(value: appearanceMusicVariantBinding, in: liquidVariantRange, step: 1)
 
                             LockScreenGlassVariantPreviewCell(variant: $lockScreenMusicLiquidGlassVariant)
                                 .padding(.top, 6)
@@ -4022,15 +4012,9 @@ struct Appearance: View {
                         .disabled(!enableLockScreenMediaWidget)
                         .opacity(enableLockScreenMediaWidget ? 1 : 0.4)
 
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text("Timer widget variant")
-                                Spacer()
-                                Text("v\(lockScreenTimerLiquidGlassVariant.rawValue)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Slider(value: appearanceTimerVariantBinding, in: liquidVariantRange, step: 1)
+                        LabeledContent("Timer widget variant") {
+                            variantSliderControl(value: appearanceTimerVariantBinding, current: lockScreenTimerLiquidGlassVariant.rawValue,
+                                                 range: liquidVariantRange, title: String(localized: "Timer widget variant"))
                         }
                         .settingsHighlight(id: highlightID("Timer widget variant (appearance)"))
                         .disabled(!enableLockScreenTimerWidget)
@@ -4605,65 +4589,62 @@ struct LockScreenSettings: View {
             } header: {
                 Text("Live Activity & Feedback")
             } footer: {
-                Text("Controls whether Kannu mirrors lock/unlock events with its own live activity.")
+                SettingsFooter("Controls whether Kannu mirrors lock/unlock events with its own live activity.")
             }
 
             Section {
-                Button(previewManager.isPreviewVisible ? "Hide lock screen preview" : "Preview lock screen widgets") {
-                    previewManager.togglePreview()
+                SettingsActionRow {
+                    Button(previewManager.isPreviewVisible ? "Hide lock screen preview" : "Preview lock screen widgets") {
+                        previewManager.togglePreview()
+                    }
                 }
-                .buttonStyle(.borderedProminent)
                 .settingsHighlight(id: highlightID("Preview lock screen widgets"))
             } header: {
                 Text("Preview")
             } footer: {
-                Text("Opens a transparent preview window with mock data that mirrors the current lock screen widget configuration.")
+                SettingsFooter("Opens a transparent preview window with mock data that mirrors the current lock screen widget configuration.")
             }
 
             Section {
                 if #available(macOS 26.0, *) {
-                    Picker("Material", selection: $lockScreenGlassStyle) {
-                        ForEach(LockScreenGlassStyle.allCases) { style in
-                            Text(style.rawValue).tag(style)
+                    SettingsRow("Material", description: lockScreenGlassStyle == .liquid
+                                ? nil : Text("Custom Liquid settings require the Liquid Glass material.")) {
+                        Picker("Material", selection: $lockScreenGlassStyle) {
+                            ForEach(LockScreenGlassStyle.allCases) { style in
+                                Text(style.rawValue).tag(style)
+                            }
                         }
                     }
                     .settingsHighlight(id: highlightID("Material"))
                 } else {
-                    Picker("Material", selection: $lockScreenGlassStyle) {
-                        ForEach(LockScreenGlassStyle.allCases) { style in
-                            Text(style.rawValue).tag(style)
+                    SettingsRow("Material", description: Text("Liquid Glass requires macOS 26 or later.")) {
+                        Picker("Material", selection: $lockScreenGlassStyle) {
+                            ForEach(LockScreenGlassStyle.allCases) { style in
+                                Text(style.rawValue).tag(style)
+                            }
                         }
                     }
                     .disabled(true)
                     .settingsHighlight(id: highlightID("Material"))
-                    Text("Liquid Glass requires macOS 26 or later.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
 
                 if lockScreenGlassStyle == .liquid {
-                    Picker("Glass mode", selection: $lockScreenGlassCustomizationMode) {
-                        ForEach(LockScreenGlassCustomizationMode.allCases) { mode in
-                            Text(mode.rawValue).tag(mode)
+                    SettingsRow("Glass mode", description: lockScreenGlassCustomizationMode == .customLiquid
+                                ? Text("Use the sliders below to pick unique Apple liquid-glass variants for each widget.") : nil) {
+                        Picker("Glass mode", selection: $lockScreenGlassCustomizationMode) {
+                            ForEach(LockScreenGlassCustomizationMode.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
                         }
+                        .pickerStyle(.segmented)
+                        .fixedSize()
                     }
-                    .pickerStyle(.segmented)
                     .settingsHighlight(id: highlightID("Glass mode"))
-
-                    if lockScreenGlassCustomizationMode == .customLiquid {
-                        Text("Use the sliders below to pick unique Apple liquid-glass variants for each widget.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    Text("Custom Liquid settings require the Liquid Glass material.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
             } header: {
                 Text("Lock Screen Glass")
             } footer: {
-                Text("Choose the global material mode for lock screen widgets. Custom Liquid unlocks per-widget variant sliders while Standard sticks to the classic frosted/liquid options.")
+                SettingsFooter("Choose the global material mode for lock screen widgets. Custom Liquid unlocks per-widget variant sliders while Standard sticks to the classic frosted/liquid options.")
             }
 
             Section {
@@ -4714,38 +4695,32 @@ struct LockScreenSettings: View {
                         .opacity(enableLockScreenMediaWidget ? 1 : 0.5)
                         .settingsHighlight(id: highlightID("Enable media panel blur"))
                 }
-                VStack(alignment: .leading, spacing: 4) {
+                SettingsRow("Fullscreen artwork on right-click", description: "Right-click the lock screen album art to use it as the wallpaper; right-click again to restore.") {
                     Defaults.Toggle(key: .lockScreenMusicFullscreenArtworkEnabled) {
                         Text("Fullscreen artwork on right-click")
                     }
-                    .disabled(!enableLockScreenMediaWidget)
-                    .settingsHighlight(id: highlightID("Fullscreen artwork on right-click"))
-                    Defaults.Toggle(key: .lockScreenUseArtworkLayoutOverFullscreenCanvas) {
-                        Text("Use album art layout over fullscreen canvas")
-                    }
-                    .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
-                    .settingsHighlight(id: highlightID("Use album art layout over fullscreen canvas"))
-                    Defaults.Toggle(key: .lockScreenKeepAlbumArtVisibleDuringFullscreenArtwork) {
-                        Text("Keep album art visible during fullscreen artwork")
-                    }
-                    .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
-                    .settingsHighlight(id: highlightID("Keep album art visible during fullscreen artwork"))
-                    Text("Right-click the lock screen album art to use it as the wallpaper; right-click again to restore.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
-
-                if !showStandardMediaControls {
-                    Text("Enable Dynamic Island media controls to manage the lock screen panel.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                .disabled(!enableLockScreenMediaWidget)
+                .settingsHighlight(id: highlightID("Fullscreen artwork on right-click"))
+                Defaults.Toggle(key: .lockScreenUseArtworkLayoutOverFullscreenCanvas) {
+                    Text("Use album art layout over fullscreen canvas")
                 }
+                .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
+                .settingsHighlight(id: highlightID("Use album art layout over fullscreen canvas"))
+                Defaults.Toggle(key: .lockScreenKeepAlbumArtVisibleDuringFullscreenArtwork) {
+                    Text("Keep album art visible during fullscreen artwork")
+                }
+                .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
+                .settingsHighlight(id: highlightID("Keep album art visible during fullscreen artwork"))
             } header: {
                 Text("Media Panel")
             } footer: {
-                Text("Enable and style the media controls that appear above the system clock when the screen is locked.")
+                VStack(alignment: .leading, spacing: 4) {
+                    if !showStandardMediaControls {
+                        SettingsFooter("Enable Dynamic Island media controls to manage the lock screen panel.")
+                    }
+                    SettingsFooter("Enable and style the media controls that appear above the system clock when the screen is locked.")
+                }
             }
             .disabled(!showStandardMediaControls)
             .opacity(showStandardMediaControls ? 1 : 0.5)
@@ -4755,20 +4730,27 @@ struct LockScreenSettings: View {
                     Text("Show lock screen timer")
                 }
                 .settingsHighlight(id: highlightID("Show lock screen timer"))
-                Picker("Timer surface", selection: timerSurfaceBinding) {
-                    ForEach(LockScreenTimerSurfaceMode.allCases) { mode in
-                        Text(mode.rawValue).tag(mode)
+                SettingsRow("Timer surface", description: timerGlassModeIsGlass
+                            ? nil : Text("Classic mode keeps the original translucent black background.")) {
+                    Picker("Timer surface", selection: timerSurfaceBinding) {
+                        ForEach(LockScreenTimerSurfaceMode.allCases) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
                     }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
                 }
-                .pickerStyle(.segmented)
                 .disabled(!enableLockScreenTimerWidget)
                 .opacity(enableLockScreenTimerWidget ? 1 : 0.5)
                 .settingsHighlight(id: highlightID("Timer surface"))
 
                 if timerGlassModeIsGlass {
-                    Picker("Timer glass material", selection: $lockScreenTimerGlassStyle) {
-                        ForEach(LockScreenGlassStyle.allCases) { style in
-                            Text(style.rawValue).tag(style)
+                    SettingsRow("Timer glass material", description: lockScreenTimerGlassStyle == .liquid
+                                ? nil : Text("Uses the frosted blur treatment while glass mode is enabled.")) {
+                        Picker("Timer glass material", selection: $lockScreenTimerGlassStyle) {
+                            ForEach(LockScreenGlassStyle.allCases) { style in
+                                Text(style.rawValue).tag(style)
+                            }
                         }
                     }
                     .disabled(!enableLockScreenTimerWidget)
@@ -4776,12 +4758,15 @@ struct LockScreenSettings: View {
                     .settingsHighlight(id: highlightID("Timer glass material"))
 
                     if lockScreenTimerGlassStyle == .liquid {
-                        Picker("Timer liquid mode", selection: $lockScreenTimerGlassCustomizationMode) {
-                            ForEach(LockScreenGlassCustomizationMode.allCases) { mode in
-                                Text(mode.rawValue).tag(mode)
+                        SettingsRow("Timer liquid mode") {
+                            Picker("Timer liquid mode", selection: $lockScreenTimerGlassCustomizationMode) {
+                                ForEach(LockScreenGlassCustomizationMode.allCases) { mode in
+                                    Text(mode.rawValue).tag(mode)
+                                }
                             }
+                            .pickerStyle(.segmented)
+                            .fixedSize()
                         }
-                        .pickerStyle(.segmented)
                         .disabled(!enableLockScreenTimerWidget)
                         .opacity(enableLockScreenTimerWidget ? 1 : 0.5)
                         .settingsHighlight(id: highlightID("Timer liquid mode"))
@@ -4795,23 +4780,12 @@ struct LockScreenSettings: View {
                                 highlight: highlightID("Timer widget variant")
                             )
                         }
-                    } else {
-                        Text("Uses the frosted blur treatment while glass mode is enabled.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                } else {
-                    Text("Classic mode keeps the original translucent black background.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .opacity(enableLockScreenTimerWidget ? 1 : 0.5)
                 }
             } header: {
                 Text("Timer Widget")
             } footer: {
-                Text("Controls the optional timer widget that floats above the media panel, including its classic, frosted, or liquid glass surface independent of the global material setting.")
+                SettingsFooter("Controls the optional timer widget that floats above the media panel, including its classic, frosted, or liquid glass surface independent of the global material setting.")
             }
 
             Section {
@@ -4857,8 +4831,11 @@ struct LockScreenSettings: View {
                     .disabled(lockScreenWeatherWidgetStyle != .inline)
                     .settingsHighlight(id: highlightID("Show sunrise time"))
 
-                    Defaults.Toggle(key: .lockScreenWeatherShowsAQI) {
-                        Text("Show AQI widget")
+                    SettingsRow("Show AQI widget", description: lockScreenWeatherProviderSource.supportsAirQuality
+                                ? nil : Text("Air quality requires the Open Meteo provider.")) {
+                        Defaults.Toggle(key: .lockScreenWeatherShowsAQI) {
+                            Text("Show AQI widget")
+                        }
                     }
                     .disabled(!lockScreenWeatherProviderSource.supportsAirQuality)
                     .settingsHighlight(id: highlightID("Show AQI widget"))
@@ -4873,12 +4850,6 @@ struct LockScreenSettings: View {
                         .settingsHighlight(id: highlightID("Air quality scale"))
                     }
 
-                    if !lockScreenWeatherProviderSource.supportsAirQuality {
-                        Text("Air quality requires the Open Meteo provider.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
                     Defaults.Toggle(key: .lockScreenWeatherUsesGaugeTint) {
                         Text("Use colored gauges")
                     }
@@ -4887,7 +4858,7 @@ struct LockScreenSettings: View {
             } header: {
                 Text("Weather Widget")
             } footer: {
-                Text("Enable the weather capsule and configure its layout, provider, units, and optional battery/AQI indicators.")
+                SettingsFooter("Enable the weather capsule and configure its layout, provider, units, and optional battery/AQI indicators.")
             }
 
 
@@ -4924,7 +4895,7 @@ struct LockScreenSettings: View {
                 } header: {
                     Text("Battery Widget")
                 } footer: {
-                    Text("Enable the battery capsule and configure its layout.")
+                    SettingsFooter("Enable the battery capsule and configure its layout.")
                 }
             }
 
@@ -4936,20 +4907,22 @@ struct LockScreenSettings: View {
             } header: {
                 Text("Focus Widget")
             } footer: {
-                Text("Displays the current Focus state above the weather capsule whenever Focus detection is enabled.")
+                SettingsFooter("Displays the current Focus state above the weather capsule whenever Focus detection is enabled.")
             }
 
 
             LockScreenPositioningControls()
 
             Section {
-                Button("Copy Latest Crash Report") {
-                    copyLatestCrashReport()
+                SettingsActionRow {
+                    Button("Copy Latest Crash Report") {
+                        copyLatestCrashReport()
+                    }
                 }
             } header: {
                 Text("Diagnostics")
             } footer: {
-                Text("Collect the latest crash report to share with the developer when reporting lock screen or overlay issues.")
+                SettingsFooter("Collect the latest crash report to share with the developer when reporting lock screen or overlay issues.")
             }
         }
         .onAppear(perform: enforceLockScreenGlassConsistency)
@@ -4970,12 +4943,11 @@ extension LockScreenSettings {
     }
 
     private var blurSettingUnavailableRow: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 2) {
             Text("Enable media panel blur")
                 .foregroundStyle(.secondary)
             Text("Only available when Material is set to Frosted Glass.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .settingsDescriptionStyle()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -4990,14 +4962,11 @@ extension LockScreenSettings {
         preview: AnyView? = nil
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
+            LabeledContent {
+                variantSliderControl(value: value, current: currentValue, range: liquidVariantRange, title: title)
+            } label: {
                 Text(title)
-                Spacer()
-                Text("v\(currentValue)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
-            Slider(value: value, in: liquidVariantRange, step: 1)
 
             if let preview {
                 preview
@@ -5105,28 +5074,6 @@ private struct LockScreenPositioningControls: View {
                 }
             )
 
-            let musicWidthBinding = Binding<Double>(
-                get: { musicWidth },
-                set: { newValue in
-                    let clampedValue = clamp(newValue, within: musicWidthRange)
-                    if musicWidth != clampedValue {
-                        musicWidth = clampedValue
-                        propagateMusicWidthChange(animated: false)
-                    }
-                }
-            )
-
-            let timerWidthBinding = Binding<Double>(
-                get: { timerWidth },
-                set: { newValue in
-                    let clampedValue = clamp(newValue, within: timerWidthRange)
-                    if timerWidth != clampedValue {
-                        timerWidth = clampedValue
-                        propagateTimerWidthChange(animated: false)
-                    }
-                }
-            )
-
             LockScreenPositioningPreview(
                 weatherOffset: weatherBinding,
                 timerOffset: timerBinding,
@@ -5137,65 +5084,79 @@ private struct LockScreenPositioningControls: View {
             .frame(height: 260)
             .padding(.vertical, 8)
 
-            HStack(alignment: .top, spacing: 24) {
-                offsetColumn(
-                    title: String(localized: "Weather"),
-                    value: weatherOffset,
-                    resetTitle: String(localized: "Reset Weather"),
-                    resetAction: resetWeatherOffset
-                )
-
-                Divider()
-                    .frame(height: 64)
-
-                offsetColumn(
-                    title: String(localized: "Timer"),
-                    value: timerOffset,
-                    resetTitle: String(localized: "Reset Timer"),
-                    resetAction: resetTimerOffset
-                )
-
-                Divider()
-                    .frame(height: 64)
-
-                offsetColumn(
-                    title: String(localized: "Music"),
-                    value: musicOffset,
-                    resetTitle: String(localized: "Reset Music"),
-                    resetAction: resetMusicOffset
-                )
-
-                Spacer()
-            }
-
-            Divider()
-                .padding(.vertical, 8)
-
-            VStack(alignment: .leading, spacing: 16) {
-                widthSlider(
-                    title: String(localized: "Media Panel Width"),
-                    value: musicWidthBinding,
-                    range: musicWidthRange,
-                    resetTitle: String(localized: "Reset Media Width"),
-                    resetAction: resetMusicWidth,
-                    helpText: String(localized: "Shrinks the lock screen media panel while keeping the expanded view full width.")
-                )
-
-                widthSlider(
-                    title: String(localized: "Timer Widget Width"),
-                    value: timerWidthBinding,
-                    range: timerWidthRange,
-                    resetTitle: String(localized: "Reset Timer Width"),
-                    resetAction: resetTimerWidth,
-                    helpText: String(localized: "Adjusts the lock screen timer widget width without affecting button sizing.")
-                )
-            }
+            offsetRow(
+                title: String(localized: "Weather"),
+                value: weatherOffset,
+                resetTitle: String(localized: "Reset Weather"),
+                resetAction: resetWeatherOffset
+            )
+            offsetRow(
+                title: String(localized: "Timer"),
+                value: timerOffset,
+                resetTitle: String(localized: "Reset Timer"),
+                resetAction: resetTimerOffset
+            )
+            offsetRow(
+                title: String(localized: "Music"),
+                value: musicOffset,
+                resetTitle: String(localized: "Reset Music"),
+                resetAction: resetMusicOffset
+            )
         } header: {
             Text("Lock Screen Positioning")
         } footer: {
-            Text("Drag the previews to adjust vertical placement. Positive values lift the panel; negative values lower it. Use the width sliders below to narrow the media and timer widgets without exceeding their default size. Changes apply instantly while the widgets are visible.")
+            SettingsFooter("Drag the previews to adjust vertical placement. Positive values lift the panel; negative values lower it. Use the width sliders below to narrow the media and timer widgets without exceeding their default size. Changes apply instantly while the widgets are visible.")
                 .textCase(nil)
         }
+
+        Section {
+            widthRow(
+                title: String(localized: "Media Panel Width"),
+                value: musicWidthBinding,
+                range: musicWidthRange,
+                helpText: String(localized: "Shrinks the lock screen media panel while keeping the expanded view full width.")
+            )
+            widthRow(
+                title: String(localized: "Timer Widget Width"),
+                value: timerWidthBinding,
+                range: timerWidthRange,
+                helpText: String(localized: "Adjusts the lock screen timer widget width without affecting button sizing.")
+            )
+            SettingsActionRow {
+                Button(String(localized: "Reset Media Width"), action: resetMusicWidth)
+                    .disabled(musicWidth == Double(LockScreenMusicPanel.defaultCollapsedWidth))
+                Button(String(localized: "Reset Timer Width"), action: resetTimerWidth)
+                    .disabled(timerWidth == LockScreenTimerWidget.defaultWidth)
+            }
+        } header: {
+            Text("Widget Width")
+        }
+    }
+
+    private var musicWidthBinding: Binding<Double> {
+        Binding(
+            get: { musicWidth },
+            set: { newValue in
+                let clampedValue = clamp(newValue, within: musicWidthRange)
+                if musicWidth != clampedValue {
+                    musicWidth = clampedValue
+                    propagateMusicWidthChange(animated: false)
+                }
+            }
+        )
+    }
+
+    private var timerWidthBinding: Binding<Double> {
+        Binding(
+            get: { timerWidth },
+            set: { newValue in
+                let clampedValue = clamp(newValue, within: timerWidthRange)
+                if timerWidth != clampedValue {
+                    timerWidth = clampedValue
+                    propagateTimerWidthChange(animated: false)
+                }
+            }
+        )
     }
 
     private func clampOffset(_ value: Double) -> Double {
@@ -5261,56 +5222,37 @@ private struct LockScreenPositioningControls: View {
         }
     }
 
-    @ViewBuilder
-    private func offsetColumn(title: String, value: Double, resetTitle: String, resetAction: @escaping () -> Void) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("\(title) Offset")
-                .font(.subheadline.weight(.semibold))
-
-            Text("\(formattedPoints(value)) pt")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Button(resetTitle) {
-                resetAction()
+    /// One widget's vertical offset: its value and a Reset on the trailing side.
+    private func offsetRow(title: String, value: Double, resetTitle: String, resetAction: @escaping () -> Void) -> some View {
+        LabeledContent {
+            HStack(spacing: 8) {
+                Text("\(formattedPoints(value)) pt")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                Button(resetTitle, action: resetAction)
+                    .disabled(value == 0)
             }
-            .buttonStyle(.bordered)
+        } label: {
+            Text("\(title) Offset")
         }
     }
 
-    @ViewBuilder
-    private func widthSlider(
-        title: String,
-        value: Binding<Double>,
-        range: ClosedRange<Double>,
-        resetTitle: String,
-        resetAction: @escaping () -> Void,
-        helpText: String
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(title)
-                Spacer()
-                Text(formattedWidth(value.wrappedValue))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Slider(value: value, in: range)
-
-            HStack(alignment: .top) {
-                Button(resetTitle) {
-                    resetAction()
+    /// One widget's width: title and what it changes on the leading side, slider and value trailing.
+    private func widthRow(title: String, value: Binding<Double>, range: ClosedRange<Double>, helpText: String) -> some View {
+        LabeledContent {
+            HStack(spacing: 8) {
+                Slider(value: value, in: range) {
+                    Text(title)
                 }
-                .buttonStyle(.bordered)
-
-                Spacer()
-
-                Text(helpText)
-                    .font(.caption)
+                .labelsHidden()
+                Text(formattedWidth(value.wrappedValue))
+                    .monospacedDigit()
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
+                    .frame(minWidth: 52, alignment: .trailing)
             }
+            .frame(width: 200)
+        } label: {
+            SettingsRowLabel(verbatim: title, description: helpText)
         }
     }
 
@@ -5741,6 +5683,21 @@ func comingSoonTag() -> some View {
         .padding(.horizontal, 6)
         .background(Color(nsColor: .secondarySystemFill))
         .clipShape(.capsule)
+}
+
+/// A liquid-glass variant slider with its value ("v11") beside it, sized like the other slider rows.
+func variantSliderControl(value: Binding<Double>, current: Int, range: ClosedRange<Double>, title: String) -> some View {
+    HStack(spacing: 8) {
+        Slider(value: value, in: range, step: 1) {
+            Text(title)
+        }
+        .labelsHidden()
+        Text("v\(current)")
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+            .frame(minWidth: 32, alignment: .trailing)
+    }
+    .frame(width: 220)
 }
 
 func customBadge(text: String) -> some View {
