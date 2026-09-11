@@ -78,8 +78,11 @@ the pre-commit hook checks its markers too and `KannuTests/UsageScriptTests.swif
 `transcript_path` are computed after the priority merge and written by all three write paths
 (payload, the 2 s merge's preserved `ts`, the sticky-yellow rewrite of `existing`). They never
 change `state` or `ts` (entry 12). A turn starts only on a prompt event, or on a wake event when the
-file has no turn; work after a Stop without a new prompt reopens the same turn — keying a restart
-on "woken after a stop" made every background-task wake restart the displayed run time. The
+file has no turn; work after a Stop without a new prompt reopens the same turn, and (v40) a prompt
+that arrives while the request is still running joins it — keying a restart on "woken after a stop"
+made every background-task wake restart the displayed run time, and keying one on "a prompt" did
+the same, because Claude Code submits a background task's result as a `UserPromptSubmit`
+(measured live: a `sleep` finishing restarted the turn). The
 computation is wrapped in `try/except` with the carried turn as fallback: an uncaught error there
 would cost the light and the allow line. Two known holes: a payload over ~1 MiB never reaches
 Python (the `KANNU_INPUT` environment variable hits ARG_MAX), so that call is uncounted; and a

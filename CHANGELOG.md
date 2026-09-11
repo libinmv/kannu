@@ -4,6 +4,20 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-12 - Hook v40: a prompt that arrives mid-request joins it
+- **Developer label:** "the total run time of the agent has been about 2 hours now, but the recent chats show it as few mins"
+- **Agent label:** Follow-up 30, measured on this Mac after C1 shipped
+- **Changes:**
+  - Watching the live status file showed the turn restarting while the agent kept working: Claude
+    Code submits a background task's result as a `UserPromptSubmit` (a `sleep` finishing restarted
+    it, timed to the transcript's queue-operation record), and so does a follow-up the user types
+    while the agent runs.
+  - A prompt now starts a request only when the agent is not already working on one; a prompt that
+    arrives while the request is open joins it, keeping the start, the tool count and the offset.
+    A prompt to a stopped agent still starts a new request.
+  - Test: `testAPromptWhileTheRequestRunsJoinsIt`; three offset tests now stop the request before
+    the next prompt, as a user would. REGRESSIONS entry 1's v39 addendum records the measurement.
+
 ### 2026-09-12 - The ADR Sensor row says what it is; a folder row for tools installed elsewhere
 - **Developer label:** "adr sensor not installed showing, but can we give an install button or something as good ux"
 - **Agent label:** Follow-up 30, C7 — Kannu never installs software, so the row explains itself and hands over the command

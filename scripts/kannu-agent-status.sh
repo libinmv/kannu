@@ -1,6 +1,6 @@
 #!/bin/bash
 # Installed by Kannu: reports AI agent status for the notch traffic light.
-# KANNU_HOOK_SCRIPT_VERSION=39
+# KANNU_HOOK_SCRIPT_VERSION=40
 # Usage: kannu-agent-status.sh <state> <provider> [hook_event] [matcher_key]
 #        (hook JSON arrives on stdin)
 
@@ -918,10 +918,10 @@ def session_terminal(existing):
     return ("", 0, 0)
 
 # --- Turn metrics (v39) ----------------------------------------------------------------
-# A turn is one request: it starts when the user sends a prompt and ends at the Stop that
-# answers it. Work after that Stop without a new prompt -- a background task finishing, a stop
-# hook sending the agent back -- reopens the same turn, so its time still counts from the
-# prompt. Kannu shows how long the turn ran and how many tools it called, and for Claude adds
+# A turn is one request: it starts when a prompt reaches an agent that is not already working and
+# ends at the Stop that answers it. Work after that Stop without a new prompt -- a background task
+# finishing, a stop hook sending the agent back -- reopens the same turn, and a prompt that arrives
+# while the request is still running joins it, so the time still counts from the first prompt. Kannu shows how long the turn ran and how many tools it called, and for Claude adds
 # up the tokens the transcript gained after the size recorded at the start. Carried on every
 # write; never touches state or ts.
 TURN_KEYS = ("turn_started_ms", "turn_ended_ms", "turn_tool_calls", "turn_tool_ids", "turn_transcript_offset")
@@ -1022,7 +1022,11 @@ def next_turn(existing, now_ms):
         if "turn_ended_ms" in turn or previous not in TURN_PROMPT_EVENTS:
             turn = {}
         return turn, transcript
-    starts = hook_event in TURN_PROMPT_EVENTS or (hook_event in TURN_WAKE_EVENTS and not turn)
+    # A prompt while the request is still running joins it: the user typing a follow-up mid-run,
+    # and the host submitting a background task's result as a prompt (Claude Code does), are not new
+    # requests. Only a prompt to an agent that has stopped starts one.
+    open_turn = bool(turn) and "turn_ended_ms" not in turn
+    starts = (hook_event in TURN_PROMPT_EVENTS and not open_turn) or (hook_event in TURN_WAKE_EVENTS and not turn)
     if parent_id and turn and hook_event in TURN_WAKE_EVENTS and parent_turn_start() > turn["turn_started_ms"]:
         # A subagent resumed in a later request of its chat.
         starts = True

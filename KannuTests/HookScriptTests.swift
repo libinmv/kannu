@@ -973,6 +973,19 @@ final class HookScriptTests: XCTestCase {
         XCTAssertEqual(int(try turnEvent("PostToolUse", "t3", extra: ["tool_use_id": "c2"])["turn_tool_calls"]), 2)
     }
 
+    func testAPromptWhileTheRequestRunsJoinsIt() throws {
+        // Claude Code submits a background task's result as a prompt, and a user can type a
+        // follow-up mid-run; neither is a new request.
+        try turnEvent("UserPromptSubmit", "pj1")
+        let start = int(try turn("pj1")["turn_started_ms"])
+        try turnEvent("PostToolUse", "pj1", extra: ["tool_use_id": "c1"])
+        tick()
+        let joined = try turnEvent("UserPromptSubmit", "pj1")
+        XCTAssertEqual(int(joined["turn_started_ms"]), start, "still the same request")
+        XCTAssertEqual(int(joined["turn_tool_calls"]), 1, "its tool calls are kept")
+        XCTAssertNil(joined["turn_ended_ms"])
+    }
+
     func testANewPromptStartsANewTurn() throws {
         try turnEvent("UserPromptSubmit", "t4")
         let first = try XCTUnwrap(int(try turn("t4")["turn_started_ms"]))
@@ -1151,7 +1164,10 @@ final class HookScriptTests: XCTestCase {
         XCTAssertEqual(int(try turnEvent("Stop", "of1", state: "stopped", extra: ["transcript_path": path])["turn_transcript_offset"]), 100)
         XCTAssertEqual(int(try turnEvent("PreToolUse", "of1", state: "executing", extra: ["transcript_path": path])["turn_transcript_offset"]),
                        100, "reopened, not restarted")
-        XCTAssertEqual(int(try turnEvent("UserPromptSubmit", "of1", extra: ["transcript_path": path])["turn_transcript_offset"]), 150)
+        tick()
+        try turnEvent("Stop", "of1", state: "stopped", extra: ["transcript_path": path])
+        XCTAssertEqual(int(try turnEvent("UserPromptSubmit", "of1", extra: ["transcript_path": path])["turn_transcript_offset"]), 150,
+                       "the next request starts where the transcript stands")
     }
 
     func testAMissingTranscriptIsOffsetZeroOnlyForAChatThatJustStarted() throws {
@@ -1169,6 +1185,7 @@ final class HookScriptTests: XCTestCase {
         let mid = try turnEvent("PostToolUse", "md1", extra: ["transcript_path": path])
         XCTAssertEqual(mid["transcript_path"] as? String, path)
         XCTAssertNil(mid["turn_transcript_offset"])
+        try turnEvent("Stop", "md1", state: "stopped", extra: ["transcript_path": path])
         XCTAssertEqual(int(try turnEvent("UserPromptSubmit", "md1", extra: ["transcript_path": path])["turn_transcript_offset"]), 70)
     }
 
@@ -1208,6 +1225,7 @@ final class HookScriptTests: XCTestCase {
         XCTAssertNil(sub["transcript_path"])
         XCTAssertEqual(int(try turn("sp1")["turn_tool_calls"]), 0, "the parent's own file counts only its own calls")
         tick()
+        try turnEvent("Stop", "sp1", state: "stopped")
         try turnEvent("UserPromptSubmit", "sp1")
         let secondStart = try XCTUnwrap(int(try turn("sp1")["turn_started_ms"]))
         tick()
@@ -1223,6 +1241,7 @@ final class HookScriptTests: XCTestCase {
         try XCTSkipUnless(FileManager.default.isExecutableFile(atPath: "/usr/bin/python3"), "no system python3")
         turnPath = "/usr/bin:/bin"
         try testAPromptStartsATurnAtTheTranscriptsSize()
+        try testAPromptWhileTheRequestRunsJoinsIt()
         try testTheFirstStopEndsTheTurnAndOnlyAStopHookContinuationMovesIt()
         try testTheIdleNoticeKeepsTheEndedTurnAndLaterWorkReopensIt()
         try testANewPromptStartsANewTurn()
