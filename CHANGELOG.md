@@ -4,6 +4,32 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - Notice new MCP servers; Discovery scans follow server changes
+- **Developer label:** Local security checks (new MCP servers)
+- **Agent label:** Watch agents' MCP settings for added servers and fix the dropped config-change scan
+- **Changes:**
+  - New `MCPServerWatch` (logic target): the settings files of Claude Code (user and per-project
+    scopes in `~/.claude.json`), Claude Desktop, Cursor, VS Code (`.json5Allowed`), Codex
+    (`[mcp_servers.<name>]` headers, sub-tables folded), Gemini CLI, Qwen Code and opencode, plus
+    project files in the folders sessions run in — never inside Desktop, Documents, Downloads, iCloud
+    or cloud storage, or other volumes, so no permission prompt. Trust on first use: the first read of
+    a file learns silently; a missing file counts as "no servers", an unreadable one keeps what was
+    known. Additions become medium findings whose summary (pushed) has the name and app only; a
+    "Runs:" line keeps lowercase package-like arguments or a URL's scheme and host, never tokens,
+    env values or URL paths. Removed servers drop their finding; added again is a new finding.
+  - Reads happen on a utility queue once a minute and only re-parse files whose date or size moved.
+  - Bug fix: a config change seen inside the five-minute debounce moved the baseline and was then
+    forgotten, so the "config changed" Discovery scan never ran. `ADRScanTrigger` keeps it pending
+    until the window passes; any scan clears it. It compares declared servers, not modification
+    times — Claude Code rewrites `~/.claude.json` constantly, which would otherwise mean a scan every
+    five minutes.
+  - Settings › Security findings: "Notice new MCP servers" (on; turning it off forgets the baseline
+    and the findings); footer lists the check. Defaults: `watchMCPServers`, `mcpServerBaseline`,
+    `mcpServerAdditions`.
+  - Tests: `MCPServerWatchTests` (every format, JSONC, CRLF TOML, secret-free "runs", protected
+    roots, first look silent, removal and re-add, missing vs unreadable, cache, inventory, the
+    trigger keeping and clearing a change).
+
 ### 2026-09-11 - Hook v35: secrets, sensitive files and the agent's terminal
 - **Developer label:** Local security checks + tab jump for every terminal agent
 - **Agent label:** Add local secret and sensitive-file checks and a per-session terminal locator to the hook

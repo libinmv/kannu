@@ -46,6 +46,8 @@ struct ADRScanRecord: Codable, Equatable, Defaults.Serializable {
 extension SecurityFindingSnooze: Defaults.Serializable {}
 extension ADRSessionAnalysis: Defaults.Serializable {}
 extension HookSightingRecords: Defaults.Serializable {}
+extension MCPServerWatch.Baseline: Defaults.Serializable {}
+extension MCPServerWatch.Addition: Defaults.Serializable {}
 
 /// Owns the findings the user sees, their acknowledgements and snoozes, and the watch on the
 /// snapshot directory. Watch mode is the whole of phase 0: whoever runs `adr-discovery` (a
@@ -90,8 +92,15 @@ final class SecurityFindingsStore: ObservableObject {
     /// When Kannu's own scan started, so the snapshot it writes is recorded as Kannu's even when
     /// the directory watcher ingests it first.
     private var kannuScanStartedAt: Date?
-    /// Modification times of the MCP configs each agent reads, so a hand edit triggers a scan.
-    private var configModificationDates: [String: Date] = [:]
+    /// Daily scans, and sooner ones when an agent's MCP servers changed (Kannu-run scans only).
+    private var scanTrigger = ADRScanTrigger(interval: automaticScanInterval, debounce: configChangeScanDebounce)
+    /// Kannu's own "new MCP server" check: what each settings file declared, and what appeared.
+    private var mcpBaseline = MCPServerWatch.Baseline()
+    private var mcpAdditions: [MCPServerWatch.Addition] = []
+    private var mcpFindings: [AgentSecurityFinding] = []
+    private var mcpReadCache: [String: MCPServerWatch.CachedRead] = [:]
+    private var mcpRefreshInFlight = false
+    static let mcpAdditionCap = 50
 
     /// Kannu-run scans: at most daily on their own, sooner when a config changed.
     static let automaticScanInterval: TimeInterval = 24 * 3600
@@ -107,6 +116,9 @@ final class SecurityFindingsStore: ObservableObject {
         detectionFindings = analyses.compactMap { $0.finding() }
         sightingRecords = Defaults[.hookSightingRecords]
         sightingFindings = sightingRecords.findings
+        mcpBaseline = Defaults[.mcpServerBaseline]
+        mcpAdditions = Defaults[.mcpServerAdditions]
+        mcpFindings = mcpAdditions.map { $0.finding(home: Self.homePath) }
     }
 
     func analysis(for conversationID: String) -> ADRSessionAnalysis? {
@@ -118,16 +130,7 @@ final class SecurityFindingsStore: ObservableObject {
     }
 
     /// The MCP configuration files whose edits should prompt a fresh scan. Read for mtime only.
-    static var watchedConfigFiles: [URL] {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return [
-            home.appendingPathComponent(".claude.json"),
-            home.appendingPathComponent(".claude/mcp.json"),
-            home.appendingPathComponent(".cursor/mcp.json"),
-            home.appendingPathComponent(".codex/config.toml"),
-            home.appendingPathComponent("Library/Application Support/Claude/claude_desktop_config.json")
-        ]
-    }
+    static var homePath: String { FileManager.default.homeDirectoryForCurrentUser.path }
 
     static var policyFileURL: URL? {
         let raw = Defaults[.adrPolicyFile].trimmingCharacters(in: .whitespacesAndNewlines)
@@ -172,10 +175,18 @@ final class SecurityFindingsStore: ObservableObject {
         syncLocalCheckSettings()
         // Know whether the tool is there before the first cadence tick; cheap and bounded.
         ADRConnection.shared.checkAgain()
-        configModificationDates = Self.currentConfigModificationDates()
+        Defaults.publisher(.watchMCPServers, options: [])
+            .sink { [weak self] change in
+                Task { @MainActor in
+                    if change.newValue { self?.cadenceTick() } else { self?.forgetMCPServers() }
+                }
+            }
+            .store(in: &cancellables)
+        // The first tick only learns what each file declares (and seeds the scan trigger).
+        cadenceTick()
         cadenceTimer?.invalidate()
         cadenceTimer = Timer.scheduledTimer(withTimeInterval: Self.cadenceTickInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.evaluateAutomaticScan() }
+            Task { @MainActor in self?.cadenceTick() }
         }
         // Saved hidden-text sightings must show after a relaunch even when no ADR snapshot is
         // ever ingested and the native findings never change.
@@ -227,6 +238,7 @@ final class SecurityFindingsStore: ObservableObject {
     /// invocation is `ADRDiscoveryCommand`, pinned by tests — never assembled here.
     func runScanNow(reason: String = "manual") {
         guard !isScanning else { return }
+        scanTrigger.scanStarted()
         guard let executable = ADRConnection.shared.discovery.executable else {
             lastScanError = String(localized: "ADR Discovery is not connected.")
             return
@@ -296,31 +308,81 @@ final class SecurityFindingsStore: ObservableObject {
         }
     }
 
-    /// Once a minute: a daily scan, or a sooner one when an MCP config changed on disk.
-    private func evaluateAutomaticScan() {
+    /// Once a minute: read the agents' MCP settings (only files that changed are parsed, off the
+    /// main thread), then decide on a Kannu-run scan — daily, or sooner when servers changed.
+    private func cadenceTick() {
+        refreshMCPServers { [weak self] inventory in self?.evaluateAutomaticScan(inventory: inventory) }
+    }
+
+    private func evaluateAutomaticScan(inventory: [String: [String]]?) {
         guard Defaults[.adrRunScansEnabled], ADRConnection.shared.isConnected, !isScanning else { return }
-        let now = Date()
-        let sinceLast = lastKannuScanAt.map { now.timeIntervalSince($0) } ?? .infinity
-        if sinceLast >= Self.automaticScanInterval {
-            runScanNow(reason: "scheduled")
-            return
-        }
-        let current = Self.currentConfigModificationDates()
-        let changed = current != configModificationDates
-        configModificationDates = current
-        if changed, sinceLast >= Self.configChangeScanDebounce {
-            runScanNow(reason: "config changed")
+        if let reason = scanTrigger.evaluate(now: Date(), lastScan: lastKannuScanAt, inventory: inventory) {
+            runScanNow(reason: reason.rawValue)
         }
     }
 
-    private static func currentConfigModificationDates() -> [String: Date] {
-        var out: [String: Date] = [:]
-        for url in watchedConfigFiles {
-            if let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate {
-                out[url.path] = date
+    // MARK: - New MCP servers (Kannu's own check)
+
+    /// Reads when either the watch or Kannu-run scans need it. Files are 60 KB–1 MB and rewritten
+    /// often, so the read happens on a utility queue (REGRESSIONS entry 11) and only for files
+    /// whose modification date or size moved.
+    private func refreshMCPServers(then completion: @escaping @MainActor ([String: [String]]?) -> Void) {
+        let watching = Defaults[.watchMCPServers]
+        let forScans = Defaults[.adrRunScansEnabled] && ADRConnection.shared.isConnected
+        guard watching || forScans, !mcpRefreshInFlight else {
+            completion(nil)
+            return
+        }
+        mcpRefreshInFlight = true
+        let home = Self.homePath
+        let roots = watching ? MCPServerWatch.projectRoots(CursorAgentStatusMonitor.shared.sessions.map(\.cwd), home: home) : []
+        let locations = MCPServerWatch.globalLocations(home: home) + roots.flatMap(MCPServerWatch.projectLocations(root:))
+        let cache = mcpReadCache
+        DispatchQueue.global(qos: .utility).async {
+            let result = MCPServerWatch.read(locations, cache: cache)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self.mcpRefreshInFlight = false
+                    self.mcpReadCache = result.cache
+                    if watching, Defaults[.watchMCPServers] {
+                        self.applyMCPReads(result.reads, locations: locations)
+                    }
+                    completion(MCPServerWatch.inventory(result.reads, home: home))
+                }
             }
         }
-        return out
+    }
+
+    private func applyMCPReads(_ reads: [String: [MCPServerWatch.Server]], locations: [MCPServerWatch.Location]) {
+        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+        let (baseline, additions) = MCPServerWatch.compare(baseline: mcpBaseline, reads: reads, locations: locations, nowMs: nowMs)
+        if baseline != mcpBaseline {
+            mcpBaseline = baseline
+            Defaults[.mcpServerBaseline] = baseline
+        }
+        if !additions.isEmpty {
+            Self.logger.info("new MCP servers: \(additions.count, privacy: .public)")
+        }
+        let updated = Array(MCPServerWatch.pruning(mcpAdditions + additions, reads: reads).suffix(Self.mcpAdditionCap))
+        guard updated != mcpAdditions else { return }
+        mcpAdditions = updated
+        Defaults[.mcpServerAdditions] = updated
+        mcpFindings = updated.map { $0.finding(home: Self.homePath) }
+        publishFindings()
+    }
+
+    /// Turning the watch off forgets everything, so turning it back on learns afresh instead of
+    /// reporting whatever changed in between.
+    private func forgetMCPServers() {
+        mcpBaseline = MCPServerWatch.Baseline()
+        Defaults[.mcpServerBaseline] = mcpBaseline
+        mcpAdditions = []
+        Defaults[.mcpServerAdditions] = []
+        mcpReadCache = [:]
+        if !mcpFindings.isEmpty {
+            mcpFindings = []
+            publishFindings()
+        }
     }
 
     // MARK: - Native findings
@@ -381,7 +443,7 @@ final class SecurityFindingsStore: ObservableObject {
     }
 
     private func publishFindings() {
-        let combined = discoveryFindings + nativeFindings + detectionFindings + sightingFindings
+        let combined = discoveryFindings + nativeFindings + detectionFindings + sightingFindings + mcpFindings
         if combined != findings { findings = combined }
     }
 

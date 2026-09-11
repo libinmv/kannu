@@ -62,3 +62,48 @@ enum ADRDiscoveryCommand {
         exitStatus == exitOK || exitStatus == exitPartial
     }
 }
+
+/// When Kannu runs its own Discovery scan: daily, or sooner after the MCP servers an agent's
+/// settings declare changed — at most once per `debounce`. A change seen inside the window is
+/// kept until the window has passed; it used to be dropped (the baseline moved on, the scan never
+/// came). Compares server sets, not modification times: Claude Code rewrites `~/.claude.json` for
+/// many reasons that are not MCP servers.
+struct ADRScanTrigger: Equatable {
+    enum Reason: String, Equatable {
+        case scheduled
+        case configChanged = "config changed"
+    }
+
+    let interval: TimeInterval
+    let debounce: TimeInterval
+    private(set) var baseline: [String: [String]]?
+    private(set) var pendingChange = false
+
+    init(interval: TimeInterval, debounce: TimeInterval) {
+        self.interval = interval
+        self.debounce = debounce
+    }
+
+    /// `inventory` nil: the settings were not read this time — nothing learned, nothing lost.
+    mutating func evaluate(now: Date, lastScan: Date?, inventory: [String: [String]]?) -> Reason? {
+        if let inventory {
+            if let baseline, baseline != inventory { pendingChange = true }
+            baseline = inventory
+        }
+        let since = lastScan.map { now.timeIntervalSince($0) } ?? .infinity
+        if since >= interval {
+            pendingChange = false
+            return .scheduled
+        }
+        if pendingChange, since >= debounce {
+            pendingChange = false
+            return .configChanged
+        }
+        return nil
+    }
+
+    /// Any scan covers a pending change.
+    mutating func scanStarted() {
+        pendingChange = false
+    }
+}

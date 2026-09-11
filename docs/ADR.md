@@ -91,6 +91,15 @@ Turn the toggle off if something else already schedules Discovery — Kannu then
   Codex `config.toml`, Kannu's own `~/.kannu`). Reading a startup file or an agent's settings is
   ordinary and not reported. Paths come from file tools and from parsing shell commands; code that
   opens a file from inside `python -c` is not seen.
+- **New MCP servers (Kannu's own, on by default, local):** once a minute Kannu reads the MCP
+  servers declared in Claude Code (`~/.claude.json`, user and local scopes), Claude Desktop, Cursor,
+  VS Code, Codex, Gemini CLI, Qwen Code and opencode settings, plus the project files (`.mcp.json`,
+  `.cursor/mcp.json`, `.vscode/mcp.json`…) of the folders your sessions run in, skipping Desktop,
+  Documents, Downloads and cloud folders so macOS never prompts. The first look only learns what is
+  there; a server that appears later is a medium finding ("New MCP server: github"), with what it
+  runs (`npx @modelcontextprotocol/server-github`, or a URL cut to its host) kept in Kannu. Env
+  values, headers and URL paths are never read into a finding. Kannu-run Discovery scans use the
+  same reads: a scan runs when the declared servers change, not whenever a settings file is touched.
 
 ## 5. Run it on your own schedule (optional)
 

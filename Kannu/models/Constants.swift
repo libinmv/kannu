@@ -1265,6 +1265,10 @@ extension Defaults.Keys {
     // untouched — so on, like hidden-text detection.
     static let detectSecrets = Key<Bool>("detectSecrets", default: true)
     static let detectSensitivePaths = Key<Bool>("detectSensitivePaths", default: true)
+    // Kannu's "new MCP server" check: local reads of agents' MCP settings, nothing sent.
+    static let watchMCPServers = Key<Bool>("watchMCPServers", default: true)
+    static let mcpServerBaseline = Key<MCPServerWatch.Baseline>("mcpServerBaseline", default: MCPServerWatch.Baseline())
+    static let mcpServerAdditions = Key<[MCPServerWatch.Addition]>("mcpServerAdditions", default: [])
     /// Sightings from the hook's local checks, kept past their session until acknowledged.
     static let hookSightingRecords = Key<HookSightingRecords>("hookSightingRecords", default: HookSightingRecords())
 
