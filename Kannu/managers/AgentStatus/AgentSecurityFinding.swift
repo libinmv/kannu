@@ -194,6 +194,12 @@ enum SecurityFindingPriority {
         let pendingHighCount: Int
     }
 
+    /// The earliest snooze that ends after `now`: when the visible findings next change by
+    /// themselves. The store wakes once at that moment instead of re-ranking on a timer.
+    static func nextSnoozeExpiry(_ snoozes: [SecurityFindingSnooze], after now: Date) -> Date? {
+        snoozes.map(\.until).filter { $0 > now }.min()
+    }
+
     static func rank(
         _ findings: [AgentSecurityFinding],
         acknowledged: Set<String>,

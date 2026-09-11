@@ -4,6 +4,22 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - No periodic timers behind the traffic light
+- **Developer label:** "how can we optimize that" (the notch's CPU while an agent works)
+- **Agent label:** Replace the notch's 1 Hz timers with one-shot wakes at the exact deadline
+- **Changes:**
+  - New pure rules in `AgentTrafficLightAttention` (logic target): the red pulse lasts exactly
+    4 s after a run ends, the five-second pill 5 s, the open panel's red blink 5 s — each with a
+    "next change" date. `AgentTrafficLightIndicator` and `AgentTrafficLightLiveActivity` drop their
+    `TimelineView(.periodic(by: 1))` wrappers (which redrew them every second for the whole run and
+    re-ranked all findings each tick) and instead wake once, with `.task(id: deadline)`, at the
+    moment a cue ends. The red window now ends at exactly 4 s instead of anywhere in 4–5 s.
+  - `SecurityFindingsStore` wakes once when the next snooze ends (`snoozes` didSet arms it; only
+    expired snoozes are dropped, never by finding id) — the removed tick had been what brought a
+    snoozed finding back. Pure `SecurityFindingPriority.nextSnoozeExpiry`.
+  - Tests: red pulse ends at 4 s with one wake, green/yellow always, inactive never, five-second
+    pill only in its mode (and no wake when the mode is chosen late), blink 5 s, next snooze.
+
 ### 2026-09-11 - A DEBUG-only way to see Settings without a screen
 - **Developer label:** "the settings should be enginered like apple does settings … while making any change make sure no regression happens"
 - **Agent label:** Add a debug snapshot harness that renders Settings tabs and boards to PNG

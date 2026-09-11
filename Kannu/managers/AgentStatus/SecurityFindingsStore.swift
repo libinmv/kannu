@@ -65,7 +65,12 @@ final class SecurityFindingsStore: ObservableObject {
     /// Why the newest snapshot could not be read, if it could not.
     @Published private(set) var snapshotError: String?
     @Published private(set) var acknowledgedIDs: Set<String>
-    @Published private(set) var snoozes: [SecurityFindingSnooze]
+    @Published private(set) var snoozes: [SecurityFindingSnooze] {
+        didSet { armSnoozeExpiry() }
+    }
+    /// Wakes once when the next snooze ends, so a snoozed finding comes back on time without any
+    /// view re-ranking on a timer.
+    private var snoozeExpiryTask: Task<Void, Never>?
     /// A scan Kannu started is in flight.
     @Published private(set) var isScanning = false
     @Published private(set) var lastKannuScanAt: Date?
@@ -120,6 +125,25 @@ final class SecurityFindingsStore: ObservableObject {
         mcpBaseline = Defaults[.mcpServerBaseline]
         mcpAdditions = Defaults[.mcpServerAdditions]
         mcpFindings = mcpAdditions.map { $0.finding(home: Self.homePath) }
+        armSnoozeExpiry()
+    }
+
+    private func armSnoozeExpiry() {
+        snoozeExpiryTask?.cancel()
+        snoozeExpiryTask = nil
+        guard let next = SecurityFindingPriority.nextSnoozeExpiry(snoozes, after: Date()) else { return }
+        snoozeExpiryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(max(0, next.timeIntervalSinceNow) + 0.5))
+            guard !Task.isCancelled, let self else { return }
+            // Only expired snoozes go: pruning by finding id here could drop valid ones while the
+            // findings are still loading.
+            let now = Date()
+            let live = self.snoozes.filter { $0.until > now }
+            if live != self.snoozes {
+                self.snoozes = live
+                Defaults[.adrFindingSnoozes] = live
+            }
+        }
     }
 
     func analysis(for conversationID: String) -> ADRSessionAnalysis? {

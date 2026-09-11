@@ -35,3 +35,48 @@ enum TrafficLightPulseSpec {
     static let minimumFrameRate: Float = 15
     static let preferredFrameRate: Float = 30
 }
+
+/// When the traffic light's attention cues start and stop. Each rule has a "next change" so a
+/// view can wake once at the exact moment instead of re-evaluating on a periodic timer (two 1 Hz
+/// timers and an unbounded 10 Hz one used to do that).
+enum AgentTrafficLightAttention {
+    /// A finished run's red dot breathes this long, then holds steady.
+    static let redPulseSeconds: TimeInterval = 4
+    /// "For 5 seconds, then glyph": the closed-notch pill's lifetime.
+    static let fiveSecondPillSeconds: TimeInterval = 5
+    /// The open panel's red badge blinks this long after a run ends.
+    static let openPanelRedBlinkSeconds: TimeInterval = 5
+
+    /// Yellow and green breathe while lit; red only within `redPulseSeconds` of the completion.
+    static func pulses(yellowOrGreen: Bool, red: Bool, completedAt: Date?, now: Date) -> Bool {
+        if red { return completedAt.map { now.timeIntervalSince($0) < redPulseSeconds } ?? false }
+        return yellowOrGreen
+    }
+
+    /// When `pulses` next changes by itself — the end of the red window — or nil.
+    static func pulseChange(red: Bool, completedAt: Date?, now: Date) -> Date? {
+        guard red, let completedAt else { return nil }
+        let end = completedAt.addingTimeInterval(redPulseSeconds)
+        return end > now ? end : nil
+    }
+
+    static func pillVisible(fiveSecondMode: Bool, firstSeen: Date, now: Date) -> Bool {
+        !fiveSecondMode || now.timeIntervalSince(firstSeen) < fiveSecondPillSeconds
+    }
+
+    static func pillChange(fiveSecondMode: Bool, firstSeen: Date, now: Date) -> Date? {
+        guard fiveSecondMode else { return nil }
+        let end = firstSeen.addingTimeInterval(fiveSecondPillSeconds)
+        return end > now ? end : nil
+    }
+
+    static func blinks(startedAt: Date?, now: Date) -> Bool {
+        startedAt.map { now.timeIntervalSince($0) < openPanelRedBlinkSeconds } ?? false
+    }
+
+    static func blinkChange(startedAt: Date?, now: Date) -> Date? {
+        guard let startedAt else { return nil }
+        let end = startedAt.addingTimeInterval(openPanelRedBlinkSeconds)
+        return end > now ? end : nil
+    }
+}
