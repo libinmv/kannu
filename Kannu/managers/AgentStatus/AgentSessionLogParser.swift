@@ -128,6 +128,8 @@ enum AgentSessionLogParser {
     }
 
     static func displayChatName(from path: URL, provider: AgentSessionLogProvider) -> String? {
+        // A quiet session whose title is already known costs a stat, not a 32 KB read.
+        if provider == .claude, let title = freshCachedClaudeTitle(at: path) { return title }
         guard let text = readLeadingLines(at: path) else { return nil }
         let lines = text.split(separator: "\n", omittingEmptySubsequences: true)
 
@@ -152,6 +154,23 @@ enum AgentSessionLogParser {
     }
 
     private static var titleCache: [String: (mtime: Date, size: Int, title: String?)] = [:]
+    /// The newest title a tail window found per transcript. A long turn can push the title record
+    /// past the last window (1 MiB) — seen on an 89 MB session — and the name then fell back to an
+    /// older title or the first prompt; it now keeps the last one found instead.
+    private static var lastTailTitleByPath: [String: String] = [:]
+
+    private static func freshCachedClaudeTitle(at url: URL) -> String? {
+        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        guard let mtime = values?.contentModificationDate, let size = values?.fileSize,
+              let cached = titleCache[url.path], cached.mtime == mtime, cached.size == size else { return nil }
+        return cached.title
+    }
+
+    /// Tail first (the newest copy), then the last title a tail showed, then the head (a session too
+    /// short to reach the tail window). Pure so the precedence is testable.
+    static func resolvedClaudeTitle(tail: String?, lastKnownTail: String?, head: String?) -> String? {
+        tail ?? lastKnownTail ?? head
+    }
 
     /// Title records are rewritten each turn, but a turn's last records are often large tool
     /// results, so the newest copy can sit hundreds of KB before EOF. Escalate through the same
@@ -173,9 +192,12 @@ enum AgentSessionLogParser {
             }
             if let size = values?.fileSize, limit >= size { break }
         }
-        // The tail holds the newest copy; the head only serves a session too short to have
-        // reached the tail window at all.
-        let title = tailTitle ?? claudeTitle(fromRecordText: leadingText)
+        if let tailTitle {
+            if lastTailTitleByPath.count > 4 * maxSessionsPerScan { lastTailTitleByPath.removeAll() }
+            lastTailTitleByPath[url.path] = tailTitle
+        }
+        let title = resolvedClaudeTitle(tail: tailTitle, lastKnownTail: lastTailTitleByPath[url.path],
+                                        head: tailTitle == nil ? claudeTitle(fromRecordText: leadingText) : nil)
 
         if let mtime = values?.contentModificationDate, let size = values?.fileSize {
             if titleCache.count > 2 * maxSessionsPerScan { titleCache.removeAll() }
@@ -191,7 +213,9 @@ enum AgentSessionLogParser {
         var customTitle: String?
         var aiTitle: String?
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
-            guard let data = line.data(using: .utf8),
+            // Both record types contain "-title"; skip parsing the megabytes of other records.
+            guard line.contains("-title"),
+                  let data = line.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let type = json["type"] as? String else { continue }
             switch type {

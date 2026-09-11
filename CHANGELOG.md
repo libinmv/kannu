@@ -4,6 +4,24 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - Claude chat names hold on very long transcripts, and cost less to read
+- **Developer label:** "did a regression happen in chat names for claude, it shows untitled chat"
+- **Agent label:** Keep the last tail-found title, skip non-title records, skip the head when cached
+- **Changes:**
+  - Not a regression, but a weakness found while checking: titles come from tail windows of at most
+    1 MiB, and on a very long transcript (89 MB here) a long turn of big tool results can push the
+    newest title record past them; the name then fell back to an older title or the first prompt.
+    `AgentSessionLogParser` now keeps the last title a tail window found per transcript and uses it
+    before the head (`resolvedClaudeTitle(tail:lastKnownTail:head:)`, pure). A newer title record
+    still wins as soon as a window sees it.
+  - `claudeTitle(fromRecordText:)` skips lines without "-title" before JSON-parsing them — same
+    result, far less work on megabyte tails.
+  - `displayChatName` answers from the (mtime, size) title cache before reading a transcript's first
+    32 KB, so a quiet session with a known title costs a stat.
+  - Tests: the title survives 1.2 MB of records written after it (and a mutation that removes the
+    sticky title makes that test fail), a newer title replaces it, precedence, and a "-title" in
+    prose does not confuse the prefilter.
+
 ### 2026-09-11 - The open panel's red blink stops at 5 s; icons resolved once
 - **Developer label:** "how can we optimize that" (the notch's CPU while an agent works)
 - **Agent label:** Bound the 10 Hz red blink, honour Reduce Motion, cache provider icons

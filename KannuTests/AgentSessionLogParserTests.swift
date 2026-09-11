@@ -239,4 +239,56 @@ final class AgentSessionLogParserTests: XCTestCase {
         XCTAssertEqual(result.state, .toolInFlight)
         XCTAssertNil(result.runError)
     }
+
+    // MARK: - Titles on very long transcripts
+
+    private func transcript(_ lines: [String]) throws -> URL {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("kannu-title-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("\(UUID().uuidString).jsonl")
+        try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: url)
+        addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
+        return url
+    }
+
+    private func append(_ lines: [String], to url: URL) throws {
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.seekToEnd()
+        handle.write(Data((lines.joined(separator: "\n") + "\n").utf8))
+        try handle.close()
+    }
+
+    /// ~1.1 MB of ordinary records with no title in them.
+    private var padding: [String] {
+        let text = String(repeating: "x", count: 900)
+        return (0..<1_300).map { _ in #"{"type":"assistant","message":{"content":[{"type":"text","text":""# + text + #""}]}}"# }
+    }
+
+    func testTheTitleSticksWhenALongTurnPushesItPastTheTailWindows() throws {
+        let prompt = #"{"type":"user","message":{"role":"user","content":"Fix the parser please"}}"#
+        let early = (0..<80).map { _ in #"{"type":"assistant","message":{"content":[{"type":"text","text":""# + String(repeating: "y", count: 900) + #""}]}}"# }
+        let url = try transcript([prompt] + early + [#"{"type":"custom-title","customTitle":"Parser rewrite"}"#])
+        // A fresh URL per read, as each rescan has: URL objects cache file attributes until the
+        // run loop turns, which a synchronous test never does.
+        func name() -> String? { AgentSessionLogParser.displayChatName(from: URL(fileURLWithPath: url.path), provider: .claude) }
+        XCTAssertEqual(name(), "Parser rewrite")
+        try append(padding, to: url)
+        XCTAssertEqual(name(), "Parser rewrite", "the last title found, not the first prompt")
+        try append([#"{"type":"custom-title","customTitle":"Renamed chat"}"#], to: url)
+        XCTAssertEqual(name(), "Renamed chat")
+    }
+
+    func testResolvedTitlePrecedence() {
+        XCTAssertEqual(AgentSessionLogParser.resolvedClaudeTitle(tail: "T", lastKnownTail: "L", head: "H"), "T")
+        XCTAssertEqual(AgentSessionLogParser.resolvedClaudeTitle(tail: nil, lastKnownTail: "L", head: "H"), "L")
+        XCTAssertEqual(AgentSessionLogParser.resolvedClaudeTitle(tail: nil, lastKnownTail: nil, head: "H"), "H")
+        XCTAssertNil(AgentSessionLogParser.resolvedClaudeTitle(tail: nil, lastKnownTail: nil, head: nil))
+    }
+
+    func testTitleLinesAreStillFoundAmongOtherRecords() {
+        let text = [#"{"type":"assistant","message":{"content":"the word -title in prose"}}"#,
+                    #"{"type":"ai-title","aiTitle":"Model name"}"#,
+                    #"{"type":"user","message":{"content":"hello"}}"#].joined(separator: "\n")
+        XCTAssertEqual(AgentSessionLogParser.claudeTitle(fromRecordText: text), "Model name")
+    }
 }
