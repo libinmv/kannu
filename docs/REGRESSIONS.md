@@ -442,6 +442,16 @@ Cursor titles) are remembered against (mtime, size), like the title and tail cac
 `AgentSessionLogParserTests.testAssistantSnippetsFollowTheFileWhenItChanges` (verified to fail
 when the cache ignores a changed file).
 
+**2026-09-12 addendum — turn tokens.** A Claude request's tokens are read from its transcripts
+(the chat's own from the size hook v39 recorded at the turn's start, plus every subagent
+transcript), which run to 175 MB. `ClaudeTurnTokenReader` does all of it on one serial utility
+queue (`ClaudeTurnTokenFollower`); the monitor's rescan only builds the requests. The totals live in
+the follower's own `@Published` map, never on the sessions, so they re-render only the metrics
+view, not the notch, and never bump the reveal pulse (entry 10). Reads stay inside the real path
+of `~/.claude/projects` (symlinks resolved, `O_NOFOLLOW`), so no status file can point Kannu at a
+protected folder. Guards: `ClaudeTurnTokensTests` (symlinks and outside paths refused, catch-up
+never publishes a partial total, copied history outside the time window never counts).
+
 ## 13. A live Claude session is never resumed
 
 **Rule:** `claude://resume?session=<id>` imports a transcript into Claude Desktop and starts a new

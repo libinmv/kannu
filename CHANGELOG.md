@@ -4,6 +4,28 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-12 - Kannu adds up a Claude request's tokens from its transcripts, off the main actor
+- **Developer label:** "and also maybe the no of tokens" (picked: in and out, where in includes cached context)
+- **Agent label:** Follow-up 30, C3 — token totals per chat card, read on a utility queue and published on their own
+- **Changes:**
+  - `UsageRecord` and the line parser moved from `JSONLUsageParser` into `ClaudeUsageLine`
+    (logic target); Codex's shape (top-level usage, `request_id`) is unchanged and tested.
+  - New `ClaudeTurnTokens.swift` (logic target): `ClaudeTurnTokenRequest` (visible Claude cards
+    whose turn names a followable transcript and an offset), `ClaudeTranscriptTokenAccumulator`
+    (reads forward from the offset in chunks of at most 4 MiB; counts only top-level assistant
+    records, once per message id + request id; skips anything more than a minute older than the
+    turn, so history a resume or fork copies into the file never counts; a replaced or shrunk file
+    is read again from the start under that window; a line over 8 MiB is skipped) and
+    `ClaudeTurnTokenReader` (the chat's own transcript plus every `subagents/**/agent-*.jsonl`
+    written during the turn, workflow agents included; 16 MiB per pass; a chat's total is
+    reported only once all its files are caught up; more than 256 subagent files hide the total
+    rather than undercount; real paths only inside `~/.claude/projects`, `O_NOFOLLOW`, regular files).
+  - New `ClaudeTurnTokenFollower` (app): its own `@Published` map by conversation, one pass at a
+    time on a utility queue, at most one a second unless a turn changed, 50 ms apart while catching
+    up; a generation check drops a pass that finishes after the monitor stopped. The monitor calls
+    `follow` after each publish and `reset` in `stop()`. Nothing is logged.
+  - Tests: `ClaudeTurnTokensTests` (16). REGRESSIONS entry 11 addendum.
+
 ### 2026-09-12 - Every chat card carries its request; a silent workflow keeps its status file
 - **Developer label:** "the total run time of the agent has been about 2 hours now, but the recent chats show it as few mins" (picked: this request)
 - **Agent label:** Follow-up 30, C2 — the Swift half of the turn: parse, carry, fold subagent calls, keep the file through a long silence, and no reveal pulse per subagent call

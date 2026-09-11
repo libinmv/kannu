@@ -124,6 +124,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
         lastPublishedTrafficLightState = nil
         lastPublishedShouldShowTrafficLight = nil
         endedRetention.removeAll()
+        ClaudeTurnTokenFollower.shared.reset()
         CursorTranscriptParser.invalidatePathCache()
         AgentSessionLogParser.invalidatePathCache()
     }
@@ -372,6 +373,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 activityPulse &+= 1
             }
         }
+        // Token totals for the cards' requests, read off the main actor (entry 11). Requests only here.
+        ClaudeTurnTokenFollower.shared.follow(sortedSessions)
         hadHookFilesThisCycle = !hookSessions.isEmpty || hadRecentHookFiles(staleMinutes: staleMinutes)
 
         let visibleSessions = resolvedSessions.filter(\.isVisible)

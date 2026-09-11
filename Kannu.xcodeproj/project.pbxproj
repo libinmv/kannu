@@ -66,6 +66,8 @@
 		AA1000000000000000000047 /* ADRSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000046 /* ADRSnapshot.swift */; };
 		AA1000000000000000000043 /* ClaudeDesktopAgentSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000042 /* ClaudeDesktopAgentSessionStore.swift */; };
 		AA1000000000000000000085 /* AgentTurnMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000084 /* AgentTurnMetrics.swift */; };
+		AA1000000000000000000087 /* ClaudeUsageLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000086 /* ClaudeUsageLine.swift */; };
+		AA1000000000000000000089 /* ClaudeTurnTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000088 /* ClaudeTurnTokens.swift */; };
 		F910B9C812C7AEFE2293F7D2 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4A9C58195E197C19F691DA62 /* Cocoa.framework */; };
 /* End PBXBuildFile section */
 
@@ -135,6 +137,8 @@
 		AA1000000000000000000046 /* ADRSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ADRSnapshot.swift; path = Kannu/managers/AgentStatus/ADRSnapshot.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000042 /* ClaudeDesktopAgentSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeDesktopAgentSessionStore.swift; path = Kannu/managers/AgentStatus/ClaudeDesktopAgentSessionStore.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000084 /* AgentTurnMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentTurnMetrics.swift; path = Kannu/managers/AgentStatus/AgentTurnMetrics.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000086 /* ClaudeUsageLine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeUsageLine.swift; path = Kannu/managers/LLMUsage/ClaudeUsageLine.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000088 /* ClaudeTurnTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeTurnTokens.swift; path = Kannu/managers/AgentStatus/ClaudeTurnTokens.swift; sourceTree = SOURCE_ROOT; };
 		DAA671E7B1B26733F02166C5 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F4C1DD09EC134302938E84F6 /* MediaRemoteAdapter.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MediaRemoteAdapter.framework; path = Frameworks/MediaRemoteAdapter.framework; sourceTree = SOURCE_ROOT; };
 		F54406E72CD4987A00C7AFD9 /* Kannu.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Kannu.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -552,6 +556,8 @@
 				AA1000000000000000000047 /* ADRSnapshot.swift in Sources */,
 				AA1000000000000000000043 /* ClaudeDesktopAgentSessionStore.swift in Sources */,
 				AA1000000000000000000085 /* AgentTurnMetrics.swift in Sources */,
+				AA1000000000000000000087 /* ClaudeUsageLine.swift in Sources */,
+				AA1000000000000000000089 /* ClaudeTurnTokens.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
