@@ -652,6 +652,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+        // `--kannu-snapshots <dir>`: render Settings to PNG and quit, before anything else starts.
+        if let request = DebugSnapshotRequest(arguments: CommandLine.arguments) {
+            Task { @MainActor in
+                await DebugSnapshots.run(request, viewModel: vm)
+                NSApp.terminate(nil)
+            }
+            return
+        }
+        #endif
         let userInfo: [String: Any] = [
             KannuDistributedNotifications.UserInfoKey.sourcePID: NSNumber(value: ProcessInfo.processInfo.processIdentifier)
         ]

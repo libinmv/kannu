@@ -8711,3 +8711,28 @@ private struct AgentPalettePopover: View {
         .padding(12)
     }
 }
+
+#if DEBUG
+extension SettingsView {
+    /// DEBUG snapshot harness: each tab exactly as the window builds it (`detailView(for:)`).
+    static func snapshotTabs(filter: Set<String>?) -> [(String, AnyView)] {
+        SettingsTab.allCases
+            .filter { filter?.contains($0.rawValue) ?? true }
+            .map { tab in (tab.rawValue, AnyView(SettingsView().detailView(for: tab))) }
+    }
+}
+
+extension AgentStatusSettings {
+    /// DEBUG snapshot harness: the findings rows as the Security findings section draws them.
+    static func snapshotFindingRows(_ findings: [AgentSecurityFinding]) -> AnyView {
+        let settings = AgentStatusSettings()
+        return AnyView(Form {
+            Section {
+                ForEach(findings) { finding in settings.adrFindingRow(finding) }
+            } header: {
+                Text("Security findings")
+            }
+        })
+    }
+}
+#endif

@@ -4,6 +4,26 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - A DEBUG-only way to see Settings without a screen
+- **Developer label:** "the settings should be enginered like apple does settings … while making any change make sure no regression happens"
+- **Agent label:** Add a debug snapshot harness that renders Settings tabs and boards to PNG
+- **Changes:**
+  - New `Kannu/helpers/DebugSnapshot.swift` (compiled only in DEBUG): launched with
+    `--kannu-snapshots <dir>` (optionally `--kannu-snapshot-tabs agentStatus,general,…`), Kannu
+    renders every Settings tab exactly as the window builds it (`SettingsView.detailView(for:)`,
+    grouped form, the real environment objects), a findings board built from fixtures (never
+    ingested — ingest would prune the shared acknowledgements) and the notch dots in every state,
+    light and dark, into PNGs plus 700 pt tiles, then quits. It returns before any monitor, hook
+    migration or window starts. Rendering: offscreen borderless window grown to the form's full
+    document height, layer tree drawn with `CALayer.render(in:)`, flipped to read top-down.
+  - `KannuApp.applicationDidFinishLaunching` checks for the flag first (DEBUG only);
+    `SettingsView.snapshotTabs(filter:)` and `AgentStatusSettings.snapshotFindingRows(_:)` are
+    DEBUG extensions in `SettingsView.swift`. Release builds are unchanged.
+  - Why: this Mac's Claude host has no screen-recording or accessibility access, so Settings
+    changes could not be seen before; every Settings commit that follows is checked against
+    before/after images. First use confirmed the Core Animation dots render the same as the
+    SwiftUI previews in every state.
+
 ### 2026-09-11 - The traffic light breathes on Core Animation, not SwiftUI
 - **Developer label:** "Kannu uses about 5% CPU while an agent works… is this a bit too much, will it draw down so much battery, how can we optimize that"
 - **Agent label:** Move the lit-dot pulse to a Core Animation layer and honour Reduce Motion
