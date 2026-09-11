@@ -4,6 +4,26 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - The traffic light breathes on Core Animation, not SwiftUI
+- **Developer label:** "Kannu uses about 5% CPU while an agent works… is this a bit too much, will it draw down so much battery, how can we optimize that"
+- **Agent label:** Move the lit-dot pulse to a Core Animation layer and honour Reduce Motion
+- **Changes:**
+  - The lit dot's breath was a SwiftUI `.repeatForever` scale/opacity animation
+    (`ConditionalPulseModifier`), which re-laid out the whole notch view on the main thread on
+    every display frame — up to 120 a second on this Mac's ProMotion screen — for as long as an
+    agent worked, on every display. New `TrafficLightDot` (`TrafficLightDotView`, an
+    `NSViewRepresentable` in the pattern of `AudioSpectrum`) draws the live dots with a CALayer
+    and runs the breath as a CA animation group in the render server: same look (scale 1.3,
+    opacity 0.5, 0.7 s ease-in-out, autoreverse), eases back to rest from wherever it was,
+    capped at 30 fps, removed when off-window, and never breathes under Reduce Motion.
+  - `AgentTrafficLightDots` gains `live` (the notch indicator); Settings and onboarding previews
+    keep their plain circles. The pulse constants live in `TrafficLightPulseSpec` (logic target),
+    pinned by `AgentTrafficLightAttentionTests`.
+  - Measured on this Mac (M3 Pro, one ProMotion display, `top -l` over ~40 s, green light, no hook
+    events): 53.1% CPU and 13,356 idle wakeups/s before; 0.9% and 12/s after. While hooks fire
+    every ~2 s the average is ~8% with spikes to 18%, all rescan work, not the pulse — addressed
+    next.
+
 ### 2026-09-11 - Copy a finding for your agent; finding text you can select
 - **Developer label:** "make general descriptions in settings copy pasteable, give a copy button in each adr detection for them to copy and paste int their agent"
 - **Agent label:** Add plain what-it-means / what-to-do help per finding, selectable text, and a safe "Copy for agent" request

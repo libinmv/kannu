@@ -11,8 +11,13 @@ struct AgentTrafficLightDots: View {
     /// Whether the lit dot should breathe. Previews pass false; the live indicator decides
     /// per-state (red only inside its completion window, yellow/green for as long as they're lit).
     var isPulsing: Bool = false
+    /// The live notch indicator draws its dots with Core Animation (`TrafficLightDot`), so the
+    /// breath costs the main thread nothing; previews keep plain SwiftUI circles.
+    var live: Bool = false
     var dotSize: CGFloat = 10
     var spacing: CGFloat = 6
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @Default(.agentActiveColor) private var activeColor
     @Default(.agentAwaitingInputColor) private var awaitingColor
@@ -43,10 +48,17 @@ struct AgentTrafficLightDots: View {
 
     @ViewBuilder
     private func dot(_ color: Color, isActive: Bool) -> some View {
-        Circle()
-            .fill(color.opacity(isActive ? 1.0 : 0.2))
-            .frame(width: dotSize, height: dotSize)
-            .modifier(ConditionalPulseModifier(isEnabled: isActive && isPulsing))
+        let tint = color.opacity(isActive ? 1.0 : 0.2)
+        if live {
+            // The inner frame leaves room for the breath (1.3×); the outer keeps the layout slot.
+            TrafficLightDot(color: tint, diameter: dotSize, pulsing: isActive && isPulsing && !reduceMotion)
+                .frame(width: dotSize * TrafficLightPulseSpec.scale, height: dotSize * TrafficLightPulseSpec.scale)
+                .frame(width: dotSize, height: dotSize)
+        } else {
+            Circle()
+                .fill(tint)
+                .frame(width: dotSize, height: dotSize)
+        }
     }
 }
 
@@ -151,7 +163,8 @@ struct AgentTrafficLightIndicator: View {
                 AgentTrafficLightDots(
                     style: trafficLightStyle,
                     state: activeState,
-                    isPulsing: shouldPulse(at: context.date)
+                    isPulsing: shouldPulse(at: context.date),
+                    live: true
                 )
                 // The dots carry the aggregate state in colour alone, and it is rendered as text
                 // nowhere — the panel shows per-session state, and only on hover.
@@ -319,32 +332,5 @@ struct SecurityAlertPill: View {
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(String(localized: "Security finding, high: \(finding.title). Click to open."))
-    }
-}
-
-private struct ConditionalPulseModifier: ViewModifier {
-    let isEnabled: Bool
-    @State private var isPulsing = false
-
-    func body(content: Content) -> some View {
-        content
-            // Previously 1.0 → 1.15 scale / 1.0 → 0.75 opacity — reported as too subtle to
-            // read as "breathing" at the small icon sizes used here. Widened the swing.
-            .scaleEffect(isPulsing ? 1.3 : 1.0)
-            .opacity(isPulsing ? 0.5 : 1.0)
-            // Using .animation(value:) instead of withAnimation so that flipping
-            // isPulsing back to false replaces the repeatForever animation and
-            // actually stops the pulse (withAnimation-started repeatForever
-            // animations are not cancelled by a plain state write).
-            .animation(
-                isPulsing
-                    ? .easeInOut(duration: 0.7).repeatForever(autoreverses: true)
-                    : .easeOut(duration: 0.15),
-                value: isPulsing
-            )
-            .onAppear { isPulsing = isEnabled }
-            .onChange(of: isEnabled) { _, enabled in
-                isPulsing = enabled
-            }
     }
 }
