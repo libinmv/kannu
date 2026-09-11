@@ -28,7 +28,7 @@ final class AgentHookInstaller: ObservableObject {
     private static let logger = os.Logger(subsystem: "com.kannu.app", category: "AgentHookInstaller")
 
     static let scriptName = AgentHookLayout.scriptName
-    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=37"
+    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=38"
 
     private static var home: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -1235,6 +1235,16 @@ final class AgentHookInstaller: ObservableObject {
         # is undefined behaviour in the host tool.
         conversation_id = conversation_id[:64]
 
+        # v38: Claude Code (and Qwen Code) fire a subagent's hooks with its agent_id beside the parent's
+        # session_id. The file stays the subagent's own, as before; parent_id names the chat it belongs
+        # to, so Kannu folds it into that chat's card instead of showing a nameless one. Cursor's agentId
+        # is its own conversation and is left alone.
+        parent_id = ""
+        if provider in {"claude", "qwen"} and pick_str(data.get("agent_id"), data.get("agentId")):
+            parent_id = re.sub("[^A-Za-z0-9_-]", "", pick_str(data.get("session_id"), data.get("sessionId")))[:64]
+            if parent_id == conversation_id:
+                parent_id = ""
+
         # v36: Copilot CLI reads the same ~/.copilot/hooks file as VS Code, so its events arrive as
         # "vscode". The CLI sets COPILOT_CLI for what it spawns and runs in a terminal; VS Code's extension
         # host has neither. A conversation already filed either way keeps it (the process walk runs once);
@@ -1637,6 +1647,8 @@ final class AgentHookInstaller: ObservableObject {
             payload["hidden_text"] = hidden_text
         if secrets:
             payload["secrets"] = secrets
+        if parent_id:
+            payload["parent_id"] = parent_id
         if sensitive_paths:
             payload["sensitive_paths"] = sensitive_paths
         if terminal[1]:

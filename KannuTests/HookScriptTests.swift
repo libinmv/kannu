@@ -844,6 +844,45 @@ final class HookScriptTests: XCTestCase {
         XCTAssertEqual(try readState("n1"), "stopped")
     }
 
+    // MARK: - v38: a subagent names its parent
+
+    func testAClaudeSubagentEventNamesItsParent() throws {
+        try run(state: "executing", event: "PreToolUse", conversation: "parent-1",
+                extra: ["agent_id": "a98f5cee53fa799c7", "agent_type": "Explore"])
+        XCTAssertEqual(try readJSON("a98f5cee53fa799c7")?["parent_id"] as? String, "parent-1")
+        XCTAssertNil(try readJSON("parent-1"), "the subagent does not write the parent's file")
+    }
+
+    func testAgentTypeAloneIsTheMainThread() throws {
+        try run(state: "executing", event: "PreToolUse", conversation: "main-2", extra: ["agent_type": "custom-agent"])
+        XCTAssertNotNil(try readJSON("main-2"))
+        XCTAssertNil(try readJSON("main-2")?["parent_id"])
+    }
+
+    func testCursorsAgentIdIsItsOwnConversation() throws {
+        try run(state: "executing", event: "preToolUse", conversation: "ignored", provider: "cursor", extra: ["agentId": "cursor-agent-7"])
+        XCTAssertNotNil(try readJSON("cursor-agent-7", provider: "cursor"))
+        XCTAssertNil(try readJSON("cursor-agent-7", provider: "cursor")?["parent_id"])
+    }
+
+    func testAQwenSubagentNamesItsParent() throws {
+        try run(state: "executing", event: "PreToolUse", conversation: "qwen-parent", provider: "qwen", extra: ["agent_id": "qsub1"])
+        XCTAssertEqual(try readJSON("qsub1", provider: "qwen")?["parent_id"] as? String, "qwen-parent")
+    }
+
+    func testTheParentIdIsSanitisedAndNeverItself() throws {
+        try run(state: "executing", event: "PreToolUse", conversation: "par/ent;1", extra: ["agent_id": "s1"])
+        XCTAssertEqual(try readJSON("s1")?["parent_id"] as? String, "parent1")
+        try run(state: "executing", event: "PreToolUse", conversation: "same-id", extra: ["agent_id": "same-id"])
+        XCTAssertNil(try readJSON("same-id")?["parent_id"])
+    }
+
+    func testTheSubagentsOwnStateMachineIsUnchanged() throws {
+        try run(state: "awaiting_input", event: "PermissionRequest", conversation: "p3", extra: ["agent_id": "s3"])
+        try run(state: "executing", event: "PreToolUse", conversation: "p3", extra: ["agent_id": "s3"])
+        XCTAssertEqual(try readState("s3"), "awaiting_input", "the 2 s urgent carry still applies to its own file")
+    }
+
     /// REGRESSIONS entry 1: the embedded copy is the one users run; the mirror is the one these
     /// tests run. Byte identity after de-indenting, and no backslash (a plain Swift literal
     /// would reinterpret it).

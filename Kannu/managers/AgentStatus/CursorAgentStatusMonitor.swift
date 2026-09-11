@@ -244,6 +244,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
         }
     }
 
+    /// Subagent conversations folded into their parent on the last hook parse (v38 `parent_id`).
+    private var foldedSubagentConversationIDs: Set<String> = []
+
     private func rescan(hooksOnly: Bool = false) async {
         guard isRunning else { return }
         let now = Date()
@@ -296,7 +299,10 @@ final class CursorAgentStatusMonitor: ObservableObject {
             // context instead of re-reading transcripts.
             transcriptAnalysis = cachedTranscriptAnalysis(maxAgeMinutes: staleMinutes, now: now, forceRefresh: false)
             let hookConversationIDs = Set(hookSessions.map(\.conversationID))
-            let retainedTranscriptSessions = sessions.filter { !hookConversationIDs.contains($0.conversationID) }
+            // A subagent card published before its parent_id was known must not be retained.
+            let retainedTranscriptSessions = sessions.filter {
+                !hookConversationIDs.contains($0.conversationID) && !foldedSubagentConversationIDs.contains($0.conversationID)
+            }
             transcriptSessions = retainedTranscriptSessions
         } else if isCursorRunning() {
             transcriptAnalysis = cachedTranscriptAnalysis(maxAgeMinutes: staleMinutes, now: now, forceRefresh: false)
@@ -951,6 +957,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
         let inactiveMs = Int64(inactiveSeconds) * 1_000
 
         var results: [AgentSessionStatus] = []
+        var subagentParentByKey: [String: String] = [:]
 
         for file in files where file.pathExtension == "json" {
             // The agent hook replaces this file atomically (mkstemp + os.replace) and can
@@ -1077,10 +1084,19 @@ final class CursorAgentStatusMonitor: ObservableObject {
             session.sightings = HookSightings(hookFile: json)
             // v35: the terminal the agent runs in (validated), for click-through to its tab.
             session.terminal = TerminalLocator(hookFile: json)
+            // v38: a subagent's file names the chat it belongs to (validated: untrusted input).
+            if let parent = json["parent_id"] as? String, parent != conversationID,
+               AgentTrafficLightMapper.isHookConversationID(parent) {
+                subagentParentByKey[provider.lowercased() + "|" + conversationID] = parent
+            }
             results.append(session)
         }
 
-        let enriched = enrichChatNames(fromComposerStore: results)
+        // One card per chat: subagents fold into their parent before names are resolved, so a
+        // stand-in for a parent with no file of its own is named from the parent's transcript too.
+        let (folded, foldedIDs) = AgentTrafficLightMapper.foldSubagentHookSessions(results, parentByKey: subagentParentByKey)
+        foldedSubagentConversationIDs = foldedIDs
+        let enriched = enrichChatNames(fromComposerStore: folded)
         return enrichProjectNamesFromTranscripts(enriched, maxAgeMinutes: staleMinutes)
     }
 

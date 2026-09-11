@@ -174,6 +174,22 @@ self-comparison bug itself is still untestable. Closing it means lifting those r
 into a pure, testable type (as `looksLikeToolName` already was). **This is the
 highest-value missing test in the repo** — five regressions, no coverage.
 
+**2026-09-11 addendum — a sixth "Untitled chat", two new shapes.**
+1. *One conversation split across ids.* Claude Code fires a subagent's hooks (Agent tool,
+   Explore/Plan) with `agent_id` + `agent_type` beside the parent's `session_id`; since v23 the
+   hook picked `agent_id` first (added for Cursor's agentId), so every subagent wrote its own
+   `claude-<agent_id>.json` → a nameless card under the same project, and its trailing `thinking`
+   could relight a finished chat green for ~6 min. Fix: hook v38 writes `parent_id` into the
+   subagent's own file (state machine untouched) and `AgentTrafficLightMapper.foldSubagentHookSessions`
+   folds it into the parent's card — the more urgent light while the parent's turn is open, nothing
+   once it has ended, a stand-in named from the parent's transcript when the parent has no file.
+   Guards: `SubagentFoldTests`, `HookScriptTests.testAClaudeSubagentEventNamesItsParent` and siblings.
+   Never key a card on anything but the conversation the user sees.
+2. *The title slides past the tail windows.* On a very long transcript a long turn can push the
+   newest title record beyond the 1 MiB window; the name fell back to an older title or the prompt.
+   The last title a tail window found now sticks (`AgentSessionLogParserTests.testTheTitleSticksWhenALongTurnPushesItPastTheTailWindows`,
+   verified to fail when the sticky title is removed).
+
 ---
 
 ## 6. Migration coverage must equal install coverage must equal uninstall coverage

@@ -4,6 +4,32 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - One card per Claude chat: subagents fold into their parent
+- **Developer label:** "did a regression happen in chat names for claude, it shows untitle chat, also 2 chats showingh, maybe duplicated"
+- **Agent label:** Hook v38 parent_id plus a tested fold of subagent hook files into the parent's card
+- **Changes:**
+  - Cause (verified live: three `claude-<17-hex>.json` files appeared while three Explore agents
+    ran): Claude Code fires a subagent's hooks with `agent_id` beside the parent's `session_id`, and
+    the hook has picked `agent_id` first since v23 (a Cursor change). Each subagent became its own
+    "Untitled chat" card, and its last `thinking` write could relight a finished chat green for up to
+    six minutes (holding caffeinate). Not caused by the recent phases.
+  - Hook script v38 (mirror and embedded copy regenerated; no backslash): for Claude and Qwen, an
+    event with `agent_id` records the parent's session id as `parent_id` in the subagent's own file.
+    The state machine is untouched; Cursor's `agentId` stays its own conversation; `agent_type`
+    alone (a `--agent` main thread) is not a subagent.
+  - New pure `AgentTrafficLightMapper.foldSubagentHookSessions` (logic target): while the parent's
+    turn is open the more urgent light wins (a subagent's permission prompt turns the chat yellow;
+    the parent's own progress cannot hide it; two prompts stay yellow until both are answered);
+    after the turn ends a leftover subagent file changes nothing; with no parent file a stand-in
+    carries the parent's id and is named from its transcript; identity, name and locators stay the
+    parent's and extras ride `carryingExtras` (sightings found by a subagent belong to the chat).
+    The monitor reads the validated `parent_id`, folds before names are resolved, and keeps folded
+    ids out of the hooks-only retention. Files from v37 have no `parent_id` and age out as before.
+  - Tests: `SubagentFoldTests` (no card of its own, yellow while open, two prompts, no relight,
+    aged parent, stand-in named by the reconciler, providers never cross, aggregate unchanged over
+    every open-turn combination, id validation) and six `HookScriptTests` for v38. REGRESSIONS
+    entry 5 addendum.
+
 ### 2026-09-11 - Hook events no longer re-list Cursor's transcripts for nothing
 - **Developer label:** "how can we optimize that" (the notch's CPU while an agent works)
 - **Agent label:** Skip project-name enrichment when every session already has a project
