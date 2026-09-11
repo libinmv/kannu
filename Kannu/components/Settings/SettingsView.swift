@@ -761,9 +761,9 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .battery, title: "Charging duration", keywords: ["charging", "duration", "seconds"], highlightID: SettingsTab.battery.highlightID(for: "Charging duration")),
             SettingsSearchEntry(tab: .battery, title: "Low battery duration", keywords: ["low battery", "duration", "seconds"], highlightID: SettingsTab.battery.highlightID(for: "Low battery duration")),
             SettingsSearchEntry(tab: .battery, title: "Full battery duration", keywords: ["full battery", "duration", "seconds"], highlightID: SettingsTab.battery.highlightID(for: "Full battery duration")),
-            SettingsSearchEntry(tab: .battery, title: "Test charging HUD", keywords: ["battery", "test", "charging", "preview"], highlightID: nil),
-            SettingsSearchEntry(tab: .battery, title: "Test low battery HUD", keywords: ["battery", "test", "low", "preview"], highlightID: nil),
-            SettingsSearchEntry(tab: .battery, title: "Test full battery HUD", keywords: ["battery", "test", "full", "preview"], highlightID: nil),
+            SettingsSearchEntry(tab: .battery, title: "Test charging HUD", keywords: ["battery", "test", "charging", "preview"], highlightID: SettingsTab.battery.highlightID(for: "Test charging HUD")),
+            SettingsSearchEntry(tab: .battery, title: "Test low battery HUD", keywords: ["battery", "test", "low", "preview"], highlightID: SettingsTab.battery.highlightID(for: "Test low battery HUD")),
+            SettingsSearchEntry(tab: .battery, title: "Test full battery HUD", keywords: ["battery", "test", "full", "preview"], highlightID: SettingsTab.battery.highlightID(for: "Test full battery HUD")),
             SettingsSearchEntry(tab: .battery, title: "Low battery style", keywords: ["battery", "style", "compact", "standard"], highlightID: SettingsTab.battery.highlightID(for: "Low battery style")),
             SettingsSearchEntry(tab: .battery, title: "Low battery threshold", keywords: ["battery", "threshold", "percent"], highlightID: SettingsTab.battery.highlightID(for: "Low battery threshold")),
             SettingsSearchEntry(tab: .battery, title: "Full battery style", keywords: ["battery", "style", "compact", "standard"], highlightID: SettingsTab.battery.highlightID(for: "Full battery style")),
@@ -1573,44 +1573,23 @@ struct Charge: View {
                 } header: {
                     Text("Battery HUDs")
                 } footer: {
-                    Text("These temporary HUDs recreate the charging, low-battery, and full-battery notch alerts.")
+                    SettingsFooter("These temporary HUDs recreate the charging, low-battery, and full-battery notch alerts.")
                 }
                 Section {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Charging duration")
-                            Spacer()
-                            Text("\(chargingBatteryHUDDuration)s")
-                                .foregroundStyle(.secondary)
-                        }
-                        Slider(value: chargingDurationBinding, in: 1...10, step: 1)
-                    }
+                    SettingsSliderRow("Charging duration", value: chargingDurationBinding, in: 1...10, step: 1,
+                                      valueText: Text("\(chargingBatteryHUDDuration)s"))
                     .settingsHighlight(id: highlightID("Charging duration"))
                     .disabled(!showPowerStatusNotifications || !showChargingBatteryHUD)
                     .opacity(sectionOpacity(showPowerStatusNotifications && showChargingBatteryHUD))
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Low battery duration")
-                            Spacer()
-                            Text("\(lowBatteryHUDDuration)s")
-                                .foregroundStyle(.secondary)
-                        }
-                        Slider(value: lowBatteryDurationBinding, in: 1...10, step: 1)
-                    }
+                    SettingsSliderRow("Low battery duration", value: lowBatteryDurationBinding, in: 1...10, step: 1,
+                                      valueText: Text("\(lowBatteryHUDDuration)s"))
                     .settingsHighlight(id: highlightID("Low battery duration"))
                     .disabled(!showPowerStatusNotifications || !showLowBatteryHUD)
                     .opacity(sectionOpacity(showPowerStatusNotifications && showLowBatteryHUD))
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Full battery duration")
-                            Spacer()
-                            Text("\(fullBatteryHUDDuration)s")
-                                .foregroundStyle(.secondary)
-                        }
-                        Slider(value: fullBatteryDurationBinding, in: 1...10, step: 1)
-                    }
+                    SettingsSliderRow("Full battery duration", value: fullBatteryDurationBinding, in: 1...10, step: 1,
+                                      valueText: Text("\(fullBatteryHUDDuration)s"))
                     .settingsHighlight(id: highlightID("Full battery duration"))
                     .disabled(!showPowerStatusNotifications || !showFullBatteryHUD)
                     .opacity(sectionOpacity(showPowerStatusNotifications && showFullBatteryHUD))
@@ -1618,33 +1597,27 @@ struct Charge: View {
                     Text("HUD Duration")
                 }
                 Section {
-                    Button {
-                        batteryStatusViewModel.triggerTestHUD(kind: .charging)
-                    } label: {
-                        Label("Test charging HUD", systemImage: "bolt.fill")
-                    }
+                    testHUDRow(Label("Charging HUD", systemImage: "bolt.fill"),
+                               accessibilityLabel: Text("Test charging HUD"), kind: .charging)
                     .disabled(!showPowerStatusNotifications || !showChargingBatteryHUD)
+                    .settingsHighlight(id: highlightID("Test charging HUD"))
 
-                    Button {
-                        batteryStatusViewModel.triggerTestHUD(kind: .lowBattery)
-                    } label: {
-                        Label("Test low battery HUD", systemImage: "battery.25")
-                    }
+                    testHUDRow(Label("Low battery HUD", systemImage: "battery.25"),
+                               accessibilityLabel: Text("Test low battery HUD"), kind: .lowBattery)
                     .disabled(!showPowerStatusNotifications || !showLowBatteryHUD)
+                    .settingsHighlight(id: highlightID("Test low battery HUD"))
 
-                    Button {
-                        batteryStatusViewModel.triggerTestHUD(kind: .fullBattery)
-                    } label: {
-                        Label("Test full battery HUD", systemImage: "battery.100")
-                    }
+                    testHUDRow(Label("Fully charged HUD", systemImage: "battery.100"),
+                               accessibilityLabel: Text("Test full battery HUD"), kind: .fullBattery)
                     .disabled(!showPowerStatusNotifications || !showFullBatteryHUD)
+                    .settingsHighlight(id: highlightID("Test full battery HUD"))
                 } header: {
                     Text("HUD Tests")
                 } footer: {
-                    Text("Runs the real notch animation on the current target display. If an external screen is using Dynamic Island mode, the battery HUD is sent there first.")
+                    SettingsFooter("Runs the real notch animation on the current target display. If an external screen is using Dynamic Island mode, the battery HUD is sent there first.")
                 }
                 Section {
-                    VStack(alignment: .leading, spacing: 10) {
+                    SettingsRow("Low battery style", description: "Compact matches the charging HUD. Standard uses the expanded DynamicNotch-style card.") {
                         Picker("Low battery style", selection: $lowBatteryHUDStyle) {
                             ForEach(BatteryNotificationStyle.allCases) { style in
                                 Text(style.title)
@@ -1652,22 +1625,12 @@ struct Charge: View {
                             }
                         }
                         .pickerStyle(.segmented)
-                        Text("Compact matches the charging HUD. Standard uses the expanded DynamicNotch-style card.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        .fixedSize()
                     }
                     .settingsHighlight(id: highlightID("Low battery style"))
 
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Low battery threshold")
-                            Spacer()
-                            Text("\(lowBatteryHUDThreshold)%")
-                                .foregroundStyle(.secondary)
-                        }
-                        Slider(value: lowBatteryThresholdBinding, in: 5...30, step: 1)
-                    }
+                    SettingsSliderRow("Low battery threshold", value: lowBatteryThresholdBinding, in: 5...30, step: 1,
+                                      valueText: Text("\(lowBatteryHUDThreshold)%"))
                     .settingsHighlight(id: highlightID("Low battery threshold"))
                 } header: {
                     Text("Low Battery")
@@ -1676,7 +1639,7 @@ struct Charge: View {
                 .opacity(sectionOpacity(showPowerStatusNotifications && showLowBatteryHUD))
 
                 Section {
-                    VStack(alignment: .leading, spacing: 10) {
+                    SettingsRow("Full battery style", description: "Compact keeps the alert inline. Standard uses the taller full-charge HUD with the charging animation.") {
                         Picker("Full battery style", selection: $fullBatteryHUDStyle) {
                             ForEach(BatteryNotificationStyle.allCases) { style in
                                 Text(style.title)
@@ -1684,22 +1647,12 @@ struct Charge: View {
                             }
                         }
                         .pickerStyle(.segmented)
-                        Text("Compact keeps the alert inline. Standard uses the taller full-charge HUD with the charging animation.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        .fixedSize()
                     }
                     .settingsHighlight(id: highlightID("Full battery style"))
 
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Full charge threshold")
-                            Spacer()
-                            Text("\(fullBatteryHUDThreshold)%")
-                                .foregroundStyle(.secondary)
-                        }
-                        Slider(value: fullBatteryThresholdBinding, in: 80...100, step: 1)
-                    }
+                    SettingsSliderRow("Full charge threshold", value: fullBatteryThresholdBinding, in: 80...100, step: 1,
+                                      valueText: Text("\(fullBatteryHUDThreshold)%"))
                     .settingsHighlight(id: highlightID("Full charge threshold"))
                 } header: {
                     Text("Full Battery")
@@ -1718,6 +1671,19 @@ struct Charge: View {
             }
         }
         .navigationTitle("Battery")
+    }
+
+    /// A HUD's name with a Test button on the trailing side.
+    private func testHUDRow(_ label: Label<Text, Image>, accessibilityLabel: Text,
+                            kind: BatteryTemporaryHUDKind) -> some View {
+        LabeledContent {
+            Button("Test") {
+                batteryStatusViewModel.triggerTestHUD(kind: kind)
+            }
+            .accessibilityLabel(accessibilityLabel)
+        } label: {
+            label
+        }
     }
 }
 
@@ -1947,10 +1913,6 @@ private struct HUDAndOSDSettingsView: View {
         var id: String { rawValue }
     }
 
-    private var paneBackgroundColor: Color {
-        Color(nsColor: .controlBackgroundColor)
-    }
-
     private var liquidVariantRange: ClosedRange<Double> {
         Double(LiquidGlassVariant.supportedRange.lowerBound)...Double(LiquidGlassVariant.supportedRange.upperBound)
     }
@@ -1973,164 +1935,169 @@ private struct HUDAndOSDSettingsView: View {
     }
 
     var body: some View {
-        VStack(spacing: 20) {
-            HStack(spacing: 16) {
-                HUDSelectionCard(
-                    title: String(localized: "Dynamic Island"),
-                    isSelected: selectedTab == .hud,
-                    action: {
-                        selectedTab = .hud
-                        enableSystemHUD = true
-                        enableCustomOSD = false
-                        enableVerticalHUD = false
-                        enableCircularHUD = false
+        // One Form for the whole tab. The style cards used to sit above two stacked Forms (the
+        // style's settings, then the display integrations), each scrolling on its own.
+        Form {
+            Section {
+                HStack(spacing: 10) {
+                    HUDSelectionCard(
+                        title: String(localized: "Dynamic Island"),
+                        isSelected: selectedTab == .hud,
+                        action: {
+                            selectedTab = .hud
+                            enableSystemHUD = true
+                            enableCustomOSD = false
+                            enableVerticalHUD = false
+                            enableCircularHUD = false
+                        }
+                    ) {
+                        VStack {
+                            Capsule()
+                                .fill(Color.black)
+                                .frame(width: 64, height: 20)
+                                .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                                .overlay {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: previewModel.iconName)
+                                            .font(.system(size: 9, weight: .semibold))
+                                            .foregroundStyle(.white)
+                                            .frame(width: 12)
+
+                                        GeometryReader { geo in
+                                            Capsule()
+                                                .fill(Color.white.opacity(0.2))
+                                                .overlay(alignment: .leading) {
+                                                    Capsule()
+                                                        .fill(Color.white)
+                                                        .frame(width: geo.size.width * CGFloat(previewModel.level))
+                                                        .animation(.spring(response: 0.3), value: previewModel.level)
+                                                }
+                                        }
+                                        .frame(height: 4)
+                                    }
+                                    .padding(.horizontal, 8)
+                                }
+                        }
                     }
-                ) {
-                    VStack {
-                        Capsule()
-                            .fill(Color.black)
-                            .frame(width: 64, height: 20)
-                            .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+
+                    HUDSelectionCard(
+                        title: String(localized: "Custom OSD"),
+                        isSelected: selectedTab == .osd,
+                        action: {
+                            selectedTab = .osd
+                            enableCustomOSD = true
+                            enableSystemHUD = false
+                            enableVerticalHUD = false
+                            enableCircularHUD = false
+                        }
+                    ) {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(.ultraThinMaterial)
                             .overlay {
-                                HStack(spacing: 6) {
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(.white.opacity(0.1), lineWidth: 1)
+                            }
+                            .shadow(color: .black.opacity(0.1), radius: 3, y: 1)
+                            .overlay {
+                                VStack(spacing: 6) {
                                     Image(systemName: previewModel.iconName)
-                                        .font(.system(size: 9, weight: .semibold))
-                                        .foregroundStyle(.white)
-                                        .frame(width: 12)
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(.secondary)
+                                        .symbolRenderingMode(.hierarchical)
+                                        .contentTransition(.symbolEffect(.replace))
 
                                     GeometryReader { geo in
                                         Capsule()
-                                            .fill(Color.white.opacity(0.2))
+                                            .fill(Color.secondary.opacity(0.2))
                                             .overlay(alignment: .leading) {
                                                 Capsule()
-                                                    .fill(Color.white)
+                                                    .fill(Color.primary)
                                                     .frame(width: geo.size.width * CGFloat(previewModel.level))
                                                     .animation(.spring(response: 0.3), value: previewModel.level)
                                             }
                                     }
-                                    .frame(height: 4)
+                                    .frame(width: 36, height: 4)
                                 }
-                                .padding(.horizontal, 8)
                             }
+                            .frame(width: 44, height: 44)
                     }
-                }
+                    // The "Enable Custom OSD" search entry lands on the card that enables it.
+                    .settingsHighlight(id: SettingsTab.hudAndOSD.highlightID(for: "Enable Custom OSD"))
 
-                HUDSelectionCard(
-                    title: String(localized: "Custom OSD"),
-                    isSelected: selectedTab == .osd,
-                    action: {
-                        selectedTab = .osd
-                        enableCustomOSD = true
-                        enableSystemHUD = false
-                        enableVerticalHUD = false
-                        enableCircularHUD = false
-                    }
-                ) {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(.ultraThinMaterial)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(.white.opacity(0.1), lineWidth: 1)
+                    HUDSelectionCard(
+                        title: String(localized: "Vertical Bar"),
+                        isSelected: selectedTab == .vertical,
+                        action: {
+                            selectedTab = .vertical
+                            enableVerticalHUD = true
+                            enableSystemHUD = false
+                            enableCustomOSD = false
+                            enableCircularHUD = false
                         }
-                        .shadow(color: .black.opacity(0.1), radius: 3, y: 1)
-                        .overlay {
-                            VStack(spacing: 6) {
-                                Image(systemName: previewModel.iconName)
-                                    .font(.system(size: 16))
-                                    .foregroundStyle(.secondary)
-                                    .symbolRenderingMode(.hierarchical)
-                                    .contentTransition(.symbolEffect(.replace))
-
-                                GeometryReader { geo in
-                                    Capsule()
-                                        .fill(Color.secondary.opacity(0.2))
-                                        .overlay(alignment: .leading) {
-                                            Capsule()
-                                                .fill(Color.primary)
-                                                .frame(width: geo.size.width * CGFloat(previewModel.level))
+                    ) {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(.ultraThinMaterial)
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(.white.opacity(0.1), lineWidth: 1)
+                            }
+                            .shadow(color: .black.opacity(0.1), radius: 3, y: 1)
+                            .overlay {
+                                VStack {
+                                    GeometryReader { geo in
+                                        VStack {
+                                            Spacer()
+                                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                                .fill(Color.white)
+                                                .frame(height: max(0, geo.size.height * CGFloat(previewModel.level)))
                                                 .animation(.spring(response: 0.3), value: previewModel.level)
                                         }
+                                    }
+                                    .mask(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                    .padding(.bottom, 2)
+
+                                    Image(systemName: previewModel.iconName)
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(previewModel.level > 0.15 ? .black : .secondary)
+                                        .symbolRenderingMode(.hierarchical)
+                                        .contentTransition(.symbolEffect(.replace))
                                 }
-                                .frame(width: 36, height: 4)
+                                .padding(4)
                             }
+                            .frame(width: 22, height: 54)
+                    }
+
+                    HUDSelectionCard(
+                        title: String(localized: "Circular"),
+                        isSelected: selectedTab == .circular,
+                        action: {
+                            selectedTab = .circular
+                            enableCircularHUD = true
+                            enableSystemHUD = false
+                            enableCustomOSD = false
+                            enableVerticalHUD = false
+                        }
+                    ) {
+                        ZStack {
+                            Circle()
+                                .stroke(Color.secondary.opacity(0.2), lineWidth: 4)
+                            Circle()
+                                .trim(from: 0, to: CGFloat(previewModel.level))
+                                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                                .rotationEffect(.degrees(-90))
+                                .animation(.spring(response: 0.3), value: previewModel.level)
+                            Image(systemName: previewModel.iconName)
+                                .font(.system(size: 16))
+                                .foregroundStyle(.primary)
+                                .symbolRenderingMode(.hierarchical)
+                                .contentTransition(.symbolEffect(.replace))
                         }
                         .frame(width: 44, height: 44)
-                }
-                // The "Enable Custom OSD" search entry lands on the card that enables it.
-                .settingsHighlight(id: SettingsTab.hudAndOSD.highlightID(for: "Enable Custom OSD"))
-
-                HUDSelectionCard(
-                    title: String(localized: "Vertical Bar"),
-                    isSelected: selectedTab == .vertical,
-                    action: {
-                        selectedTab = .vertical
-                        enableVerticalHUD = true
-                        enableSystemHUD = false
-                        enableCustomOSD = false
-                        enableCircularHUD = false
                     }
-                ) {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(.ultraThinMaterial)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(.white.opacity(0.1), lineWidth: 1)
-                        }
-                        .shadow(color: .black.opacity(0.1), radius: 3, y: 1)
-                        .overlay {
-                            VStack {
-                                GeometryReader { geo in
-                                    VStack {
-                                        Spacer()
-                                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                            .fill(Color.white)
-                                            .frame(height: max(0, geo.size.height * CGFloat(previewModel.level)))
-                                            .animation(.spring(response: 0.3), value: previewModel.level)
-                                    }
-                                }
-                                .mask(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                .padding(.bottom, 2)
-
-                                Image(systemName: previewModel.iconName)
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(previewModel.level > 0.15 ? .black : .secondary)
-                                    .symbolRenderingMode(.hierarchical)
-                                    .contentTransition(.symbolEffect(.replace))
-                            }
-                            .padding(4)
-                        }
-                        .frame(width: 22, height: 54)
                 }
-
-                HUDSelectionCard(
-                    title: String(localized: "Circular"),
-                    isSelected: selectedTab == .circular,
-                    action: {
-                        selectedTab = .circular
-                        enableCircularHUD = true
-                        enableSystemHUD = false
-                        enableCustomOSD = false
-                        enableVerticalHUD = false
-                    }
-                ) {
-                    ZStack {
-                        Circle()
-                            .stroke(Color.secondary.opacity(0.2), lineWidth: 4)
-                        Circle()
-                            .trim(from: 0, to: CGFloat(previewModel.level))
-                            .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                            .rotationEffect(.degrees(-90))
-                            .animation(.spring(response: 0.3), value: previewModel.level)
-                        Image(systemName: previewModel.iconName)
-                            .font(.system(size: 16))
-                            .foregroundStyle(.primary)
-                            .symbolRenderingMode(.hierarchical)
-                            .contentTransition(.symbolEffect(.replace))
-                    }
-                    .frame(width: 44, height: 44)
-                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
             }
-            .padding(.top, 8)
 
             switch selectedTab {
             case .hud:
@@ -2139,216 +2106,30 @@ private struct HUDAndOSDSettingsView: View {
                 if #available(macOS 15.0, *) {
                     CustomOSDSettings()
                 } else {
-                    VStack(spacing: 16) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 48))
-                            .foregroundStyle(.orange)
-
-                        Text("macOS 15 or later required")
-                            .font(.headline)
-
-                        Text("Custom OSD feature requires macOS 15 or later.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
+                    Section {
+                        VStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 32))
+                                .foregroundStyle(.orange)
+                            Text("macOS 15 or later required")
+                                .font(.headline)
+                            Text("Custom OSD feature requires macOS 15 or later.")
+                                .settingsDescriptionStyle()
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding()
                 }
             case .vertical:
-                Form {
-                    if !accessibilityPermission.isAuthorized && !enableThirdPartyDDCIntegration {
-                        Section {
-                            SettingsPermissionCallout(
-                                message: "Accessibility permission is needed to intercept system controls for the Vertical HUD.",
-                                requestAction: {
-                                    accessibilityPermission.requestAuthorizationPrompt()
-                                },
-                                openSettingsAction: {
-                                    accessibilityPermission.openSystemSettings()
-                                }
-                            )
-                        } header: {
-                            Text("Accessibility")
-                        }
-                    }
-
-                    if accessibilityPermission.isAuthorized || enableThirdPartyDDCIntegration {
-                        Section {
-                            Toggle("Volume HUD", isOn: $enableVolumeHUD)
-                            Toggle("Brightness HUD", isOn: $enableBrightnessHUD)
-                            Toggle("Keyboard Backlight HUD", isOn: $enableKeyboardBacklightHUD)
-                                .disabled(enableThirdPartyDDCIntegration)
-                                .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active. Brightness keys are handled by the external app." : "")
-                        } header: {
-                            Text("Controls")
-                        } footer: {
-                            Text("Choose which system controls should display HUD notifications.")
-                                .foregroundStyle(.secondary)
-                                .font(.caption)
-                        }
-                    }
-
-                    Section {
-                        Toggle("Show Percentage", isOn: $verticalHUDShowValue)
-                        Toggle("Use Accent Color", isOn: $verticalHUDUseAccentColor)
-                        Toggle("Interactive (Drag to Change)", isOn: $verticalHUDInteractive)
-                        Picker("Material", selection: $verticalHUDMaterial) {
-                            ForEach(availableVerticalMaterials, id: \.self) { material in
-                                Text(material.rawValue).tag(material)
-                            }
-                        }
-
-                        if verticalHUDMaterial == .liquid {
-                            if #available(macOS 26.0, *) {
-                                Picker("Glass mode", selection: $verticalHUDLiquidGlassCustomizationMode) {
-                                    ForEach(LockScreenGlassCustomizationMode.allCases) { mode in
-                                        Text(mode.rawValue).tag(mode)
-                                    }
-                                }
-                                .pickerStyle(.segmented)
-
-                                if verticalHUDLiquidGlassCustomizationMode == .customLiquid {
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        HStack {
-                                            Text("Custom liquid variant")
-                                            Spacer()
-                                            Text("v\(verticalHUDLiquidGlassVariant.rawValue)")
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        Slider(value: verticalLiquidVariantBinding, in: liquidVariantRange, step: 1)
-                                    }
-                                }
-                            } else {
-                                Text("Custom Liquid is available on macOS 26 or later.")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        Defaults.Toggle(key: .useColorCodedVolumeDisplay) {
-                            Text("Color-coded Volume")
-                        }
-                        if Defaults[.useColorCodedVolumeDisplay] {
-                            Defaults.Toggle(key: .useSmoothColorGradient) {
-                                Text("Smooth color transitions")
-                            }
-                        }
-                    } header: {
-                        Text("Behavior & Style")
-                    }
-
-                    Section {
-                        Picker("HUD Position", selection: $verticalHUDPosition) {
-                            Text("Left").tag("left")
-                            Text("Right").tag("right")
-                        }
-                        .pickerStyle(.menu)
-
-                        VStack(alignment: .leading) {
-                            Text("Screen Padding: \(Int(verticalHUDPadding))px")
-                            Slider(value: $verticalHUDPadding, in: 0...100, step: 4)
-                        }
-                    } header: {
-                        Text("Position")
-                    } footer: {
-                        Text("Choose directly on which side of the screen the vertical bar appears.")
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
-                    }
-
-                    Section {
-                        VStack(alignment: .leading) {
-                            Text("Width: \(Int(verticalHUDWidth))px")
-                            Slider(value: $verticalHUDWidth, in: 24...80, step: 2)
-                        }
-                        VStack(alignment: .leading) {
-                            Text("Height: \(Int(verticalHUDHeight))px")
-                            Slider(value: $verticalHUDHeight, in: 100...500, step: 10)
-                        }
-                        Button("Reset to Default") {
-                            verticalHUDWidth = 36
-                            verticalHUDHeight = 160
-                            verticalHUDPadding = 24
-                        }
-                    } header: {
-                        Text("Dimensions")
-                    }
-                }
-
+                verticalHUDSections
             case .circular:
-                Form {
-                    if !accessibilityPermission.isAuthorized && !enableThirdPartyDDCIntegration {
-                        Section {
-                            SettingsPermissionCallout(
-                                message: "Accessibility permission is needed to intercept system controls for the Circular HUD.",
-                                requestAction: {
-                                    accessibilityPermission.requestAuthorizationPrompt()
-                                },
-                                openSettingsAction: {
-                                    accessibilityPermission.openSystemSettings()
-                                }
-                            )
-                        } header: {
-                            Text("Accessibility")
-                        }
-                    }
-
-                    if accessibilityPermission.isAuthorized || enableThirdPartyDDCIntegration {
-                        Section {
-                            Toggle("Volume HUD", isOn: $enableVolumeHUD)
-                            Toggle("Brightness HUD", isOn: $enableBrightnessHUD)
-                            Toggle("Keyboard Backlight HUD", isOn: $enableKeyboardBacklightHUD)
-                                .disabled(enableThirdPartyDDCIntegration)
-                                .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active. Brightness keys are handled by the external app." : "")
-                        } header: {
-                            Text("Controls")
-                        } footer: {
-                            Text("Choose which system controls should display HUD notifications.")
-                                .foregroundStyle(.secondary)
-                                .font(.caption)
-                        }
-                    }
-
-                    Section {
-                        Toggle("Show Percentage", isOn: $circularHUDShowValue)
-                        Toggle("Use Accent Color", isOn: $circularHUDUseAccentColor)
-                        Defaults.Toggle(key: .useColorCodedVolumeDisplay) {
-                            Text("Color-coded Volume")
-                        }
-                        if Defaults[.useColorCodedVolumeDisplay] {
-                            Defaults.Toggle(key: .useSmoothColorGradient) {
-                                Text("Smooth color transitions")
-                            }
-                        }
-                    } header: {
-                        Text("Style")
-                    }
-
-                    Section {
-                        VStack(alignment: .leading) {
-                            Text("Size: \(Int(circularHUDSize))px")
-                            Slider(value: $circularHUDSize, in: 40...200, step: 5)
-                        }
-                        VStack(alignment: .leading) {
-                            Text("Line Width: \(Int(circularHUDStrokeWidth))px")
-                            Slider(value: $circularHUDStrokeWidth, in: 2...16, step: 1)
-                        }
-                        Button("Reset to Default") {
-                            circularHUDSize = 65
-                            circularHUDStrokeWidth = 4
-                        }
-                    } header: {
-                        Text("Dimensions")
-                    }
-                }
+                circularHUDSections
             }
 
             // Third-party display integrations (shared across all HUD variants)
             ExternalDisplayIntegrationsSection()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(paneBackgroundColor)
         .navigationTitle("Controls")
         .onAppear {
             accessibilityPermission.refreshStatus()
@@ -2356,6 +2137,202 @@ private struct HUDAndOSDSettingsView: View {
                 verticalHUDMaterial = .frosted
                 verticalHUDLiquidGlassCustomizationMode = .standard
             }
+            if #unavailable(macOS 26.0), Defaults[.osdMaterial] == .liquid {
+                Defaults[.osdMaterial] = .frosted
+                Defaults[.osdLiquidGlassCustomizationMode] = .standard
+            }
+        }
+        // These lived on the Dynamic Island and Custom OSD sub-views' own Forms, live only while that
+        // style was selected. Rows of a lazy Form cannot host them reliably, so they sit here, keyed
+        // by the selected style exactly as before.
+        .onChange(of: selectedTab) { _, _ in
+            accessibilityPermission.refreshStatus()
+        }
+        .onChange(of: accessibilityPermission.isAuthorized) { _, granted in
+            switch selectedTab {
+            case .hud:
+                if !granted {
+                    enableSystemHUD = false
+                } else {
+                    // Without this the tap was created once at launch and never retried, so
+                    // granting Accessibility only took effect after restarting Kannu.
+                    MediaKeyInterceptor.shared.start()
+                }
+            case .osd:
+                if !granted {
+                    enableCustomOSD = false
+                    CustomOSDWindowManager.shared.forceHideAll()
+                }
+            case .vertical, .circular:
+                break
+            }
+        }
+        .onChange(of: enableCustomOSD) { _, enabled in
+            if !enabled {
+                CustomOSDWindowManager.shared.forceHideAll()
+            }
+        }
+    }
+
+    /// Accessibility callout, or the three HUD switches once Kannu can intercept the keys.
+    @ViewBuilder
+    private func controlsSections(permissionMessage: String) -> some View {
+        if !accessibilityPermission.isAuthorized && !enableThirdPartyDDCIntegration {
+            Section {
+                SettingsPermissionCallout(
+                    message: permissionMessage,
+                    requestAction: {
+                        accessibilityPermission.requestAuthorizationPrompt()
+                    },
+                    openSettingsAction: {
+                        accessibilityPermission.openSystemSettings()
+                    }
+                )
+            } header: {
+                Text("Accessibility")
+            }
+        }
+
+        if accessibilityPermission.isAuthorized || enableThirdPartyDDCIntegration {
+            Section {
+                Toggle("Volume HUD", isOn: $enableVolumeHUD)
+                Toggle("Brightness HUD", isOn: $enableBrightnessHUD)
+                SettingsRow("Keyboard Backlight HUD", description: enableThirdPartyDDCIntegration
+                            ? Text("Disabled while external display integration is active. Brightness keys are handled by the external app.") : nil) {
+                    Toggle("Keyboard Backlight HUD", isOn: $enableKeyboardBacklightHUD)
+                }
+                .disabled(enableThirdPartyDDCIntegration)
+            } header: {
+                Text("Controls")
+            } footer: {
+                SettingsFooter("Choose which system controls should display HUD notifications.")
+            }
+        }
+    }
+
+    @ViewBuilder
+    fileprivate var verticalHUDSections: some View {
+        controlsSections(permissionMessage: "Accessibility permission is needed to intercept system controls for the Vertical HUD.")
+
+        Section {
+            Toggle("Show Percentage", isOn: $verticalHUDShowValue)
+            Toggle("Use Accent Color", isOn: $verticalHUDUseAccentColor)
+            Toggle("Interactive (Drag to Change)", isOn: $verticalHUDInteractive)
+            Picker("Material", selection: $verticalHUDMaterial) {
+                ForEach(availableVerticalMaterials, id: \.self) { material in
+                    Text(material.rawValue).tag(material)
+                }
+            }
+
+            if verticalHUDMaterial == .liquid {
+                if #available(macOS 26.0, *) {
+                    SettingsRow("Glass mode") {
+                        Picker("Glass mode", selection: $verticalHUDLiquidGlassCustomizationMode) {
+                            ForEach(LockScreenGlassCustomizationMode.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .fixedSize()
+                    }
+
+                    if verticalHUDLiquidGlassCustomizationMode == .customLiquid {
+                        LabeledContent("Custom liquid variant") {
+                            variantSliderControl(value: verticalLiquidVariantBinding, current: verticalHUDLiquidGlassVariant.rawValue,
+                                                 range: liquidVariantRange, title: String(localized: "Custom liquid variant"))
+                        }
+                    }
+                } else {
+                    Text("Custom Liquid is available on macOS 26 or later.")
+                        .settingsDescriptionStyle()
+                }
+            }
+            Defaults.Toggle(key: .useColorCodedVolumeDisplay) {
+                Text("Color-coded Volume")
+            }
+            if Defaults[.useColorCodedVolumeDisplay] {
+                Defaults.Toggle(key: .useSmoothColorGradient) {
+                    Text("Smooth color transitions")
+                }
+            }
+        } header: {
+            Text("Behavior & Style")
+        }
+
+        Section {
+            Picker("HUD Position", selection: $verticalHUDPosition) {
+                Text("Left").tag("left")
+                Text("Right").tag("right")
+            }
+            .pickerStyle(.menu)
+
+            dimensionSlider(Text("Screen Padding: \(Int(verticalHUDPadding))px"), value: $verticalHUDPadding, in: 0...100, step: 4)
+        } header: {
+            Text("Position")
+        } footer: {
+            SettingsFooter("Choose directly on which side of the screen the vertical bar appears.")
+        }
+
+        Section {
+            dimensionSlider(Text("Width: \(Int(verticalHUDWidth))px"), value: $verticalHUDWidth, in: 24...80, step: 2)
+            dimensionSlider(Text("Height: \(Int(verticalHUDHeight))px"), value: $verticalHUDHeight, in: 100...500, step: 10)
+            SettingsActionRow {
+                Button("Reset to Default") {
+                    verticalHUDWidth = 36
+                    verticalHUDHeight = 160
+                    verticalHUDPadding = 24
+                }
+            }
+        } header: {
+            Text("Dimensions")
+        }
+    }
+
+    @ViewBuilder
+    fileprivate var circularHUDSections: some View {
+        controlsSections(permissionMessage: "Accessibility permission is needed to intercept system controls for the Circular HUD.")
+
+        Section {
+            Toggle("Show Percentage", isOn: $circularHUDShowValue)
+            Toggle("Use Accent Color", isOn: $circularHUDUseAccentColor)
+            Defaults.Toggle(key: .useColorCodedVolumeDisplay) {
+                Text("Color-coded Volume")
+            }
+            if Defaults[.useColorCodedVolumeDisplay] {
+                Defaults.Toggle(key: .useSmoothColorGradient) {
+                    Text("Smooth color transitions")
+                }
+            }
+        } header: {
+            Text("Style")
+        }
+
+        Section {
+            dimensionSlider(Text("Size: \(Int(circularHUDSize))px"), value: $circularHUDSize, in: 40...200, step: 5)
+            dimensionSlider(Text("Line Width: \(Int(circularHUDStrokeWidth))px"), value: $circularHUDStrokeWidth, in: 2...16, step: 1)
+            SettingsActionRow {
+                Button("Reset to Default") {
+                    circularHUDSize = 65
+                    circularHUDStrokeWidth = 4
+                }
+            }
+        } header: {
+            Text("Dimensions")
+        }
+    }
+
+    /// A size or position slider: the title (which carries the value, "Width: 36px") on the leading
+    /// side, the slider trailing.
+    private func dimensionSlider<V: BinaryFloatingPoint>(_ title: Text, value: Binding<V>, in range: ClosedRange<V>,
+                                                         step: V.Stride) -> some View where V.Stride: BinaryFloatingPoint {
+        LabeledContent {
+            Slider(value: value, in: range, step: step) {
+                title
+            }
+            .labelsHidden()
+            .frame(width: 220)
+        } label: {
+            title.monospacedDigit()
         }
     }
 }
@@ -2438,138 +2415,107 @@ private struct ExternalDisplayIntegrationsSection: View {
         }
     }
 
+    /// Step size and display-app integration sections, drawn inside the Controls tab's Form.
     var body: some View {
-        Form {
-            Section {
-                Stepper(value: $volumeStepPercent, in: 1...25) {
-                    HStack {
-                        Text("Volume step")
-                        Spacer()
-                        Text("\(volumeStepPercent)%")
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                }
+        Section {
+            stepRow(Text("Volume step"), value: $volumeStepPercent)
                 .settingsHighlight(id: highlightID("Volume step"))
                 .disabled(enableExternalVolumeControlListener)
-
-                Stepper(value: $volumeFineStepPercent, in: 1...25) {
-                    HStack {
-                        Text("Volume fine step")
-                        Spacer()
-                        Text("\(volumeFineStepPercent)%")
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                }
+            stepRow(Text("Volume fine step"), value: $volumeFineStepPercent)
                 .settingsHighlight(id: highlightID("Volume fine step"))
                 .disabled(enableExternalVolumeControlListener)
-
-                if enableExternalVolumeControlListener {
-                    Text("Disabled while external display volume integration is active.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Stepper(value: $brightnessStepPercent, in: 1...25) {
-                    HStack {
-                        Text("Brightness step")
-                        Spacer()
-                        Text("\(brightnessStepPercent)%")
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                }
+            stepRow(Text("Brightness step"), value: $brightnessStepPercent)
                 .settingsHighlight(id: highlightID("Brightness step"))
                 .disabled(enableThirdPartyDDCIntegration)
-
-                Stepper(value: $brightnessFineStepPercent, in: 1...25) {
-                    HStack {
-                        Text("Brightness fine step")
-                        Spacer()
-                        Text("\(brightnessFineStepPercent)%")
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                }
+            stepRow(Text("Brightness fine step"), value: $brightnessFineStepPercent)
                 .settingsHighlight(id: highlightID("Brightness fine step"))
                 .disabled(enableThirdPartyDDCIntegration)
-
-                if enableThirdPartyDDCIntegration {
-                    Text("Disabled while external display brightness integration is active.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        } header: {
+            Text("Step size")
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                if enableExternalVolumeControlListener {
+                    SettingsFooter("Disabled while external display volume integration is active.")
                 }
-            } header: {
-                Text("Step size")
-            } footer: {
-                Text("Percent change per key press. Fine step applies when holding Shift+Option.")
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
-            }
-
-            Section {
-                Toggle("Enable third-party DDC app integration", isOn: $enableThirdPartyDDCIntegration)
-                    .settingsHighlight(id: highlightID("Third-party DDC app integration"))
-
                 if enableThirdPartyDDCIntegration {
-                    Picker("Provider", selection: $thirdPartyDDCProvider) {
-                        ForEach(ThirdPartyDDCProvider.allCases) { provider in
-                            HStack {
-                                AppIconImage(
-                                    bundleIdentifiers: provider.bundleIdentifiers,
-                                    symbolFallback: "display",
-                                    symbolColor: .secondary
-                                )
-                                Text(provider.displayName)
-                            }
-                            .tag(provider)
+                    SettingsFooter("Disabled while external display brightness integration is active.")
+                }
+                SettingsFooter("Percent change per key press. Fine step applies when holding Shift+Option.")
+            }
+        }
+
+        Section {
+            SettingsRow("Enable third-party DDC app integration", description: enableThirdPartyDDCIntegration
+                        ? nil : Text("Enable to route BetterDisplay or Lunar display adjustments through Kannu's active HUD style.")) {
+                Toggle("Enable third-party DDC app integration", isOn: $enableThirdPartyDDCIntegration)
+            }
+            .settingsHighlight(id: highlightID("Third-party DDC app integration"))
+
+            if enableThirdPartyDDCIntegration {
+                Picker("Provider", selection: $thirdPartyDDCProvider) {
+                    ForEach(ThirdPartyDDCProvider.allCases) { provider in
+                        HStack {
+                            AppIconImage(
+                                bundleIdentifiers: provider.bundleIdentifiers,
+                                symbolFallback: "display",
+                                symbolColor: .secondary
+                            )
+                            Text(provider.displayName)
                         }
+                        .tag(provider)
                     }
-                    .settingsHighlight(id: highlightID("Third-party DDC provider"))
+                }
+                .settingsHighlight(id: highlightID("Third-party DDC provider"))
 
+                SettingsRow("Enable external volume control listener", description: Text(
+                    enableExternalVolumeControlListener
+                    ? "Kannu's built-in volume key interception is disabled while external volume listening is on. Volume HUD/OSD will follow \(thirdPartyDDCProvider.displayName) payloads."
+                    : "Kannu keeps native volume key interception. External provider volume payloads are ignored while this is off."
+                )) {
                     Toggle("Enable external volume control listener", isOn: $enableExternalVolumeControlListener)
-                        .settingsHighlight(id: highlightID("Enable external volume control listener"))
+                }
+                .settingsHighlight(id: highlightID("Enable external volume control listener"))
 
-                    Text(
-                        enableExternalVolumeControlListener
-                        ? "Kannu's built-in volume key interception is disabled while external volume listening is on. Volume HUD/OSD will follow \(thirdPartyDDCProvider.displayName) payloads."
-                        : "Kannu keeps native volume key interception. External provider volume payloads are ignored while this is off."
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                    HStack {
-                        Text("Status")
-                        Spacer()
-                        Text(providerStatusText)
-                            .font(.caption)
-                            .foregroundStyle(providerStatusColor)
-                    }
-
-                    Text(providerStatusDescription)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
+                LabeledContent {
                     Button {
                         refreshDetectionStatus()
                     } label: {
                         Label("Refresh detection", systemImage: "arrow.clockwise")
-                            .font(.caption)
                     }
-                    .buttonStyle(.link)
-                } else {
-                    Text("Enable to route BetterDisplay or Lunar display adjustments through Kannu's active HUD style.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            } footer: {
-                if enableThirdPartyDDCIntegration {
-                    Text("Kannu always listens to selected-provider brightness events, and listens to provider volume events only when external volume listener is enabled.")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text("Status")
+                            Text(providerStatusText)
+                                .foregroundStyle(providerStatusColor)
+                        }
+                        // The descriptions carry Markdown links; a plain String would show the brackets.
+                        Text(LocalizedStringKey(providerStatusDescription))
+                            .settingsDescriptionStyle()
+                    }
                 }
             }
+        } footer: {
+            if enableThirdPartyDDCIntegration {
+                SettingsFooter("Kannu always listens to selected-provider brightness events, and listens to provider volume events only when external volume listener is enabled.")
+            }
+        }
+    }
+
+    /// A percent step: the title on the leading side, the value and a stepper trailing.
+    private func stepRow(_ title: Text, value: Binding<Int>) -> some View {
+        LabeledContent {
+            HStack(spacing: 6) {
+                Text("\(value.wrappedValue)%")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                Stepper(value: value, in: 1...25) {
+                    title
+                }
+                .labelsHidden()
+            }
+        } label: {
+            title
         }
     }
 }
@@ -2599,12 +2545,16 @@ private struct HUDSelectionCard<Preview: View>: View {
 
                     preview
                 }
-                .frame(width: 110, height: 80)
+                // Four cards share one Form row, so they flex instead of taking a fixed 110 pt.
+                .frame(minWidth: 72, maxWidth: 110)
+                .frame(height: 76)
 
                 VStack(spacing: 4) {
                     Text(title)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(isSelected ? .primary : .secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
 
                     if isSelected {
                         Circle()
@@ -2736,139 +2686,117 @@ struct HUD: View {
         progressBarStyle == .segmented
     }
 
+    /// The Dynamic Island style's sections, drawn inside the Controls tab's Form (which also holds
+    /// this style's Accessibility side effects).
     var body: some View {
-        Form {
-            if !hasAccessibilityPermission && !enableThirdPartyDDCIntegration {
-                Section {
-                    SettingsPermissionCallout(
-                        message: "Without Accessibility permission macOS handles the volume and brightness keys itself and shows its own HUD, so Kannu hides its own to avoid two HUDs stacking. Granting it lets Kannu replace them.",
-                        requestAction: { accessibilityPermission.requestAuthorizationPrompt() },
-                        openSettingsAction: { accessibilityPermission.openSystemSettings() }
-                    )
-                } header: {
-                    Text("Accessibility")
-                }
-            }
-
-
-
-            if enableSystemHUD && !Defaults[.enableCustomOSD] && (hasAccessibilityPermission || enableThirdPartyDDCIntegration) {
-                Section {
-                    Toggle("Volume HUD", isOn: $enableVolumeHUD)
-                    Toggle("Brightness HUD", isOn: $enableBrightnessHUD)
-                    Toggle("Keyboard Backlight HUD", isOn: $enableKeyboardBacklightHUD)
-                        .disabled(enableThirdPartyDDCIntegration)
-                        .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active. Brightness keys are handled by the external app." : "")
-                } header: {
-                    Text("Controls")
-                } footer: {
-                    Text("Choose which system controls should display HUD notifications.")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
-            }
-
+        if !hasAccessibilityPermission && !enableThirdPartyDDCIntegration {
             Section {
+                SettingsPermissionCallout(
+                    message: "Without Accessibility permission macOS handles the volume and brightness keys itself and shows its own HUD, so Kannu hides its own to avoid two HUDs stacking. Granting it lets Kannu replace them.",
+                    requestAction: { accessibilityPermission.requestAuthorizationPrompt() },
+                    openSettingsAction: { accessibilityPermission.openSystemSettings() }
+                )
+            } header: {
+                Text("Accessibility")
+            }
+        }
+
+
+
+        if enableSystemHUD && !Defaults[.enableCustomOSD] && (hasAccessibilityPermission || enableThirdPartyDDCIntegration) {
+            Section {
+                Toggle("Volume HUD", isOn: $enableVolumeHUD)
+                Toggle("Brightness HUD", isOn: $enableBrightnessHUD)
+                SettingsRow("Keyboard Backlight HUD", description: enableThirdPartyDDCIntegration
+                            ? Text("Disabled while external display integration is active. Brightness keys are handled by the external app.") : nil) {
+                    Toggle("Keyboard Backlight HUD", isOn: $enableKeyboardBacklightHUD)
+                }
+                .disabled(enableThirdPartyDDCIntegration)
+            } header: {
+                Text("Controls")
+            } footer: {
+                SettingsFooter("Choose which system controls should display HUD notifications.")
+            }
+        }
+
+        Section {
+            SettingsRow("Play feedback when volume is changed", description: "Plays the supplied feedback clip whenever you press the hardware volume keys.") {
                 Defaults.Toggle(key: .playVolumeChangeFeedback) {
                     Text("Play feedback when volume is changed")
                 }
-                .settingsHighlight(id: highlightID("Play feedback when volume is changed"))
-                .help("Plays the supplied feedback clip whenever you press the hardware volume keys.")
-            } header: {
-                Text("Audio feedback")
-            } footer: {
-                Text("Requires Accessibility permission so Dynamic Island can intercept the hardware volume keys.")
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
             }
-
-            Section {
-                Defaults.Toggle(key: .useColorCodedVolumeDisplay) {
-                    Text("Color-coded volume display")
-                }
-                .disabled(colorCodingDisabled)
-                .settingsHighlight(id: highlightID("Color-coded volume display"))
-
-                if !colorCodingDisabled && (Defaults[.useColorCodedBatteryDisplay] || Defaults[.useColorCodedVolumeDisplay]) {
-                    Defaults.Toggle(key: .useSmoothColorGradient) {
-                        Text("Smooth color transitions")
-                    }
-                    .settingsHighlight(id: highlightID("Smooth color transitions"))
-                }
-
-                Defaults.Toggle(key: .showProgressPercentages) {
-                    Text("Show percentages beside progress bars")
-                }
-                .settingsHighlight(id: highlightID("Show percentages beside progress bars"))
-            } header: {
-                Text("Dynamic Island Progress Bars")
-            } footer: {
-                if colorCodingDisabled {
-                    Text("Color-coded fills and smooth gradients are unavailable in Segmented mode. Switch to Hierarchical or Gradient to adjust these options.")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                } else if Defaults[.useSmoothColorGradient] {
-                    Text("Smooth transitions blend Green (0–60%), Yellow (60–85%), and Red (85–100%) through the entire fill.")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                } else {
-                    Text("Discrete transitions snap between Green (0–60%), Yellow (60–85%), and Red (85–100%).")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
-            }
-
-            Section {
-                Picker("HUD style", selection: $inlineHUD) {
-                    Text("Default")
-                        .tag(false)
-                    Text("Inline")
-                        .tag(true)
-                }
-                .settingsHighlight(id: highlightID("HUD style"))
-                .onChange(of: Defaults[.inlineHUD]) {
-                    if Defaults[.inlineHUD] {
-                        withAnimation {
-                            Defaults[.systemEventIndicatorShadow] = false
-                            Defaults[.progressBarStyle] = .hierarchical
-                        }
-                    }
-                }
-                Picker("Progressbar style", selection: $progressBarStyle) {
-                    Text("Hierarchical")
-                        .tag(ProgressBarStyle.hierarchical)
-                    Text("Gradient")
-                        .tag(ProgressBarStyle.gradient)
-                    Text("Segmented")
-                        .tag(ProgressBarStyle.segmented)
-                }
-                .settingsHighlight(id: highlightID("Progressbar style"))
-                Defaults.Toggle(key: .systemEventIndicatorShadow) {
-                    Text("Enable glowing effect")
-                }
-                .settingsHighlight(id: highlightID("Enable glowing effect"))
-                Defaults.Toggle(key: .systemEventIndicatorUseAccent) {
-                    Text("Use accent color")
-                }
-                .settingsHighlight(id: highlightID("Use accent color"))
-            } header: {
-                HStack {
-                    Text("Appearance")
-                }
-            }
+            .settingsHighlight(id: highlightID("Play feedback when volume is changed"))
+        } header: {
+            Text("Audio feedback")
+        } footer: {
+            SettingsFooter("Requires Accessibility permission so Dynamic Island can intercept the hardware volume keys.")
         }
-        .navigationTitle("Controls")
-        .onAppear {
-            accessibilityPermission.refreshStatus()
-        }
-        .onChange(of: accessibilityPermission.isAuthorized) { _, granted in
-            if !granted {
-                enableSystemHUD = false
+
+        Section {
+            Defaults.Toggle(key: .useColorCodedVolumeDisplay) {
+                Text("Color-coded volume display")
+            }
+            .disabled(colorCodingDisabled)
+            .settingsHighlight(id: highlightID("Color-coded volume display"))
+
+            if !colorCodingDisabled && (Defaults[.useColorCodedBatteryDisplay] || Defaults[.useColorCodedVolumeDisplay]) {
+                Defaults.Toggle(key: .useSmoothColorGradient) {
+                    Text("Smooth color transitions")
+                }
+                .settingsHighlight(id: highlightID("Smooth color transitions"))
+            }
+
+            Defaults.Toggle(key: .showProgressPercentages) {
+                Text("Show percentages beside progress bars")
+            }
+            .settingsHighlight(id: highlightID("Show percentages beside progress bars"))
+        } header: {
+            Text("Dynamic Island Progress Bars")
+        } footer: {
+            if colorCodingDisabled {
+                SettingsFooter("Color-coded fills and smooth gradients are unavailable in Segmented mode. Switch to Hierarchical or Gradient to adjust these options.")
+            } else if Defaults[.useSmoothColorGradient] {
+                SettingsFooter("Smooth transitions blend Green (0–60%), Yellow (60–85%), and Red (85–100%) through the entire fill.")
             } else {
-                // Without this the tap was created once at launch and never retried, so
-                // granting Accessibility only took effect after restarting Kannu.
-                MediaKeyInterceptor.shared.start()
+                SettingsFooter("Discrete transitions snap between Green (0–60%), Yellow (60–85%), and Red (85–100%).")
             }
+        }
+
+        Section {
+            Picker("HUD style", selection: $inlineHUD) {
+                Text("Default")
+                    .tag(false)
+                Text("Inline")
+                    .tag(true)
+            }
+            .settingsHighlight(id: highlightID("HUD style"))
+            .onChange(of: Defaults[.inlineHUD]) {
+                if Defaults[.inlineHUD] {
+                    withAnimation {
+                        Defaults[.systemEventIndicatorShadow] = false
+                        Defaults[.progressBarStyle] = .hierarchical
+                    }
+                }
+            }
+            Picker("Progressbar style", selection: $progressBarStyle) {
+                Text("Hierarchical")
+                    .tag(ProgressBarStyle.hierarchical)
+                Text("Gradient")
+                    .tag(ProgressBarStyle.gradient)
+                Text("Segmented")
+                    .tag(ProgressBarStyle.segmented)
+            }
+            .settingsHighlight(id: highlightID("Progressbar style"))
+            Defaults.Toggle(key: .systemEventIndicatorShadow) {
+                Text("Enable glowing effect")
+            }
+            .settingsHighlight(id: highlightID("Enable glowing effect"))
+            Defaults.Toggle(key: .systemEventIndicatorUseAccent) {
+                Text("Use accent color")
+            }
+            .settingsHighlight(id: highlightID("Use accent color"))
+        } header: {
+            Text("Appearance")
         }
     }
 }
@@ -7032,7 +6960,7 @@ struct SettingsPermissionCallout: View {
 }
 
 #Preview {
-    HUD()
+    Form { HUD() }
 }
 
 struct CustomOSDSettings: View {
@@ -7082,166 +7010,139 @@ struct CustomOSDSettings: View {
         )
     }
 
+    /// The Custom OSD style's sections, drawn inside the Controls tab's Form (which also holds this
+    /// style's Accessibility and hide-on-disable side effects, and the macOS 26 material fallback).
     var body: some View {
-        Form {
-            if !hasAccessibilityPermission && !enableThirdPartyDDCIntegration {
-                Section {
-                    SettingsPermissionCallout(
-                        message: "Accessibility permission is needed to intercept system controls for the Custom OSD.",
-                        requestAction: { accessibilityPermission.requestAuthorizationPrompt() },
-                        openSettingsAction: { accessibilityPermission.openSystemSettings() }
-                    )
-                } header: {
-                    Text("Accessibility")
+        if !hasAccessibilityPermission && !enableThirdPartyDDCIntegration {
+            Section {
+                SettingsPermissionCallout(
+                    message: "Accessibility permission is needed to intercept system controls for the Custom OSD.",
+                    requestAction: { accessibilityPermission.requestAuthorizationPrompt() },
+                    openSettingsAction: { accessibilityPermission.openSystemSettings() }
+                )
+            } header: {
+                Text("Accessibility")
+            }
+        }
+
+        if hasAccessibilityPermission || enableThirdPartyDDCIntegration {
+            Section {
+                Toggle("Volume OSD", isOn: $enableOSDVolume)
+                    .settingsHighlight(id: highlightID("Volume OSD"))
+                Toggle("Brightness OSD", isOn: $enableOSDBrightness)
+                    .settingsHighlight(id: highlightID("Brightness OSD"))
+                SettingsRow("Keyboard Backlight OSD", description: enableThirdPartyDDCIntegration
+                            ? Text("Disabled while external display integration is active. Brightness keys are handled by the external app.") : nil) {
+                    Toggle("Keyboard Backlight OSD", isOn: $enableOSDKeyboardBacklight)
                 }
+                .settingsHighlight(id: highlightID("Keyboard Backlight OSD"))
+                .disabled(enableThirdPartyDDCIntegration)
+            } header: {
+                Text("Controls")
+            } footer: {
+                SettingsFooter("Choose which system controls should display custom OSD windows.")
             }
 
-            if hasAccessibilityPermission || enableThirdPartyDDCIntegration {
-                Section {
-                    Toggle("Volume OSD", isOn: $enableOSDVolume)
-                        .settingsHighlight(id: highlightID("Volume OSD"))
-                    Toggle("Brightness OSD", isOn: $enableOSDBrightness)
-                        .settingsHighlight(id: highlightID("Brightness OSD"))
-                    Toggle("Keyboard Backlight OSD", isOn: $enableOSDKeyboardBacklight)
-                        .settingsHighlight(id: highlightID("Keyboard Backlight OSD"))
-                        .disabled(enableThirdPartyDDCIntegration)
-                        .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active. Brightness keys are handled by the external app." : "")
-                } header: {
-                    Text("Controls")
-                } footer: {
-                    Text("Choose which system controls should display custom OSD windows.")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
+            Section {
+                Picker("Material", selection: $osdMaterial) {
+                    ForEach(availableOSDMaterials, id: \.self) { material in
+                        Text(material.rawValue).tag(material)
+                    }
+                }
+                .settingsHighlight(id: highlightID("Material"))
+                .onChange(of: osdMaterial) { _, _ in
+                    previewValue = previewValue == 0.65 ? 0.651 : 0.65
                 }
 
-                Section {
-                    Picker("Material", selection: $osdMaterial) {
-                        ForEach(availableOSDMaterials, id: \.self) { material in
-                            Text(material.rawValue).tag(material)
-                        }
-                    }
-                    .settingsHighlight(id: highlightID("Material"))
-                    .onChange(of: osdMaterial) { _, _ in
-                        previewValue = previewValue == 0.65 ? 0.651 : 0.65
-                    }
-
-                    if osdMaterial == .liquid {
-                        if #available(macOS 26.0, *) {
+                if osdMaterial == .liquid {
+                    if #available(macOS 26.0, *) {
+                        SettingsRow("Glass mode") {
                             Picker("Glass mode", selection: $osdLiquidGlassCustomizationMode) {
                                 ForEach(LockScreenGlassCustomizationMode.allCases) { mode in
                                     Text(mode.rawValue).tag(mode)
                                 }
                             }
                             .pickerStyle(.segmented)
+                            .fixedSize()
+                        }
 
-                            if osdLiquidGlassCustomizationMode == .customLiquid {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    HStack {
-                                        Text("Custom liquid variant")
-                                        Spacer()
-                                        Text("v\(osdLiquidGlassVariant.rawValue)")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Slider(value: osdLiquidVariantBinding, in: liquidVariantRange, step: 1)
-                                }
+                        if osdLiquidGlassCustomizationMode == .customLiquid {
+                            LabeledContent("Custom liquid variant") {
+                                variantSliderControl(value: osdLiquidVariantBinding, current: osdLiquidGlassVariant.rawValue,
+                                                     range: liquidVariantRange, title: String(localized: "Custom liquid variant"))
                             }
-                        } else {
-                            Text("Custom Liquid is available on macOS 26 or later.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                         }
+                    } else {
+                        Text("Custom Liquid is available on macOS 26 or later.")
+                            .settingsDescriptionStyle()
                     }
-
-                    Picker("Icon & Progress Color", selection: $osdIconColorStyle) {
-                        ForEach(OSDIconColorStyle.allCases, id: \.self) { style in
-                            Text(style.rawValue).tag(style)
-                        }
-                    }
-                    .settingsHighlight(id: highlightID("Icon & Progress Color"))
-                    .onChange(of: osdIconColorStyle) { _, _ in
-                        previewValue = previewValue == 0.65 ? 0.651 : 0.65
-                    }
-                } header: {
-                    Text("Appearance")
-                } footer: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Material Options:")
-                        Text("• Frosted Glass: Translucent blur effect")
-                        Text("• Liquid Glass: Modern glass effect (macOS 26+)")
-                        Text("• Solid Dark/Light/Auto: Opaque backgrounds")
-                        Text("")
-                        Text("Color options control the icon and progress bar appearance. Auto adapts to system theme.")
-                    }
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
                 }
 
-                Section {
-                    HStack {
-                        Spacer()
-                        VStack(spacing: 16) {
-                            Text("Live Preview")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                Picker("Icon & Progress Color", selection: $osdIconColorStyle) {
+                    ForEach(OSDIconColorStyle.allCases, id: \.self) { style in
+                        Text(style.rawValue).tag(style)
+                    }
+                }
+                .settingsHighlight(id: highlightID("Icon & Progress Color"))
+                .onChange(of: osdIconColorStyle) { _, _ in
+                    previewValue = previewValue == 0.65 ? 0.651 : 0.65
+                }
+            } header: {
+                Text("Appearance")
+            } footer: {
+                VStack(alignment: .leading, spacing: 2) {
+                    SettingsFooter("Material Options:")
+                    SettingsFooter("• Frosted Glass: Translucent blur effect")
+                    SettingsFooter("• Liquid Glass: Modern glass effect (macOS 26+)")
+                    SettingsFooter("• Solid Dark/Light/Auto: Opaque backgrounds")
+                    SettingsFooter("Color options control the icon and progress bar appearance. Auto adapts to system theme.")
+                        .padding(.top, 6)
+                }
+            }
 
-                            CustomOSDView(
-                                type: .constant(previewType),
-                                value: .constant(previewValue),
-                                icon: .constant("")
-                            )
-                            .frame(width: 200, height: 200)
+            Section {
+                HStack {
+                    Spacer()
+                    VStack(spacing: 16) {
+                        Text("Live Preview")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
 
-                            HStack(spacing: 8) {
-                                Button("Volume") {
-                                    previewType = .volume
-                                }
-                                .buttonStyle(.bordered)
+                        CustomOSDView(
+                            type: .constant(previewType),
+                            value: .constant(previewValue),
+                            icon: .constant("")
+                        )
+                        .frame(width: 200, height: 200)
 
-                                Button("Brightness") {
-                                    previewType = .brightness
-                                }
-                                .buttonStyle(.bordered)
+                        HStack(spacing: 8) {
+                            Button("Volume") {
+                                previewType = .volume
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button("Brightness") {
+                                previewType = .brightness
+                            }
+                            .buttonStyle(.bordered)
                                 
-                                Button("Backlight") {
-                                    previewType = .backlight
-                                }
-                                .buttonStyle(.bordered)
+                            Button("Backlight") {
+                                previewType = .backlight
                             }
-                            .controlSize(.small)
-                            
-                            Slider(value: $previewValue, in: 0...1)
-                                .frame(width: 160)
+                            .buttonStyle(.bordered)
                         }
-                        .padding(.vertical, 12)
-                        Spacer()
+                        .controlSize(.small)
+                            
+                        Slider(value: $previewValue, in: 0...1)
+                            .frame(width: 160)
                     }
-                } header: {
-                    Text("Preview")
-                } footer: {
-                    Text("Adjust settings above to see changes in real-time. The actual OSD appears at the bottom center of your screen.")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
+                    .padding(.vertical, 12)
+                    Spacer()
                 }
-            }
-        }
-        .navigationTitle("Custom OSD")
-        .onAppear {
-            accessibilityPermission.refreshStatus()
-            if #unavailable(macOS 26.0), osdMaterial == .liquid {
-                osdMaterial = .frosted
-                osdLiquidGlassCustomizationMode = .standard
-            }
-        }
-        .onChange(of: accessibilityPermission.isAuthorized) { _, granted in
-            if !granted {
-                enableCustomOSD = false
-                CustomOSDWindowManager.shared.forceHideAll()
-            }
-        }
-        .onChange(of: enableCustomOSD) { _, enabled in
-            if !enabled {
-                CustomOSDWindowManager.shared.forceHideAll()
+            } header: {
+                Text("Preview")
+            } footer: {
+                SettingsFooter("Adjust settings above to see changes in real-time. The actual OSD appears at the bottom center of your screen.")
             }
         }
     }
@@ -8646,6 +8547,21 @@ extension SettingsView {
         SettingsTab.allCases
             .filter { filter?.contains($0.rawValue) ?? true }
             .map { tab in (tab.rawValue, AnyView(SettingsView().detailView(for: tab))) }
+    }
+}
+
+extension SettingsView {
+    /// DEBUG snapshot harness: the Controls tab's Custom OSD, Vertical Bar and Circular sections, which
+    /// show only when that style's card is selected (the harness must not change the user's choice).
+    static func snapshotControlsStyles() -> AnyView {
+        let controls = HUDAndOSDSettingsView()
+        return AnyView(Form {
+            if #available(macOS 15.0, *) {
+                CustomOSDSettings()
+            }
+            controls.verticalHUDSections
+            controls.circularHUDSections
+        })
     }
 }
 

@@ -4,6 +4,34 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - Controls is one Form; Battery in the System Settings layout
+- **Developer label:** "the settings should be enginered like apple does settings" (scope picked: "Rework every tab")
+- **Agent label:** Rebuild the Controls tab as a single scrolling Form; Battery rows, sliders and test buttons
+- **Changes:**
+  - Controls stacked two Forms (the selected style's settings, then step size and display
+    integrations) under a fixed row of style cards: two regions scrolled separately, a footer was
+    clipped, and the fourth card ran off the window edge. Now one Form: the cards are the first
+    group (flexible width, all four fit), then the style's groups, then Step size and DDC.
+  - `HUD`, `CustomOSDSettings` and `ExternalDisplayIntegrationsSection` now emit sections. Their
+    side effects moved to the Controls Form because rows in a lazy Form cannot host them
+    reliably, keyed by the selected card exactly as before: Dynamic Island — Accessibility
+    revoked turns the system HUD off, granted starts the media-key tap; Custom OSD — revoked turns
+    the OSD off and hides its windows. Turning the OSD off hides its windows from any card, the
+    macOS 26 material fallbacks run when the tab appears, and switching cards refreshes the
+    Accessibility status (it used to on each sub-view's appear).
+  - Keyboard-backlight, audio-feedback and DDC explanations (tooltips or rows of their own) are
+    descriptions; steppers show "6%" beside the stepper; size sliders share `dimensionSlider`;
+    Reset to Default sits on the trailing side. The DDC status description showed its Markdown
+    links as raw brackets; it now renders them.
+  - Battery: durations and thresholds use the new shared `SettingsSliderRow` (title leading,
+    slider and value trailing); the style explanations sit under their pickers; the three test
+    buttons are "Charging HUD / Low battery HUD / Fully charged HUD" rows with Test on the
+    trailing side. Each registers a highlight id, so the three "Test … HUD" search entries,
+    which opened the tab and scrolled nowhere, now land on their row (inventory test: every
+    entry names a row; 249 registrations).
+  - DEBUG harness: a `controlStyles` board renders the Custom OSD, Vertical Bar and Circular
+    groups without changing the selected card.
+
 ### 2026-09-11 - Media, Live Activities, Lock Screen and Devices in the System Settings layout
 - **Developer label:** "the settings should be enginered like apple does settings" (scope picked: "Rework every tab")
 - **Agent label:** State notes become footers or descriptions, tooltips become visible text, packed rows split, one slider pattern

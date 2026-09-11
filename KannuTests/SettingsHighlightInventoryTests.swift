@@ -59,8 +59,8 @@ final class SettingsHighlightInventoryTests: XCTestCase {
     func testCountsArePinned() throws {
         let inventory = try Self.inventory()
         XCTAssertEqual(inventory.entries.count, 198, "search entries")
-        XCTAssertEqual(inventory.registrations.values.reduce(0, +), 246, "row registrations")
-        XCTAssertEqual(inventory.registrations.count, 240, "distinct registered ids")
+        XCTAssertEqual(inventory.registrations.values.reduce(0, +), 249, "row registrations")
+        XCTAssertEqual(inventory.registrations.count, 243, "distinct registered ids")
     }
 
     func testOnlyTheKnownRowsTakeTheirIdBuilderFromAParent() throws {
@@ -105,11 +105,10 @@ final class SettingsHighlightInventoryTests: XCTestCase {
         XCTAssertEqual(inventory.entries.count, entryCalls)
     }
 
-    func testOnlyTheBatteryTestButtonsOpenTheirTabWithoutARow() throws {
-        // An entry without an id opens its tab and scrolls nowhere.
+    func testEverySearchEntryNamesARow() throws {
+        // An entry without an id opens its tab and scrolls nowhere (the three Battery test entries did).
         let withoutRow = try Self.inventory().entries.filter { $0.highlight == nil }.map { "\($0.tab): \($0.title)" }
-        XCTAssertEqual(Set(withoutRow), ["battery: Test charging HUD", "battery: Test low battery HUD",
-                                         "battery: Test full battery HUD"])
+        XCTAssertEqual(withoutRow, [])
     }
 
     // MARK: - Parsing

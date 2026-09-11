@@ -133,6 +133,42 @@ struct SettingsRow<Control: View>: View {
     }
 }
 
+/// A slider row: the title on the leading side, the slider and its current value trailing, at one
+/// width across Settings.
+struct SettingsSliderRow<Value: BinaryFloatingPoint>: View where Value.Stride: BinaryFloatingPoint {
+    private let title: Text
+    private let valueText: Text
+    @Binding private var value: Value
+    private let range: ClosedRange<Value>
+    private let step: Value.Stride
+
+    init(_ title: LocalizedStringKey, value: Binding<Value>, in range: ClosedRange<Value>, step: Value.Stride, valueText: Text) {
+        self.title = Text(title)
+        self.valueText = valueText
+        _value = value
+        self.range = range
+        self.step = step
+    }
+
+    var body: some View {
+        LabeledContent {
+            HStack(spacing: 8) {
+                Slider(value: $value, in: range, step: step) {
+                    title
+                }
+                .labelsHidden()
+                valueText
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 40, alignment: .trailing)
+            }
+            .frame(width: 220)
+        } label: {
+            title
+        }
+    }
+}
+
 /// Text under a group of rows. Selectable, leading-aligned like System Settings.
 struct SettingsFooter: View {
     private let text: Text

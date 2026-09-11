@@ -56,6 +56,9 @@ enum DebugSnapshots {
         if request.tabs == nil || request.tabs?.contains("displays") == true {
             boards.append(("displays", GeneralSettings.snapshotPerDisplayRows()))
         }
+        if request.tabs == nil || request.tabs?.contains("controlStyles") == true {
+            boards.append(("controlStyles", SettingsView.snapshotControlsStyles()))
+        }
         if request.tabs == nil || request.tabs?.contains("components") == true {
             boards.append(("components", AnyView(componentsBoard)))
         }
