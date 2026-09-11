@@ -4,6 +4,33 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - Timer, Notes, Clipboard, Screen Assistant, Shelf, Downloads and Shortcuts in the System Settings layout
+- **Developer label:** "the settings should be enginered like apple does settings" (scope picked: "Rework every tab")
+- **Agent label:** Same row rules on the remaining productivity tabs, plus four visible bugs fixed
+- **Changes:**
+  - Timer: the Clock-mirroring and display-mode explanations (tooltips) and the lock-screen
+    surface notes are descriptions; the custom duration is a "Default Custom Timer" row plus
+    Hours/Minutes/Seconds rows (value and stepper trailing); Restore Defaults and Add Preset sit
+    on the trailing side; the sound row is one row with Reset and Choose File trailing. The
+    stepper side effects moved to the Form so a row that is not built yet cannot miss them.
+  - Timer sound: the row read `customTimerSoundPath` straight from UserDefaults, so after Choose
+    File or Reset it kept showing the old file until something else redrew the tab; it is now
+    `@AppStorage` and updates at once (same key; the timer still reads it the same way).
+  - Downloads: "Download indicator style" was hard-coded white and invisible in light mode.
+  - Clipboard and Shortcuts said the clipboard shortcut is Cmd+Shift+V; the default is ⇧⌘C and it
+    is user-set. The Clipboard and Screen Assistant footers now show the actual shortcut; the
+    Shortcuts rows drop the stale defaults (the recorder shows the real one).
+  - Shortcuts: five one-row groups with right-aligned footers become one group of recorder rows,
+    each explained under its (translated) title; the disabled placeholder group is gone.
+  - Clipboard and Screen Assistant: labelled pickers instead of text plus an unlabelled picker;
+    value rows as `LabeledContent`; the permanent Clear actions sit on the trailing side and keep
+    their red text; clipboard previews can be selected.
+  - Notes: Sync Now is a trailing button beside "Last synced" instead of a full-width button;
+    Shelf: the Quick Share explanation sits under its picker; every footer on these tabs is
+    selectable and left-aligned.
+  - Keys, bindings, side effects and highlight ids unchanged (inventory test). DEBUG harness: a
+    `shortcutRows` board for the recorder rows (shown only once global shortcuts are on).
+
 ### 2026-09-11 - Controls is one Form; Battery in the System Settings layout
 - **Developer label:** "the settings should be enginered like apple does settings" (scope picked: "Rework every tab")
 - **Agent label:** Rebuild the Controls tab as a single scrolling Form; Battery rows, sliders and test buttons

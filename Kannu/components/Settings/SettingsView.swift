@@ -1703,9 +1703,8 @@ struct Downloads: View {
                 }
                 .settingsHighlight(id: highlightID("Enable download detection"))
                 VStack(alignment: .leading, spacing: 12) {
+                    // Was hard-coded white, which vanished on the light background.
                     Text("Download indicator style")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
 
                     HStack(spacing: 16) {
                         DownloadStyleButton(
@@ -1729,7 +1728,7 @@ struct Downloads: View {
             } header: {
                 Text("Download Detection")
             } footer: {
-                Text("Monitor your Downloads folder for Chromium-style downloads (.crdownload files) and show a live activity in the Dynamic Island while downloads are in progress.")
+                SettingsFooter("Monitor your Downloads folder for Chromium-style downloads (.crdownload files) and show a live activity in the Dynamic Island while downloads are in progress.")
             }
         }
         .navigationTitle("Downloads")
@@ -3450,35 +3449,24 @@ struct Shelf: View {
             }
 
             Section {
-                Picker("Quick Share Service", selection: $quickShareProvider) {
-                    ForEach(quickShareService.availableProviders, id: \.id) { provider in
-                        HStack {
-                            QuickShareProviderIconImage(provider: provider, size: 16)
-                            Text(provider.id)
+                SettingsRow("Quick Share Service", description: selectedProvider == nil
+                            ? nil : Text("Files dropped on the shelf will be shared via this service")) {
+                    Picker("Quick Share Service", selection: $quickShareProvider) {
+                        ForEach(quickShareService.availableProviders, id: \.id) { provider in
+                            HStack {
+                                QuickShareProviderIconImage(provider: provider, size: 16)
+                                Text(provider.id)
+                            }
+                            .tag(provider.id)
                         }
-                        .tag(provider.id)
                     }
+                    .pickerStyle(.menu)
                 }
-                .pickerStyle(.menu)
                 .settingsHighlight(id: highlightID("Quick Share Service"))
-
-                if let selectedProvider {
-                    HStack {
-                        QuickShareProviderIconImage(provider: selectedProvider, size: 16)
-                        Text("Files dropped on the shelf will be shared via this service")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 4)
-                }
             } header: {
-                HStack {
-                    Text("Quick Share")
-                }
+                Text("Quick Share")
             } footer: {
-                Text("Choose which service to use when sharing files from the shelf. Drag files onto the shelf or click the shelf button to pick files.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                SettingsFooter("Choose which service to use when sharing files from the shelf. Drag files onto the shelf or click the shelf button to pick files.")
             }
             
             if quickShareProvider == "LocalSend" {
@@ -3523,9 +3511,7 @@ private struct LocalSendSettingsSection: View {
         } header: {
             Text("LocalSend Device Picker")
         } footer: {
-            Text("Customize the appearance of the LocalSend device selection popup that appears when you drop files.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            SettingsFooter("Customize the appearance of the LocalSend device selection popup that appears when you drop files.")
         }
     }
 }
@@ -5476,121 +5462,52 @@ struct Shortcuts: View {
             } header: {
                 Text("General")
             } footer: {
-                Text("Keyboard shortcuts are off by default. Enable this toggle to activate global hotkeys for notch controls.")
-                    .multilineTextAlignment(.trailing)
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
+                SettingsFooter("Keyboard shortcuts are off by default. Enable this toggle to activate global hotkeys for notch controls.")
             }
 
             if enableShortcuts {
-                Section {
-                    KeyboardShortcuts.Recorder("Toggle Sneak Peek:", name: .toggleSneakPeek)
-                        .disabled(!enableShortcuts)
-                } header: {
-                    Text("Media")
-                } footer: {
-                    Text("Sneak Peek shows the media title and artist under the notch for a few seconds.")
-                        .multilineTextAlignment(.trailing)
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
-
-                Section {
-                    KeyboardShortcuts.Recorder("Toggle Notch Open:", name: .toggleNotchOpen)
-                        .disabled(!enableShortcuts)
-                } header: {
-                    Text("Navigation")
-                } footer: {
-                    Text("Toggle the Dynamic Island open or closed from anywhere.")
-                        .multilineTextAlignment(.trailing)
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
-
-                Section {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            KeyboardShortcuts.Recorder("Start Demo Timer:", name: .startDemoTimer)
-                                .disabled(!enableShortcuts || !enableTimerFeature)
-                            if !enableTimerFeature {
-                                Text("Timer feature is disabled")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.top, 2)
-                            }
-                        }
-                        Spacer()
-                    }
-                } header: {
-                    Text("Timer")
-                } footer: {
-                    Text("Starts a 5-minute demo timer to test the timer live activity feature. Only works when timer feature is enabled.")
-                        .multilineTextAlignment(.trailing)
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
-
-                Section {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            KeyboardShortcuts.Recorder("Clipboard History:", name: .clipboardHistoryPanel)
-                                .disabled(!enableShortcuts || !enableClipboardManager)
-                            if !enableClipboardManager {
-                                Text("Clipboard feature is disabled")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.top, 2)
-                            }
-                        }
-                        Spacer()
-                    }
-                } header: {
-                    Text("Clipboard")
-                } footer: {
-                    Text("Opens the clipboard history panel. Default is Cmd+Shift+V (similar to Windows+V on PC). Only works when clipboard feature is enabled.")
-                        .multilineTextAlignment(.trailing)
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
-
-                Section {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            KeyboardShortcuts.Recorder("Screen Assistant:", name: .screenAssistantPanel)
-                                .disabled(!enableShortcuts || !Defaults[.enableScreenAssistant])
-                            if !Defaults[.enableScreenAssistant] {
-                                Text("Screen Assistant feature is disabled")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.top, 2)
-                            }
-                        }
-                        Spacer()
-                    }
-                } header: {
-                    Text("AI Assistant")
-                } footer: {
-                    Text("Opens the AI assistant panel for file analysis and conversation. Default is Cmd+Shift+A. Only works when screen assistant feature is enabled.")
-                        .multilineTextAlignment(.trailing)
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
-            } else {
-                Section {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Keyboard shortcuts are disabled")
-                            .font(.headline)
-                            .foregroundStyle(.secondary)
-
-                        Text("Enable global keyboard shortcuts above to customize your shortcuts.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 8)
-                }
+                shortcutsSection
             }
         }
         .navigationTitle("Shortcuts")
+    }
+
+    fileprivate var shortcutsSection: some View {
+        Section {
+            shortcutRow("Toggle Sneak Peek:", name: .toggleSneakPeek,
+                        description: Text("Sneak Peek shows the media title and artist under the notch for a few seconds."))
+            shortcutRow("Toggle Notch Open:", name: .toggleNotchOpen,
+                        description: Text("Toggle the Dynamic Island open or closed from anywhere."))
+            shortcutRow("Start Demo Timer:", name: .startDemoTimer,
+                        description: enableTimerFeature
+                            ? Text("Starts a 5-minute demo timer to test the timer live activity feature. Only works when timer feature is enabled.")
+                            : Text("Timer feature is disabled"),
+                        isEnabled: enableTimerFeature)
+            // The recorder shows the real shortcut; the old text claimed a default of Cmd+Shift+V.
+            shortcutRow("Clipboard History:", name: .clipboardHistoryPanel,
+                        description: enableClipboardManager
+                            ? Text("Opens the clipboard history panel. Only works when clipboard feature is enabled.")
+                            : Text("Clipboard feature is disabled"),
+                        isEnabled: enableClipboardManager)
+            shortcutRow("Screen Assistant:", name: .screenAssistantPanel,
+                        description: Defaults[.enableScreenAssistant]
+                            ? Text("Opens the AI assistant panel for file analysis and conversation. Only works when screen assistant feature is enabled.")
+                            : Text("Screen Assistant feature is disabled"),
+                        isEnabled: Defaults[.enableScreenAssistant])
+        } header: {
+            Text("Shortcuts")
+        }
+    }
+
+    /// A shortcut: what it does on the leading side, the recorder trailing.
+    private func shortcutRow(_ title: LocalizedStringKey, name: KeyboardShortcuts.Name, description: Text,
+                             isEnabled: Bool = true) -> some View {
+        LabeledContent {
+            KeyboardShortcuts.Recorder(for: name)
+                .disabled(!isEnabled)
+        } label: {
+            SettingsRowLabel(title, description: description)
+        }
     }
 }
 
@@ -5611,6 +5528,12 @@ func comingSoonTag() -> some View {
         .padding(.horizontal, 6)
         .background(Color(nsColor: .secondarySystemFill))
         .clipShape(.capsule)
+}
+
+/// The user's shortcut for a global hotkey as macOS draws it ("⇧⌘C"), or "not set".
+@MainActor
+func shortcutDescription(for name: KeyboardShortcuts.Name) -> String {
+    KeyboardShortcuts.getShortcut(for: name)?.description ?? String(localized: "not set")
 }
 
 /// A liquid-glass variant slider with its value ("v11") beside it, sized like the other slider rows.
@@ -5688,6 +5611,8 @@ struct TimerSettings: View {
     @Default(.lockScreenTimerGlassCustomizationMode) private var lockScreenTimerGlassCustomizationMode
     @Default(.lockScreenTimerLiquidGlassVariant) private var lockScreenTimerLiquidGlassVariant
     @AppStorage("customTimerDuration") private var customTimerDuration: Double = 600
+    /// Observed, so the row updates after Choose File or Reset (a plain UserDefaults read did not).
+    @AppStorage("customTimerSoundPath") private var customTimerSoundPath: String?
     @State private var customHours: Int = 0
     @State private var customMinutes: Int = 10
     @State private var customSeconds: Int = 0
@@ -5729,6 +5654,10 @@ struct TimerSettings: View {
         .navigationTitle("Timer")
         .onAppear { syncCustomDuration() }
         .onChange(of: customTimerDuration) { _, newValue in syncCustomDuration(newValue) }
+        // On the Form, not the stepper rows: rows of a lazy Form may not exist when these change.
+        .onChange(of: customHours) { _, _ in updateCustomDuration() }
+        .onChange(of: customMinutes) { _, _ in updateCustomDuration() }
+        .onChange(of: customSeconds) { _, _ in updateCustomDuration() }
     }
 
     @ViewBuilder
@@ -5742,28 +5671,39 @@ struct TimerSettings: View {
             if enableTimerFeature {
                 Toggle("Enable timer live activity", isOn: $coordinator.timerLiveActivityEnabled)
                     .animation(.easeInOut, value: coordinator.timerLiveActivityEnabled)
-                Defaults.Toggle(key: .mirrorSystemTimer) {
-                    HStack(spacing: 8) {
+                LabeledContent {
+                    Defaults.Toggle(key: .mirrorSystemTimer) {
                         Text("Mirror macOS Clock timers")
-                        alphaBadge()
+                    }
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 8) {
+                            Text("Mirror macOS Clock timers")
+                            alphaBadge()
+                        }
+                        Text("Shows the system Clock timer in the notch when available. Requires Accessibility permission to read the status item.")
+                            .settingsDescriptionStyle()
                     }
                 }
-                .help("Shows the system Clock timer in the notch when available. Requires Accessibility permission to read the status item.")
                 .settingsHighlight(id: highlightID("Mirror macOS Clock timers"))
 
-                Picker("Timer controls appear as", selection: $timerDisplayMode) {
-                    ForEach(TimerDisplayMode.allCases) { mode in
-                        Text(mode.displayName).tag(mode)
+                SettingsRow("Timer controls appear as", description: timerDisplayMode.description) {
+                    Picker("Timer controls appear as", selection: $timerDisplayMode) {
+                        ForEach(TimerDisplayMode.allCases) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
                     }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
                 }
-                .pickerStyle(.segmented)
-                .help(timerDisplayMode.description)
                 .settingsHighlight(id: highlightID("Timer controls appear as"))
             }
         } header: {
             Text("Timer Feature")
         } footer: {
-            Text("Control timer availability, live activity behaviour, and whether the app mirrors timers started from the macOS Clock app.")
+            SettingsFooter("Control timer availability, live activity behaviour, and whether the app mirrors timers started from the macOS Clock app.")
         }
     }
 
@@ -5795,20 +5735,27 @@ struct TimerSettings: View {
                 Text("Show lock screen timer widget")
             }
             .settingsHighlight(id: highlightID("Show lock screen timer widget"))
-            Picker("Timer surface", selection: timerSurfaceBinding) {
-                ForEach(LockScreenTimerSurfaceMode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
+            SettingsRow("Timer surface", description: timerGlassModeIsGlass
+                        ? nil : Text("Classic mode keeps the original translucent black background.")) {
+                Picker("Timer surface", selection: timerSurfaceBinding) {
+                    ForEach(LockScreenTimerSurfaceMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .fixedSize()
             }
-            .pickerStyle(.segmented)
             .disabled(!enableLockScreenTimerWidget)
             .opacity(enableLockScreenTimerWidget ? 1 : 0.5)
             .settingsHighlight(id: highlightID("Timer surface"))
 
             if timerGlassModeIsGlass {
-                Picker("Timer glass material", selection: $lockScreenTimerGlassStyle) {
-                    ForEach(LockScreenGlassStyle.allCases) { style in
-                        Text(style.rawValue).tag(style)
+                SettingsRow("Timer glass material", description: lockScreenTimerGlassStyle == .liquid
+                            ? nil : Text("Uses the frosted blur treatment while glass mode is enabled.")) {
+                    Picker("Timer glass material", selection: $lockScreenTimerGlassStyle) {
+                        ForEach(LockScreenGlassStyle.allCases) { style in
+                            Text(style.rawValue).tag(style)
+                        }
                     }
                 }
                 .disabled(!enableLockScreenTimerWidget)
@@ -5816,79 +5763,53 @@ struct TimerSettings: View {
                 .settingsHighlight(id: highlightID("Timer glass material"))
 
                 if lockScreenTimerGlassStyle == .liquid {
-                    Picker("Timer liquid mode", selection: $lockScreenTimerGlassCustomizationMode) {
-                        ForEach(LockScreenGlassCustomizationMode.allCases) { mode in
-                            Text(mode.rawValue).tag(mode)
+                    SettingsRow("Timer liquid mode") {
+                        Picker("Timer liquid mode", selection: $lockScreenTimerGlassCustomizationMode) {
+                            ForEach(LockScreenGlassCustomizationMode.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
                         }
+                        .pickerStyle(.segmented)
+                        .fixedSize()
                     }
-                    .pickerStyle(.segmented)
                     .disabled(!enableLockScreenTimerWidget)
                     .opacity(enableLockScreenTimerWidget ? 1 : 0.5)
                     .settingsHighlight(id: highlightID("Timer liquid mode"))
 
                     if lockScreenTimerGlassCustomizationMode == .customLiquid {
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text("Timer widget variant")
-                                Spacer()
-                                Text("v\(lockScreenTimerLiquidGlassVariant.rawValue)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Slider(value: timerVariantBinding, in: liquidVariantRange, step: 1)
+                        LabeledContent("Timer widget variant") {
+                            variantSliderControl(value: timerVariantBinding, current: lockScreenTimerLiquidGlassVariant.rawValue,
+                                                 range: liquidVariantRange, title: String(localized: "Timer widget variant"))
                         }
                         .settingsHighlight(id: highlightID("Timer widget variant"))
                         .disabled(!enableLockScreenTimerWidget)
                         .opacity(enableLockScreenTimerWidget ? 1 : 0.4)
                     }
-                } else {
-                    Text("Uses the frosted blur treatment while glass mode is enabled.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-            } else {
-                Text("Classic mode keeps the original translucent black background.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .opacity(enableLockScreenTimerWidget ? 1 : 0.5)
             }
         } header: {
             Text("Lock Screen Integration")
         } footer: {
-            Text("Mirrors the toggle found under Lock Screen settings so timer-specific workflows can enable or disable the widget without switching tabs.")
+            SettingsFooter("Mirrors the toggle found under Lock Screen settings so timer-specific workflows can enable or disable the widget without switching tabs.")
         }
     }
 
     @ViewBuilder
     private var customTimerSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Default Custom Timer")
-                    .font(.headline)
-
-                TimerDurationStepperRow(title: String(localized: "Hours"), value: $customHours, range: 0...23)
-                TimerDurationStepperRow(title: String(localized: "Minutes"), value: $customMinutes, range: 0...59)
-                TimerDurationStepperRow(title: String(localized: "Seconds"), value: $customSeconds, range: 0...59)
-
-                HStack {
-                    Text("Current default:")
-                        .foregroundStyle(.secondary)
-                    Text(customDurationDisplay)
-                        .font(.system(.body, design: .monospaced))
-                        .fontWeight(.medium)
-                    Spacer()
-                }
+            LabeledContent("Default Custom Timer") {
+                Text(customDurationDisplay)
+                    .font(.system(.body, design: .monospaced))
+                    .fontWeight(.medium)
+                    .textSelection(.enabled)
             }
-            .padding(.vertical, 4)
-            .onChange(of: customHours) { _, _ in updateCustomDuration() }
-            .onChange(of: customMinutes) { _, _ in updateCustomDuration() }
-            .onChange(of: customSeconds) { _, _ in updateCustomDuration() }
+            TimerDurationStepperRow(title: String(localized: "Hours"), value: $customHours, range: 0...23)
+            TimerDurationStepperRow(title: String(localized: "Minutes"), value: $customMinutes, range: 0...59)
+            TimerDurationStepperRow(title: String(localized: "Seconds"), value: $customSeconds, range: 0...59)
         } header: {
             Text("Custom Timer")
         } footer: {
-            Text("This duration powers the \"Custom\" option inside the timer popover for quick access.")
+            SettingsFooter("This duration powers the \"Custom\" option inside the timer popover for quick access.")
         }
     }
 
@@ -5922,9 +5843,10 @@ struct TimerSettings: View {
             Toggle("Show preset list in timer tab", isOn: $showTimerPresetsInNotchTab)
                 .settingsHighlight(id: highlightID("Show preset list in timer tab"))
 
-            Toggle("Show floating pause/stop controls", isOn: $controlWindowEnabled)
-                .disabled(showsLabel)
-                .help("These controls sit beside the notch while a timer runs. They require the timer name to stay hidden for spacing.")
+            SettingsRow("Show floating pause/stop controls", description: "These controls sit beside the notch while a timer runs. They require the timer name to stay hidden for spacing.") {
+                Toggle("Show floating pause/stop controls", isOn: $controlWindowEnabled)
+            }
+            .disabled(showsLabel)
 
             Picker("Progress style", selection: $progressStyle) {
                 ForEach(TimerProgressStyle.allCases) { style in
@@ -5937,7 +5859,7 @@ struct TimerSettings: View {
         } header: {
             Text("Appearance")
         } footer: {
-            Text("Configure how the timer looks inside the closed notch. Progress can render as a ring around the icon or as horizontal bars.")
+            SettingsFooter("Configure how the timer looks inside the closed notch. Progress can render as a ring around the icon or as horizontal bars.")
         }
     }
 
@@ -5946,9 +5868,7 @@ struct TimerSettings: View {
         Section {
             if timerPresets.isEmpty {
                 Text("No presets configured. Add a preset to make it appear in the timer popover.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 4)
+                    .settingsDescriptionStyle()
             } else {
                 TimerPresetListView(
                     presets: $timerPresets,
@@ -5959,61 +5879,53 @@ struct TimerSettings: View {
                 )
             }
 
-            HStack {
-                Button(action: addPreset) {
-                    Label("Add Preset", systemImage: "plus")
-                }
-                .buttonStyle(.bordered)
-
-                Spacer()
-
+            SettingsActionRow {
                 Button(role: .destructive, action: { showingResetConfirmation = true }) {
                     Label("Restore Defaults", systemImage: "arrow.counterclockwise")
                 }
-                .buttonStyle(.bordered)
                 .confirmationDialog("Restore default timer presets?", isPresented: $showingResetConfirmation, titleVisibility: .visible) {
                     Button("Restore", role: .destructive, action: resetPresets)
+                }
+
+                Button(action: addPreset) {
+                    Label("Add Preset", systemImage: "plus")
                 }
             }
         } header: {
             Text("Timer Presets")
         } footer: {
-            Text("Presets show up inside the timer popover with the configured name, duration, and accent colour. Reorder them to change the display order.")
+            SettingsFooter("Presets show up inside the timer popover with the configured name, duration, and accent colour. Reorder them to change the display order.")
         }
     }
 
     @ViewBuilder
     private var timerSoundSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("Timer Sound")
-                        .font(.system(size: 16, weight: .medium))
-                    Spacer()
+            LabeledContent {
+                HStack(spacing: 8) {
+                    Button("Reset to Default") {
+                        customTimerSoundPath = nil
+                    }
+                    .disabled(customTimerSoundPath == nil)
                     Button("Choose File", action: selectCustomTimerSound)
-                        .buttonStyle(.bordered)
                 }
-
-                if let customTimerSoundPath = UserDefaults.standard.string(forKey: "customTimerSoundPath") {
-                    Text("Custom: \(URL(fileURLWithPath: customTimerSoundPath).lastPathComponent)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                } else {
-                    Text("Default: dynamic.m4a")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Timer Sound")
+                    Group {
+                        if let customTimerSoundPath {
+                            Text("Custom: \(URL(fileURLWithPath: customTimerSoundPath).lastPathComponent)")
+                        } else {
+                            Text("Default: dynamic.m4a")
+                        }
+                    }
+                    .settingsDescriptionStyle()
                 }
-
-                Button("Reset to Default") {
-                    UserDefaults.standard.removeObject(forKey: "customTimerSoundPath")
-                }
-                .buttonStyle(.bordered)
-                .disabled(UserDefaults.standard.string(forKey: "customTimerSoundPath") == nil)
             }
         } header: {
             Text("Timer Sound")
         } footer: {
-            Text("Select a custom sound to play when a timer ends. Supported formats include MP3, M4A, WAV, and AIFF.")
+            SettingsFooter("Select a custom sound to play when a timer ends. Supported formats include MP3, M4A, WAV, and AIFF.")
         }
     }
 
@@ -6083,7 +5995,7 @@ struct TimerSettings: View {
 
         if panel.runModal() == .OK {
             if let url = panel.url {
-                UserDefaults.standard.set(url.path, forKey: "customTimerSoundPath")
+                customTimerSoundPath = url.path
             }
         }
     }
@@ -6095,13 +6007,18 @@ private struct TimerDurationStepperRow: View {
     let range: ClosedRange<Int>
 
     var body: some View {
-        Stepper(value: $value, in: range) {
-            HStack {
-                Text(title)
-                Spacer()
+        LabeledContent {
+            HStack(spacing: 6) {
                 Text("\(value)")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                Stepper(value: $value, in: range) {
+                    Text(title)
+                }
+                .labelsHidden()
             }
+        } label: {
+            Text(title)
         }
     }
 }
@@ -6569,7 +6486,8 @@ struct ClipboardSettings: View {
             } header: {
                 Text("Clipboard Manager")
             } footer: {
-                Text("Monitor clipboard changes and keep a history of recent copies. Use Cmd+Shift+V to quickly access clipboard history.")
+                // The shortcut is the user's (default ⇧⌘C); the old text said Cmd+Shift+V.
+                SettingsFooter("Monitor clipboard changes and keep a history of recent copies. With global keyboard shortcuts on, \(shortcutDescription(for: .clipboardHistoryPanel)) opens the history.")
             }
 
             if enableClipboardManager {
@@ -6579,50 +6497,32 @@ struct ClipboardSettings: View {
                     }
                     .settingsHighlight(id: highlightID("Show Clipboard Icon"))
 
-                    HStack {
-                        Text("Display Mode")
-                        Spacer()
-                        Picker("", selection: $clipboardDisplayMode) {
-                            ForEach(ClipboardDisplayMode.allCases, id: \.self) { mode in
-                                Text(mode.displayName).tag(mode)
-                            }
+                    Picker("Display Mode", selection: $clipboardDisplayMode) {
+                        ForEach(ClipboardDisplayMode.allCases, id: \.self) { mode in
+                            Text(mode.displayName).tag(mode)
                         }
-                        .pickerStyle(.menu)
-                        .frame(minWidth: 100)
                     }
+                    .pickerStyle(.menu)
                     .settingsHighlight(id: highlightID("Display Mode"))
 
-                    HStack {
-                        Text("History Size")
-                        Spacer()
-                        Picker("", selection: $clipboardHistorySize) {
-                            Text("3 items").tag(3)
-                            Text("5 items").tag(5)
-                            Text("7 items").tag(7)
-                            Text("10 items").tag(10)
-                        }
-                        .pickerStyle(.menu)
-                        .frame(minWidth: 100)
+                    Picker("History Size", selection: $clipboardHistorySize) {
+                        Text("3 items").tag(3)
+                        Text("5 items").tag(5)
+                        Text("7 items").tag(7)
+                        Text("10 items").tag(10)
                     }
+                    .pickerStyle(.menu)
                     .settingsHighlight(id: highlightID("History Size"))
 
-                    HStack {
-                        Text("Current Items")
-                        Spacer()
+                    LabeledContent("Current Items") {
                         Text("\(clipboardManager.clipboardHistory.count)")
-                            .foregroundColor(.secondary)
                     }
 
-                    HStack {
-                        Text("Pinned Items")
-                        Spacer()
+                    LabeledContent("Pinned Items") {
                         Text("\(clipboardManager.pinnedItems.count)")
-                            .foregroundColor(.secondary)
                     }
 
-                    HStack {
-                        Text("Monitoring Status")
-                        Spacer()
+                    LabeledContent("Monitoring Status") {
                         Text(clipboardManager.isMonitoring ? "Active" : "Stopped")
                             .foregroundColor(clipboardManager.isMonitoring ? .green : .secondary)
                     }
@@ -6631,31 +6531,33 @@ struct ClipboardSettings: View {
                 } footer: {
                     switch clipboardDisplayMode {
                     case .popover:
-                        Text("Popover mode shows clipboard as a dropdown attached to the clipboard button.")
+                        SettingsFooter("Popover mode shows clipboard as a dropdown attached to the clipboard button.")
                     case .panel:
-                        Text("Panel mode shows clipboard in a floating window near the notch.")
+                        SettingsFooter("Panel mode shows clipboard in a floating window near the notch.")
                     case .separateTab:
-                        Text("Separate Tab mode integrates Copied Items and Notes into a single view. If both are enabled, Notes appear on the right and Clipboard on the left.")
+                        SettingsFooter("Separate Tab mode integrates Copied Items and Notes into a single view. If both are enabled, Notes appear on the right and Clipboard on the left.")
                     }
                 }
 
                 Section {
-                    Button("Clear Clipboard History") {
-                        clipboardManager.clearHistory()
-                    }
-                    .foregroundColor(.red)
-                    .disabled(clipboardManager.clipboardHistory.isEmpty)
+                    SettingsActionRow {
+                        Button("Clear Pinned Items", role: .destructive) {
+                            clipboardManager.pinnedItems.removeAll()
+                            clipboardManager.savePinnedItemsToDefaults()
+                        }
+                        .foregroundColor(.red)
+                        .disabled(clipboardManager.pinnedItems.isEmpty)
 
-                    Button("Clear Pinned Items") {
-                        clipboardManager.pinnedItems.removeAll()
-                        clipboardManager.savePinnedItemsToDefaults()
+                        Button("Clear Clipboard History", role: .destructive) {
+                            clipboardManager.clearHistory()
+                        }
+                        .foregroundColor(.red)
+                        .disabled(clipboardManager.clipboardHistory.isEmpty)
                     }
-                    .foregroundColor(.red)
-                    .disabled(clipboardManager.pinnedItems.isEmpty)
                 } header: {
                     Text("Actions")
                 } footer: {
-                    Text("Clear clipboard history removes recent copies. Clear pinned items removes your favorites. Both actions are permanent.")
+                    SettingsFooter("Clear clipboard history removes recent copies. Clear pinned items removes your favorites. Both actions are permanent.")
                 }
 
                 if !clipboardManager.clipboardHistory.isEmpty {
@@ -6677,6 +6579,7 @@ struct ClipboardSettings: View {
                                 Text(item.preview)
                                     .font(.system(.body, design: .monospaced))
                                     .lineLimit(2)
+                                    .textSelection(.enabled)
                             }
                             .padding(.vertical, 2)
                         }
@@ -6735,35 +6638,37 @@ struct ScreenAssistantSettings: View {
             } header: {
                 Text("AI Assistant")
             } footer: {
-                Text("AI-powered assistant that can analyze files, images, and provide conversational help. Use Cmd+Shift+A to quickly access the assistant.")
+                SettingsFooter("AI-powered assistant that can analyze files, images, and provide conversational help. With global keyboard shortcuts on, \(shortcutDescription(for: .screenAssistantPanel)) opens the assistant.")
             }
 
             if enableScreenAssistant {
                 Section {
-                    HStack {
-                        Text("Gemini API Key")
-                        Spacer()
-                        if geminiApiKey.isEmpty {
-                            Text("Not Set")
-                                .foregroundColor(.red)
-                        } else {
-                            Text("••••••••")
-                                .foregroundColor(.green)
-                        }
-
-                        Button(showingApiKey ? "Hide" : (geminiApiKey.isEmpty ? "Set" : "Change")) {
-                            if showingApiKey {
-                                showingApiKey = false
-                                if !apiKeyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                    SecureSecretsStore.set(apiKeyText, for: .geminiAPIKey)
-                                    geminiApiKey = SecureSecretsStore.value(for: .geminiAPIKey)
-                                }
-                                apiKeyText = ""
+                    LabeledContent {
+                        HStack(spacing: 8) {
+                            if geminiApiKey.isEmpty {
+                                Text("Not Set")
+                                    .foregroundColor(.red)
                             } else {
-                                showingApiKey = true
-                                apiKeyText = geminiApiKey
+                                Text("••••••••")
+                                    .foregroundColor(.green)
+                            }
+
+                            Button(showingApiKey ? "Hide" : (geminiApiKey.isEmpty ? "Set" : "Change")) {
+                                if showingApiKey {
+                                    showingApiKey = false
+                                    if !apiKeyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                        SecureSecretsStore.set(apiKeyText, for: .geminiAPIKey)
+                                        geminiApiKey = SecureSecretsStore.value(for: .geminiAPIKey)
+                                    }
+                                    apiKeyText = ""
+                                } else {
+                                    showingApiKey = true
+                                    apiKeyText = geminiApiKey
+                                }
                             }
                         }
+                    } label: {
+                        Text("Gemini API Key")
                     }
 
                     if showingApiKey {
@@ -6772,16 +6677,14 @@ struct ScreenAssistantSettings: View {
                                 .textFieldStyle(.roundedBorder)
 
                             Text("Get your free API key from Google AI Studio")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                                .settingsDescriptionStyle()
 
                             HStack {
+                                Spacer()
+
                                 Button("Open Google AI Studio") {
                                     NSWorkspace.shared.open(URL(string: "https://aistudio.google.com/app/apikey")!)
                                 }
-                                .buttonStyle(.link)
-
-                                Spacer()
 
                                 Button("Save") {
                                     SecureSecretsStore.set(apiKeyText, for: .geminiAPIKey)
@@ -6794,29 +6697,19 @@ struct ScreenAssistantSettings: View {
                         }
                     }
 
-                    HStack {
-                        Text("Display Mode")
-                        Spacer()
-                        Picker("", selection: $screenAssistantDisplayMode) {
-                            ForEach(ScreenAssistantDisplayMode.allCases, id: \.self) { mode in
-                                Text(mode.displayName).tag(mode)
-                            }
+                    Picker("Display Mode", selection: $screenAssistantDisplayMode) {
+                        ForEach(ScreenAssistantDisplayMode.allCases, id: \.self) { mode in
+                            Text(mode.displayName).tag(mode)
                         }
-                        .pickerStyle(.menu)
-                        .frame(minWidth: 100)
                     }
+                    .pickerStyle(.menu)
                     .settingsHighlight(id: highlightID("Display Mode"))
 
-                    HStack {
-                        Text("Attached Files")
-                        Spacer()
+                    LabeledContent("Attached Files") {
                         Text("\(screenAssistantManager.attachedFiles.count)")
-                            .foregroundColor(.secondary)
                     }
 
-                    HStack {
-                        Text("Recording Status")
-                        Spacer()
+                    LabeledContent("Recording Status") {
                         Text(screenAssistantManager.isRecording ? "Recording" : "Ready")
                             .foregroundColor(screenAssistantManager.isRecording ? .red : .secondary)
                     }
@@ -6825,22 +6718,24 @@ struct ScreenAssistantSettings: View {
                 } footer: {
                     switch screenAssistantDisplayMode {
                     case .popover:
-                        Text("Popover mode shows the assistant as a dropdown attached to the AI button. Panel mode shows the assistant in a floating window near the notch.")
+                        SettingsFooter("Popover mode shows the assistant as a dropdown attached to the AI button. Panel mode shows the assistant in a floating window near the notch.")
                     case .panel:
-                        Text("Panel mode shows the assistant in a floating window near the notch. Popover mode shows the assistant as a dropdown attached to the AI button.")
+                        SettingsFooter("Panel mode shows the assistant in a floating window near the notch. Popover mode shows the assistant as a dropdown attached to the AI button.")
                     }
                 }
 
                 Section {
-                    Button("Clear All Files") {
-                        screenAssistantManager.clearAllFiles()
+                    SettingsActionRow {
+                        Button("Clear All Files", role: .destructive) {
+                            screenAssistantManager.clearAllFiles()
+                        }
+                        .foregroundColor(.red)
+                        .disabled(screenAssistantManager.attachedFiles.isEmpty)
                     }
-                    .foregroundColor(.red)
-                    .disabled(screenAssistantManager.attachedFiles.isEmpty)
                 } header: {
                     Text("Actions")
                 } footer: {
-                    Text("Clear all files removes all attached files and audio recordings. This action is permanent.")
+                    SettingsFooter("Clear all files removes all attached files and audio recordings. This action is permanent.")
                 }
 
                 if !screenAssistantManager.attachedFiles.isEmpty {
@@ -7186,9 +7081,7 @@ struct NotesSettingsView: View {
             } header: {
                 Text("General")
             } footer: {
-                Text("Customize how you organize and create notes. Enabling color filtering and search helps manage large lists.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                SettingsFooter("Customize how you organize and create notes. Enabling color filtering and search helps manage large lists.")
             }
 
             if enableNotes {
@@ -7199,45 +7092,43 @@ struct NotesSettingsView: View {
                     .settingsHighlight(id: highlightID("Sync with Apple Notes"))
 
                     if enableAppleNotesSync {
-                        Button {
-                            Task {
-                                let notes = Defaults[.savedNotes]
-                                if let merged = await appleNotesSync.sync(localNotes: notes) {
-                                    Defaults[.savedNotes] = merged
-                                }
-                            }
-                        } label: {
-                            HStack {
-                                Text("Sync Now")
-                                Spacer()
+                        LabeledContent {
+                            HStack(spacing: 8) {
                                 if appleNotesSync.isSyncing {
                                     ProgressView()
                                         .controlSize(.small)
                                 }
+                                Button("Sync Now") {
+                                    Task {
+                                        let notes = Defaults[.savedNotes]
+                                        if let merged = await appleNotesSync.sync(localNotes: notes) {
+                                            Defaults[.savedNotes] = merged
+                                        }
+                                    }
+                                }
+                                .disabled(appleNotesSync.isSyncing)
+                            }
+                        } label: {
+                            if let lastSync = appleNotesLastSyncDate {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Last synced")
+                                    Text(lastSync, style: .relative)
+                                        .settingsDescriptionStyle()
+                                }
+                            } else {
+                                Text("Not synced yet")
                             }
                         }
-                        .disabled(appleNotesSync.isSyncing)
                         .settingsHighlight(id: highlightID("Sync Now"))
 
-                        if let lastSync = appleNotesLastSyncDate {
-                            LabeledContent("Last synced") {
-                                Text(lastSync, style: .relative)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-
                         if let error = appleNotesSync.lastError {
-                            Text(error)
-                                .font(.caption)
-                                .foregroundStyle(.red)
+                            SettingsErrorText(error)
                         }
                     }
                 } header: {
                     Text("Apple Notes")
                 } footer: {
-                    Text("Two-way sync with the macOS Notes app. Notes created in Kannu appear in the Kannu folder in Notes, and your existing Apple Notes are imported into the notch. Grant Automation permission for Notes when prompted.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    SettingsFooter("Two-way sync with the macOS Notes app. Notes created in Kannu appear in the Kannu folder in Notes, and your existing Apple Notes are imported into the notch. Grant Automation permission for Notes when prompted.")
                 }
             }
         }
@@ -8551,6 +8442,11 @@ extension SettingsView {
 }
 
 extension SettingsView {
+    /// DEBUG snapshot harness: the shortcut recorder rows, shown only once global shortcuts are on.
+    static func snapshotShortcutRows() -> AnyView {
+        AnyView(Form { Shortcuts().shortcutsSection })
+    }
+
     /// DEBUG snapshot harness: the Controls tab's Custom OSD, Vertical Bar and Circular sections, which
     /// show only when that style's card is selected (the harness must not change the user's choice).
     static func snapshotControlsStyles() -> AnyView {
