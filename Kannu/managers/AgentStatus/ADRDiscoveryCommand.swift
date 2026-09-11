@@ -68,10 +68,21 @@ enum ADRDiscoveryCommand {
 /// kept until the window has passed; it used to be dropped (the baseline moved on, the scan never
 /// came). Compares server sets, not modification times: Claude Code rewrites `~/.claude.json` for
 /// many reasons that are not MCP servers.
+///
+/// A scan that wrote no snapshot is retried after 1, 2, 4, 8, 16 hours (never later than the daily
+/// scan) instead of a full day later; while scans keep failing, a config change waits for that
+/// retry too, so a broken install is not re-run every five minutes.
 struct ADRScanTrigger: Equatable {
     enum Reason: String, Equatable {
         case scheduled
         case configChanged = "config changed"
+        case retry = "retry after a failed scan"
+    }
+
+    /// How long after the last Kannu-run scan the next one is due.
+    static func retryDelay(consecutiveFailures: Int, interval: TimeInterval) -> TimeInterval {
+        guard consecutiveFailures > 0 else { return interval }
+        return min(3600 * pow(2, Double(min(consecutiveFailures, 10) - 1)), interval)
     }
 
     let interval: TimeInterval
@@ -85,25 +96,58 @@ struct ADRScanTrigger: Equatable {
     }
 
     /// `inventory` nil: the settings were not read this time — nothing learned, nothing lost.
-    mutating func evaluate(now: Date, lastScan: Date?, inventory: [String: [String]]?) -> Reason? {
+    mutating func evaluate(now: Date, lastScan: Date?, consecutiveFailures: Int = 0,
+                           inventory: [String: [String]]?) -> Reason? {
         if let inventory {
             if let baseline, baseline != inventory { pendingChange = true }
             baseline = inventory
         }
         let since = lastScan.map { now.timeIntervalSince($0) } ?? .infinity
-        if since >= interval {
+        if since >= Self.retryDelay(consecutiveFailures: consecutiveFailures, interval: interval) {
             pendingChange = false
-            return .scheduled
+            return consecutiveFailures > 0 && since < interval ? .retry : .scheduled
         }
-        if pendingChange, since >= debounce {
+        if pendingChange, since >= changeDelay(consecutiveFailures: consecutiveFailures) {
             pendingChange = false
             return .configChanged
         }
         return nil
     }
 
+    /// When the next automatic scan is due, for Settings; nil means at the next check (within a
+    /// minute), because Kannu has not run one yet. Stable between checks, so publishing it does not
+    /// redraw anything once a minute.
+    func nextScan(lastScan: Date?, consecutiveFailures: Int) -> Date? {
+        guard let lastScan else { return nil }
+        let due = lastScan.addingTimeInterval(Self.retryDelay(consecutiveFailures: consecutiveFailures, interval: interval))
+        guard pendingChange else { return due }
+        return min(due, lastScan.addingTimeInterval(changeDelay(consecutiveFailures: consecutiveFailures)))
+    }
+
+    private func changeDelay(consecutiveFailures: Int) -> TimeInterval {
+        consecutiveFailures > 0
+            ? max(debounce, Self.retryDelay(consecutiveFailures: consecutiveFailures, interval: interval))
+            : debounce
+    }
+
     /// Any scan covers a pending change.
     mutating func scanStarted() {
         pendingChange = false
+    }
+}
+
+/// The span of one Kannu-run scan. A snapshot modified inside it is the one that scan wrote — the
+/// watcher may ingest it before the process exits, or the reload after exit may — and one modified
+/// outside it was written by something else. `kannuScanStartedAt` used to be set and never
+/// cleared, so after Kannu's first scan every later snapshot was labelled Kannu's.
+struct ADRKannuScanWindow: Equatable {
+    let startedAt: Date
+    var finishedAt: Date?
+    /// Whether this scan's success or failure has been counted (a file can be ingested twice).
+    var settled = false
+
+    func wrote(_ modified: Date) -> Bool {
+        modified >= startedAt.addingTimeInterval(-1)
+            && modified <= (finishedAt ?? .distantFuture).addingTimeInterval(2)
     }
 }

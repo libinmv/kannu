@@ -7855,7 +7855,7 @@ struct AgentStatusSettings: View {
             adrLastScanRow
 
             if adr.discovery.isFound {
-                SettingsRow("Let Kannu run scans", description: "Daily, and sooner after an MCP config changes. Off means Kannu only reads snapshots that something else wrote.") {
+                SettingsRow("Let Kannu run scans", description: "Daily, sooner when the MCP servers in an AI tool's settings change, and within hours after a scan that failed. Off means Kannu only reads snapshots that something else wrote.") {
                     Defaults.Toggle(key: .adrRunScansEnabled) {
                         Text("Let Kannu run scans")
                     }
@@ -7878,6 +7878,10 @@ struct AgentStatusSettings: View {
                             }
                         }
                         .settingsDescriptionStyle()
+                        if adrRunScansEnabled, findingsStore.automaticScansActive, !findingsStore.isScanning {
+                            Text(verbatim: nextAutomaticScanText)
+                                .settingsDescriptionStyle()
+                        }
                     }
                 }
                 .settingsHighlight(id: highlightID("Scan now"))
@@ -8225,6 +8229,18 @@ struct AgentStatusSettings: View {
                 .textSelection(.enabled)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    /// "Next automatic scan Sep 13, 4:54 AM · retrying after a failed scan".
+    private var nextAutomaticScanText: String {
+        let when: String
+        if let next = findingsStore.nextAutomaticScanAt, next > Date().addingTimeInterval(60) {
+            when = String(localized: "Next automatic scan \(next.formatted(date: .abbreviated, time: .shortened))")
+        } else {
+            when = String(localized: "Next automatic scan within a minute")
+        }
+        guard findingsStore.consecutiveScanFailures > 0 else { return when }
+        return when + " · " + String(localized: "retrying after a failed scan")
     }
 
     private var adrLastScanRow: some View {

@@ -75,6 +75,14 @@ final class SecurityFindingsStore: ObservableObject {
     @Published private(set) var isScanning = false
     @Published private(set) var lastKannuScanAt: Date?
     @Published private(set) var lastScanError: String?
+    /// When the next automatic scan is due (nil: at the next check, or none when scans are off or
+    /// Discovery is not found — see `automaticScansActive`). Assigned only when it changes: the
+    /// notch observes this store.
+    @Published private(set) var nextAutomaticScanAt: Date?
+    /// Scans are on and Discovery is found, so a next scan is coming.
+    @Published private(set) var automaticScansActive = false
+    /// Kannu-run scans that wrote no snapshot, in a row.
+    @Published private(set) var consecutiveScanFailures = Defaults[.adrKannuScanFailures]
 
     private static let logger = os.Logger(subsystem: "com.kannu.app", category: "SecurityFindings")
 
@@ -99,9 +107,9 @@ final class SecurityFindingsStore: ObservableObject {
     private static let analysisCap = 50
     private var cancellables = Set<AnyCancellable>()
     private var cadenceTimer: Timer?
-    /// When Kannu's own scan started, so the snapshot it writes is recorded as Kannu's even when
-    /// the directory watcher ingests it first.
-    private var kannuScanStartedAt: Date?
+    /// Kannu's own scan in flight or just finished, so the snapshot it writes is recorded as
+    /// Kannu's even when the directory watcher ingests it first — and nothing written later is.
+    private var kannuScanWindow: ADRKannuScanWindow?
     /// Daily scans, and sooner ones when an agent's MCP servers changed (Kannu-run scans only).
     private var scanTrigger = ADRScanTrigger(interval: automaticScanInterval, debounce: configChangeScanDebounce)
     /// Kannu's own "new MCP server" check: what each settings file declared, and what appeared.
@@ -213,6 +221,10 @@ final class SecurityFindingsStore: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+        // "Let Kannu run scans" changes the next-scan line at once, not a minute later.
+        Defaults.publisher(.adrRunScansEnabled, options: [])
+            .sink { [weak self] _ in Task { @MainActor in self?.refreshNextAutomaticScan() } }
+            .store(in: &cancellables)
         // The first tick only learns what each file declares (and seeds the scan trigger).
         cadenceTick()
         cadenceTimer?.invalidate()
@@ -222,6 +234,7 @@ final class SecurityFindingsStore: ObservableObject {
         // Saved hidden-text sightings must show after a relaunch even when no ADR snapshot is
         // ever ingested and the native findings never change.
         publishFindings()
+        refreshNextAutomaticScan()
     }
 
     func stop() {
@@ -233,6 +246,8 @@ final class SecurityFindingsStore: ObservableObject {
         cancellables.removeAll()
         cadenceTimer?.invalidate()
         cadenceTimer = nil
+        if nextAutomaticScanAt != nil { nextAutomaticScanAt = nil }
+        if automaticScansActive { automaticScansActive = false }
     }
 
     /// Re-points the watcher after the user changes the directory in Settings.
@@ -313,7 +328,8 @@ final class SecurityFindingsStore: ObservableObject {
 
         isScanning = true
         lastScanError = nil
-        kannuScanStartedAt = Date()
+        kannuScanWindow = ADRKannuScanWindow(startedAt: Date())
+        refreshNextAutomaticScan()
         Self.logger.info("adr-discovery scan starting (\(reason, privacy: .public))")
 
         DispatchQueue.global(qos: .utility).async {
@@ -353,17 +369,24 @@ final class SecurityFindingsStore: ObservableObject {
 
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
+                    let finished = Date()
                     self.isScanning = false
-                    self.lastKannuScanAt = Date()
-                    Defaults[.adrLastKannuScanAt] = self.lastKannuScanAt
+                    self.lastKannuScanAt = finished
+                    Defaults[.adrLastKannuScanAt] = finished
+                    self.kannuScanWindow?.finishedAt = finished
                     if let failure {
-                        self.lastScanError = failure
-                    } else if ADRDiscoveryCommand.producedSnapshot(exitStatus: status) {
-                        self.lastScanError = nil
-                        self.reloadNewestSnapshot()
+                        self.settleKannuScan(error: failure)
+                    } else if !ADRDiscoveryCommand.producedSnapshot(exitStatus: status) {
+                        self.settleKannuScan(error: String(localized: "adr-discovery exited \(status). \(stderrTail)"))
+                    } else if !self.kannuScanWroteSnapshot() {
+                        // Exit 2 is also argparse's usage error: a status alone proves nothing.
+                        self.settleKannuScan(error: String(localized: "ADR Discovery finished but wrote no snapshot. \(stderrTail)"))
                     } else {
-                        self.lastScanError = String(localized: "adr-discovery exited \(status). \(stderrTail)")
+                        self.lastScanError = nil
+                        // The ingest settles it (the watcher may already have).
+                        self.reloadNewestSnapshot()
                     }
+                    self.refreshNextAutomaticScan()
                     Self.logger.info("adr-discovery scan finished status=\(status, privacy: .public)")
                 }
             }
@@ -377,10 +400,49 @@ final class SecurityFindingsStore: ObservableObject {
     }
 
     private func evaluateAutomaticScan(inventory: [String: [String]]?) {
+        defer { refreshNextAutomaticScan() }
         guard Defaults[.adrRunScansEnabled], ADRConnection.shared.isConnected, !isScanning else { return }
-        if let reason = scanTrigger.evaluate(now: Date(), lastScan: lastKannuScanAt, inventory: inventory) {
+        if let reason = scanTrigger.evaluate(now: Date(), lastScan: lastKannuScanAt,
+                                             consecutiveFailures: consecutiveScanFailures, inventory: inventory) {
             runScanNow(reason: reason.rawValue)
         }
+    }
+
+    /// For Settings: whether automatic scans are coming, and when.
+    private func refreshNextAutomaticScan() {
+        let active = Defaults[.adrRunScansEnabled] && ADRConnection.shared.isConnected
+        if active != automaticScansActive { automaticScansActive = active }
+        let next = active && !isScanning
+            ? scanTrigger.nextScan(lastScan: lastKannuScanAt, consecutiveFailures: consecutiveScanFailures)
+            : nil
+        if next != nextAutomaticScanAt { nextAutomaticScanAt = next }
+    }
+
+    /// Whether the newest snapshot in the folder is the one this scan wrote.
+    private func kannuScanWroteSnapshot() -> Bool {
+        guard let window = kannuScanWindow,
+              let url = ADRSnapshot.newestSnapshotURL(in: Self.snapshotDirectory),
+              let written = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        else { return false }
+        return window.wrote(written)
+    }
+
+    /// Counts a Kannu-run scan once: a snapshot it wrote was read (success), or it wrote none or an
+    /// unreadable one (failure). Failures bring the next scan forward (1, 2, 4 … hours).
+    private func settleKannuScan(error: String?) {
+        guard var window = kannuScanWindow, !window.settled else {
+            if let error { lastScanError = error }
+            return
+        }
+        window.settled = true
+        kannuScanWindow = window
+        let failures = error == nil ? 0 : min(consecutiveScanFailures + 1, 10)
+        if failures != consecutiveScanFailures {
+            consecutiveScanFailures = failures
+            Defaults[.adrKannuScanFailures] = failures
+        }
+        if let error { lastScanError = error }
+        refreshNextAutomaticScan()
     }
 
     // MARK: - New MCP servers (Kannu's own check)
@@ -708,9 +770,9 @@ final class SecurityFindingsStore: ObservableObject {
         let generation = reloadGeneration &+ 1
         reloadGeneration = generation
         let origin: ADRScanRecord.Origin = {
-            guard let started = kannuScanStartedAt,
+            guard let window = kannuScanWindow,
                   let written = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
-                  written >= started.addingTimeInterval(-1) else { return .watched }
+                  window.wrote(written) else { return .watched }
             return .kannu
         }()
         DispatchQueue.global(qos: .utility).async {
@@ -723,9 +785,11 @@ final class SecurityFindingsStore: ObservableObject {
                     case .success(let snapshot):
                         self.ingest(snapshot, origin: origin, fileName: url.lastPathComponent)
                         self.snapshotError = nil
+                        if origin == .kannu { self.settleKannuScan(error: nil) }
                     case .failure(let error):
                         self.snapshotError = error.localizedDescription
                         Self.logger.error("snapshot unreadable: \(error.localizedDescription, privacy: .public)")
+                        if origin == .kannu { self.settleKannuScan(error: error.localizedDescription) }
                     }
                 }
             }

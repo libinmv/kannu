@@ -51,11 +51,25 @@ and no access at all under personal folders such as `~/.ssh`, `Documents`, `Mail
 ## 3. Let Kannu run it (default once connected)
 
 With Discovery connected, Settings → Agents → ADR Discovery → **Let Kannu run scans** makes
-Kannu invoke `adr-discovery --json --output-dir <snapshot folder>` itself: once a day, sooner
-after one of your MCP configuration files changes on disk (`~/.claude.json`, `~/.claude/mcp.json`,
-`~/.cursor/mcp.json`, `~/.codex/config.toml`, Claude Desktop's config), and whenever you press
-**Scan now**. The exact command is fixed in code and pinned by tests; Kannu never adds flags to it.
-Turn the toggle off if something else already schedules Discovery — Kannu then only reads.
+Kannu invoke `adr-discovery --json --output-dir <snapshot folder>` itself. Kannu checks once a
+minute whether a scan is due, and runs one:
+
+- when Kannu has never run one;
+- 24 hours after Kannu's last scan;
+- when the MCP servers declared in an AI tool's global settings change — `~/.claude.json`,
+  `~/.claude/mcp.json`, Claude Desktop's `claude_desktop_config.json`, `~/.cursor/mcp.json`,
+  VS Code's `mcp.json`, `~/.codex/config.toml`, `~/.gemini/settings.json`,
+  `~/.qwen/settings.json` and `~/.config/opencode/opencode.json` — at most once every five
+  minutes (the server names are compared, not the files' dates, so an unrelated rewrite of
+  `~/.claude.json` does not count);
+- after a scan that wrote no snapshot (it timed out, failed to start, exited with an error, or
+  left an unreadable file): again after 1, 2, 4, 8 and 16 hours, never later than the daily scan.
+  While scans keep failing, a settings change waits for that retry too;
+- whenever you press **Scan now**.
+
+Settings shows when the next automatic scan is due under "Last run by Kannu". The exact command is
+fixed in code and pinned by tests; Kannu never adds flags to it. Turn the toggle off if something
+else already schedules Discovery — Kannu then only reads, and labels those snapshots as watched.
 
 ## 4. How a high-severity finding gets your attention
 

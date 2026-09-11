@@ -4,6 +4,28 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-12 - ADR Discovery retries a failed scan within the hour and shows the next scan
+- **Developer label:** "also when does automatic scans run for securtity findings"
+- **Agent label:** Follow-up 30, C6 — the answer, and the three bugs found tracing it
+- **Changes:**
+  - A failed Kannu-run scan counted as a run, so the next attempt waited a full day. Now a scan
+    that wrote no snapshot is retried after 1, 2, 4, 8, 16 hours, never later than the daily scan
+    (`ADRScanTrigger.retryDelay`; the count persists in `adrKannuScanFailures`). Success means a
+    snapshot this scan wrote was read — not an exit status: exit 2 is also argparse's usage error,
+    which used to clear the error and re-read the old file.
+  - While scans keep failing, a settings change waits for the retry, so a broken install is not
+    re-run (up to three minutes each) every five minutes.
+  - `kannuScanStartedAt` was set and never cleared, so after Kannu's first scan every later
+    snapshot was labelled "run by Kannu". `ADRKannuScanWindow` tags only a file modified between
+    the scan's start and a moment after its end, and settles each scan's outcome once.
+  - Settings: "Next automatic scan …" under "Last run by Kannu" (with "retrying after a failed
+    scan"), shown while "Let Kannu run scans" is on; the toggle's description names the retries.
+    The store publishes the date only when it changes (the notch observes the store), clears it
+    in `stop()`, and follows the toggle at once.
+  - docs/ADR.md §3 lists the real schedule and all nine global settings files.
+  - Tests: four `MCPServerWatchTests` (backoff table, a change waits for the retry, next scan,
+    scan window).
+
 ### 2026-09-12 - Finding cards: Acknowledge on the bottom row, selectable details, Reveal points at the file
 - **Developer label:** "why does the reveal button in adr finding just open repo, it doesnt make sense … the copy for agent button in securtity findings is good , but we need acknowledge button also maybe add it. to bottom right or do a good ux for individual finding card , also the whokle details section and all is not easily selectable text for some reason"
 - **Agent label:** Follow-up 30, C5 — the finding card

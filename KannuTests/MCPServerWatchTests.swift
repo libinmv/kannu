@@ -162,4 +162,55 @@ final class MCPServerWatchTests: XCTestCase {
         trigger.scanStarted()
         XCTAssertNil(trigger.evaluate(now: t0.addingTimeInterval(900), lastScan: t0, inventory: ["f": ["|x"]]))
     }
+
+    // MARK: - Retry after a failed scan
+
+    func testAFailedScanIsRetriedWithinTheHourThenBacksOff() {
+        typealias T = ADRScanTrigger
+        let day: TimeInterval = 86_400
+        XCTAssertEqual(T.retryDelay(consecutiveFailures: 0, interval: day), day, "a good scan waits the day")
+        XCTAssertEqual(T.retryDelay(consecutiveFailures: 1, interval: day), 3_600)
+        XCTAssertEqual(T.retryDelay(consecutiveFailures: 2, interval: day), 7_200)
+        XCTAssertEqual(T.retryDelay(consecutiveFailures: 3, interval: day), 14_400)
+        XCTAssertEqual(T.retryDelay(consecutiveFailures: 5, interval: day), 57_600)
+        XCTAssertEqual(T.retryDelay(consecutiveFailures: 6, interval: day), day, "never later than the daily scan")
+        XCTAssertEqual(T.retryDelay(consecutiveFailures: 99, interval: day), day)
+
+        var trigger = ADRScanTrigger(interval: day, debounce: 300)
+        let t0 = Date(timeIntervalSince1970: 1_788_000_000)
+        XCTAssertNil(trigger.evaluate(now: t0.addingTimeInterval(3_599), lastScan: t0, consecutiveFailures: 1, inventory: nil))
+        XCTAssertEqual(trigger.evaluate(now: t0.addingTimeInterval(3_600), lastScan: t0, consecutiveFailures: 1, inventory: nil), .retry)
+        XCTAssertEqual(trigger.evaluate(now: t0.addingTimeInterval(day), lastScan: t0, consecutiveFailures: 6, inventory: nil), .scheduled)
+    }
+
+    func testWhileFailingAConfigChangeWaitsForTheRetry() {
+        var trigger = ADRScanTrigger(interval: 86_400, debounce: 300)
+        let t0 = Date(timeIntervalSince1970: 1_788_000_000)
+        _ = trigger.evaluate(now: t0, lastScan: t0, consecutiveFailures: 2, inventory: ["f": []])
+        XCTAssertNil(trigger.evaluate(now: t0.addingTimeInterval(400), lastScan: t0, consecutiveFailures: 2, inventory: ["f": ["|x"]]),
+                     "a broken install is not re-run every five minutes")
+        XCTAssertEqual(trigger.nextScan(lastScan: t0, consecutiveFailures: 2), t0.addingTimeInterval(7_200))
+        XCTAssertEqual(trigger.evaluate(now: t0.addingTimeInterval(7_200), lastScan: t0, consecutiveFailures: 2, inventory: nil), .retry)
+    }
+
+    func testTheNextScanIsDailyOrSoonerForAPendingChange() {
+        var trigger = ADRScanTrigger(interval: 86_400, debounce: 300)
+        let t0 = Date(timeIntervalSince1970: 1_788_000_000)
+        XCTAssertNil(trigger.nextScan(lastScan: nil, consecutiveFailures: 0), "never run by Kannu: at the next check")
+        XCTAssertEqual(trigger.nextScan(lastScan: t0, consecutiveFailures: 0), t0.addingTimeInterval(86_400))
+        _ = trigger.evaluate(now: t0.addingTimeInterval(10), lastScan: t0, inventory: ["f": []])
+        _ = trigger.evaluate(now: t0.addingTimeInterval(20), lastScan: t0, inventory: ["f": ["|x"]])
+        XCTAssertEqual(trigger.nextScan(lastScan: t0, consecutiveFailures: 0), t0.addingTimeInterval(300))
+    }
+
+    func testTheScanWindowTagsOnlyWhatThatScanWrote() {
+        let t0 = Date(timeIntervalSince1970: 1_788_000_000)
+        var window = ADRKannuScanWindow(startedAt: t0)
+        XCTAssertTrue(window.wrote(t0.addingTimeInterval(30)), "the watcher can ingest it while the scan still runs")
+        XCTAssertTrue(window.wrote(t0.addingTimeInterval(-0.5)), "clock granularity")
+        XCTAssertFalse(window.wrote(t0.addingTimeInterval(-5)), "an older snapshot")
+        window.finishedAt = t0.addingTimeInterval(40)
+        XCTAssertTrue(window.wrote(t0.addingTimeInterval(41)))
+        XCTAssertFalse(window.wrote(t0.addingTimeInterval(3_600)), "a snapshot something else wrote later is not Kannu's")
+    }
 }
