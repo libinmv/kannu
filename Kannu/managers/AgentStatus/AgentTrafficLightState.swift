@@ -108,6 +108,10 @@ struct AgentSessionStatus: Identifiable, Equatable {
     /// What the hook's local checks found in what this session read or wrote (hook v34+: hidden
     /// Unicode). Hook-only and additive: carried by `carryingExtras` as a union (`HookSightings`).
     var sightings = HookSightings()
+    /// The terminal the agent runs in, as its hook reported it (v35+): a locator like `hostPID`,
+    /// used by click-through when no process id is known. Carried by `carryingExtras` as
+    /// `self ?? source`.
+    var terminal: TerminalLocator? = nil
 
     /// True when the hook that produced this session reported work in progress, regardless of
     /// what the staleness ladder later concluded about its age.
@@ -784,6 +788,7 @@ extension AgentSessionStatus {
         copy.runError = RunError.preferred(copy.runError, source.runError)
         copy.desktopSessionID = copy.desktopSessionID ?? source.desktopSessionID
         copy.sightings = HookSightings.union(copy.sightings, source.sightings)
+        copy.terminal = copy.terminal ?? source.terminal
         return copy
     }
 }

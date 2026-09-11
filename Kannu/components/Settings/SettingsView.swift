@@ -935,6 +935,8 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .agentStatus, title: "Push high security findings", keywords: ["push", "security", "finding", "high", "mobile", "ntfy", "pushover", "webhook"], highlightID: SettingsTab.agentStatus.highlightID(for: "Push high security findings")),
             SettingsSearchEntry(tab: .agentStatus, title: "Push medium security findings", keywords: ["push", "security", "finding", "medium", "mobile"], highlightID: SettingsTab.agentStatus.highlightID(for: "Push medium security findings")),
             SettingsSearchEntry(tab: .agentStatus, title: "Look for hidden text in what agents read", keywords: ["hidden", "invisible", "unicode", "tag", "ascii smuggling", "zero-width", "bidi", "trojan source", "variation selector", "prompt injection"], highlightID: SettingsTab.agentStatus.highlightID(for: "Look for hidden text in what agents read")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Look for secrets in prompts and tool calls", keywords: ["secret", "api key", "token", "private key", "leak", "credential", "aws", "github"], highlightID: SettingsTab.agentStatus.highlightID(for: "Look for secrets in prompts and tool calls")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Watch for agents touching sensitive files", keywords: ["sensitive", "ssh", "keychain", "credentials", "env", "launch agent", "zshrc", "browser", "password", "history"], highlightID: SettingsTab.agentStatus.highlightID(for: "Watch for agents touching sensitive files")),
             SettingsSearchEntry(tab: .agentStatus, title: "Tell the agent when hidden text is found", keywords: ["hidden", "invisible", "unicode", "agent", "warn", "context", "note"], highlightID: SettingsTab.agentStatus.highlightID(for: "Tell the agent when hidden text is found")),
             SettingsSearchEntry(tab: .agentStatus, title: "Analyze chats with ADR Detection", keywords: ["adr", "detection", "analyze", "analysis", "session", "transcript", "malicious", "prompt injection"], highlightID: SettingsTab.agentStatus.highlightID(for: "Analyze chats with ADR Detection")),
             SettingsSearchEntry(tab: .agentStatus, title: "Detection checkout", keywords: ["adr", "detection", "checkout", "uv", "clone"], highlightID: SettingsTab.agentStatus.highlightID(for: "Detection checkout")),
@@ -8138,6 +8140,20 @@ struct AgentStatusSettings: View {
             Text("Off by default. Adds one short, factual note to the agent's context saying hidden text was found and where — never the hidden text. Claude Code also shows you a one-line notice.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            Defaults.Toggle(key: .detectSecrets) {
+                Text("Look for secrets in prompts and tool calls")
+            }
+            .settingsHighlight(id: highlightID("Look for secrets in prompts and tool calls"))
+            Text("Flags API keys and private keys in what you send an agent and in what an agent hands a tool. Kannu keeps only the kind of key, its first few letters, its length and a fingerprint — never the key itself.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Defaults.Toggle(key: .detectSensitivePaths) {
+                Text("Watch for agents touching sensitive files")
+            }
+            .settingsHighlight(id: highlightID("Watch for agents touching sensitive files"))
+            Text("Flags when an agent reads keys, passwords, cloud or browser data, or changes files that run programs on their own or set what agents may do. Checked on this Mac. Nothing is sent anywhere.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
             Divider()
             adrDetectionSection
@@ -8174,7 +8190,7 @@ struct AgentStatusSettings: View {
             Text("""
             Findings come from ADR, Uber's open-source agent security toolkit (Apache-2.0). You install it; Kannu only reads its results.
 
-            Kannu also runs two checks of its own, on this Mac: sessions started with permission checks turned off, and hidden text in what agents read.
+            Kannu also runs checks of its own, on this Mac: sessions started with permission checks turned off, hidden text in what agents read, secrets in prompts and tool calls, and agents touching sensitive files.
 
             Kannu never changes your agent or MCP settings. Nothing leaves this Mac unless you turn on push notifications or session analysis.
 

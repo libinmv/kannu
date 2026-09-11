@@ -1075,6 +1075,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
             // v34+: what the hook's local checks found in this session's input or output.
             // Untrusted input, re-sanitised by each kind's parser.
             session.sightings = HookSightings(hookFile: json)
+            // v35: the terminal the agent runs in (validated), for click-through to its tab.
+            session.terminal = TerminalLocator(hookFile: json)
             results.append(session)
         }
 

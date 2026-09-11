@@ -1261,6 +1261,10 @@ extension Defaults.Keys {
     // it is on; telling the agent changes what it sees, so that is opt-in.
     static let detectHiddenText = Key<Bool>("detectHiddenText", default: true)
     static let warnAgentAboutHiddenText = Key<Bool>("warnAgentAboutHiddenText", default: false)
+    // Kannu's secret and sensitive-file checks (hook v35). Local, nothing sent, the agent
+    // untouched — so on, like hidden-text detection.
+    static let detectSecrets = Key<Bool>("detectSecrets", default: true)
+    static let detectSensitivePaths = Key<Bool>("detectSensitivePaths", default: true)
     /// Sightings from the hook's local checks, kept past their session until acknowledged.
     static let hookSightingRecords = Key<HookSightingRecords>("hookSightingRecords", default: HookSightingRecords())
 

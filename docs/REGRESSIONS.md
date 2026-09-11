@@ -57,7 +57,10 @@ against the mirror byte for byte) — a body edit without a matching copy fails 
 `"\n"` in the Python becomes a real newline in the installed script, `"\U000E0000"` does not
 compile, and escaping them makes the two copies differ. Build code points and regex character
 classes with `chr()` (the hidden-text scan does exactly that). The pre-commit hook and the same
-test reject any backslash in the mirror's Python body. Before this guard existed, the rule was: diff
+test reject any backslash in the mirror's Python body. v35 keeps to it: the secret patterns use
+lookarounds and character classes, not `\b`, and check the "no word character before" edge in code
+(a leading lookbehind also made a 1 MB scan 40 times slower — a regex that starts with its literal
+lets the engine skip ahead). Before this guard existed, the rule was: diff
 the two Python bodies (extract each heredoc, strip the embedded copy's 8-space indent) and expect
 byte identity. Regenerate the mirror from the embedded literal
 rather than hand-editing it; hand-editing is how `quota_exceeded` had to be typed into both copies
@@ -247,7 +250,9 @@ side that has not seen the sighting would erase it. Guards: `ClaudeReconcilerTes
 pass-through arms carry it) and `HiddenTextIncidentTests.testReconstructionHelpersKeepTheField`.
 Since the sightings refactor the field is `sightings` (`HookSightings`, one list per hook-side check)
 and the union is `HookSighting.union` per list; a new check adds a list to `HookSightings`, never a
-new field on `AgentSessionStatus`.
+new field on `AgentSessionStatus`. v35 adds `secrets` and `sensitivePaths` that way, plus one
+locator, `terminal` (the hook-reported tty, session leader and its start time), carried like
+`desktopSessionID` as `self ?? source`. Guard: `HookSightingsTests.testTerminalLocatorRidesTheSeamAsSelfOrSource`.
 
 **2026-09-09 addendum — the run verdict is not additive.** `runError` (why the run ended, nil for
 a clean finish) is a per-turn *verdict*, replaced by every stopped write. It rides the same

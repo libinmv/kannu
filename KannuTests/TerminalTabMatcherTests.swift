@@ -37,6 +37,12 @@ final class TerminalTabMatcherTests: XCTestCase {
         XCTAssertNil(TerminalLocator(tty: "/dev/../etc/passwd"))
         XCTAssertNil(TerminalLocator(tty: ""))
         XCTAssertNil(TerminalLocator(tty: "/dev/tty"))
+        XCTAssertEqual(TerminalLocator(hookFile: ["tty": "/dev/ttys017", "tty_sid": NSNumber(value: 4242), "tty_start": NSNumber(value: 1_788_000_000)]),
+                       TerminalLocator(tty: "/dev/ttys017", sessionLeaderPID: 4242, sessionLeaderStart: 1_788_000_000))
+        XCTAssertNil(TerminalLocator(hookFile: ["tty": "/dev/ttys017"]), "a terminal without its session leader is not enough")
+        XCTAssertNil(TerminalLocator(hookFile: ["tty": "/etc/passwd", "tty_sid": NSNumber(value: 4242)]))
+        XCTAssertNil(TerminalLocator(hookFile: ["tty": "/dev/ttys017", "tty_sid": NSNumber(value: true)]))
+        XCTAssertNil(TerminalLocator(hookFile: ["tty_sid": NSNumber(value: 4242)]), "no terminal: an IDE or a desktop app")
         XCTAssertNil(TerminalLocator(tty: "/dev/ttys003", sessionLeaderPID: 1), "launchd is nobody's session leader here")
         XCTAssertNil(TerminalTabMatcher.selectScript(family: .terminal, bundleIdentifier: "com.apple.Terminal", tty: "/dev/ttys1\" & x"))
     }
@@ -85,5 +91,16 @@ final class TerminalTabMatcherTests: XCTestCase {
         XCTAssertEqual(elsewhere?.client.pid, 402)
         XCTAssertEqual(elsewhere?.needsSwitch, true)
         XCTAssertNil(Tmux.client(for: pane, in: []))
+    }
+
+    func testALocatorMatchesOnlyTheSameTerminalAndStart() {
+        let locator = TerminalLocator(tty: "/dev/ttys017", sessionLeaderPID: 4242, sessionLeaderStart: 1_788_000_000)!
+        XCTAssertTrue(locator.matches(liveTTY: "/dev/ttys017", liveStart: 1_788_000_000))
+        XCTAssertFalse(locator.matches(liveTTY: "/dev/ttys017", liveStart: 1_788_000_500), "the pid was reused")
+        XCTAssertFalse(locator.matches(liveTTY: "/dev/ttys018", liveStart: 1_788_000_000), "the process moved terminal")
+        XCTAssertFalse(locator.matches(liveTTY: nil, liveStart: 1_788_000_000), "the leader has no terminal any more")
+        let noStart = TerminalLocator(tty: "/dev/ttys017", sessionLeaderPID: 4242)!
+        XCTAssertTrue(noStart.matches(liveTTY: "/dev/ttys017", liveStart: 5))
+        XCTAssertNil(TerminalLocator(tty: "/dev/ttys017", sessionLeaderPID: 4242, sessionLeaderStart: 0)?.sessionLeaderStart)
     }
 }

@@ -525,6 +525,181 @@ final class HookScriptTests: XCTestCase {
         }
     }
 
+    // MARK: - v35: secrets, sensitive files, terminal
+
+    /// Built at run time so no literal key sits in the repository for a scanner to trip on.
+    private static let awsKey = "AKIA" + "Z7Q2M4XKP9RT3WY5"
+    private static let githubToken = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"
+
+    private func secrets(_ conversation: String, provider: String = "claude") throws -> [[String: Any]] {
+        (try readJSON(conversation, provider: provider)?["secrets"] as? [[String: Any]]) ?? []
+    }
+
+    private func sensitivePaths(_ conversation: String, provider: String = "claude") throws -> [[String: Any]] {
+        (try readJSON(conversation, provider: provider)?["sensitive_paths"] as? [[String: Any]]) ?? []
+    }
+
+    func testASecretInAPromptIsRecordedButNeverStored() throws {
+        let out = try run(state: "thinking", event: "UserPromptSubmit", conversation: "s1",
+                          extra: ["prompt": "deploy with " + Self.awsKey + " please"])
+        XCTAssertEqual(out, #"{"permission":"allow","continue":true}"#, "the check never changes what the agent is told")
+        let entry = try XCTUnwrap(try secrets("s1").first)
+        XCTAssertEqual(entry["kind"] as? String, "aws_access_key")
+        XCTAssertEqual(entry["where"] as? String, "prompt")
+        XCTAssertEqual(entry["prefix"] as? String, "AKIA")
+        XCTAssertEqual((entry["length"] as? NSNumber)?.intValue, 20)
+        XCTAssertEqual((entry["fp"] as? String)?.count, 12)
+        let raw = String(decoding: try Data(contentsOf: statusFile("s1")), as: UTF8.self)
+        XCTAssertFalse(raw.contains("Z7Q2M4XKP9RT3WY5"), "no part of the key's random body reaches the file")
+    }
+
+    func testSecretsInToolInputButNeverInToolResults() throws {
+        try run(state: "executing", event: "PreToolUse", conversation: "s2",
+                extra: ["tool_input": ["command": "curl -H 'Authorization: token " + Self.githubToken + "' https://api.github.com"],
+                        "tool_use_id": "t1"])
+        let entry = try XCTUnwrap(try secrets("s2").first)
+        XCTAssertEqual(entry["where"] as? String, "tool_input")
+        XCTAssertEqual(entry["tool"] as? String, "Bash")
+        XCTAssertEqual(entry["prefix"] as? String, "ghp_")
+        try run(state: "thinking", event: "PostToolUse", conversation: "s3",
+                extra: ["tool_response": ["stdout": "AWS_KEY=" + Self.awsKey]])
+        XCTAssertTrue(try secrets("s3").isEmpty, "what a tool returned is the sensitive-file check's business")
+        try run(state: "thinking", event: "UserPromptSubmit", conversation: "s4", extra: ["prompt": "AKIAIOSFODNN7EXAMPLE"])
+        XCTAssertTrue(try secrets("s4").isEmpty, "documentation placeholders are not secrets")
+    }
+
+    func testTheSameSecretIsOneSighting() throws {
+        let input: [String: Any] = ["tool_input": ["command": "export T=" + Self.githubToken], "tool_use_id": "same"]
+        try run(state: "executing", event: "PreToolUse", conversation: "s5", extra: input)
+        try run(state: "executing", event: "PreToolUse", conversation: "s5", extra: input)
+        XCTAssertEqual((try secrets("s5").first?["events"] as? NSNumber)?.intValue, 1, "parallel hook groups, one call")
+        var later = input
+        later["tool_use_id"] = "other"
+        try run(state: "executing", event: "PreToolUse", conversation: "s5", extra: later)
+        XCTAssertEqual(try secrets("s5").count, 1)
+        XCTAssertEqual((try secrets("s5").first?["events"] as? NSNumber)?.intValue, 2)
+    }
+
+    func testASensitiveFileIsRecordedOnlyAfterTheToolRan() throws {
+        let key = home.path + "/.ssh/id_ed25519"
+        try run(state: "executing", event: "PreToolUse", conversation: "p1", toolName: "Read", extra: ["tool_input": ["file_path": key]])
+        XCTAssertTrue(try sensitivePaths("p1").isEmpty)
+        try run(state: "thinking", event: "PostToolUse", conversation: "p1", toolName: "Read",
+                extra: ["tool_input": ["file_path": key], "tool_use_id": "r1"])
+        let entry = try XCTUnwrap(try sensitivePaths("p1").first)
+        XCTAssertEqual(entry["category"] as? String, "ssh_key")
+        XCTAssertEqual(entry["access"] as? String, "read")
+        XCTAssertEqual(entry["path"] as? String, "~/.ssh/id_ed25519")
+        XCTAssertEqual(entry["tool"] as? String, "Read")
+        XCTAssertEqual(entry["failed"] as? Bool, false)
+        try run(state: "thinking", event: "PostToolUse", conversation: "p2", toolName: "Read",
+                extra: ["tool_input": ["file_path": key + ".pub"]])
+        XCTAssertTrue(try sensitivePaths("p2").isEmpty, "a public key is public")
+    }
+
+    func testShellCommandsReadCredentialsAndChangeStartupFiles() throws {
+        try run(state: "thinking", event: "PostToolUse", conversation: "p3",
+                extra: ["tool_input": ["command": "cat ~/.aws/credentials && echo 'export X=1' >> ~/.zshrc"]])
+        let found = try sensitivePaths("p3").map { "\($0["category"] as? String ?? "") \($0["access"] as? String ?? "") \($0["path"] as? String ?? "")" }
+        XCTAssertEqual(found, ["cloud_credentials read ~/.aws/credentials", "shell_startup write ~/.zshrc"])
+        try run(state: "thinking", event: "PostToolUse", conversation: "p4", toolName: "Read",
+                extra: ["tool_input": ["file_path": home.path + "/.zshrc"]])
+        XCTAssertTrue(try sensitivePaths("p4").isEmpty, "reading a startup file is ordinary")
+        try run(state: "thinking", event: "PostToolUseFailure", conversation: "p5",
+                extra: ["tool_input": ["command": "security find-generic-password -s github -w"]])
+        let keychain = try XCTUnwrap(try sensitivePaths("p5").first)
+        XCTAssertEqual(keychain["category"] as? String, "keychain")
+        XCTAssertEqual(keychain["path"] as? String, "security find-generic-password")
+        XCTAssertEqual(keychain["failed"] as? Bool, true, "a failed attempt is still worth knowing about")
+    }
+
+    func testEnvFilesButNotTheirExamples() throws {
+        try run(state: "thinking", event: "PostToolUse", conversation: "p6", toolName: "Read",
+                extra: ["tool_input": ["file_path": ".env"], "cwd": "/work/app"])
+        XCTAssertEqual(try sensitivePaths("p6").first?["path"] as? String, "/work/app/.env")
+        try run(state: "thinking", event: "PostToolUse", conversation: "p7", toolName: "Read",
+                extra: ["tool_input": ["file_path": ".env.example"], "cwd": "/work/app"])
+        XCTAssertTrue(try sensitivePaths("p7").isEmpty)
+    }
+
+    func testCursorAndCodexShapes() throws {
+        try run(state: "thinking", event: "postToolUse", conversation: "p8", toolName: "read_file", provider: "cursor",
+                extra: ["tool_input": #"{"target_file":"~/.netrc"}"#])
+        XCTAssertEqual(try sensitivePaths("p8", provider: "cursor").first?["category"] as? String, "token_file")
+        let out = try run(state: "thinking", event: "PostToolUse", conversation: "p9", toolName: "shell", provider: "codex",
+                          extra: ["tool_input": ["command": ["bash", "-lc", "cp evil.plist ~/Library/LaunchAgents/"]]])
+        XCTAssertEqual(out, "", "Codex still gets empty stdout")
+        XCTAssertEqual(try sensitivePaths("p9", provider: "codex").first?["category"] as? String, "autorun")
+        try run(state: "thinking", event: "PostToolUse", conversation: "p10", toolName: "apply_patch", provider: "codex",
+                extra: ["tool_input": ["input": "*** Begin Patch\n*** Update File: .claude/settings.json\n@@\n*** End Patch"], "cwd": "/work"])
+        XCTAssertEqual(try sensitivePaths("p10", provider: "codex").first?["path"] as? String, "/work/.claude/settings.json")
+    }
+
+    func testSightingsAreCarriedAndUntrusted() throws {
+        try run(state: "thinking", event: "UserPromptSubmit", conversation: "c1", extra: ["prompt": Self.awsKey])
+        try run(state: "thinking", event: "PostToolUse", conversation: "c1", toolName: "Read",
+                extra: ["tool_input": ["file_path": home.path + "/.ssh/id_rsa"]])
+        try run(state: "stopped", event: "Stop", conversation: "c1")
+        XCTAssertEqual(try secrets("c1").count, 1, "a clean event keeps what was seen")
+        XCTAssertEqual(try sensitivePaths("c1").count, 1)
+        let now = Int(Date().timeIntervalSince1970 * 1000)
+        let junk: [String: Any] = [
+            "state": "thinking", "ts": now, "provider": "claude",
+            "secrets": [["kind": "aws_access_key", "where": "prompt", "fp": "NOT-HEX", "first_ts": now], "x"],
+            "sensitive_paths": [["category": "ssh_key", "access": "read", "path": "", "first_ts": now], ["category": "made_up"]],
+        ]
+        try FileManager.default.createDirectory(at: statusDir, withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: junk).write(to: statusFile("c2"))
+        try run(state: "stopped", event: "Stop", conversation: "c2")
+        XCTAssertNil(try readJSON("c2")?["secrets"])
+        XCTAssertNil(try readJSON("c2")?["sensitive_paths"])
+    }
+
+    func testTurningTheChecksOffSkipsAndDrops() throws {
+        try run(state: "thinking", event: "UserPromptSubmit", conversation: "o1", extra: ["prompt": Self.awsKey])
+        try run(state: "thinking", event: "PostToolUse", conversation: "o1", toolName: "Read",
+                extra: ["tool_input": ["file_path": home.path + "/.ssh/id_rsa"]])
+        try placeMarker(SecretSighting.detectionOffMarker)
+        try placeMarker(SensitivePathSighting.detectionOffMarker)
+        try run(state: "thinking", event: "UserPromptSubmit", conversation: "o1", extra: ["prompt": Self.githubToken])
+        XCTAssertNil(try readJSON("o1")?["secrets"])
+        XCTAssertNil(try readJSON("o1")?["sensitive_paths"])
+    }
+
+    func testNoTerminalMeansNoTTY() throws {
+        try run(state: "thinking", event: "UserPromptSubmit", conversation: "t0", extra: ["prompt": "hi"])
+        let json = try XCTUnwrap(try readJSON("t0"))
+        XCTAssertNil(json["tty"], "the test runner has no controlling terminal")
+        XCTAssertNotNil(json["tty_sid"], "the session is still noted, so the next event skips the lookup")
+    }
+
+    /// `script` gives the hook a pseudo-terminal, as Terminal.app would.
+    func testTheTerminalIsRecordedUnderAPseudoTerminal() throws {
+        try XCTSkipUnless(FileManager.default.isExecutableFile(atPath: "/usr/bin/script"), "script(1) not available")
+        let payload = home.appendingPathComponent("payload.json")
+        try JSONSerialization.data(withJSONObject: ["session_id": "t1", "prompt": "hi"]).write(to: payload)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/script")
+        process.arguments = ["-q", "/dev/null", "/bin/bash", "-c",
+                             "/bin/bash \"$0\" thinking claude UserPromptSubmit < \"$1\"; /bin/bash \"$0\" stopped claude Stop < \"$1\"",
+                             Self.scriptURL.path, payload.path]
+        var env = ProcessInfo.processInfo.environment
+        env["HOME"] = home.path
+        env["PATH"] = Self.defaultPath
+        process.environment = env
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+        let json = try XCTUnwrap(try readJSON("t1"))
+        let tty = try XCTUnwrap(json["tty"] as? String)
+        XCTAssertNotNil(TerminalLocator(hookFile: json), "\(tty) validates")
+        XCTAssertGreaterThan((json["tty_sid"] as? NSNumber)?.intValue ?? 0, 1)
+        XCTAssertGreaterThan((json["tty_start"] as? NSNumber)?.intValue ?? 0, 1_700_000_000)
+        XCTAssertEqual(json["state"] as? String, "stopped", "the second event carried it")
+    }
+
     /// REGRESSIONS entry 1: the embedded copy is the one users run; the mirror is the one these
     /// tests run. Byte identity after de-indenting, and no backslash (a plain Swift literal
     /// would reinterpret it).

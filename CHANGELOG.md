@@ -4,6 +4,48 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - Hook v35: secrets, sensitive files and the agent's terminal
+- **Developer label:** Local security checks + tab jump for every terminal agent
+- **Agent label:** Add local secret and sensitive-file checks and a per-session terminal locator to the hook
+- **Changes:**
+  - Hook script v35 (mirror and embedded copy regenerated, still no backslash, Python 3.9 and 3.13,
+    no warnings under `-W error`):
+    - `secrets`: API keys and private keys in `UserPromptSubmit`/`beforeSubmitPrompt` prompts and in
+      tool input at `PreToolUse`/`preToolUse`/`beforeShellExecution`/`beforeMCPExecution` — never in
+      tool results. Eleven vendor patterns plus PEM/OpenSSH/PGP private-key blocks; placeholders
+      (`EXAMPLE`, `XXXXXXXX`, low-variety bodies, keys with no digit) skipped. Only kind, vendor
+      prefix, length and a 12-hex SHA-256 fingerprint are written; one sighting per key and place;
+      the same `tool_use_id` never counts twice; at most five per session.
+    - `sensitive_paths`: at post-tool events, paths from file tools (`file_path`, `target_file`,
+      `path`…, JSON-string inputs, Codex `apply_patch` headers) and from shell commands (`shlex`
+      with punctuation splitting; redirections, `tee`, `cp`/`mv` targets, `sed -i`, `security`,
+      `crontab`, `launchctl load`), classified into thirteen categories; startup files, autorun
+      locations and agent settings count only when changed; `.env.example` and friends skipped; a
+      failure event marks the sighting `failed` until an attempt succeeds.
+    - `tty`, `tty_sid`, `tty_start`: the session leader's controlling terminal and start time from
+      libproc through ctypes (`proc_pidinfo` + `devname`, about 2 ms, no process spawned), looked
+      up only when the session leader changes. Python's `os.ttyname` on `/dev/tty` only answers
+      `/dev/tty` on macOS, which is why it is not used.
+    - Two off markers (`.kannu-secrets-off`, `.kannu-sensitive-paths-off`); a check that is off
+      skips its scan and drops its list. Everything is carried on every write, sticky path included.
+    - Cost: 2–6 ms more per event on a 100–120 ms hook, mostly compiling the longer script.
+  - Swift: `SecretSighting` and `SensitivePathSighting` (logic target) with tolerant parsing,
+    plain titles, severities decided in Swift (secret: high when the agent used it in anything but a
+    file edit; file: medium for `.env`, shell history and `.vscode/settings.json`, else high) and ids
+    that survive later counts. `HookSightings`/`HookSightingRecords` gain both lists;
+    `TerminalLocator(hookFile:)` and `matches(liveTTY:liveStart:)` so a reused pid or tty never opens
+    a stranger's tab; `AgentSessionStatus.terminal` (locator, `self ?? source`).
+  - Click-through: Codex sessions without a pid, and terminal agents Kannu has no icon for yet, now
+    open their exact Terminal/iTerm2 tab or tmux pane from the hook's terminal.
+  - Settings › Security findings: "Look for secrets in prompts and tool calls" and "Watch for agents
+    touching sensitive files" (both on; local; search entries); footer lists all of Kannu's checks.
+  - Tests: 13 hook-script cases (secret never stored, tool results ignored, placeholders, one
+    sighting per call, post-tool only, shell parsing, failed attempts, `.env` vs example, Cursor and
+    Codex shapes, carry and sanitising, off markers, no terminal, a real pseudo-terminal through
+    `script`), `SecretSightingTests`, `SensitivePathSightingTests`, container and locator tests.
+  - Docs: `docs/ADR.md` §4 bullets; REGRESSIONS entry 1 (regex edges without backslashes) and
+    entry 7 (the two lists, the `terminal` locator).
+
 ### 2026-09-11 - One container for what the hook's local checks see
 - **Developer label:** Local security checks (groundwork)
 - **Agent label:** Refactor hidden-text plumbing into a shared sightings container before adding more checks

@@ -77,6 +77,20 @@ Turn the toggle off if something else already schedules Discovery — Kannu then
   nothing sent. A sighting is high when it decodes to readable text; the decoded text is only ever
   shown inside Kannu, never pushed. "Tell the agent when hidden text is found" (off by default)
   adds one factual sentence to the agent's context — never the hidden text.
+- **Secrets (Kannu's own, on by default, local):** API keys and private keys in a prompt or in what
+  an agent hands a tool (AWS, GitHub, GitLab, Slack, Stripe live, Anthropic, OpenAI, Google, npm,
+  Hugging Face, PEM/OpenSSH/PGP private keys). Tool results are never scanned. The hook keeps only
+  the kind, the vendor prefix, the length and the first 12 hex digits of the SHA-256 — never the
+  key. High when the agent used a key in a command or any non-file tool; medium for a file edit or
+  your own prompt.
+- **Sensitive files (Kannu's own, on by default, local):** after a tool ran, the paths it read or
+  changed — SSH and GPG keys, cloud and Git credentials, AI tools' sign-in files, password stores,
+  the keychain (including `security find-generic-password`), browser profiles, `.env` files, shell
+  history — and changes to files that run code on their own (LaunchAgents, `crontab`, Git hooks,
+  `authorized_keys`), shell startup files and agent settings (`.claude/settings.json`, `.mcp.json`,
+  Codex `config.toml`, Kannu's own `~/.kannu`). Reading a startup file or an agent's settings is
+  ordinary and not reported. Paths come from file tools and from parsing shell commands; code that
+  opens a file from inside `python -c` is not seen.
 
 ## 5. Run it on your own schedule (optional)
 

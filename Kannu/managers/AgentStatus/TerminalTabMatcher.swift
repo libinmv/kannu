@@ -24,12 +24,32 @@ import Foundation
 struct TerminalLocator: Codable, Equatable {
     let tty: String
     let sessionLeaderPID: Int?
+    /// When the session leader started (seconds since 1970), if the hook reported it: a process
+    /// with that pid that started at another moment is a different process.
+    let sessionLeaderStart: Int?
 
-    init?(tty: String, sessionLeaderPID: Int? = nil) {
+    init?(tty: String, sessionLeaderPID: Int? = nil, sessionLeaderStart: Int? = nil) {
         guard Self.isValidTTY(tty) else { return nil }
         if let pid = sessionLeaderPID, pid <= 1 { return nil }
         self.tty = tty
         self.sessionLeaderPID = sessionLeaderPID
+        self.sessionLeaderStart = sessionLeaderStart.flatMap { $0 > 0 ? $0 : nil }
+    }
+
+    /// From a status file (hook v35+: `tty`, `tty_sid`, `tty_start`). Untrusted input: nil unless
+    /// the terminal validates and a session leader is named.
+    init?(hookFile json: [String: Any]) {
+        guard let tty = json["tty"] as? String,
+              let leader = (json["tty_sid"] as? NSNumber)?.intValue else { return nil }
+        self.init(tty: tty, sessionLeaderPID: leader, sessionLeaderStart: (json["tty_start"] as? NSNumber)?.intValue)
+    }
+
+    /// True when a live process still fits: the same terminal and, when known, the same start —
+    /// a closed tab's tty number or pid reused by another process never matches.
+    func matches(liveTTY: String?, liveStart: Int?) -> Bool {
+        guard liveTTY == tty else { return false }
+        guard let sessionLeaderStart else { return true }
+        return liveStart == sessionLeaderStart
     }
 
     static func isValidTTY(_ tty: String) -> Bool {

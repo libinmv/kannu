@@ -54,20 +54,29 @@ extension HookSighting {
 /// A new kind of check adds one list here, to `init(hookFile:)`, `union` and `isEmpty`.
 struct HookSightings: Equatable {
     var hiddenText: [HiddenTextIncident] = []
+    var secrets: [SecretSighting] = []
+    var sensitivePaths: [SensitivePathSighting] = []
 
-    var isEmpty: Bool { hiddenText.isEmpty }
+    var isEmpty: Bool { hiddenText.isEmpty && secrets.isEmpty && sensitivePaths.isEmpty }
 
-    init(hiddenText: [HiddenTextIncident] = []) {
+    init(hiddenText: [HiddenTextIncident] = [], secrets: [SecretSighting] = [],
+         sensitivePaths: [SensitivePathSighting] = []) {
         self.hiddenText = hiddenText
+        self.secrets = secrets
+        self.sensitivePaths = sensitivePaths
     }
 
     /// From a session's status file — untrusted input, re-sanitised by each kind's parser.
     init(hookFile json: [String: Any]) {
         hiddenText = HiddenTextIncident.list(fromHookValue: json["hidden_text"])
+        secrets = SecretSighting.list(fromHookValue: json["secrets"])
+        sensitivePaths = SensitivePathSighting.list(fromHookValue: json["sensitive_paths"])
     }
 
     static func union(_ lhs: HookSightings, _ rhs: HookSightings) -> HookSightings {
-        HookSightings(hiddenText: HiddenTextIncident.union(lhs.hiddenText, rhs.hiddenText))
+        HookSightings(hiddenText: HiddenTextIncident.union(lhs.hiddenText, rhs.hiddenText),
+                      secrets: SecretSighting.union(lhs.secrets, rhs.secrets),
+                      sensitivePaths: SensitivePathSighting.union(lhs.sensitivePaths, rhs.sensitivePaths))
     }
 }
 
@@ -125,23 +134,54 @@ struct HookSightingRecord<Sighting: HookSighting>: Codable, Equatable {
 /// the others survive.
 struct HookSightingRecords: Codable, Equatable {
     var hiddenText: [HookSightingRecord<HiddenTextIncident>] = []
+    var secrets: [HookSightingRecord<SecretSighting>] = []
+    var sensitivePaths: [HookSightingRecord<SensitivePathSighting>] = []
 
     static let capPerKind = 50
+
+    /// Which checks are on; a check that is off records nothing.
+    struct Enabled: Equatable {
+        var hiddenText = true
+        var secrets = true
+        var sensitivePaths = true
+    }
 
     init() {}
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         hiddenText = (try? container.decodeIfPresent([HookSightingRecord<HiddenTextIncident>].self, forKey: .hiddenText)) ?? []
+        secrets = (try? container.decodeIfPresent([HookSightingRecord<SecretSighting>].self, forKey: .secrets)) ?? []
+        sensitivePaths = (try? container.decodeIfPresent([HookSightingRecord<SensitivePathSighting>].self, forKey: .sensitivePaths)) ?? []
     }
 
-    var findings: [AgentSecurityFinding] { hiddenText.map(\.finding) }
+    var isEmpty: Bool { hiddenText.isEmpty && secrets.isEmpty && sensitivePaths.isEmpty }
 
-    func upserting(_ sessions: [AgentSessionStatus], includeHiddenText: Bool) -> HookSightingRecords {
+    var findings: [AgentSecurityFinding] {
+        hiddenText.map(\.finding) + secrets.map(\.finding) + sensitivePaths.map(\.finding)
+    }
+
+    func upserting(_ sessions: [AgentSessionStatus], enabled: Enabled) -> HookSightingRecords {
         var out = self
-        if includeHiddenText {
+        if enabled.hiddenText {
             out.hiddenText = HookSightingRecord.upserting(sessions, \.hiddenText, into: hiddenText, cap: Self.capPerKind)
         }
+        if enabled.secrets {
+            out.secrets = HookSightingRecord.upserting(sessions, \.secrets, into: secrets, cap: Self.capPerKind)
+        }
+        if enabled.sensitivePaths {
+            out.sensitivePaths = HookSightingRecord.upserting(sessions, \.sensitivePaths, into: sensitivePaths, cap: Self.capPerKind)
+        }
+        return out
+    }
+
+    /// Forgets the lists of checks that are off: kept, their acknowledgements would be pruned
+    /// and turning the check back on would show and push them all again.
+    func keepingOnly(_ enabled: Enabled) -> HookSightingRecords {
+        var out = self
+        if !enabled.hiddenText { out.hiddenText = [] }
+        if !enabled.secrets { out.secrets = [] }
+        if !enabled.sensitivePaths { out.sensitivePaths = [] }
         return out
     }
 }

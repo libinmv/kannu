@@ -48,7 +48,7 @@ final class AgentHookInstaller: ObservableObject {
     private static let logger = os.Logger(subsystem: "com.kannu.app", category: "AgentHookInstaller")
 
     static let scriptName = "kannu-agent-status.sh"
-    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=34"
+    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=35"
 
     private static var home: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -649,6 +649,518 @@ final class AgentHookInstaller: ObservableObject {
                     out["systemMessage"] = user_note
             print(json.dumps(out, separators=(",", ":")))
 
+        # --- Terminal, secrets and sensitive files (v35) ------------------------------------------
+        # Three more local, model-free checks, each written by this script and read by Kannu.
+        # Terminal: the controlling terminal of the session the agent runs in, so a click can open its
+        # exact tab. Secrets: API keys and private keys in a prompt or in what the agent hands a tool --
+        # never in a tool's result; only the kind, the vendor prefix, the length and a 12-hex SHA-256
+        # fingerprint are kept, never the secret. Sensitive files: after a tool ran, the paths it read or
+        # changed, matched against keys, credential and password stores, browser data, shell history,
+        # and files that run code at login or configure an agent. Still no backslash anywhere.
+        SEC_OFF_MARKER = ".kannu-secrets-off"
+        SP_OFF_MARKER = ".kannu-sensitive-paths-off"
+        SEC_PROMPT_EVENTS = {"UserPromptSubmit", "beforeSubmitPrompt"}
+        SEC_TOOL_EVENTS = {"PreToolUse", "preToolUse", "beforeShellExecution", "beforeMCPExecution"}
+        SP_EVENTS = {"PostToolUse", "postToolUse", "PostToolUseFailure", "postToolUseFailure"}
+        SP_FAILURE_EVENTS = {"PostToolUseFailure", "postToolUseFailure"}
+        SEC_MAX_ENTRIES = 5
+        SP_MAX_ENTRIES = 5
+        SEC_BUDGET = 2000000
+        TTY_DEVICE_RE = "tty[A-Za-z0-9]{1,12}"
+        TTY_PATH_RE = "/dev/tty[A-Za-z0-9]{1,12}"
+        FP_RE = "[0-9a-f]{12}"
+        # (kind, literal anchors checked first, pattern). Every pattern starts with its literal so the
+        # regex engine can skip ahead; the "no word character before" edge is checked in code (a leading
+        # lookbehind made a 1 MB scan 40 times slower).
+        SEC_PATTERNS = [
+            ("private_key", ("PRIVATE KEY",), "-----BEGIN (?:[A-Z0-9]{2,12} ){0,2}PRIVATE KEY(?: BLOCK)?-----"),
+            ("anthropic_key", ("sk-ant-",), "sk-ant-[A-Za-z0-9_-]{32,300}"),
+            ("openai_key", ("sk-",), "sk-(?!ant-)(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{32,300}"),
+            ("aws_access_key", ("AKIA", "ASIA"), "(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Za-z0-9])"),
+            ("github_token", ("ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_"),
+             "(?:gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{50,255})(?![A-Za-z0-9_])"),
+            ("gitlab_token", ("glpat-",), "glpat-[A-Za-z0-9_-]{20,64}"),
+            ("slack_token", ("xox",), "xox[abprs]-[A-Za-z0-9-]{10,250}"),
+            ("stripe_key", ("k_live_",), "(?:sk|rk)_live_[A-Za-z0-9]{20,250}"),
+            ("google_api_key", ("AIza",), "AIza[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])"),
+            ("npm_token", ("npm_",), "npm_[A-Za-z0-9]{36}(?![A-Za-z0-9])"),
+            ("huggingface_token", ("hf_",), "hf_[A-Za-z0-9]{34,64}(?![A-Za-z0-9])"),
+        ]
+        SEC_WORD_CHARS = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-")
+        SEC_KINDS = {kind for kind, _, _ in SEC_PATTERNS}
+        SEC_LITERAL_PREFIXES = ("github_pat_", "sk-svcacct-", "sk-admin-", "sk-proj-", "sk-ant-",
+                                "sk_live_", "rk_live_", "glpat-", "npm_", "hf_")
+        SEC_PLACEHOLDER_WORDS = ("EXAMPLE", "XXXXXXXX", "PLACEHOLDER", "REDACTED", "YOUR_", "DUMMY")
+        _sec_re = {}
+
+        def iter_strings(value, limit=20000):
+            # Every string inside a JSON value, depth-first, bounded.
+            stack = [(value, 0)]
+            nodes = 0
+            while stack and nodes < limit:
+                item, depth = stack.pop()
+                nodes += 1
+                if isinstance(item, str):
+                    if item:
+                        yield item
+                elif isinstance(item, dict):
+                    if depth < 8:
+                        stack.extend((v, depth + 1) for v in item.values())
+                elif isinstance(item, list):
+                    if depth < 8:
+                        stack.extend((v, depth + 1) for v in item)
+
+        def sec_prefix(kind, token):
+            if kind == "private_key":
+                return token.strip("-")[6:]
+            for literal in SEC_LITERAL_PREFIXES:
+                if token.startswith(literal):
+                    return literal
+            if kind == "slack_token":
+                return token[:5]
+            if kind == "openai_key":
+                return "sk-"
+            return token[:4]
+
+        def sec_plausible(token, prefix):
+            upper = token.upper()
+            if any(word in upper for word in SEC_PLACEHOLDER_WORDS):
+                return False
+            body = token[len(prefix):]
+            return len(set(body)) >= 8 and any(c.isdigit() for c in body) and any(c.isalpha() for c in body)
+
+        def sec_fingerprint(material):
+            import hashlib
+            return hashlib.sha256(material.encode("utf-8", "replace")).hexdigest()[:12]
+
+        def sec_texts(payload, event, tool_input):
+            # What the check reads: the prompt, or what the agent hands a tool. Never a tool result.
+            if event in SEC_PROMPT_EVENTS:
+                return [("prompt", payload.get("prompt"))]
+            if event in SEC_TOOL_EVENTS:
+                return [("tool_input", tool_input), ("tool_input", payload.get("command"))]
+            return []
+
+        def scan_secrets(texts):
+            # [(kind, where, prefix, length, fingerprint)], one per distinct secret, at most the cap.
+            hits, seen, budget = [], set(), SEC_BUDGET
+            for where, value in texts:
+                for text in iter_strings(value):
+                    budget -= len(text)
+                    if budget < 0:
+                        return hits
+                    for kind, anchors, pattern in SEC_PATTERNS:
+                        if not any(anchor in text for anchor in anchors):
+                            continue
+                        regex = _sec_re.get(pattern)
+                        if regex is None:
+                            regex = _sec_re[pattern] = re.compile(pattern)
+                        for m in regex.finditer(text):
+                            if kind != "private_key" and m.start() > 0 and text[m.start() - 1] in SEC_WORD_CHARS:
+                                continue
+                            token = m.group(0)
+                            prefix = sec_prefix(kind, token)
+                            if kind == "private_key":
+                                end = text.find("-----END", m.end(), m.end() + 20000)
+                                close = text.find("-----", end + 8, end + 80) if end >= 0 else -1
+                                if close < 0:
+                                    continue
+                                material = "".join(text[m.start():close + 5].split())
+                                if len(material) - 2 * len(token) < 64:
+                                    continue
+                            else:
+                                if not sec_plausible(token, prefix):
+                                    continue
+                                material = token
+                            fp = sec_fingerprint(material)
+                            if (fp, where) in seen:
+                                continue
+                            seen.add((fp, where))
+                            hits.append((kind, where, prefix, len(material), fp))
+                            if len(hits) >= SEC_MAX_ENTRIES:
+                                return hits
+            return hits
+
+        def carried_secrets(value):
+            out = []
+            for item in (value if isinstance(value, list) else [])[-SEC_MAX_ENTRIES:]:
+                if not isinstance(item, dict):
+                    continue
+                kind, where, fp = item.get("kind"), item.get("where"), item.get("fp")
+                first = ht_int(item.get("first_ts"))
+                if (kind not in SEC_KINDS or where not in ("prompt", "tool_input") or not isinstance(fp, str)
+                        or not re.fullmatch(FP_RE, fp) or first < HT_PLAUSIBLE_MS):
+                    continue
+                prefix = item.get("prefix")
+                out.append({"kind": kind, "where": where, "tool": ht_token(item.get("tool")),
+                            "prefix": printable_ascii(prefix if isinstance(prefix, str) else "", 40),
+                            "length": min(ht_int(item.get("length")), 99999), "fp": fp,
+                            "events": max(1, min(ht_int(item.get("events"), 1), 999)),
+                            "first_ts": first, "last_ts": max(first, ht_int(item.get("last_ts"))),
+                            "tool_use_id": ht_token(item.get("tool_use_id"))})
+            return out
+
+        def record_secret(entries, hit, now_ms, tool_name, tool_use_id):
+            # The same secret in the same place is one sighting; the same tool call never counts twice.
+            kind, where, prefix, length, fp = hit
+            for entry in reversed(entries):
+                if entry["fp"] == fp and entry["where"] == where:
+                    if not (tool_use_id and entry["tool_use_id"] == tool_use_id):
+                        entry["events"] = min(entry["events"] + 1, 999)
+                    entry["last_ts"] = now_ms
+                    if tool_use_id:
+                        entry["tool_use_id"] = tool_use_id
+                    return
+            entries.append({"kind": kind, "where": where, "tool": tool_name if where == "tool_input" else "",
+                            "prefix": prefix, "length": length, "fp": fp, "events": 1,
+                            "first_ts": now_ms, "last_ts": now_ms, "tool_use_id": tool_use_id})
+            del entries[:-SEC_MAX_ENTRIES]
+
+        SP_SHELL_TOOLS = {"bash", "shell", "runterminalcmd", "localshell", "execcommand", "runshellcommand",
+                          "terminal", "exec", "execute", "runcommand"}
+        SP_LISTING_TOOLS = {"glob", "ls", "listdir", "listdirectory", "filesearch", "globfilesearch"}
+        SP_WRITE_WORDS = ("write", "edit", "replace", "patch", "create", "move", "rename", "copy",
+                          "delete", "insert", "append", "update", "save")
+        SP_PATH_KEYS = ("file_path", "filePath", "path", "target_file", "targetFile", "notebook_path",
+                        "absolute_path", "filename", "file", "source", "destination", "target")
+        SP_WRAPPERS = {"sudo", "env", "command", "exec", "nohup", "time", "nice", "doas", "builtin", "caffeinate"}
+        SP_SEPARATOR_CHARS = set(";&|(){}!")
+        SP_REDIRECTS_OUT = {">", ">>", ">|", "&>", "&>>", ">&", "1>", "2>"}
+        SP_COPY_CMDS = {"cp", "mv", "ln", "install", "rsync", "ditto", "scp"}
+        SP_WRITE_CMDS = {"tee", "touch", "rm", "truncate", "chmod", "chown", "shred", "unlink", "srm"}
+        SP_INPLACE_CMDS = {"sed", "gsed", "perl"}
+        SP_NAME_ONLY_CMDS = {"ls", "stat", "file", "du", "cd", "pushd", "popd", "mkdir", "echo", "printf",
+                             "which", "type", "realpath", "dirname", "basename", "readlink", "test", "[", "[["}
+        SP_KEYCHAIN_READS = {"find-generic-password", "find-internet-password", "dump-keychain", "export"}
+        SP_LAUNCHCTL_WRITES = {"load", "bootstrap", "enable", "submit"}
+        SP_PATCH_MARKERS = ("*** Add File: ", "*** Update File: ", "*** Delete File: ", "*** Move to: ")
+        SP_WRITE_ONLY = {"autorun", "shell_startup", "agent_config"}
+        SP_ENV_SAFE = {"example", "sample", "template", "dist", "defaults", "schema", "tpl", "tmpl"}
+        SP_HOME_DIRS = {".ssh": "ssh_key", ".gnupg": "gpg_key", ".aws": "cloud_credentials",
+                        ".password-store": "password_store", "Library/Keychains": "keychain",
+                        ".config/gcloud": "cloud_credentials", ".kube": "cloud_credentials"}
+        SP_HOME_FILES = {
+            ".aws/credentials": "cloud_credentials", ".kube/config": "cloud_credentials",
+            ".docker/config.json": "cloud_credentials", ".terraform.d/credentials.tfrc.json": "cloud_credentials",
+            ".config/gcloud/credentials.db": "cloud_credentials", ".config/gcloud/access_tokens.db": "cloud_credentials",
+            ".config/gcloud/application_default_credentials.json": "cloud_credentials",
+            ".git-credentials": "token_file", ".config/git/credentials": "token_file", ".netrc": "token_file",
+            ".config/gh/hosts.yml": "token_file", ".npmrc": "token_file", ".pypirc": "token_file",
+            ".gem/credentials": "token_file", ".cargo/credentials": "token_file", ".cargo/credentials.toml": "token_file",
+            ".codex/auth.json": "agent_credentials", ".claude/.credentials.json": "agent_credentials",
+            ".gemini/oauth_creds.json": "agent_credentials", ".qwen/oauth_creds.json": "agent_credentials",
+            ".local/share/opencode/auth.json": "agent_credentials",
+            ".gnupg/secring.gpg": "gpg_key",
+            ".zsh_history": "shell_history", ".bash_history": "shell_history", ".zhistory": "shell_history",
+            ".sh_history": "shell_history", ".history": "shell_history", ".python_history": "shell_history",
+            ".node_repl_history": "shell_history", ".psql_history": "shell_history", ".mysql_history": "shell_history",
+            ".sqlite_history": "shell_history", ".irb_history": "shell_history",
+            ".ssh/authorized_keys": "autorun",
+            ".zshrc": "shell_startup", ".zshenv": "shell_startup", ".zprofile": "shell_startup",
+            ".zlogin": "shell_startup", ".zlogout": "shell_startup", ".bashrc": "shell_startup",
+            ".bash_profile": "shell_startup", ".bash_login": "shell_startup", ".profile": "shell_startup",
+            ".config/fish/config.fish": "shell_startup",
+            ".claude.json": "agent_config", ".codex/config.toml": "agent_config",
+            ".config/opencode/opencode.json": "agent_config", ".config/opencode/opencode.jsonc": "agent_config",
+            "Library/Application Support/Claude/claude_desktop_config.json": "agent_config",
+            "Library/Application Support/Code/User/settings.json": "agent_config",
+            "Library/Application Support/Code/User/mcp.json": "agent_config",
+            "Library/Application Support/Cursor/User/settings.json": "agent_config",
+        }
+        SP_HOME_PREFIXES = [
+            (".aws/sso/cache/", "cloud_credentials"), (".config/gcloud/legacy_credentials/", "cloud_credentials"),
+            (".azure/", "cloud_credentials"), (".config/github-copilot/", "agent_credentials"),
+            (".gnupg/private-keys-v1.d/", "gpg_key"), (".password-store/", "password_store"),
+            ("Library/Application Support/1Password/", "password_store"),
+            ("Library/Group Containers/2BUA8C4S2C.com.1password/", "password_store"),
+            ("Library/Application Support/Bitwarden/", "password_store"),
+            ("Library/Keychains/", "keychain"),
+            ("Library/Application Support/Google/Chrome/", "browser_data"),
+            ("Library/Application Support/BraveSoftware/", "browser_data"),
+            ("Library/Application Support/Microsoft Edge/", "browser_data"),
+            ("Library/Application Support/Arc/User Data/", "browser_data"),
+            ("Library/Application Support/Firefox/Profiles/", "browser_data"),
+            ("Library/Safari/", "browser_data"), ("Library/Cookies/", "browser_data"),
+            ("Library/Containers/com.apple.Safari/", "browser_data"),
+            (".zsh_sessions/", "shell_history"),
+            ("Library/LaunchAgents/", "autorun"),
+            (".kannu/", "agent_config"),
+        ]
+        SP_ROOT_PREFIXES = [("/Library/LaunchAgents/", "autorun"), ("/Library/LaunchDaemons/", "autorun"),
+                            ("/Library/Keychains/", "keychain"), ("/etc/periodic/", "autorun")]
+        SP_ANY_SUFFIXES = [("/.claude/settings.json", "agent_config"), ("/.claude/settings.local.json", "agent_config"),
+                           ("/.mcp.json", "agent_config"), ("/.cursor/mcp.json", "agent_config"),
+                           ("/.cursor/hooks.json", "agent_config"), ("/.gemini/settings.json", "agent_config"),
+                           ("/.qwen/settings.json", "agent_config"), ("/.vscode/settings.json", "agent_config"),
+                           ("/.vscode/mcp.json", "agent_config"), ("/.codex/config.toml", "agent_config")]
+        SP_CATEGORIES = ({c for c in SP_HOME_DIRS.values()} | {c for c in SP_HOME_FILES.values()}
+                         | {c for _, c in SP_HOME_PREFIXES} | {"env_file", "autorun", "keychain", "agent_config"})
+
+        def early_cwd(payload):
+            roots = payload.get("workspace_roots") or payload.get("workspacePaths") or payload.get("workspace_paths")
+            root = str(roots[0]) if isinstance(roots, list) and roots else ""
+            return pick_str(payload.get("cwd"), root).replace("file://", "").rstrip("/")
+
+        def sp_norm(token, cwd, home):
+            t = token.strip().replace("file://", "")
+            if t.startswith("@"):
+                t = t[1:]
+            if t.startswith("-") or ("=" in t and not t.startswith(("/", "~", "."))):
+                if "=" not in t:
+                    return ""
+                t = t.split("=", 1)[1]
+            if not t or len(t) > 1024 or t.startswith(("http:", "https:")):
+                return ""
+            if t == "~" or t.startswith("~/"):
+                t = home + t[1:]
+            elif t.startswith("$HOME/"):
+                t = home + t[5:]
+            elif t.startswith("${HOME}/"):
+                t = home + t[7:]
+            if not t.startswith("/") and cwd:
+                t = cwd + "/" + t
+            return os.path.normpath(t)
+
+        def sp_classify(path, home):
+            rel = path[len(home) + 1:] if home and path.startswith(home + "/") else ""
+            base = path.rsplit("/", 1)[-1]
+            if rel:
+                if rel.startswith(".ssh/") and "/" not in rel[5:] and (
+                        (base.startswith("id_") and not base.endswith(".pub")) or "*" in base
+                        or base.endswith((".pem", ".key", ".ppk"))):
+                    return "ssh_key"
+                category = SP_HOME_DIRS.get(rel) or SP_HOME_FILES.get(rel)
+                if category:
+                    return category
+                # A directory itself counts too: `cp x ~/Library/LaunchAgents/` normalises to no slash.
+                for prefix, category in SP_HOME_PREFIXES:
+                    if (rel + "/").startswith(prefix):
+                        return category
+            for prefix, category in SP_ROOT_PREFIXES:
+                if (path + "/").startswith(prefix):
+                    return category
+            for suffix, category in SP_ANY_SUFFIXES:
+                if path.endswith(suffix) or path == suffix[1:]:
+                    return category
+            if "/.git/hooks/" in path or path.startswith(".git/hooks/"):
+                return "autorun"
+            if base == ".env" or (base.startswith(".env.") and base[5:].lower() not in SP_ENV_SAFE):
+                return "env_file"
+            return ""
+
+        def sp_simple_command(words):
+            # [(token, access, special)] for one simple command: redirections, then its operands.
+            i = 0
+            while i < len(words):
+                word = words[i]
+                if word in SP_WRAPPERS or (i > 0 and words[i - 1] in SP_WRAPPERS and word.startswith("-")):
+                    i += 1
+                elif "=" in word and word.split("=", 1)[0].replace("_", "").isalnum():
+                    i += 1
+                else:
+                    break
+            if i >= len(words):
+                return []
+            name, args = words[i].rsplit("/", 1)[-1], words[i + 1:]
+            out = []
+            operands = [a for a in args if not a.startswith("-") or "=" in a]
+            if name == "security":
+                sub = operands[0] if operands else ""
+                if sub in SP_KEYCHAIN_READS:
+                    out.append(("security " + sub, "read", "keychain"))
+            elif name == "crontab" and args and "-l" not in args:
+                out.append(("crontab", "write", "autorun"))
+            elif name == "launchctl" and args and args[0] in SP_LAUNCHCTL_WRITES:
+                out.append(("launchctl " + args[0], "write", "autorun"))
+            elif name == "apply_patch":
+                out.extend(sp_patch_paths(args))
+            plain, redirect = [], ""
+            for arg in args:
+                if arg in SP_REDIRECTS_OUT:
+                    redirect = "write"
+                elif arg == "<":
+                    redirect = "read"
+                elif redirect:
+                    out.append((arg, redirect, ""))
+                    redirect = ""
+                elif not arg.startswith("-") or "=" in arg:
+                    plain.append(arg)
+            if name in SP_NAME_ONLY_CMDS:
+                return out
+            if name in SP_WRITE_CMDS:
+                out.extend((a, "write", "") for a in plain)
+            elif name in SP_COPY_CMDS and plain:
+                out.extend((a, "read", "") for a in plain[:-1])
+                out.append((plain[-1], "write", ""))
+            elif name in SP_INPLACE_CMDS and any(a.startswith(("-i", "-pi", "--in-place")) for a in args):
+                out.extend((a, "write", "") for a in plain)
+            else:
+                out.extend((a, "read", "") for a in plain)
+            return out
+
+        def sp_command_paths(command):
+            if isinstance(command, list):
+                parts = [p for p in command if isinstance(p, str)]
+                if len(parts) >= 3 and parts[1] in ("-c", "-lc", "-ic", "-lic"):
+                    command = parts[2]
+                else:
+                    return sp_simple_command(parts)
+            if not isinstance(command, str):
+                return []
+            import shlex
+            out = []
+            for line in command.split(chr(10))[:200]:
+                if not line.strip():
+                    continue
+                try:
+                    lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
+                    lexer.whitespace_split = True
+                    words = list(lexer)
+                except Exception:
+                    words = line.split()
+                current = []
+                for word in words + [";"]:
+                    if word and all(c in SP_SEPARATOR_CHARS for c in word):
+                        if current:
+                            out.extend(sp_simple_command(current))
+                        current = []
+                    else:
+                        current.append(word)
+                if len(out) > 200:
+                    break
+            return out
+
+        def sp_patch_paths(value):
+            out = []
+            for text in iter_strings(value, 200):
+                if "*** " not in text:
+                    continue
+                for line in text.split(chr(10))[:5000]:
+                    for marker in SP_PATCH_MARKERS:
+                        if line.startswith(marker):
+                            out.append((line[len(marker):].strip(), "write", ""))
+            return out
+
+        def scan_paths(tool_name, tool_input, cwd, home):
+            # [(category, access, display path)], distinct, at most the cap.
+            compact = normalize_token(tool_name)
+            if compact in SP_LISTING_TOOLS:
+                return []
+            if isinstance(tool_input, str) and tool_input.lstrip()[:1] == "{":
+                try:
+                    parsed = json.loads(tool_input)
+                except Exception:
+                    parsed = None
+                if isinstance(parsed, dict):
+                    tool_input = parsed
+            candidates = []
+            if isinstance(tool_input, dict):
+                command = tool_input.get("command", tool_input.get("cmd"))
+                if command is not None and (compact in SP_SHELL_TOOLS or not any(k in tool_input for k in SP_PATH_KEYS)):
+                    candidates.extend(sp_command_paths(command))
+                else:
+                    access = "write" if any(word in compact for word in SP_WRITE_WORDS) else "read"
+                    for key in SP_PATH_KEYS:
+                        value = tool_input.get(key)
+                        if isinstance(value, str) and value:
+                            candidates.append((value, access, ""))
+                    paths = tool_input.get("paths")
+                    if isinstance(paths, list):
+                        candidates.extend((p, "read", "") for p in paths[:50] if isinstance(p, str))
+                if "patch" in compact:
+                    candidates.extend(sp_patch_paths(tool_input))
+            elif isinstance(tool_input, (str, list)) and compact in SP_SHELL_TOOLS:
+                candidates.extend(sp_command_paths(tool_input))
+            elif isinstance(tool_input, str) and "patch" in compact:
+                candidates.extend(sp_patch_paths(tool_input))
+            hits = []
+            for token, access, special in candidates[:400]:
+                if special:
+                    hit = (special, access, printable_ascii(token, 160))
+                else:
+                    path = sp_norm(token, cwd, home)
+                    category = sp_classify(path, home) if path else ""
+                    if (not category or (category in SP_WRITE_ONLY and access != "write")
+                            or (category == "env_file" and access != "read")):
+                        continue
+                    shown = "~/" + path[len(home) + 1:] if home and path.startswith(home + "/") else path
+                    hit = (category, access, printable_ascii(shown, 160))
+                if hit[2] and hit not in hits:
+                    hits.append(hit)
+                    if len(hits) >= SP_MAX_ENTRIES:
+                        break
+            return hits
+
+        def carried_paths(value):
+            out = []
+            for item in (value if isinstance(value, list) else [])[-SP_MAX_ENTRIES:]:
+                if not isinstance(item, dict):
+                    continue
+                category, access, path = item.get("category"), item.get("access"), item.get("path")
+                first = ht_int(item.get("first_ts"))
+                path = printable_ascii(path, 160) if isinstance(path, str) else ""
+                if category not in SP_CATEGORIES or access not in ("read", "write") or not path or first < HT_PLAUSIBLE_MS:
+                    continue
+                out.append({"category": category, "access": access, "path": path, "tool": ht_token(item.get("tool")),
+                            "failed": item.get("failed") is True,
+                            "events": max(1, min(ht_int(item.get("events"), 1), 999)),
+                            "first_ts": first, "last_ts": max(first, ht_int(item.get("last_ts"))),
+                            "tool_use_id": ht_token(item.get("tool_use_id"))})
+            return out
+
+        def record_path(entries, hit, now_ms, tool_name, tool_use_id, failed):
+            # One sighting per (category, access, path); "failed" stays only while every attempt failed.
+            category, access, path = hit
+            for entry in reversed(entries):
+                if entry["category"] == category and entry["access"] == access and entry["path"] == path:
+                    if not (tool_use_id and entry["tool_use_id"] == tool_use_id):
+                        entry["events"] = min(entry["events"] + 1, 999)
+                    entry["failed"] = entry["failed"] and failed
+                    entry["last_ts"] = now_ms
+                    if tool_use_id:
+                        entry["tool_use_id"] = tool_use_id
+                    return
+            entries.append({"category": category, "access": access, "path": path, "tool": tool_name,
+                            "failed": failed, "events": 1, "first_ts": now_ms, "last_ts": now_ms,
+                            "tool_use_id": tool_use_id})
+            del entries[:-SP_MAX_ENTRIES]
+
+        def terminal_probe(sid):
+            # libproc's proc_bsdinfo for the session leader: its controlling terminal (e_tdev, byte 108)
+            # and start time (byte 120) -- about 2 ms, no process spawned.
+            import ctypes
+            lib = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+            size = 136
+            buf = ctypes.create_string_buffer(size)
+            if lib.proc_pidinfo(ctypes.c_int(sid), ctypes.c_int(3), ctypes.c_uint64(0), buf, ctypes.c_int(size)) != size:
+                return ("", sid, 0)
+            raw = buf.raw
+            if int.from_bytes(raw[12:16], "little") != sid:
+                return ("", sid, 0)
+            start = int.from_bytes(raw[120:128], "little")
+            tdev = int.from_bytes(raw[108:112], "little", signed=True)
+            if tdev == -1:
+                return ("", sid, start)
+            lib.devname.restype = ctypes.c_char_p
+            name = lib.devname(ctypes.c_int32(tdev), ctypes.c_uint16(0o020000))
+            name = name.decode("ascii", "replace") if name else ""
+            if not re.fullmatch(TTY_DEVICE_RE, name):
+                return ("", sid, start)
+            return ("/dev/" + name, sid, start)
+
+        def session_terminal(existing):
+            # (tty, session leader pid, its start time). Same leader as the last write means the same
+            # terminal -- a session never changes its terminal -- so it is carried without a lookup.
+            sid = os.getsid(0)
+            if sid <= 1:
+                return ("", 0, 0)
+            if ht_int(existing.get("tty_sid")) == sid:
+                tty = existing.get("tty")
+                if isinstance(tty, str) and re.fullmatch(TTY_PATH_RE, tty):
+                    return (tty, sid, ht_int(existing.get("tty_start")))
+                return ("", sid, 0)
+            return terminal_probe(sid)
+
         tool = pick_str(
             data.get("tool_name"),
             data.get("toolName"),
@@ -773,6 +1285,22 @@ final class AgentHookInstaller: ObservableObject {
             except Exception:
                 hidden_hit = None
 
+        # v35: the secret and sensitive-file checks, also before the lock.
+        secrets_off = os.path.exists(str(status_dir / SEC_OFF_MARKER))
+        paths_off = os.path.exists(str(status_dir / SP_OFF_MARKER))
+        secret_hits = []
+        if not secrets_off and (hook_event in SEC_PROMPT_EVENTS or hook_event in SEC_TOOL_EVENTS):
+            try:
+                secret_hits = scan_secrets(sec_texts(data, hook_event, tool_input))
+            except Exception:
+                secret_hits = []
+        path_hits = []
+        if not paths_off and hook_event in SP_EVENTS:
+            try:
+                path_hits = scan_paths(tool, tool_input, early_cwd(data), os.path.expanduser("~"))
+            except Exception:
+                path_hits = []
+
         # Claude runs the matcher-scoped and generic hook groups for one event as separate
         # processes, in parallel, with no ordering guarantee. The STATE_PRIORITY merge below
         # compares against what is on disk, so without a lock both processes read the same
@@ -856,6 +1384,38 @@ final class AgentHookInstaller: ObservableObject {
                         hidden_notes_out = hidden_notes(hidden_hit, _ht_tool)
                 except Exception:
                     pass
+
+        # v35: carried like hidden_text -- every write keeps them; a check that is off drops its list.
+        sighting_tool = ht_token(tool)
+        sighting_call = ht_token(pick_str(data.get("tool_use_id"), data.get("toolUseId")))
+        sighting_ms = int(time.time() * 1000)
+        secrets = []
+        if not secrets_off:
+            try:
+                secrets = carried_secrets(existing.get("secrets"))
+            except Exception:
+                secrets = []
+            for _hit in secret_hits:
+                try:
+                    record_secret(secrets, _hit, sighting_ms, sighting_tool, sighting_call)
+                except Exception:
+                    pass
+        sensitive_paths = []
+        if not paths_off:
+            try:
+                sensitive_paths = carried_paths(existing.get("sensitive_paths"))
+            except Exception:
+                sensitive_paths = []
+            for _hit in path_hits:
+                try:
+                    record_path(sensitive_paths, _hit, sighting_ms, sighting_tool, sighting_call,
+                                hook_event in SP_FAILURE_EVENTS)
+                except Exception:
+                    pass
+        try:
+            terminal = session_terminal(existing)
+        except Exception:
+            terminal = ("", 0, 0)
 
         # Tool failures since the last prompt. Stop never says whether the turn went well; the
         # failure events do. Reset when the user submits. Diagnostic only since v33: a failure the
@@ -983,6 +1543,12 @@ final class AgentHookInstaller: ObservableObject {
                         existing["hidden_text"] = hidden_text
                     else:
                         existing.pop("hidden_text", None)
+                    for _key, _value in (("secrets", secrets), ("sensitive_paths", sensitive_paths),
+                                         ("tty", terminal[0]), ("tty_sid", terminal[1]), ("tty_start", terminal[2])):
+                        if _value:
+                            existing[_key] = _value
+                        else:
+                            existing.pop(_key, None)
                     write_status(status_file, existing)
                     emit(hidden_notes_out)
                     raise SystemExit(0)
@@ -1007,6 +1573,16 @@ final class AgentHookInstaller: ObservableObject {
             payload["ended_on_error"] = True
         if hidden_text:
             payload["hidden_text"] = hidden_text
+        if secrets:
+            payload["secrets"] = secrets
+        if sensitive_paths:
+            payload["sensitive_paths"] = sensitive_paths
+        if terminal[1]:
+            payload["tty_sid"] = terminal[1]
+        if terminal[0]:
+            payload["tty"] = terminal[0]
+            if terminal[2]:
+                payload["tty_start"] = terminal[2]
         write_status(status_file, payload)
         emit(hidden_notes_out)
         PY

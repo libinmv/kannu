@@ -163,14 +163,13 @@ final class SecurityFindingsStore: ObservableObject {
                 self?.recordSightings(from: sessions)
             }
             .store(in: &cancellables)
-        // The hook reads two marker files for the hidden-text settings; keep them in step.
-        Defaults.publisher(.detectHiddenText, options: [])
-            .sink { [weak self] _ in Task { @MainActor in self?.syncHiddenTextSetting() } }
-            .store(in: &cancellables)
-        Defaults.publisher(.warnAgentAboutHiddenText, options: [])
-            .sink { [weak self] _ in Task { @MainActor in self?.syncHiddenTextSetting() } }
-            .store(in: &cancellables)
-        syncHiddenTextSetting()
+        // The hook reads marker files for the local-check settings; keep them in step.
+        for key in [Defaults.Keys.detectHiddenText, .warnAgentAboutHiddenText, .detectSecrets, .detectSensitivePaths] {
+            Defaults.publisher(key, options: [])
+                .sink { [weak self] _ in Task { @MainActor in self?.syncLocalCheckSettings() } }
+                .store(in: &cancellables)
+        }
+        syncLocalCheckSettings()
         // Know whether the tool is there before the first cadence tick; cheap and bounded.
         ADRConnection.shared.checkAgain()
         configModificationDates = Self.currentConfigModificationDates()
@@ -335,8 +334,13 @@ final class SecurityFindingsStore: ObservableObject {
 
     // MARK: - Sightings (Kannu's own local checks in the hook, v34+)
 
+    private var enabledLocalChecks: HookSightingRecords.Enabled {
+        HookSightingRecords.Enabled(hiddenText: Defaults[.detectHiddenText], secrets: Defaults[.detectSecrets],
+                                    sensitivePaths: Defaults[.detectSensitivePaths])
+    }
+
     private func recordSightings(from sessions: [AgentSessionStatus]) {
-        let updated = sightingRecords.upserting(sessions, includeHiddenText: Defaults[.detectHiddenText])
+        let updated = sightingRecords.upserting(sessions, enabled: enabledLocalChecks)
         guard updated != sightingRecords else { return }
         storeSightingRecords(updated)
     }
@@ -348,11 +352,12 @@ final class SecurityFindingsStore: ObservableObject {
         publishFindings()
     }
 
-    /// Writes or removes the hook's two marker files. Turning detection off also forgets saved
+    /// Writes or removes the hook's marker files. Turning a check off also forgets its saved
     /// sightings: kept, their acknowledgements would be pruned and turning it back on would show
     /// and push them all again.
-    private func syncHiddenTextSetting() {
-        let detect = Defaults[.detectHiddenText]
+    private func syncLocalCheckSettings() {
+        let enabled = enabledLocalChecks
+        let detect = enabled.hiddenText
         let warn = detect && Defaults[.warnAgentAboutHiddenText]
         let directory = AgentHookInstaller.statusDirectory
         let fileManager = FileManager.default
@@ -369,11 +374,10 @@ final class SecurityFindingsStore: ObservableObject {
         }
         place(HiddenTextIncident.detectionOffMarker, present: !detect)
         place(HiddenTextIncident.warnAgentMarker, present: warn)
-        if !detect, !sightingRecords.hiddenText.isEmpty {
-            var records = sightingRecords
-            records.hiddenText = []
-            storeSightingRecords(records)
-        }
+        place(SecretSighting.detectionOffMarker, present: !enabled.secrets)
+        place(SensitivePathSighting.detectionOffMarker, present: !enabled.sensitivePaths)
+        let kept = sightingRecords.keepingOnly(enabled)
+        if kept != sightingRecords { storeSightingRecords(kept) }
     }
 
     private func publishFindings() {

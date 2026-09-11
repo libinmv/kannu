@@ -126,12 +126,13 @@ enum AgentSessionOpener {
                 return nil
             }
         case .codex:
-            // Codex: only a live pid gives us a host to activate. The provider bundle id
-            // intentionally isn't used — it points at an unrelated desktop app.
-            guard let pid = session.hostPID else { return nil }
-            return terminalTarget(for: hostChain(agentPID: pid))
+            // Codex: a live pid, or the terminal its hook reported (v35), gives us a host. The
+            // provider bundle id intentionally isn't used — it points at an unrelated desktop app.
+            if let pid = session.hostPID { return terminalTarget(for: hostChain(agentPID: pid)) }
+            return liveTerminalChain(session.terminal).flatMap(terminalTarget(for:))
         case .unknown:
-            return nil
+            // A terminal agent Kannu has no icon for yet still has a terminal to open.
+            return liveTerminalChain(session.terminal).flatMap(terminalTarget(for:))
         }
     }
 
@@ -282,6 +283,17 @@ enum AgentSessionOpener {
             pid = parent
         }
         return HostChain(app: nil, passesThroughTmux: passesThroughTmux, tty: tty)
+    }
+
+    /// The host of a hook-reported terminal — only while its session leader still owns that
+    /// terminal and started when the hook saw it, so a reused pid or tty never opens someone
+    /// else's tab.
+    static func liveTerminalChain(_ locator: TerminalLocator?) -> HostChain? {
+        guard let locator, let leader = locator.sessionLeaderPID,
+              let info = processInfo(pid: pid_t(leader)) else { return nil }
+        let start = Int(info.kp_proc.p_starttime.tv_sec)
+        guard locator.matches(liveTTY: controllingTTY(pid: leader), liveStart: start) else { return nil }
+        return hostChain(agentPID: leader)
     }
 
     /// Kept for callers that only need the app.
