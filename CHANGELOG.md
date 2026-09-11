@@ -4,6 +4,27 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - Agents and Usage tabs in the System Settings layout; the Agents tab stops re-rendering on every rescan
+- **Developer label:** "the settings should be enginered like apple does settings" (scope picked: "Rework every tab")
+- **Agent label:** Descriptions under their titles, labelled pickers, trailing buttons, selectable footers; decouple the preview from the monitor
+- **Changes:**
+  - Agents: every caption that sat in a row of its own now sits under its setting's title
+    (terminal tab, traffic light style, smart caffeinate, red light, wait reminder, provider);
+    the three indicator pickers are labelled menus instead of a text plus an unlabelled picker
+    (the first no longer wraps onto two lines); the state colours read as title and meaning with
+    the swatch trailing; Reset Colors, the test notification and every footer follow the same
+    rules; Detected Editors is a grid, so "Claude Code" and "Claude Desktop" no longer wrap.
+  - Mobile notifications split into where pushes go (provider, address or keys, test push) and
+    **Notify about** (inactive, wait reminder, findings, usage limit).
+  - The Agents tab observed `CursorAgentStatusMonitor` only for the style preview, so the whole
+    tab re-rendered on every rescan while agents ran. The preview now observes the monitor on
+    its own. The editor and hook-tool file checks run when the tab appears instead of on every
+    render.
+  - Usage: footers no longer right-aligned, both alert captions under their titles.
+  - Titles, keys, bindings, side effects, disabled and dimmed conditions and highlight ids are
+    unchanged (inventory test). DEBUG harness: a `notifications` board for the rows that show only
+    once pushes are on.
+
 ### 2026-09-11 - Agents › security, laid out like System Settings: compact findings first
 - **Developer label:** "fix the allignment, spacing and padding of settings items, especially these nwe findings sections, dont leave area with lot of empty spacing in rach finfings window"
 - **Agent label:** Split the one long security section into four groups and switch findings to the compact row

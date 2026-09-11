@@ -7636,7 +7636,9 @@ private extension QuickShareProvider {
 }
 
 struct AgentStatusSettings: View {
-    @ObservedObject var monitor = CursorAgentStatusMonitor.shared
+    // Deliberately not observing CursorAgentStatusMonitor: it publishes on every rescan while
+    // agents run, and the only thing here that shows its state is the preview, which observes it
+    // on its own (AgentTrafficLightStylePreview).
     @ObservedObject private var accessibilityPermission = AccessibilityPermissionStore.shared
     @ObservedObject var hookInstaller = AgentHookInstaller.shared
     @ObservedObject private var notificationBridge = AgentStatusNotificationBridge.shared
@@ -7686,6 +7688,9 @@ struct AgentStatusSettings: View {
     @Default(.agentStatusNotifyOnInactive) var notifyOnInactive
     @Default(.agentWaitReminderMinutes) var agentWaitReminderMinutes
     @State private var isSendingTestNotification = false
+    /// File checks, read when the tab appears rather than on every render.
+    @State private var detectedEditors: [DetectedEditor] = []
+    @State private var presentHookTools: Set<AgentHookProvider> = Set(AgentHookProvider.allCases)
 
     private func highlightID(_ title: String) -> String {
         SettingsTab.agentStatus.highlightID(for: title)
@@ -7701,16 +7706,16 @@ struct AgentStatusSettings: View {
             } header: {
                 Text("Monitoring")
             } footer: {
-                Text("Shows a traffic light in the notch while AI agents run in your editor: green while the agent is working, yellow when it needs your input, and red when it has stopped.")
+                SettingsFooter("Shows a traffic light in the notch while AI agents run in your editor: green while the agent is working, yellow when it needs your input, and red when it has stopped.")
             }
 
             if enableAgentStatusFeature {
                 Section {
-                    detectedProvidersRow
+                    detectedProvidersGrid
                 } header: {
                     Text("Detected Editors")
                 } footer: {
-                    Text("Kannu watches these editors automatically. Install a hook below for richer status on editors marked as not detected.")
+                    SettingsFooter("Kannu watches these editors automatically. Install a hook below for richer status on editors marked as not detected.")
                 }
 
                 // Accessibility is optional, not required: without it clicking a chat still activates
@@ -7718,13 +7723,12 @@ struct AgentStatusSettings: View {
                 // Chats Claude Desktop knows deep-link to the exact chat (its session route, see
                 // ClaudeDesktopSessionIndex); Terminal and iTerm2 tabs are picked by AppleScript.
                 Section {
-                    Defaults.Toggle(key: .openAgentTerminalTab) {
-                        Text("Open the exact terminal tab")
+                    SettingsRow("Open the exact terminal tab", description: "Clicking a chat that runs in Terminal or iTerm2 brings its tab to the front, and switches tmux to its pane. macOS asks once for permission to control each terminal app.") {
+                        Defaults.Toggle(key: .openAgentTerminalTab) {
+                            Text("Open the exact terminal tab")
+                        }
                     }
                     .settingsHighlight(id: highlightID("Open the exact terminal tab"))
-                    Text("Clicking a chat that runs in Terminal or iTerm2 brings its tab to the front, and switches tmux to its pane. macOS asks once for permission to control each terminal app.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                     if !accessibilityPermission.isAuthorized {
                         SettingsPermissionCallout(
                             title: "Accessibility improves click-through",
@@ -7738,23 +7742,17 @@ struct AgentStatusSettings: View {
                 }
 
                 Section {
-                    Picker("Traffic light style", selection: $agentTrafficLightStyle) {
-                        ForEach(AgentTrafficLightStyle.allCases) { style in
-                            Text(style.localizedName).tag(style)
+                    SettingsRow("Traffic light style", description: agentTrafficLightStyle.description) {
+                        Picker("Traffic light style", selection: $agentTrafficLightStyle) {
+                            ForEach(AgentTrafficLightStyle.allCases) { style in
+                                Text(style.localizedName).tag(style)
+                            }
                         }
                     }
                     .settingsHighlight(id: highlightID("Traffic light style"))
-                    Text(agentTrafficLightStyle.description)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                     // Live preview using the same view the notch draws, so this can't drift.
-                    HStack(spacing: 10) {
-                        Text("Preview")
-                        Spacer()
-                        AgentTrafficLightDots(
-                            style: agentTrafficLightStyle,
-                            state: monitor.trafficLightState == .inactive ? .executing : monitor.trafficLightState
-                        )
+                    LabeledContent("Preview") {
+                        AgentTrafficLightStylePreview(style: agentTrafficLightStyle)
                     }
                     stateColorRow(
                         key: .agentActiveColor,
@@ -7774,103 +7772,87 @@ struct AgentStatusSettings: View {
                         detail: String(localized: "The agent has finished or was aborted"),
                         highlightTitle: "Stopped color"
                     )
-                    Button("Reset Colors") {
-                        Defaults[.agentActiveColor] = .green
-                        Defaults[.agentAwaitingInputColor] = .yellow
-                        Defaults[.agentStoppedColor] = .red
+                    SettingsActionRow {
+                        Button("Reset Colors") {
+                            Defaults[.agentActiveColor] = .green
+                            Defaults[.agentAwaitingInputColor] = .yellow
+                            Defaults[.agentStoppedColor] = .red
+                        }
+                        .disabled(
+                            agentActiveColor == .green
+                                && agentAwaitingInputColor == .yellow
+                                && agentStoppedColor == .red
+                        )
                     }
-                    .buttonStyle(.link)
-                    .disabled(
-                        agentActiveColor == .green
-                            && agentAwaitingInputColor == .yellow
-                            && agentStoppedColor == .red
-                    )
                     .settingsHighlight(id: highlightID("Reset traffic light colors"))
                 } header: {
                     Text("Traffic Light")
                 } footer: {
-                    Text("The yellow light is most reliable when hooks are installed.")
+                    SettingsFooter("The yellow light is most reliable when hooks are installed.")
                 }
 
                 Section {
-                    Defaults.Toggle(key: .smartCaffeinate) {
-                        Text("Smart caffeinate")
+                    SettingsRow("Smart caffeinate", description: "Keeps the Mac awake automatically while any agent is running, and lets it sleep when they stop. While this is on, the manual switch in the notch is hidden.") {
+                        Defaults.Toggle(key: .smartCaffeinate) {
+                            Text("Smart caffeinate")
+                        }
                     }
                     .settingsHighlight(id: SettingsDeepLink.smartCaffeinateHighlightID)
-                    Text("Keeps the Mac awake automatically while any agent is running, and lets it sleep when they stop. While this is on, the manual switch in the notch is hidden.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 } header: {
                     Text("Caffeinate")
                 } footer: {
-                    Text("Only system sleep is prevented, so the display may still sleep while agents keep running. Closing the lid always sleeps the Mac.")
+                    SettingsFooter("Only system sleep is prevented, so the display may still sleep while agents keep running. Closing the lid always sleeps the Mac.")
                 }
 
                 Section {
-                    Defaults.Toggle(key: .showAgentStoppedIndicator) {
-                        Text("Show a red light when no agents are running")
+                    SettingsRow("Show a red light when no agents are running", description: "When off, the light hides once agents go quiet.") {
+                        Defaults.Toggle(key: .showAgentStoppedIndicator) {
+                            Text("Show a red light when no agents are running")
+                        }
                     }
                     .settingsHighlight(id: highlightID("Show a red light when no agents are running"))
-                    Text("When off, the light hides once agents go quiet.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
 
-                    HStack {
-                        Text("Hide indicator after agent stops for")
-                        Spacer()
-                        Picker("", selection: $agentStoppedCollapseSeconds) {
-                            Text("3 seconds").tag(3)
-                            Text("5 seconds").tag(5)
-                            Text("10 seconds").tag(10)
-                            Text("15 seconds").tag(15)
-                            Text("30 seconds").tag(30)
-                            Text("1 minute").tag(60)
-                            Text("2 minutes").tag(120)
-                            Text("5 minutes").tag(300)
-                        }
-                        .pickerStyle(.menu)
-                        .frame(minWidth: 120)
+                    Picker("Hide indicator after agent stops for", selection: $agentStoppedCollapseSeconds) {
+                        Text("3 seconds").tag(3)
+                        Text("5 seconds").tag(5)
+                        Text("10 seconds").tag(10)
+                        Text("15 seconds").tag(15)
+                        Text("30 seconds").tag(30)
+                        Text("1 minute").tag(60)
+                        Text("2 minutes").tag(120)
+                        Text("5 minutes").tag(300)
                     }
+                    .pickerStyle(.menu)
                     .disabled(showAgentStoppedIndicator)
                     .opacity(showAgentStoppedIndicator ? 0.5 : 1.0)
                     .settingsHighlight(id: highlightID("Hide red light after"))
 
-                    HStack {
-                        Text("Show dim traffic light for")
-                        Spacer()
-                        Picker("", selection: $agentInactiveDisplaySeconds) {
-                            Text("Off").tag(0)
-                            Text("5 seconds").tag(5)
-                            Text("10 seconds").tag(10)
-                            Text("15 seconds").tag(15)
-                            Text("30 seconds").tag(30)
-                            Text("1 minute").tag(60)
-                            Text("2 minutes").tag(120)
-                        }
-                        .pickerStyle(.menu)
-                        .frame(minWidth: 120)
+                    Picker("Show dim traffic light for", selection: $agentInactiveDisplaySeconds) {
+                        Text("Off").tag(0)
+                        Text("5 seconds").tag(5)
+                        Text("10 seconds").tag(10)
+                        Text("15 seconds").tag(15)
+                        Text("30 seconds").tag(30)
+                        Text("1 minute").tag(60)
+                        Text("2 minutes").tag(120)
                     }
+                    .pickerStyle(.menu)
                     .disabled(showAgentStoppedIndicator)
                     .opacity(showAgentStoppedIndicator ? 0.5 : 1.0)
                     .settingsHighlight(id: highlightID("Dim traffic light duration"))
 
-                    HStack {
-                        Text("Consider agents inactive after")
-                        Spacer()
-                        Picker("", selection: $agentStatusStaleMinutes) {
-                            Text("10 minutes").tag(10)
-                            Text("15 minutes").tag(15)
-                            Text("30 minutes").tag(30)
-                            Text("60 minutes").tag(60)
-                        }
-                        .pickerStyle(.menu)
-                        .frame(minWidth: 120)
+                    Picker("Consider agents inactive after", selection: $agentStatusStaleMinutes) {
+                        Text("10 minutes").tag(10)
+                        Text("15 minutes").tag(15)
+                        Text("30 minutes").tag(30)
+                        Text("60 minutes").tag(60)
                     }
+                    .pickerStyle(.menu)
                     .settingsHighlight(id: highlightID("Consider agents inactive after"))
                 } header: {
                     Text("Indicator")
                 } footer: {
-                    Text("After an agent stops, the red light stays visible for the chosen time, then all lights dim for the inactive duration, then the traffic light disappears entirely. While the red light is kept visible when idle, the hide and dim delays have no effect.")
+                    SettingsFooter("After an agent stops, the red light stays visible for the chosen time, then all lights dim for the inactive duration, then the traffic light disappears entirely. While the red light is kept visible when idle, the hide and dim delays have no effect.")
                 }
 
                 Section {
@@ -7880,131 +7862,17 @@ struct AgentStatusSettings: View {
                     .settingsHighlight(id: highlightID("Cursor Hook"))
 
                     if let error = hookInstaller.lastError {
-                        Text(error)
-                            .font(.caption)
-                            .foregroundColor(.red)
+                        SettingsErrorText(error)
                     }
                 } header: {
                     Text("Editor Hooks")
                 } footer: {
-                    Text("Install hooks for Cursor, VS Code and Copilot CLI, Codex CLI, Claude Code, Antigravity, Gemini CLI, Qwen Code or opencode. Each hook writes agent status into ~/.kannu/agent-status for the notch traffic light and Recent chats list. Copilot CLI uses the VS Code hook; opencode gets a small plugin.")
+                    SettingsFooter("Install hooks for Cursor, VS Code and Copilot CLI, Codex CLI, Claude Code, Antigravity, Gemini CLI, Qwen Code or opencode. Each hook writes agent status into ~/.kannu/agent-status for the notch traffic light and Recent chats list. Copilot CLI uses the VS Code hook; opencode gets a small plugin.")
                 }
 
                 securitySections
 
-                Section {
-                    Defaults.Toggle(key: .enableAgentStatusMobileNotifications) {
-                        Text("Enable mobile notifications")
-                    }
-                    .settingsHighlight(id: highlightID("Mobile notifications"))
-
-                    if enableMobileNotifications {
-                        Picker("Provider", selection: $notificationProvider) {
-                            ForEach(AgentStatusNotificationProvider.allCases) { provider in
-                                Text(provider.displayName).tag(provider)
-                            }
-                        }
-                        .settingsHighlight(id: highlightID("Notification provider"))
-
-                        Text(notificationProvider.description)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        switch notificationProvider {
-                        case .ntfy:
-                            TextField("Topic", text: $ntfyTopic)
-                                .textFieldStyle(.roundedBorder)
-                            TextField("Server URL", text: $ntfyServerURL)
-                                .textFieldStyle(.roundedBorder)
-                        case .pushover:
-                            SecureField("User key", text: Binding(
-                                get: { pushoverUserKey },
-                                set: { newValue in
-                                    pushoverUserKey = newValue
-                                    SecureSecretsStore.set(newValue, for: .pushoverUserKey)
-                                }
-                            ))
-                                .textFieldStyle(.roundedBorder)
-                            SecureField("App token", text: Binding(
-                                get: { pushoverAppToken },
-                                set: { newValue in
-                                    pushoverAppToken = newValue
-                                    SecureSecretsStore.set(newValue, for: .pushoverAppToken)
-                                }
-                            ))
-                                .textFieldStyle(.roundedBorder)
-                        case .webhook:
-                            TextField("Webhook URL", text: Binding(
-                                get: { webhookURL },
-                                set: { newValue in
-                                    webhookURL = newValue
-                                    SecureSecretsStore.set(newValue, for: .webhookURL)
-                                }
-                            ))
-                                .textFieldStyle(.roundedBorder)
-                        }
-
-                        Defaults.Toggle(key: .agentStatusNotifyOnInactive) {
-                            Text("Notify when inactive")
-                        }
-                        HStack {
-                            Text("Remind me when an agent is still waiting")
-                            Spacer()
-                            Picker("", selection: $agentWaitReminderMinutes) {
-                                Text("Off").tag(0)
-                                Text("After 3 minutes").tag(3)
-                                Text("After 10 minutes").tag(10)
-                                Text("After 20 minutes").tag(20)
-                            }
-                            .pickerStyle(.menu)
-                            .frame(minWidth: 140)
-                        }
-                        .settingsHighlight(id: highlightID("Remind me when an agent is still waiting"))
-                        Text("One more push if an agent is still waiting for your answer after this long. Only the app's name and how long it has waited are sent.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Defaults.Toggle(key: .adrPushHighFindings) {
-                            Text("Push high security findings")
-                        }
-                        .settingsHighlight(id: highlightID("Push high security findings"))
-                        Defaults.Toggle(key: .adrPushMediumFindings) {
-                            Text("Push medium security findings")
-                        }
-                        .settingsHighlight(id: highlightID("Push medium security findings"))
-                        Defaults.Toggle(key: .pushUsageLimitAlerts) {
-                            Text("Push when a usage limit is almost reached")
-                        }
-                        .settingsHighlight(id: highlightID("Push when a usage limit is almost reached"))
-
-                        HStack {
-                            Button(isSendingTestNotification ? "Sending…" : "Send test notification") {
-                                isSendingTestNotification = true
-                                Task {
-                                    await notificationBridge.sendTestNotification()
-                                    isSendingTestNotification = false
-                                }
-                            }
-                            .disabled(isSendingTestNotification)
-
-                            if let lastSentAt = notificationBridge.lastSentAt {
-                                Text("Last sent \(lastSentAt.formatted(date: .omitted, time: .shortened))")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .settingsHighlight(id: highlightID("Send test notification"))
-
-                        if let error = notificationBridge.lastError {
-                            Text(error)
-                                .font(.caption)
-                                .foregroundColor(.red)
-                        }
-                    }
-                } header: {
-                    Text("Mobile Notifications")
-                } footer: {
-                    Text("Optional push alerts when agent state changes. Uses ntfy (iPhone, Apple Watch, Android), Pushover (iPhone), or a custom webhook. Public ntfy topics can be read by anyone unless you self-host with authentication. Notifications are debounced by 2 seconds to avoid spam.")
-                }
+                mobileNotificationSections
             }
         }
         .onAppear {
@@ -8012,38 +7880,180 @@ struct AgentStatusSettings: View {
             pushoverAppToken = SecureSecretsStore.value(for: .pushoverAppToken)
             webhookURL = SecureSecretsStore.value(for: .webhookURL)
             refreshStoredADRSecrets()
+            detectedEditors = Self.detectEditors()
+            presentHookTools = Set(AgentHookProvider.allCases.filter { AgentHookInstaller.layout.toolIsPresent($0) })
             hookInstaller.refresh()
             accessibilityPermission.refreshStatus()
         }
         .navigationTitle("Agents")
     }
 
-    private var detectedProviders: [(source: AgentProviderIconSource, name: String, detected: Bool)] {
+    // MARK: - Mobile notifications
+
+    @ViewBuilder
+    private var mobileNotificationSections: some View {
+        Section {
+            Defaults.Toggle(key: .enableAgentStatusMobileNotifications) {
+                Text("Enable mobile notifications")
+            }
+            .settingsHighlight(id: highlightID("Mobile notifications"))
+
+            if enableMobileNotifications {
+                notificationDeliveryRows
+            }
+        } header: {
+            Text("Mobile Notifications")
+        } footer: {
+            SettingsFooter("Optional push alerts when agent state changes. Uses ntfy (iPhone, Apple Watch, Android), Pushover (iPhone), or a custom webhook. Public ntfy topics can be read by anyone unless you self-host with authentication. Notifications are debounced by 2 seconds to avoid spam.")
+        }
+
+        if enableMobileNotifications {
+            notificationEventsSection
+        }
+    }
+
+    /// Where pushes go: the provider, its address or keys, and a test push.
+    @ViewBuilder
+    private var notificationDeliveryRows: some View {
+        SettingsRow("Provider", description: notificationProvider.description) {
+            Picker("Provider", selection: $notificationProvider) {
+                ForEach(AgentStatusNotificationProvider.allCases) { provider in
+                    Text(provider.displayName).tag(provider)
+                }
+            }
+        }
+        .settingsHighlight(id: highlightID("Notification provider"))
+
+        switch notificationProvider {
+        case .ntfy:
+            TextField("Topic", text: $ntfyTopic)
+                .textFieldStyle(.roundedBorder)
+            TextField("Server URL", text: $ntfyServerURL)
+                .textFieldStyle(.roundedBorder)
+        case .pushover:
+            SecureField("User key", text: Binding(
+                get: { pushoverUserKey },
+                set: { newValue in
+                    pushoverUserKey = newValue
+                    SecureSecretsStore.set(newValue, for: .pushoverUserKey)
+                }
+            ))
+                .textFieldStyle(.roundedBorder)
+            SecureField("App token", text: Binding(
+                get: { pushoverAppToken },
+                set: { newValue in
+                    pushoverAppToken = newValue
+                    SecureSecretsStore.set(newValue, for: .pushoverAppToken)
+                }
+            ))
+                .textFieldStyle(.roundedBorder)
+        case .webhook:
+            TextField("Webhook URL", text: Binding(
+                get: { webhookURL },
+                set: { newValue in
+                    webhookURL = newValue
+                    SecureSecretsStore.set(newValue, for: .webhookURL)
+                }
+            ))
+                .textFieldStyle(.roundedBorder)
+        }
+
+        LabeledContent {
+            Button(isSendingTestNotification ? "Sending…" : "Send test notification") {
+                isSendingTestNotification = true
+                Task {
+                    await notificationBridge.sendTestNotification()
+                    isSendingTestNotification = false
+                }
+            }
+            .disabled(isSendingTestNotification)
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Test notification")
+                Group {
+                    if let lastSentAt = notificationBridge.lastSentAt {
+                        Text("Last sent \(lastSentAt.formatted(date: .omitted, time: .shortened))")
+                    } else {
+                        Text("Sends one push to check the setup.")
+                    }
+                }
+                .settingsDescriptionStyle()
+            }
+        }
+        .settingsHighlight(id: highlightID("Send test notification"))
+
+        if let error = notificationBridge.lastError {
+            SettingsErrorText(error)
+        }
+    }
+
+    /// What gets pushed.
+    private var notificationEventsSection: some View {
+        Section {
+            Defaults.Toggle(key: .agentStatusNotifyOnInactive) {
+                Text("Notify when inactive")
+            }
+            SettingsRow("Remind me when an agent is still waiting", description: "One more push if an agent is still waiting for your answer after this long. Only the app's name and how long it has waited are sent.") {
+                Picker("Remind me when an agent is still waiting", selection: $agentWaitReminderMinutes) {
+                    Text("Off").tag(0)
+                    Text("After 3 minutes").tag(3)
+                    Text("After 10 minutes").tag(10)
+                    Text("After 20 minutes").tag(20)
+                }
+            }
+            .settingsHighlight(id: highlightID("Remind me when an agent is still waiting"))
+            Defaults.Toggle(key: .adrPushHighFindings) {
+                Text("Push high security findings")
+            }
+            .settingsHighlight(id: highlightID("Push high security findings"))
+            Defaults.Toggle(key: .adrPushMediumFindings) {
+                Text("Push medium security findings")
+            }
+            .settingsHighlight(id: highlightID("Push medium security findings"))
+            Defaults.Toggle(key: .pushUsageLimitAlerts) {
+                Text("Push when a usage limit is almost reached")
+            }
+            .settingsHighlight(id: highlightID("Push when a usage limit is almost reached"))
+        } header: {
+            Text("Notify about")
+        }
+    }
+
+    private struct DetectedEditor: Identifiable {
+        let source: AgentProviderIconSource
+        let name: String
+        let detected: Bool
+        var id: String { name }
+    }
+
+    private static func detectEditors() -> [DetectedEditor] {
         let fm = FileManager.default
         let home = fm.homeDirectoryForCurrentUser
         return [
-            (.cursor, "Cursor", fm.fileExists(atPath: home.appendingPathComponent("Library/Application Support/Cursor/User/globalStorage/state.vscdb").path)),
-            (.claude, "Claude Code", fm.fileExists(atPath: home.appendingPathComponent(".claude/projects").path)),
-            (.codex, "Codex", fm.fileExists(atPath: home.appendingPathComponent(".codex/sessions").path)),
-            (.warp, "Warp", WarpAgentStore.databaseURL != nil),
-            (.claudeDesktop, "Claude Desktop", fm.fileExists(atPath: ClaudeDesktopAgentSessionStore.defaultRoot.path)),
+            DetectedEditor(source: .cursor, name: "Cursor", detected: fm.fileExists(atPath: home.appendingPathComponent("Library/Application Support/Cursor/User/globalStorage/state.vscdb").path)),
+            DetectedEditor(source: .claude, name: "Claude Code", detected: fm.fileExists(atPath: home.appendingPathComponent(".claude/projects").path)),
+            DetectedEditor(source: .codex, name: "Codex", detected: fm.fileExists(atPath: home.appendingPathComponent(".codex/sessions").path)),
+            DetectedEditor(source: .warp, name: "Warp", detected: WarpAgentStore.databaseURL != nil),
+            DetectedEditor(source: .claudeDesktop, name: "Claude Desktop", detected: fm.fileExists(atPath: ClaudeDesktopAgentSessionStore.defaultRoot.path)),
         ]
     }
 
-    private var detectedProvidersRow: some View {
-        HStack(spacing: 0) {
-            ForEach(detectedProviders, id: \.name) { p in
+    private var detectedProvidersGrid: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 12, alignment: .leading)], alignment: .leading, spacing: 10) {
+            ForEach(detectedEditors) { editor in
                 HStack(spacing: 6) {
-                    AgentProviderIconView(source: p.source, size: 16)
-                        .opacity(p.detected ? 1 : 0.35)
-                    Text(p.name)
+                    AgentProviderIconView(source: editor.source, size: 16)
+                        .opacity(editor.detected ? 1 : 0.35)
+                    Text(editor.name)
                         .font(.subheadline)
-                        .foregroundStyle(p.detected ? .primary : .secondary)
+                        .foregroundStyle(editor.detected ? .primary : .secondary)
+                        .lineLimit(1)
                     Circle()
-                        .fill(p.detected ? Color.green : Color.secondary.opacity(0.4))
+                        .fill(editor.detected ? Color.green : Color.secondary.opacity(0.4))
                         .frame(width: 6, height: 6)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(editor.detected ? Text("\(editor.name), detected") : Text("\(editor.name), not detected"))
             }
         }
         .padding(.vertical, 2)
@@ -8561,7 +8571,7 @@ struct AgentStatusSettings: View {
     @ViewBuilder
     private func hookRow(for provider: AgentHookProvider) -> some View {
         let installed = hookInstaller.isInstalled(provider)
-        let present = AgentHookInstaller.layout.toolIsPresent(provider)
+        let present = presentHookTools.contains(provider)
         HStack(spacing: 10) {
             Circle()
                 .fill(installed ? Color.green : Color.secondary.opacity(0.5))
@@ -8586,8 +8596,7 @@ struct AgentStatusSettings: View {
     }
 
 
-    @ViewBuilder
-    /// Legend row plus the palette picker for that state's color. The popover offers only
+    /// A state's name and meaning, with the palette picker for its color. The popover offers only
     /// the curated palette and blocks swatches already used by another state, so two states
     /// can never share a color.
     private func stateColorRow(
@@ -8596,7 +8605,6 @@ struct AgentStatusSettings: View {
         detail: String,
         highlightTitle: String
     ) -> some View {
-        let selection = Defaults[key]
         let others: [AgentTrafficLightPaletteColor: String] = {
             var taken: [AgentTrafficLightPaletteColor: String] = [:]
             let all: [(Defaults.Key<AgentTrafficLightPaletteColor>, String)] = [
@@ -8609,20 +8617,26 @@ struct AgentStatusSettings: View {
             }
             return taken
         }()
-        return HStack(spacing: 10) {
-            Circle()
-                .fill(selection.color)
-                .frame(width: 10, height: 10)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
+        return LabeledContent {
             AgentPaletteSwatchButton(key: key, takenByOthers: others)
+        } label: {
+            SettingsRowLabel(verbatim: title, description: detail)
         }
         .settingsHighlight(id: highlightID(highlightTitle))
+    }
+}
+
+/// The traffic light in Settings, in the chosen style and the monitor's current state. It observes
+/// the monitor itself so the rest of the Agents tab does not re-render on every rescan.
+private struct AgentTrafficLightStylePreview: View {
+    let style: AgentTrafficLightStyle
+    @ObservedObject private var monitor = CursorAgentStatusMonitor.shared
+
+    var body: some View {
+        AgentTrafficLightDots(
+            style: style,
+            state: monitor.trafficLightState == .inactive ? .executing : monitor.trafficLightState
+        )
     }
 }
 
@@ -8712,6 +8726,15 @@ extension AgentStatusSettings {
         return AnyView(Form {
             Section { settings.detectionCheckoutRows } header: { Text("Session analysis") }
             settings.detectionSetupSections
+        })
+    }
+
+    /// DEBUG snapshot harness: the mobile-notification rows that only show once pushes are on.
+    static func snapshotNotificationRows() -> AnyView {
+        let settings = AgentStatusSettings()
+        return AnyView(Form {
+            Section { settings.notificationDeliveryRows } header: { Text("Mobile Notifications") }
+            settings.notificationEventsSection
         })
     }
 
