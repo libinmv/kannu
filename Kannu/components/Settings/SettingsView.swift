@@ -893,6 +893,7 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .llmUsage, title: "Cursor Provider", keywords: ["llm", "cursor", "provider", "toggle"], highlightID: SettingsTab.llmUsage.highlightID(for: "Cursor Provider")),
             SettingsSearchEntry(tab: .llmUsage, title: "Show a gauge beside the lights near a limit", keywords: ["usage", "limit", "gauge", "alert", "95", "quota", "forecast"], highlightID: SettingsTab.llmUsage.highlightID(for: "Show a gauge beside the lights near a limit")),
             SettingsSearchEntry(tab: .llmUsage, title: "Check Codex and Cursor limits in the background", keywords: ["usage", "background", "codex", "cursor", "quota", "limit"], highlightID: SettingsTab.llmUsage.highlightID(for: "Check Codex and Cursor limits in the background")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Open the exact terminal tab", keywords: ["terminal", "iterm", "tmux", "tab", "click", "open", "pane"], highlightID: SettingsTab.agentStatus.highlightID(for: "Open the exact terminal tab")),
             SettingsSearchEntry(tab: .agentStatus, title: "Push when a usage limit is almost reached", keywords: ["push", "usage", "limit", "quota", "mobile", "ntfy", "pushover", "webhook"], highlightID: SettingsTab.agentStatus.highlightID(for: "Push when a usage limit is almost reached")),
             SettingsSearchEntry(tab: .llmUsage, title: "Antigravity Provider", keywords: ["antigravity", "gemini", "provider", "usage", "sessions"], highlightID: SettingsTab.llmUsage.highlightID(for: "Antigravity Provider")),
             SettingsSearchEntry(tab: .stats, title: "Stop monitoring after closing the notch", keywords: ["stats", "auto stop"], highlightID: SettingsTab.stats.highlightID(for: "Stop monitoring after closing the notch")),
@@ -7700,21 +7701,28 @@ struct AgentStatusSettings: View {
                     Text("Kannu watches these editors automatically. Install a hook below for richer status on editors marked as not detected.")
                 }
 
-                // Optional, not required: without it clicking a chat still activates the
-                // right app — it just can't raise the specific window for terminal- and
-                // IDE-hosted sessions. Chats Claude Desktop knows deep-link to the exact chat
-                // (its session route, see ClaudeDesktopSessionIndex) and don't need it.
-                if !accessibilityPermission.isAuthorized {
-                    Section {
+                // Accessibility is optional, not required: without it clicking a chat still activates
+                // the right app — it just can't raise the specific window for IDE-hosted sessions.
+                // Chats Claude Desktop knows deep-link to the exact chat (its session route, see
+                // ClaudeDesktopSessionIndex); Terminal and iTerm2 tabs are picked by AppleScript.
+                Section {
+                    Defaults.Toggle(key: .openAgentTerminalTab) {
+                        Text("Open the exact terminal tab")
+                    }
+                    .settingsHighlight(id: highlightID("Open the exact terminal tab"))
+                    Text("Clicking a chat that runs in Terminal or iTerm2 brings its tab to the front, and switches tmux to its pane. macOS asks once for permission to control each terminal app.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if !accessibilityPermission.isAuthorized {
                         SettingsPermissionCallout(
                             title: "Accessibility improves click-through",
-                            message: "Clicking a recent chat brings its app forward — Claude Desktop chats open on the exact chat. With Accessibility access, Kannu can also raise the exact window for sessions running in a terminal or IDE.",
+                            message: "Clicking a recent chat brings its app forward — Claude Desktop chats open on the exact chat. With Accessibility access, Kannu can also raise the exact window for sessions running in an IDE.",
                             requestAction: { accessibilityPermission.requestAuthorizationPrompt() },
                             openSettingsAction: { accessibilityPermission.openSystemSettings() }
                         )
-                    } header: {
-                        Text("Click-through")
                     }
+                } header: {
+                    Text("Click-through")
                 }
 
                 Section {

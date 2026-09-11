@@ -4,6 +4,29 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - Click-through opens the exact Terminal or iTerm2 tab and tmux pane; a live chat is never resumed
+- **Developer label:** Waiting reminder + tab jump
+- **Agent label:** Pick the agent's own terminal tab (and tmux pane) on click, and stop resuming live Claude chats whose host the parent walk cannot reach
+- **Changes:**
+  - The parent walk (`AgentSessionOpener.hostChain`) now also reads the agent's controlling terminal
+    (`kp_eproc.e_tdev` + `devname_r`, no process spawned while a row renders) and notes a tmux server
+    on the way to launchd.
+  - Terminal.app (tabs have a `tty`) and iTerm2 (sessions have a `tty`): after the app activates, an
+    AppleScript selects the tab or split whose terminal is the agent's and raises its window
+    (`TerminalTabMatcher`, `TerminalTabLocator`; an Automation refusal is remembered for the launch and
+    the old window raise takes over). Other terminals stay at "bring the app forward".
+  - tmux: `list-panes` finds the pane by its tty, `select-window`/`select-pane` focus it, `list-clients`
+    finds the terminal showing that session (switching the most recent client when none does), and
+    that terminal's tab comes forward. tmux is found in the usual install folders, run without a
+    shell, with a 2 s deadline; every tty and pane id is validated before it becomes an argument.
+  - Fixed: a live Claude session in tmux, `screen` or ssh has no GUI app up its parent chain, and when
+    its card was dim the click fell through to `claude://resume` — a second host for a live transcript.
+    The decision now lives in `AgentClickThroughPolicy` (tested); REGRESSIONS entry 13.
+  - Settings › Agents › Click-through is always shown, with "Open the exact terminal tab" (on); the
+    Apple Events usage text names terminals.
+  - Tests: `TerminalTabMatcherTests` (families, injection-proof validation, scripts, tmux parsing and
+    client choice), `AgentClickThroughPolicyTests`.
+
 ### 2026-09-11 - Usage forecast, a gauge near the limit, "resumes at" on rate-limited stops
 - **Developer label:** Usage forecast + alerts
 - **Agent label:** Forecast each usage window from Kannu's own readings, cue a nearly full limit beside the lights, say when a rate-limited chat can resume, and push a nearly full limit if the user opts in

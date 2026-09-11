@@ -19,6 +19,7 @@
 import AppKit
 import ApplicationServices
 import Darwin
+import Defaults
 import Foundation
 import os
 
@@ -60,8 +61,12 @@ enum AgentSessionOpener {
         fileprivate enum Kind {
             /// A GUI IDE identified by bundle id (running app when non-nil).
             case ide(running: NSRunningApplication?, appURL: URL?, source: AgentProviderIconSource)
-            /// The GUI app hosting a CLI agent's terminal, found via parent-walk.
-            case terminalHost(NSRunningApplication)
+            /// The GUI app hosting a CLI agent's terminal, found via parent-walk; `tty` lets
+            /// Terminal and iTerm2 bring the exact tab forward.
+            case terminalHost(NSRunningApplication, tty: String?)
+            /// A tmux pane (its server has no GUI parent): tmux selects it, then the terminal
+            /// showing that session comes forward.
+            case tmuxPane(tty: String)
             /// A specific Claude Code chat, via a Claude Desktop deep link: the session route
             /// (focus) or `resume` (import).
             case claudeDeepLink(url: URL)
@@ -69,8 +74,11 @@ enum AgentSessionOpener {
 
         /// Tooltip text: a deep link lands on the chat itself, the others on its app.
         var actionLabel: String {
-            if case .claudeDeepLink = kind { return String(localized: "Open chat in \(appName)") }
-            return String(localized: "Open in \(appName)")
+            switch kind {
+            case .claudeDeepLink: return String(localized: "Open chat in \(appName)")
+            case .tmuxPane: return String(localized: "Open in tmux")
+            default: return String(localized: "Open in \(appName)")
+            }
         }
     }
 
@@ -90,40 +98,38 @@ enum AgentSessionOpener {
             }
             return nil
         case .claude:
-            // Desktop knows this chat: its session route focuses it in the Code tab and creates
-            // nothing, so it serves live and stopped rows alike.
-            if let desktopID = session.desktopSessionID,
-               let url = ClaudeDesktopSessionIndex.focusDeepLink(desktopSessionID: desktopID),
-               let handler = claudeDesktopAppURL {
-                return OpenTarget(appName: FileManager.default.displayName(atPath: handler.path),
-                                  kind: .claudeDeepLink(url: url))
+            // The decision lives in `AgentClickThroughPolicy` (tested). A Desktop-known chat opens
+            // on its session route; a live one goes to its terminal or tmux pane — NEVER `resume`:
+            // it spawns a second `claude --resume` host for a transcript that already has one
+            // (verified against Desktop 2.1.222 and 1.46388.4; REGRESSIONS entry 13). Only a chat
+            // whose process is gone may be imported, and only once it is dim.
+            let desktopURL = session.desktopSessionID.flatMap { ClaudeDesktopSessionIndex.focusDeepLink(desktopSessionID: $0) }
+            let chain = session.hostPID.map { hostChain(agentPID: $0) }
+            let resumeURL = claudeResumeDeepLink(conversationID: session.conversationID)
+            let action = AgentClickThroughPolicy.claude(
+                hasDesktopRoute: desktopURL != nil && claudeDesktopAppURL != nil,
+                liveProcess: session.hostPID != nil,
+                host: chain?.host ?? .none,
+                displayState: session.displayState,
+                canResume: resumeURL != nil && claudeDesktopAppURL != nil
+            )
+            switch action {
+            case .desktopRoute:
+                guard let desktopURL, let handler = claudeDesktopAppURL else { return nil }
+                return OpenTarget(appName: FileManager.default.displayName(atPath: handler.path), kind: .claudeDeepLink(url: desktopURL))
+            case .resume:
+                guard let resumeURL, let handler = claudeDesktopAppURL else { return nil }
+                return OpenTarget(appName: FileManager.default.displayName(atPath: handler.path), kind: .claudeDeepLink(url: resumeURL))
+            case .terminalHost, .tmuxPane:
+                return chain.flatMap(terminalTarget(for:))
+            case .none:
+                return nil
             }
-            // Live session elsewhere (or Desktop-hosted but not in the index yet): activate its
-            // host. NEVER `resume` a live session — verified against Claude Desktop 2.1.222 and
-            // 1.46388.4: it spawns a fresh `claude --resume=<id>` host even when the session
-            // already has one, creating a second consumer of the same transcript.
-            if let pid = session.hostPID, let host = terminalHostApplication(agentPID: pid) {
-                return OpenTarget(appName: host.localizedName ?? "Terminal", kind: .terminalHost(host))
-            }
-            // Stopped session: navigable. Claude Desktop imports the on-disk transcript and
-            // shows the chat where it left off; nothing runs until the user types (the
-            // attached host process just idles). Gated on the session actually being
-            // stopped — a *live* session that transiently lacks a pid (hook fired before
-            // the transcript was parsed) must stay inert, not spawn a duplicate consumer.
-            if session.displayState == .inactive,
-               let url = claudeResumeDeepLink(conversationID: session.conversationID),
-               let handler = claudeDesktopAppURL {
-                return OpenTarget(appName: FileManager.default.displayName(atPath: handler.path),
-                                  kind: .claudeDeepLink(url: url))
-            }
-            return nil
         case .codex:
             // Codex: only a live pid gives us a host to activate. The provider bundle id
             // intentionally isn't used — it points at an unrelated desktop app.
-            guard let pid = session.hostPID, let host = terminalHostApplication(agentPID: pid) else {
-                return nil
-            }
-            return OpenTarget(appName: host.localizedName ?? "Terminal", kind: .terminalHost(host))
+            guard let pid = session.hostPID else { return nil }
+            return terminalTarget(for: hostChain(agentPID: pid))
         case .unknown:
             return nil
         }
@@ -143,16 +149,28 @@ enum AgentSessionOpener {
             NSRunningApplication.runningApplications(withBundleIdentifier: claudeDesktopBundleID).first?.activate()
             return true
 
-        case .terminalHost(let host):
+        case .terminalHost(let host, let tty):
             log.notice("activating terminal host \(host.localizedName ?? "?", privacy: .public) (pid \(host.processIdentifier))")
+            host.activate()
             if host.bundleIdentifier == claudeDesktopBundleID {
                 // Desktop-hosted but unresolved in the index: its window titles never carry
                 // the project, so the raise would only ever miss.
                 log.notice("Desktop-hosted session not in the index yet; activating only")
+            } else if let tty, Defaults[.openAgentTerminalTab],
+                      let bundle = host.bundleIdentifier, TerminalTabMatcher.family(forBundleIdentifier: bundle) != nil {
+                Task { @MainActor in
+                    if await !TerminalTabLocator.selectTab(bundleIdentifier: bundle, tty: tty) {
+                        raiseMatchingWindow(in: host, session: session)
+                    }
+                }
             } else {
                 raiseMatchingWindow(in: host, session: session)
             }
-            host.activate()
+            return true
+
+        case .tmuxPane(let tty):
+            log.notice("focusing tmux pane")
+            Task { @MainActor in await TmuxLocator.focus(paneTTY: tty) }
             return true
 
         case .ide(let running, let appURL, let source):
@@ -230,25 +248,86 @@ enum AgentSessionOpener {
 
     // MARK: - Terminal host discovery (CLI agents)
 
-    /// Walks the agent process's parent chain until it reaches a regular GUI application.
-    /// Same sysctl idiom as `isClaudeProcessAlive`; `kp_eproc.e_ppid` is the parent pid.
-    private static func terminalHostApplication(agentPID: Int) -> NSRunningApplication? {
+    struct HostChain {
+        /// The first regular GUI app up the parent chain.
+        let app: NSRunningApplication?
+        /// The chain passed through a tmux server before reaching launchd.
+        let passesThroughTmux: Bool
+        /// The agent's controlling terminal, e.g. `/dev/ttys003`.
+        let tty: String?
+
+        var host: AgentClickThroughPolicy.Host {
+            if app != nil { return .app }
+            return passesThroughTmux && tty != nil ? .tmux : .none
+        }
+    }
+
+    /// Walks the agent process's parent chain until it reaches a regular GUI application, noting
+    /// a tmux server on the way and the agent's own terminal. Same sysctl idiom as
+    /// `isClaudeProcessAlive`; `kp_eproc.e_ppid` is the parent pid. No process is spawned: this
+    /// runs while a row renders.
+    static func hostChain(agentPID: Int) -> HostChain {
+        let tty = controllingTTY(pid: agentPID)
         var pid = pid_t(agentPID)
-        for _ in 0..<10 {
-            guard pid > 1 else { return nil }
-            if let app = NSRunningApplication(processIdentifier: pid),
-               app.activationPolicy == .regular {
-                return app
+        var passesThroughTmux = false
+        for _ in 0..<12 {
+            guard pid > 1 else { break }
+            if let app = NSRunningApplication(processIdentifier: pid), app.activationPolicy == .regular {
+                return HostChain(app: app, passesThroughTmux: passesThroughTmux, tty: tty)
             }
-            var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, Int32(pid)]
-            var info = kinfo_proc()
-            var size = MemoryLayout<kinfo_proc>.size
-            guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return nil }
+            guard let info = processInfo(pid: pid) else { break }
+            if processName(info) == "tmux" { passesThroughTmux = true }
             let parent = info.kp_eproc.e_ppid
-            guard parent != pid else { return nil }
+            guard parent != pid else { break }
             pid = parent
         }
-        return nil
+        return HostChain(app: nil, passesThroughTmux: passesThroughTmux, tty: tty)
+    }
+
+    /// Kept for callers that only need the app.
+    static func terminalHostApplication(agentPID: Int) -> NSRunningApplication? {
+        hostChain(agentPID: agentPID).app
+    }
+
+    private static func terminalTarget(for chain: HostChain) -> OpenTarget? {
+        switch chain.host {
+        case .app:
+            guard let app = chain.app else { return nil }
+            return OpenTarget(appName: app.localizedName ?? "Terminal", kind: .terminalHost(app, tty: chain.tty))
+        case .tmux:
+            guard let tty = chain.tty else { return nil }
+            return OpenTarget(appName: "tmux", kind: .tmuxPane(tty: tty))
+        case .none:
+            return nil
+        }
+    }
+
+    private static func processInfo(pid: pid_t) -> kinfo_proc? {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, Int32(pid)]
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.size
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return nil }
+        return info
+    }
+
+    private static func processName(_ info: kinfo_proc) -> String {
+        var comm = info.kp_proc.p_comm
+        return withUnsafeBytes(of: &comm) { raw in
+            String(decoding: raw.prefix { $0 != 0 }, as: UTF8.self)
+        }
+    }
+
+    /// `/dev/ttys003` for a process with a controlling terminal; nil otherwise (Desktop-hosted
+    /// sessions have none).
+    static func controllingTTY(pid: Int) -> String? {
+        guard let info = processInfo(pid: pid_t(pid)) else { return nil }
+        let device = info.kp_eproc.e_tdev
+        guard device != -1 else { return nil }
+        var buffer = [CChar](repeating: 0, count: 64)
+        guard devname_r(device, S_IFCHR, &buffer, Int32(buffer.count)) != nil else { return nil }
+        let name = String(cString: buffer)
+        let path = "/dev/" + name
+        return TerminalLocator.isValidTTY(path) ? path : nil
     }
 
     // MARK: - Window raise (Accessibility, best-effort)

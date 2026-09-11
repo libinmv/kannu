@@ -365,6 +365,23 @@ not for TCC — `~/Library/Application Support/Claude` is not protected — but 
 are 100+ KB each and rewritten on every Desktop turn. Only the reduced id map crosses back, and
 it is compared as a map so a timestamp bump alone never schedules a rescan.
 
+## 13. A live Claude session is never resumed
+
+**Rule:** `claude://resume?session=<id>` imports a transcript into Claude Desktop and starts a new
+`claude --resume` host for it. On a session whose process is still alive that is a second consumer
+of the same transcript. Only a chat whose process is gone may be resumed, and only once its card is
+dim. A live chat goes to its terminal, its tmux pane, or nowhere.
+
+**What happened (2026-09-11).** The opener's own header already said "never resume a live
+session", but the Claude arm resumed any `.inactive` card that had no reachable host. A live but
+idle session in tmux (whose server's parent is launchd), `screen` or ssh has a `hostPID` and no GUI
+app up its parent chain, and its dim card read as "not running" — so a click spawned a duplicate.
+
+**Guard.** The decision moved into `AgentClickThroughPolicy` (logic target);
+`AgentClickThroughPolicyTests.testInactiveLiveSessionNeverResumes` and
+`…testLiveSessionWithoutAHostNeverResumes` pin it. A live process is "live" by `hostPID` today;
+anything that later proves liveness (a hook-reported terminal) must feed the same flag.
+
 ## 12. Yellow follows evidence, not the clock
 
 **Rule:** an `awaiting_input` hook state expires on the 300 s clock (`awaitingInputStaleMs`) only

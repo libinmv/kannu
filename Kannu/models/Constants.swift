@@ -1283,6 +1283,9 @@ extension Defaults.Keys {
     /// Clicking the media card lands on the browser tab that is playing (Safari, Chrome family),
     /// which needs the one-time "control <browser>" Automation permission. Off = app only.
     static let openPlayingBrowserTab = Key<Bool>("openPlayingBrowserTab", default: true)
+    /// Clicking a chat that runs in Terminal or iTerm2 brings its exact tab forward (and switches
+    /// tmux to its pane); needs the one-time "control <terminal>" Automation permission.
+    static let openAgentTerminalTab = Key<Bool>("openAgentTerminalTab", default: true)
     static let showAgentStoppedIndicator = Key<Bool>("showAgentStoppedIndicator", default: false)
     /// Closed-notch traffic light shape. Defaults to `.classic` so existing installs keep the
     /// three-dot look they already have — only fresh installs are asked to choose in onboarding.
