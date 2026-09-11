@@ -53,6 +53,9 @@ enum DebugSnapshots {
         if request.tabs == nil || request.tabs?.contains("notifications") == true {
             boards.append(("notifications", AgentStatusSettings.snapshotNotificationRows()))
         }
+        if request.tabs == nil || request.tabs?.contains("displays") == true {
+            boards.append(("displays", GeneralSettings.snapshotPerDisplayRows()))
+        }
         if request.tabs == nil || request.tabs?.contains("components") == true {
             boards.append(("components", AnyView(componentsBoard)))
         }

@@ -4,6 +4,29 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - General and Appearance in the System Settings layout; a mislabelled media toggle
+- **Developer label:** "the settings should be enginered like apple does settings" (scope picked: "Rework every tab")
+- **Agent label:** Captions under titles, composite rows split into rows, buttons trailing, footers left-aligned and selectable
+- **Changes:**
+  - General: hover duration, external display style and always-show carry their explanations under
+    the title; the slider sits at a fixed width so its explanation is not squeezed; Launch at
+    login's approval hint is a row with Open Login Items on the trailing side; the gesture footer
+    is no longer right-aligned. Per-display overrides get one group per display (header with a
+    Built-in badge, Reset on the trailing side) instead of one packed row per display.
+  - Appearance: Notch Width is three rows plus "Recommended width" with Reset on the trailing side
+    and the explanation as the footer (the Divider inside the row is gone); both width sliders
+    show their value beside the slider, so "Closed notch / pill width" no longer wraps; notch
+    fill colour and lock-screen glass captions sit under their titles; notch skin and app icon
+    split into the gallery, a trailing button row (Remove selected, then the primary Upload/Add)
+    and a footer; the app-icon thumbnail is clipped to its rounded card (square corners showed).
+  - The Media toggle for `playerColorTinting` was labelled "Enable colored spectograms", nearly
+    the same as the spectrogram toggle above it; it now reads "Tint player controls with the
+    album art color" (setting unchanged; the five translations of the old label translated the
+    wrong words and now fall back to English).
+  - `SettingsColorPickerRow` gains an optional description; the row components gain a
+    state-dependent description. DEBUG harness: a `displays` board for the per-display groups
+    (a lone MacBook lists none). Keys, bindings, side effects and highlight ids unchanged.
+
 ### 2026-09-11 - Agents and Usage tabs in the System Settings layout; the Agents tab stops re-rendering on every rescan
 - **Developer label:** "the settings should be enginered like apple does settings" (scope picked: "Rework every tab")
 - **Agent label:** Descriptions under their titles, labelled pickers, trailing buttons, selectable footers; decouple the preview from the monitor

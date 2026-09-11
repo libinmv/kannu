@@ -66,6 +66,12 @@ struct SettingsRowLabel: View {
         self.description = description.map { Text(verbatim: $0) }
     }
 
+    /// For a description that depends on state, or none.
+    init(_ title: LocalizedStringKey, description: Text?) {
+        self.title = Text(title)
+        self.description = description
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             title
@@ -105,6 +111,12 @@ struct SettingsRow<Control: View>: View {
     @_disfavoredOverload
     init(verbatim title: String, description: String? = nil, @ViewBuilder control: () -> Control) {
         label = SettingsRowLabel(verbatim: title, description: description)
+        self.control = control()
+    }
+
+    /// For a description that depends on state, or none.
+    init(_ title: LocalizedStringKey, description: Text?, @ViewBuilder control: () -> Control) {
+        label = SettingsRowLabel(title, description: description)
         self.control = control()
     }
 

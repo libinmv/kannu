@@ -1114,7 +1114,7 @@ struct GeneralSettings: View {
             } header: {
                 Text("UI Mode")
             } footer: {
-                Text("Minimalistic mode focuses on media controls and system HUDs, hiding all extra features for a clean, focused experience. Automatically enables simpler animations.")
+                SettingsFooter("Minimalistic mode focuses on media controls and system HUDs, hiding all extra features for a clean, focused experience. Automatically enables simpler animations.")
             }
 
             Section {
@@ -1130,24 +1130,19 @@ struct GeneralSettings: View {
                     // macOS can accept the registration but park it pending user approval; the
                     // toggle alone would just read off with no explanation and no way forward.
                     if SMAppService.mainApp.status == .requiresApproval {
-                        HStack(spacing: 6) {
-                            Text("macOS needs you to approve Kannu in Login Items.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        LabeledContent {
                             Button("Open Login Items") {
                                 SMAppService.openSystemSettingsLoginItems()
                             }
-                            .buttonStyle(.link)
-                            .font(.caption)
+                        } label: {
+                            Text("macOS needs you to approve Kannu in Login Items.")
+                                .settingsDescriptionStyle()
                         }
                     }
                 } else {
-                    Toggle(isOn: .constant(false)) {
-                        VStack(alignment: .leading, spacing: 2) {
+                    SettingsRow("Launch at login", description: "Move Kannu to your Applications folder to enable this.") {
+                        Toggle(isOn: .constant(false)) {
                             Text("Launch at login")
-                            Text("Move Kannu to your Applications folder to enable this.")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
                         }
                     }
                     .disabled(true)
@@ -1280,18 +1275,17 @@ struct GeneralSettings: View {
                 .settingsHighlight(id: highlightID("Horizontal media gestures"))
 
                 if enableHorizontalMusicGestures {
-                    Picker("Gesture skip behavior", selection: $musicGestureBehavior) {
-                        ForEach(MusicSkipBehavior.allCases) { behavior in
-                            Text(behavior.displayName)
-                                .tag(behavior)
+                    SettingsRow("Gesture skip behavior", description: musicGestureBehavior.description) {
+                        Picker("Gesture skip behavior", selection: $musicGestureBehavior) {
+                            ForEach(MusicSkipBehavior.allCases) { behavior in
+                                Text(behavior.displayName)
+                                    .tag(behavior)
+                            }
                         }
+                        .pickerStyle(.segmented)
+                        .fixedSize()
                     }
-                    .pickerStyle(.segmented)
                     .settingsHighlight(id: highlightID("Gesture skip behavior"))
-
-                    Text(musicGestureBehavior.description)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
 
                     Defaults.Toggle(key: .reverseSwipeGestures) {
                         Text("Reverse swipe gestures")
@@ -1323,10 +1317,7 @@ struct GeneralSettings: View {
                 customBadge(text: "Beta")
             }
         } footer: {
-            Text("Two-finger swipe up on notch to close, two-finger swipe down on notch to open when **Open notch on hover** option is disabled")
-                .multilineTextAlignment(.trailing)
-                .foregroundStyle(.secondary)
-                .font(.caption)
+            SettingsFooter("Two-finger swipe up on notch to close, two-finger swipe down on notch to open when **Open notch on hover** option is disabled")
         }
     }
 
@@ -1348,42 +1339,40 @@ struct GeneralSettings: View {
             // Also shown with hover-to-open off when a display hides until hovered: the same
             // value is the dwell before the hidden island slides in.
             if openNotchOnHover || !alwaysShowOnNonNotchDisplays {
-                Slider(value: $minimumHoverDuration, in: 0...2, step: 0.1) {
-                    HStack {
-                        Text("Minimum hover duration")
-                        Spacer()
+                SettingsRow("Minimum hover duration", description: "How long the pointer must rest on the notch before it opens. On displays where Kannu hides until hovered, this is also how long the pointer must rest at the top edge before the island slides in.") {
+                    HStack(spacing: 8) {
+                        Slider(value: $minimumHoverDuration, in: 0...2, step: 0.1) {
+                            Text("Minimum hover duration")
+                        }
                         Text("\(minimumHoverDuration, specifier: "%.1f")s")
+                            .monospacedDigit()
                             .foregroundStyle(.secondary)
                     }
+                    .frame(width: 190)
                 }
                 .onChange(of: minimumHoverDuration) {
                     NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
                 }
                 .settingsHighlight(id: highlightID("Minimum hover duration"))
-                Text("How long the pointer must rest on the notch before it opens. On displays where Kannu hides until hovered, this is also how long the pointer must rest at the top edge before the island slides in.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
-            Picker("External display style", selection: $externalDisplayStyle) {
-                ForEach(ExternalDisplayStyle.allCases) { style in
-                    Text(style.localizedName)
-                        .tag(style)
+            SettingsRow("External display style", description: externalDisplayStyle.description) {
+                Picker("External display style", selection: $externalDisplayStyle) {
+                    ForEach(ExternalDisplayStyle.allCases) { style in
+                        Text(style.localizedName)
+                            .tag(style)
+                    }
                 }
             }
             .onChange(of: externalDisplayStyle) {
                 NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
             }
             .settingsHighlight(id: highlightID("External display style"))
-            Text(externalDisplayStyle.description)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Defaults.Toggle(key: .alwaysShowOnNonNotchDisplays) {
-                Text("Always show on non-notch displays")
+            SettingsRow("Always show on non-notch displays", description: "By default the notch hides on external displays and appears when you hover near the top. Turn this on to keep it visible.") {
+                Defaults.Toggle(key: .alwaysShowOnNonNotchDisplays) {
+                    Text("Always show on non-notch displays")
+                }
             }
             .settingsHighlight(id: highlightID("Always show on non-notch displays"))
-            Text("By default the notch hides on external displays and appears when you hover near the top. Turn this on to keep it visible.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         } header: {
             Text("Notch behavior")
         }
@@ -1398,51 +1387,52 @@ struct GeneralSettings: View {
     /// would be a control that does nothing.
     @ViewBuilder
     private var perDisplayOverridesSection: some View {
-        let customisable = NSScreen.screens.filter { $0.safeAreaInsets.top <= 0 }
-        if !customisable.isEmpty {
+        perDisplayOverrideSections(
+            NSScreen.screens
+                .filter { $0.safeAreaInsets.top <= 0 }
+                .map { (name: $0.localizedName, isBuiltIn: isBuiltInDisplay($0)) }
+        )
+    }
+
+    /// One group per display: its two overrides and Reset. The explanation sits under the last one.
+    @ViewBuilder
+    func perDisplayOverrideSections(_ displays: [(name: String, isBuiltIn: Bool)]) -> some View {
+        ForEach(displays, id: \.name) { display in
+            let name = display.name
             Section {
-                ForEach(customisable, id: \.localizedName) { screen in
-                    let name = screen.localizedName
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text(name).font(.callout)
-                            if isBuiltInDisplay(screen) {
-                                Text("Built-in")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Button("Reset") {
-                                Defaults[.displayStyleOverrides].removeValue(forKey: name)
-                                Defaults[.alwaysShowOverrides].removeValue(forKey: name)
-                                NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
-                            }
-                            .buttonStyle(.link)
-                            .disabled(
-                                Defaults[.displayStyleOverrides][name] == nil
-                                    && Defaults[.alwaysShowOverrides][name] == nil
-                            )
-                        }
-                        Picker("Style", selection: displayStyleBinding(for: name)) {
-                            Text("Follow default").tag(ExternalDisplayStyle?.none)
-                            ForEach(ExternalDisplayStyle.allCases) { style in
-                                Text(style.localizedName).tag(ExternalDisplayStyle?.some(style))
-                            }
-                        }
-                        Picker("Always show", selection: alwaysShowBinding(for: name)) {
-                            Text("Follow default").tag(Bool?.none)
-                            Text("On").tag(Bool?.some(true))
-                            Text("Off").tag(Bool?.some(false))
-                        }
+                Picker("Style", selection: displayStyleBinding(for: name)) {
+                    Text("Follow default").tag(ExternalDisplayStyle?.none)
+                    ForEach(ExternalDisplayStyle.allCases) { style in
+                        Text(style.localizedName).tag(ExternalDisplayStyle?.some(style))
                     }
-                    .padding(.vertical, 2)
+                }
+                Picker("Always show", selection: alwaysShowBinding(for: name)) {
+                    Text("Follow default").tag(Bool?.none)
+                    Text("On").tag(Bool?.some(true))
+                    Text("Off").tag(Bool?.some(false))
+                }
+                SettingsActionRow {
+                    Button("Reset") {
+                        Defaults[.displayStyleOverrides].removeValue(forKey: name)
+                        Defaults[.alwaysShowOverrides].removeValue(forKey: name)
+                        NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
+                    }
+                    .disabled(
+                        Defaults[.displayStyleOverrides][name] == nil
+                            && Defaults[.alwaysShowOverrides][name] == nil
+                    )
                 }
             } header: {
-                Text("Per-display")
+                HStack(spacing: 6) {
+                    Text(verbatim: name)
+                    if display.isBuiltIn {
+                        customBadge(text: String(localized: "Built-in"))
+                    }
+                }
             } footer: {
-                Text("Displays without their own setting follow the defaults above. Built-in displays with a notch always use the notch shape and aren't listed.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if display.name == displays.last?.name {
+                    SettingsFooter("Displays without their own setting follow the defaults above. Built-in displays with a notch always use the notch shape and aren't listed.")
+                }
             }
         }
     }
@@ -3950,19 +3940,18 @@ struct Appearance: View {
             // Show display style picker only on non-notch Macs (main screen has no physical notch)
             if !mainScreenHasPhysicalNotch {
                 Section {
-                    Picker("Main screen style", selection: $externalDisplayStyle) {
-                        ForEach(ExternalDisplayStyle.allCases) { style in
-                            Text(style.localizedName)
-                                .tag(style)
+                    SettingsRow("Main screen style", description: externalDisplayStyle.description) {
+                        Picker("Main screen style", selection: $externalDisplayStyle) {
+                            ForEach(ExternalDisplayStyle.allCases) { style in
+                                Text(style.localizedName)
+                                    .tag(style)
+                            }
                         }
                     }
                     .onChange(of: externalDisplayStyle) {
                         NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
                     }
                     .settingsHighlight(id: highlightID("Main screen style"))
-                    Text(externalDisplayStyle.description)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 } header: {
                     Text("Display Style")
                 }
@@ -3971,52 +3960,51 @@ struct Appearance: View {
             notchWidthControls()
 
             Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    SettingsColorPickerRow(title: "Notch fill color", selection: $notchFillColor)
-                }
-                .settingsHighlight(id: highlightID("Notch fill color"))
-                Text("Fill color is used when no custom notch skin is selected.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                SettingsColorPickerRow(title: "Notch fill color",
+                                       description: String(localized: "Fill color is used when no custom notch skin is selected."),
+                                       selection: $notchFillColor)
+                    .settingsHighlight(id: highlightID("Notch fill color"))
             } header: {
                 Text("Notch appearance")
             }
 
             Section {
                 if #available(macOS 26.0, *) {
-                    Picker("Material", selection: $lockScreenGlassStyle) {
-                        ForEach(LockScreenGlassStyle.allCases) { style in
-                            Text(style.rawValue).tag(style)
+                    SettingsRow("Material", description: lockScreenGlassStyle == .liquid
+                                ? nil : Text("Custom Liquid settings require the Liquid Glass material.")) {
+                        Picker("Material", selection: $lockScreenGlassStyle) {
+                            ForEach(LockScreenGlassStyle.allCases) { style in
+                                Text(style.rawValue).tag(style)
+                            }
                         }
                     }
                     .settingsHighlight(id: highlightID("Lock screen material"))
                 } else {
-                    Picker("Material", selection: $lockScreenGlassStyle) {
-                        ForEach(LockScreenGlassStyle.allCases) { style in
-                            Text(style.rawValue).tag(style)
+                    SettingsRow("Material", description: Text("Liquid Glass requires macOS 26 or later.")) {
+                        Picker("Material", selection: $lockScreenGlassStyle) {
+                            ForEach(LockScreenGlassStyle.allCases) { style in
+                                Text(style.rawValue).tag(style)
+                            }
                         }
                     }
                     .disabled(true)
                     .settingsHighlight(id: highlightID("Lock screen material"))
-                    Text("Liquid Glass requires macOS 26 or later.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
 
                 if lockScreenGlassStyle == .liquid {
-                    Picker("Lock screen glass mode", selection: $lockScreenGlassCustomizationMode) {
-                        ForEach(LockScreenGlassCustomizationMode.allCases) { mode in
-                            Text(mode.rawValue).tag(mode)
+                    SettingsRow("Lock screen glass mode", description: lockScreenGlassCustomizationMode == .customLiquid
+                                ? Text("Pick per-widget liquid-glass variants below. Changes mirror the Lock Screen tab.") : nil) {
+                        Picker("Lock screen glass mode", selection: $lockScreenGlassCustomizationMode) {
+                            ForEach(LockScreenGlassCustomizationMode.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
                         }
+                        .pickerStyle(.segmented)
+                        .fixedSize()
                     }
-                    .pickerStyle(.segmented)
                     .settingsHighlight(id: highlightID("Lock screen glass mode"))
 
                     if lockScreenGlassCustomizationMode == .customLiquid {
-                        Text("Pick per-widget liquid-glass variants below. Changes mirror the Lock Screen tab.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
                                 Text("Music panel variant")
@@ -4048,15 +4036,11 @@ struct Appearance: View {
                         .disabled(!enableLockScreenTimerWidget)
                         .opacity(enableLockScreenTimerWidget ? 1 : 0.4)
                     }
-                } else {
-                    Text("Custom Liquid settings require the Liquid Glass material.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
             } header: {
                 Text("Lock Screen Glass")
             } footer: {
-                Text("Configure lock screen materials from the Appearance tab. Custom Liquid unlocks variant sliders for both widgets whenever Liquid Glass is selected.")
+                SettingsFooter("Configure lock screen materials from the Appearance tab. Custom Liquid unlocks variant sliders for both widgets whenever Liquid Glass is selected.")
             }
 
             Section {
@@ -4065,7 +4049,7 @@ struct Appearance: View {
                 }
                 .settingsHighlight(id: highlightID("Enable colored spectrograms"))
                 Defaults.Toggle(key: .playerColorTinting) {
-                    Text("Enable colored spectograms")
+                    Text("Tint player controls with the album art color")
                 }
                 Defaults.Toggle(key: .lightingEffect) {
                     Text("Enable blur effect behind album art")
@@ -4134,47 +4118,48 @@ struct Appearance: View {
                     .onDrop(of: [UTType.fileURL], isTargeted: $isSkinDropTarget) { providers in
                         handleSkinDrop(providers)
                     }
+                }
+                .settingsHighlight(id: highlightID("Notch skin"))
 
-                    HStack(spacing: 8) {
-                        Button("Upload skin") {
-                            notchSkinManager.importError = nil
-                            isSkinImporterPresented = true
+                SettingsActionRow {
+                    Button("Remove selected") {
+                        if let id = selectedNotchSkinID,
+                           let skin = customNotchSkins.first(where: { $0.id.uuidString == id }) {
+                            notchSkinManager.removeSkin(skin)
                         }
-                        .buttonStyle(.borderedProminent)
-
-                        Button("Remove selected") {
-                            if let id = selectedNotchSkinID,
-                               let skin = customNotchSkins.first(where: { $0.id.uuidString == id }) {
-                                notchSkinManager.removeSkin(skin)
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(selectedNotchSkinID == nil)
                     }
+                    .disabled(selectedNotchSkinID == nil)
 
-                    HStack {
-                        Text("Scrim opacity")
-                        Slider(value: $notchSkinScrimOpacity, in: 0...0.6, step: 0.05)
+                    Button("Upload skin") {
+                        notchSkinManager.importError = nil
+                        isSkinImporterPresented = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+
+                LabeledContent("Scrim opacity") {
+                    HStack(spacing: 8) {
+                        Slider(value: $notchSkinScrimOpacity, in: 0...0.6, step: 0.05) {
+                            Text("Scrim opacity")
+                        }
+                        .labelsHidden()
                         Text("\(Int(notchSkinScrimOpacity * 100))%")
+                            .monospacedDigit()
                             .foregroundStyle(.secondary)
                             .frame(width: 44, alignment: .trailing)
                     }
-                    .disabled(selectedNotchSkinID == nil)
-                    .settingsHighlight(id: highlightID("Skin scrim opacity"))
-
-                    if let importError = notchSkinManager.importError {
-                        Text(importError)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("Upload a PNG, JPG, or WebP image to fill the notch background. Add a scrim if the traffic-light indicators are hard to read.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    .frame(minWidth: 180)
                 }
-                .settingsHighlight(id: highlightID("Notch skin"))
+                .disabled(selectedNotchSkinID == nil)
+                .settingsHighlight(id: highlightID("Skin scrim opacity"))
             } header: {
                 Text("Notch skin")
+            } footer: {
+                if let importError = notchSkinManager.importError {
+                    SettingsFooter(importError)
+                } else {
+                    SettingsFooter("Upload a PNG, JPG, or WebP image to fill the notch background. Add a scrim if the traffic-light indicators are hard to read.")
+                }
             }
 
             Section {
@@ -4218,38 +4203,31 @@ struct Appearance: View {
                     .onDrop(of: [UTType.fileURL], isTargeted: $isIconDropTarget) { providers in
                         handleIconDrop(providers)
                     }
-
-                    HStack(spacing: 8) {
-                        Button("Add icon") {
-                            iconImportError = nil
-                            isIconImporterPresented = true
-                        }
-                        .buttonStyle(.borderedProminent)
-
-                        Button("Remove selected") {
-                            if let id = selectedAppIconID,
-                               let icon = customAppIcons.first(where: { $0.id.uuidString == id }) {
-                                removeCustomIcon(icon)
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(selectedAppIconID == nil)
-                    }
-
-                    if let iconImportError {
-                        Text(iconImportError)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("Drop a PNG, JPEG, TIFF, or ICNS file to add it to your icon library.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
                 }
                 .settingsHighlight(id: highlightID("App icon"))
+
+                SettingsActionRow {
+                    Button("Remove selected") {
+                        if let id = selectedAppIconID,
+                           let icon = customAppIcons.first(where: { $0.id.uuidString == id }) {
+                            removeCustomIcon(icon)
+                        }
+                    }
+                    .disabled(selectedAppIconID == nil)
+
+                    Button("Add icon") {
+                        iconImportError = nil
+                        isIconImporterPresented = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
             } header: {
-                HStack {
-                    Text("App icon")
+                Text("App icon")
+            } footer: {
+                if let iconImportError {
+                    SettingsFooter(iconImportError)
+                } else {
+                    SettingsFooter("Drop a PNG, JPEG, TIFF, or ICNS file to add it to your icon library.")
                 }
             }
         }
@@ -4309,6 +4287,7 @@ struct Appearance: View {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(Color.black.opacity(0.08))
                 )
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 2)
@@ -4472,77 +4451,72 @@ struct Appearance: View {
                 }
             )
 
-            VStack(alignment: .leading, spacing: 10) {
-                Defaults.Toggle(key: .customizePhysicalNotchWidth) {
-                    Text("Customize physical notch width")
-                }
-                .onChange(of: customizePhysicalNotchWidth) {
-                    NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
-                }
-                .settingsHighlight(id: highlightID("Customize physical notch width"))
-                
-                Slider(
-                    value: closedWidthBinding,
-                    in: closedRange,
-                    step: 5
-                ) {
-                    HStack {
-                        Text("Closed notch / pill width")
-                        Spacer()
-                        Text("\(Int(closedNotchWidth)) px")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .disabled(!customizePhysicalNotchWidth)
-                .opacity(customizePhysicalNotchWidth ? 1 : 0.5)
-                .settingsHighlight(id: highlightID("Closed notch / pill width"))
-
-                Divider().padding(.vertical, 4)
-
-                Slider(
-                    value: widthBinding,
-                    in: dynamicRange,
-                    step: 10
-                ) {
-                    HStack {
-                        Text("Expanded notch width")
-                        Spacer()
-                        Text("\(Int(openNotchWidth)) px")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .disabled(enableMinimalisticUI || !customizePhysicalNotchWidth)
-                .opacity(customizePhysicalNotchWidth ? 1 : 0.5)
-                .settingsHighlight(id: highlightID("Expanded notch width"))
-
-                HStack {
-                    Text("\(tabCount) tab\(tabCount == 1 ? "" : "s") enabled · min \(Int(recommendedMin)) px")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Reset Width") {
-                        openNotchWidth = recommendedMin
-                    }
-                    .disabled(!customizePhysicalNotchWidth || abs(openNotchWidth - recommendedMin) < 0.5)
-                    .buttonStyle(.bordered)
-                }
-
-                let description = enableMinimalisticUI
-                ? String(localized: "Expanded width adjustments apply only to the standard notch layout. Disable Minimalistic UI to edit this value.")
-                : String(localized: "Recommended minimum width adjusts automatically based on the number of enabled tabs.")
-
-                Text(description)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Defaults.Toggle(key: .customizePhysicalNotchWidth) {
+                Text("Customize physical notch width")
+            }
+            .onChange(of: customizePhysicalNotchWidth) {
+                NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
             }
             .onAppear {
                 enforceMinimumNotchWidth()
+            }
+            .settingsHighlight(id: highlightID("Customize physical notch width"))
+
+            LabeledContent("Closed notch / pill width") {
+                HStack(spacing: 8) {
+                    Slider(value: closedWidthBinding, in: closedRange, step: 5) {
+                        Text("Closed notch / pill width")
+                    }
+                    .labelsHidden()
+                    Text("\(Int(closedNotchWidth)) px")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 48, alignment: .trailing)
+                }
+                .frame(minWidth: 200)
+            }
+            .disabled(!customizePhysicalNotchWidth)
+            .opacity(customizePhysicalNotchWidth ? 1 : 0.5)
+            .settingsHighlight(id: highlightID("Closed notch / pill width"))
+
+            LabeledContent("Expanded notch width") {
+                HStack(spacing: 8) {
+                    Slider(value: widthBinding, in: dynamicRange, step: 10) {
+                        Text("Expanded notch width")
+                    }
+                    .labelsHidden()
+                    Text("\(Int(openNotchWidth)) px")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 48, alignment: .trailing)
+                }
+                .frame(minWidth: 200)
+            }
+            .disabled(enableMinimalisticUI || !customizePhysicalNotchWidth)
+            .opacity(customizePhysicalNotchWidth ? 1 : 0.5)
+            .settingsHighlight(id: highlightID("Expanded notch width"))
+
+            LabeledContent {
+                Button("Reset Width") {
+                    openNotchWidth = recommendedMin
+                }
+                .disabled(!customizePhysicalNotchWidth || abs(openNotchWidth - recommendedMin) < 0.5)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Recommended width")
+                    Text("\(tabCount) tab\(tabCount == 1 ? "" : "s") enabled · min \(Int(recommendedMin)) px")
+                        .settingsDescriptionStyle()
+                }
             }
         } header: {
             HStack {
                 Text("Notch Width")
                 customBadge(text: "Beta")
             }
+        } footer: {
+            SettingsFooter(enableMinimalisticUI
+                ? String(localized: "Expanded width adjustments apply only to the standard notch layout. Disable Minimalistic UI to edit this value.")
+                : String(localized: "Recommended minimum width adjusts automatically based on the number of enabled tabs."))
         }
     }
 
@@ -7417,16 +7391,17 @@ struct NotesSettingsView: View {
 
 private struct SettingsColorPickerRow: View {
     let title: String
+    var description: String? = nil
     @Binding var selection: Color
     var supportsOpacity: Bool = false
 
     var body: some View {
-        HStack {
-            Text(title)
-            Spacer()
+        LabeledContent {
             KannuColorPickerButton(color: selection, accessibilityLabel: title) {
                 SettingsColorPickerPopover(selection: $selection, supportsOpacity: supportsOpacity)
             }
+        } label: {
+            SettingsRowLabel(verbatim: title, description: description)
         }
     }
 }
@@ -8717,8 +8692,20 @@ extension SettingsView {
     }
 }
 
+extension GeneralSettings {
+    /// DEBUG snapshot harness: the per-display overrides, which list only displays without a
+    /// notch (none on a lone MacBook), for two made-up displays.
+    static func snapshotPerDisplayRows() -> AnyView {
+        AnyView(Form {
+            GeneralSettings().perDisplayOverrideSections([
+                (name: "Studio Display (made up)", isBuiltIn: false),
+                (name: "Built-in Display (made up)", isBuiltIn: true),
+            ])
+        })
+    }
+}
+
 extension AgentStatusSettings {
-    /// DEBUG snapshot harness: the findings rows as the Security findings section draws them.
     /// DEBUG snapshot harness: the ADR Detection rows that only show once analysis is on, without
     /// turning it on (the harness shares the user's Defaults).
     static func snapshotDetectionRows() -> AnyView {
@@ -8738,6 +8725,7 @@ extension AgentStatusSettings {
         })
     }
 
+    /// DEBUG snapshot harness: the findings rows as the Security findings section draws them.
     static func snapshotFindingRows(_ findings: [AgentSecurityFinding]) -> AnyView {
         AnyView(Form {
             Section {
