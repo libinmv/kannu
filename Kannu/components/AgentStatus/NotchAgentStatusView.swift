@@ -21,6 +21,8 @@ struct NotchAgentStatusView: View {
     @Default(.agentStoppedColor) private var stoppedPaletteColor
     @State private var isSuppressingScrollGesture = false
     @State private var redBlinkStartTimes: [String: Date] = [:]
+    /// The pinned finding whose "Copy for agent" was just pressed; cleared after 2 s.
+    @State private var copiedFindingID: String?
     private let scrollSuppressionToken = UUID()
 
     private var hasSkin: Bool { skinManager.selectedSkinImage != nil }
@@ -333,7 +335,7 @@ struct NotchAgentStatusView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
-                if let evidence = finding.evidence.first {
+                if let evidence = finding.displayedEvidence.first {
                     Text(evidence)
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
@@ -348,6 +350,20 @@ struct NotchAgentStatusView: View {
                     }
                     Button(String(localized: "Acknowledge")) {
                         findingsStore.acknowledge(finding.id)
+                    }
+                    Button {
+                        findingsStore.copyAgentPrompt(for: finding)
+                        let id = finding.id
+                        copiedFindingID = id
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .seconds(2))
+                            if copiedFindingID == id { copiedFindingID = nil }
+                        }
+                    } label: {
+                        // The hidden label keeps the width while "Copied" shows.
+                        Text(String(localized: "Copy for agent"))
+                            .opacity(copiedFindingID == finding.id ? 0 : 1)
+                            .overlay { if copiedFindingID == finding.id { Text(String(localized: "Copied")) } }
                     }
                 }
                 .controlSize(.small)

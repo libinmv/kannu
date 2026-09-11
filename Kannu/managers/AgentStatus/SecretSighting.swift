@@ -148,7 +148,9 @@ struct SecretSighting: HookSighting {
                 "strreplaceeditor", "applypatch", "replace", "create"].contains(compact)
     }
 
-    var rule: String { "secret_" + kind.rawValue }
+    static let rulePrefix = "secret_"
+
+    var rule: String { Self.rulePrefix + kind.rawValue }
 
     var title: String {
         switch location {

@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import AppKit
 import Combine
 import Defaults
 import Foundation
@@ -229,6 +230,14 @@ final class SecurityFindingsStore: ObservableObject {
         snoozes = []
         Defaults[.adrAcknowledgedFindingIDs] = []
         Defaults[.adrFindingSnoozes] = []
+    }
+
+    /// Puts a request about this finding on the clipboard, ready to paste into the user's agent.
+    /// Built by `SecurityFindingGuide` — no key, hidden text or chat name — and never logged.
+    func copyAgentPrompt(for finding: AgentSecurityFinding) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(SecurityFindingGuide.agentPrompt(for: finding), forType: .string)
     }
 
     // MARK: - Kannu-run scans
@@ -619,7 +628,7 @@ final class SecurityFindingsStore: ObservableObject {
                 return AgentSecurityFinding(id: finding.id, source: finding.source, rule: finding.rule, severity: finding.severity,
                                             title: finding.title, summary: finding.summary, evidence: finding.evidence,
                                             assetName: finding.assetName, assetPath: finding.assetPath, sessionID: finding.sessionID,
-                                            firstSeen: seen)
+                                            firstSeen: seen, kannuOnlyEvidence: finding.kannuOnlyEvidence)
             }
         publishFindings()
     }

@@ -7659,6 +7659,8 @@ struct AgentStatusSettings: View {
     @State private var adrOpenAIKeyText = ""
     @State private var adrAnthropicKeyText = ""
     @State private var showDetectionConsent = false
+    /// The finding (or analysis) whose "Copy for agent" was just pressed; cleared after 2 s.
+    @State private var copiedKey: String?
     @Default(.enableAgentStatusFeature) var enableAgentStatusFeature
     @Default(.agentStatusStaleMinutes) var agentStatusStaleMinutes
     @Default(.agentStoppedCollapseSeconds) var agentStoppedCollapseSeconds
@@ -8061,6 +8063,7 @@ struct AgentStatusSettings: View {
                 Spacer()
                 Text(SecurityFindingsStore.snapshotDirectory.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
                     .font(.caption)
+                    .textSelection(.enabled)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -8080,6 +8083,7 @@ struct AgentStatusSettings: View {
                 .settingsHighlight(id: highlightID("Let Kannu run scans"))
                 Text("Daily, and sooner after an MCP config changes. Off means Kannu only reads snapshots that something else wrote.")
                     .font(.caption)
+                    .textSelection(.enabled)
                     .foregroundStyle(.secondary)
 
                 HStack {
@@ -8091,12 +8095,13 @@ struct AgentStatusSettings: View {
                     if let at = findingsStore.lastKannuScanAt {
                         Text("Last run by Kannu \(at.formatted(date: .abbreviated, time: .shortened))")
                             .font(.caption)
+                            .textSelection(.enabled)
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
                 }
                 if let error = findingsStore.lastScanError {
-                    Text(error).font(.caption).foregroundColor(.red)
+                    Text(error).font(.caption).foregroundColor(.red).textSelection(.enabled)
                 }
 
                 HStack {
@@ -8104,6 +8109,7 @@ struct AgentStatusSettings: View {
                     Spacer()
                     Text(adrPolicyFile.isEmpty ? String(localized: "none") : adrPolicyFile.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
                         .font(.caption)
+                        .textSelection(.enabled)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -8123,6 +8129,7 @@ struct AgentStatusSettings: View {
             .settingsHighlight(id: highlightID("High-severity alerts in the notch"))
             Text(adrHighAlertMode.description)
                 .font(.caption)
+                .textSelection(.enabled)
                 .foregroundStyle(.secondary)
 
             Divider()
@@ -8132,6 +8139,7 @@ struct AgentStatusSettings: View {
             .settingsHighlight(id: highlightID("Look for hidden text in what agents read"))
             Text("Some characters are invisible to you but readable by the AI, and can hide instructions. Kannu checks prompts and tool results on this Mac. No AI model is used and nothing is sent anywhere.")
                 .font(.caption)
+                .textSelection(.enabled)
                 .foregroundStyle(.secondary)
             Defaults.Toggle(key: .warnAgentAboutHiddenText) {
                 Text("Tell the agent when hidden text is found")
@@ -8140,6 +8148,7 @@ struct AgentStatusSettings: View {
             .settingsHighlight(id: highlightID("Tell the agent when hidden text is found"))
             Text("Off by default. Adds one short, factual note to the agent's context saying hidden text was found and where — never the hidden text. Claude Code also shows you a one-line notice.")
                 .font(.caption)
+                .textSelection(.enabled)
                 .foregroundStyle(.secondary)
             Defaults.Toggle(key: .detectSecrets) {
                 Text("Look for secrets in prompts and tool calls")
@@ -8147,6 +8156,7 @@ struct AgentStatusSettings: View {
             .settingsHighlight(id: highlightID("Look for secrets in prompts and tool calls"))
             Text("Flags API keys and private keys in what you send an agent and in what an agent hands a tool. Kannu keeps only the kind of key, its first few letters, its length and a fingerprint — never the key itself.")
                 .font(.caption)
+                .textSelection(.enabled)
                 .foregroundStyle(.secondary)
             Defaults.Toggle(key: .detectSensitivePaths) {
                 Text("Watch for agents touching sensitive files")
@@ -8154,6 +8164,7 @@ struct AgentStatusSettings: View {
             .settingsHighlight(id: highlightID("Watch for agents touching sensitive files"))
             Text("Flags when an agent reads keys, passwords, cloud or browser data, or changes files that run programs on their own or set what agents may do. Checked on this Mac. Nothing is sent anywhere.")
                 .font(.caption)
+                .textSelection(.enabled)
                 .foregroundStyle(.secondary)
             Defaults.Toggle(key: .watchMCPServers) {
                 Text("Notice new MCP servers")
@@ -8161,13 +8172,14 @@ struct AgentStatusSettings: View {
             .settingsHighlight(id: highlightID("Notice new MCP servers"))
             Text("Tells you when an MCP server is added to Claude Code, Claude Desktop, Cursor, VS Code, Codex, Gemini CLI, Qwen Code or opencode. The first look only learns what is already there. Project folders inside Desktop, Documents and Downloads are skipped, so macOS never asks for access.")
                 .font(.caption)
+                .textSelection(.enabled)
                 .foregroundStyle(.secondary)
 
             Divider()
             adrDetectionSection
 
             if let error = findingsStore.snapshotError {
-                Text(error).font(.caption).foregroundColor(.red)
+                Text(error).font(.caption).foregroundColor(.red).textSelection(.enabled)
             }
 
             let ranking = findingsStore.ranking
@@ -8176,6 +8188,7 @@ struct AgentStatusSettings: View {
                      ? String(localized: "No findings yet. Findings appear here as soon as a snapshot lands in the folder above.")
                      : String(localized: "No open findings."))
                     .font(.caption)
+                    .textSelection(.enabled)
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(ranking.visible) { finding in
@@ -8185,6 +8198,7 @@ struct AgentStatusSettings: View {
             if !findingsStore.reviewQueue.isEmpty {
                 Text("Needs review: \(findingsStore.reviewQueue.count) uncatalogued AI tool(s) — see the snapshot for paths.")
                     .font(.caption)
+                    .textSelection(.enabled)
                     .foregroundStyle(.secondary)
             }
             if !findingsStore.acknowledgedIDs.isEmpty || !findingsStore.snoozes.isEmpty {
@@ -8243,6 +8257,7 @@ struct AgentStatusSettings: View {
         }
         Text("Opt-in, per chat. Right-click a finished Claude Code chat in the notch and choose \"Analyze with ADR Detection\". The transcript is sent to the model providers below under your own keys — nothing is ever sent automatically.")
             .font(.caption)
+            .textSelection(.enabled)
             .foregroundStyle(.secondary)
 
         if adrDetectionEnabled {
@@ -8250,14 +8265,14 @@ struct AgentStatusSettings: View {
                 Text("Detection checkout")
                 Spacer()
                 Text(adrDetectionCheckout.isEmpty ? String(localized: "none") : adrDetectionCheckout.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
                 Button("Choose…") { chooseDetectionCheckout() }
                 Button("Check") { adr.checkDetection() }
             }
             .settingsHighlight(id: highlightID("Detection checkout"))
             HStack(spacing: 6) {
                 Circle().fill(adr.detection.isReady ? Color.green : Color.secondary.opacity(0.5)).frame(width: 8, height: 8)
-                Text(adr.detection.caption).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Text(adr.detection.caption).font(.caption).foregroundStyle(.secondary).lineLimit(2).textSelection(.enabled)
             }
             HStack {
                 Text(ADRConnection.detectionCloneCommand)
@@ -8273,6 +8288,7 @@ struct AgentStatusSettings: View {
             }
             Text("Needs uv and Python 3.10–3.12 (uv fetches one). ADR Detection is Uber's research tool (Apache-2.0); it runs an unattended Claude session on this Mac to reason about the chat, with file edits disallowed.")
                 .font(.caption)
+                .textSelection(.enabled)
                 .foregroundStyle(.secondary)
 
             TextField("Reasoning model (Claude)", text: $adrDetectionReasoningModel)
@@ -8283,13 +8299,13 @@ struct AgentStatusSettings: View {
                 adrSecretRow(title: "Anthropic API key", key: .claudeAPIKey, text: $adrAnthropicKeyText)
             } else {
                 Text("Analyses count against your Claude subscription's 5-hour and weekly limits.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
             }
 
             Toggle("Triage with OpenAI first", isOn: $adrDetectionTriageEnabled)
                 .settingsHighlight(id: highlightID("Triage with OpenAI first"))
             Text("Upstream's pipeline: a cheap gpt-4o pass decides whether the Claude reasoning agent runs at all. Off means Claude only — no OpenAI account needed.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
             if adrDetectionTriageEnabled {
                 TextField("Triage model (OpenAI)", text: $adrDetectionTriageModel)
                 adrSecretRow(title: "OpenAI API key", key: .openaiAPIKey, text: $adrOpenAIKeyText)
@@ -8299,7 +8315,7 @@ struct AgentStatusSettings: View {
             Toggle("Context: source code analyzer", isOn: $adrDetectionContextSourceCode)
             Toggle("Context: policy store", isOn: $adrDetectionContextPolicy)
             Text("ADR's three local MCP context servers; they read bundled data and this Mac only.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
 
             Picker("Reasoning timeout", selection: $adrDetectionTimeoutSeconds) {
                 Text("2 minutes").tag(120)
@@ -8317,7 +8333,7 @@ struct AgentStatusSettings: View {
                 .settingsHighlight(id: highlightID("Confirm before every analysis"))
 
             if let error = findingsStore.lastAnalysisError {
-                Text(error).font(.caption).foregroundColor(.red)
+                Text(error).font(.caption).foregroundColor(.red).textSelection(.enabled)
             }
             if !findingsStore.analyses.isEmpty {
                 Text("Recent analyses").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -8328,7 +8344,13 @@ struct AgentStatusSettings: View {
                             Text("\(analysis.date.formatted(date: .abbreviated, time: .shortened)) · \(analysis.shortLabel)\(analysis.costUSD.map { String(format: " · $%.3f", $0) } ?? "")")
                                 .font(.caption2).foregroundStyle(.secondary)
                         }
+                        .textSelection(.enabled)
                         Spacer()
+                        if analysis.isMalicious {
+                            copyForAgentButton(key: "analysis:" + analysis.conversationID) {
+                                if let finding = analysis.finding() { findingsStore.copyAgentPrompt(for: finding) }
+                            }
+                        }
                         if let path = analysis.reportPath, FileManager.default.fileExists(atPath: path) {
                             Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
                         }
@@ -8394,6 +8416,7 @@ struct AgentStatusSettings: View {
                 Text(tool.displayName)
                 Text(adrStatusCaption(status))
                     .font(.caption)
+                    .textSelection(.enabled)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -8451,11 +8474,13 @@ struct AgentStatusSettings: View {
                     : String(localized: "partial coverage (\(scan.coverageGaps) gaps)")
                 Text("\(scan.date.formatted(date: .abbreviated, time: .shortened)) · \(scan.assetCount) assets · \(scan.findingCount) findings · \(coverage) · catalog \(scan.catalogVersion)")
                     .font(.caption)
+                    .textSelection(.enabled)
                     .foregroundStyle(scan.coverageComplete ? Color.secondary : Color.orange)
                     .multilineTextAlignment(.trailing)
             } else {
                 Text("none yet")
                     .font(.caption)
+                    .textSelection(.enabled)
                     .foregroundStyle(.secondary)
             }
         }
@@ -8476,12 +8501,17 @@ struct AgentStatusSettings: View {
                         .background(Capsule().fill(Color.secondary.opacity(0.15)))
                 }
                 Text(finding.summary).font(.caption)
-                ForEach(finding.evidence, id: \.self) { line in
+                ForEach(finding.displayedEvidence, id: \.self) { line in
                     Text(line).font(.caption2).foregroundStyle(.secondary).lineLimit(2).truncationMode(.middle)
                 }
+                let guide = SecurityFindingGuide(rule: finding.rule)
+                Text("What it means: \(guide.whatItIs)").font(.caption2).foregroundStyle(.secondary)
+                Text("What to do: \(guide.whatToDo)").font(.caption2).foregroundStyle(.secondary)
             }
+            .textSelection(.enabled)
             Spacer()
             VStack(alignment: .trailing, spacing: 4) {
+                copyForAgentButton(key: finding.id) { findingsStore.copyAgentPrompt(for: finding) }
                 Button("Acknowledge") { findingsStore.acknowledge(finding.id) }
                 Button("Snooze 24h") { findingsStore.snooze(finding.id, for: 24 * 3600) }
                 if let path = finding.assetPath {
@@ -8495,6 +8525,30 @@ struct AgentStatusSettings: View {
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Security finding, \(finding.severity.label): \(finding.title). \(finding.summary)")
+    }
+
+    /// "Copy for agent", showing "Copied" for two seconds without changing width (the hidden label
+    /// keeps the size), so the row never reflows.
+    private func copyForAgentButton(key: String, copy: @escaping () -> Void) -> some View {
+        let copied = copiedKey == key
+        return Button {
+            copy()
+            flashCopied(key)
+        } label: {
+            Text("Copy for agent")
+                .opacity(copied ? 0 : 1)
+                .overlay { if copied { Text("Copied") } }
+        }
+        .accessibilityLabel(copied ? Text("Copied") : Text("Copy for agent"))
+        .help("Copies a request about this finding, ready to paste into your agent. Nothing is sent.")
+    }
+
+    private func flashCopied(_ key: String) {
+        copiedKey = key
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            if copiedKey == key { copiedKey = nil }
+        }
     }
 
     private func choosePolicyFile() {

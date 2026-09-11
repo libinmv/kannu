@@ -57,6 +57,7 @@
 		AA1000000000000000000077 /* MCPServerWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000076 /* MCPServerWatch.swift */; };
 		AA1000000000000000000079 /* AgentHookLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000078 /* AgentHookLayout.swift */; };
 		AA100000000000000000007B /* OpencodePluginSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000007A /* OpencodePluginSource.swift */; };
+		AA100000000000000000007D /* SecurityFindingGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000007C /* SecurityFindingGuide.swift */; };
 		AA1000000000000000000065 /* TerminalTabMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000064 /* TerminalTabMatcher.swift */; };
 		AA1000000000000000000055 /* ADRDetectionCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000054 /* ADRDetectionCommand.swift */; };
 		AA1000000000000000000047 /* ADRSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000046 /* ADRSnapshot.swift */; };
@@ -121,6 +122,7 @@
 		AA1000000000000000000076 /* MCPServerWatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MCPServerWatch.swift; path = Kannu/managers/AgentStatus/MCPServerWatch.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000078 /* AgentHookLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentHookLayout.swift; path = Kannu/managers/AgentStatus/AgentHookLayout.swift; sourceTree = SOURCE_ROOT; };
 		AA100000000000000000007A /* OpencodePluginSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OpencodePluginSource.swift; path = Kannu/managers/AgentStatus/OpencodePluginSource.swift; sourceTree = SOURCE_ROOT; };
+		AA100000000000000000007C /* SecurityFindingGuide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SecurityFindingGuide.swift; path = Kannu/managers/AgentStatus/SecurityFindingGuide.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000064 /* TerminalTabMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TerminalTabMatcher.swift; path = Kannu/managers/AgentStatus/TerminalTabMatcher.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000054 /* ADRDetectionCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ADRDetectionCommand.swift; path = Kannu/managers/AgentStatus/ADRDetectionCommand.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000046 /* ADRSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ADRSnapshot.swift; path = Kannu/managers/AgentStatus/ADRSnapshot.swift; sourceTree = SOURCE_ROOT; };
@@ -533,6 +535,7 @@
 				AA1000000000000000000077 /* MCPServerWatch.swift in Sources */,
 				AA1000000000000000000079 /* AgentHookLayout.swift in Sources */,
 				AA100000000000000000007B /* OpencodePluginSource.swift in Sources */,
+				AA100000000000000000007D /* SecurityFindingGuide.swift in Sources */,
 				AA1000000000000000000065 /* TerminalTabMatcher.swift in Sources */,
 				AA1000000000000000000055 /* ADRDetectionCommand.swift in Sources */,
 				AA1000000000000000000047 /* ADRSnapshot.swift in Sources */,

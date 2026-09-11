@@ -116,8 +116,10 @@ final class HiddenTextIncidentTests: XCTestCase {
         XCTAssertEqual(finding.source, AgentSecurityFinding.Source.kannu)
         XCTAssertEqual(finding.severity, AgentSecurityFinding.Severity.high)
         XCTAssertEqual(finding.sessionID, "c1")
-        XCTAssertEqual(finding.evidence.first, "Decodes to: “SECRET PAYLOAD”", "the decoded text is evidence, shown in Kannu only")
-        XCTAssertEqual(Set(finding.evidence).count, finding.evidence.count, "evidence lines are distinct")
+        XCTAssertEqual(finding.kannuOnlyEvidence, ["Decodes to: “SECRET PAYLOAD”"], "the decoded text is shown in Kannu only")
+        XCTAssertEqual(finding.displayedEvidence.first, "Decodes to: “SECRET PAYLOAD”")
+        XCTAssertFalse(finding.evidence.contains { $0.contains("SECRET") }, "evidence is what leaves Kannu")
+        XCTAssertEqual(Set(finding.displayedEvidence).count, finding.displayedEvidence.count, "evidence lines are distinct")
     }
 
     // MARK: - Merging

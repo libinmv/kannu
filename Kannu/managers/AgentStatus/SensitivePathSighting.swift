@@ -112,7 +112,9 @@ struct SensitivePathSighting: HookSighting {
         }
     }
 
-    var rule: String { "sensitive_file_" + category.rawValue }
+    static let rulePrefix = "sensitive_file_"
+
+    var rule: String { Self.rulePrefix + category.rawValue }
 
     private var object: String {
         switch category {

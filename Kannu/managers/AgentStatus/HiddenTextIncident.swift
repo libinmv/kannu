@@ -49,7 +49,8 @@ struct HiddenTextIncident: HookSighting {
     let eventCount: Int
     /// Printable ASCII only, at most `previewLimit`: the decoded text for tags, variation
     /// selectors and bit-encoded zero-width runs; the line in logical order for bidi. Shown in
-    /// Kannu only — never pushed, never sent to the agent.
+    /// Kannu only — never pushed, never sent to the agent, never copied for one
+    /// (`AgentSecurityFinding.kannuOnlyEvidence`).
     let preview: String
     let firstSeenMs: Int64
     let lastSeenMs: Int64
@@ -109,7 +110,9 @@ struct HiddenTextIncident: HookSighting {
         kind != .bidi && preview.count >= 4 ? .high : .medium
     }
 
-    var rule: String { "hidden_text_" + kind.rawValue }
+    static let rulePrefix = "hidden_text_"
+
+    var rule: String { Self.rulePrefix + kind.rawValue }
 
     var title: String {
         if kind == .bidi {
@@ -143,8 +146,8 @@ struct HiddenTextIncident: HookSighting {
         }
     }
 
-    /// One line for the card and for a push. Never the preview: that stays in `evidence`, which
-    /// is shown in Kannu only.
+    /// One line for the card and for a push. Never the preview: that is `previewLine`, which is
+    /// shown in Kannu only.
     func summary(chatName: String) -> String {
         var text = String(localized: "\(characterCount) \(characterWord) in \(place), in “\(chatName)”.")
         if eventCount > 1 { text += " " + String(localized: "Seen \(eventCount) times.") }
@@ -160,12 +163,16 @@ struct HiddenTextIncident: HookSighting {
         }
     }
 
-    /// Distinct lines (the Settings row iterates them by value), the decoded text first.
+    /// The decoded text ("Decodes to: …", or the bidi line in logical order), when there is one.
+    /// Shown in Kannu only: it becomes `kannuOnlyEvidence`, never pushed, never copied for an agent.
+    var previewLine: String? {
+        guard !preview.isEmpty else { return nil }
+        return kind == .bidi ? String(localized: "Logical order: \(preview)") : String(localized: "Decodes to: “\(preview)”")
+    }
+
+    /// Distinct lines (the Settings row iterates them by value); never the decoded text.
     func evidence(provider: String) -> [String] {
         var lines: [String] = []
-        if !preview.isEmpty {
-            lines.append(kind == .bidi ? String(localized: "Logical order: \(preview)") : String(localized: "Decodes to: “\(preview)”"))
-        }
         var detail = "\(characterCount) \(technicalKind) · \(location.rawValue.replacingOccurrences(of: "_", with: " "))"
         if let tool { detail += " · \(tool)" }
         detail += " · \(AgentSessionStatus.providerLabel(for: provider))"
@@ -196,7 +203,8 @@ struct HiddenTextIncident: HookSighting {
             assetName: projectName,
             assetPath: cwd,
             sessionID: conversationID,
-            firstSeen: Date(timeIntervalSince1970: TimeInterval(firstSeenMs) / 1000)
+            firstSeen: Date(timeIntervalSince1970: TimeInterval(firstSeenMs) / 1000),
+            kannuOnlyEvidence: previewLine.map { [$0] } ?? []
         )
     }
 }

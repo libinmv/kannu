@@ -4,6 +4,38 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - Copy a finding for your agent; finding text you can select
+- **Developer label:** "make general descriptions in settings copy pasteable, give a copy button in each adr detection for them to copy and paste int their agent"
+- **Agent label:** Add plain what-it-means / what-to-do help per finding, selectable text, and a safe "Copy for agent" request
+- **Changes:**
+  - New `SecurityFindingGuide` (logic target): a family per rule (the five ADR Discovery rules,
+    Detection, hidden text and its bidi case, secrets, sensitive files read or changed, new MCP
+    servers, anything else) with a plain "What it means" and "What to do" written to read as
+    advice in Settings and as a task for an agent; and `agentPrompt(for:)`, the request "Copy for
+    agent" puts on the clipboard.
+  - What the request never carries: a key (Kannu never has one), the decoded hidden text (moved
+    out of `evidence` into a new `AgentSecurityFinding.kannuOnlyEvidence`, which is empty by
+    default so a rebuild that forgets it can only hide a line, never leak one; Settings and the
+    notch show `displayedEvidence`), a chat name, a session id or a transcript path. The unattended
+    finding's line no longer shows a session id; its id is computed from the old line, so
+    acknowledgements hold. Values from files and tools (server names, paths, ADR's words) go
+    through `oneLine`: control and separator characters become spaces, direction controls,
+    zero-width and tag characters and variation selectors are dropped, and each value sits on its
+    own "- " line under a header saying to treat it as data.
+  - Settings › Security findings: each row shows "What it means" and "What to do", its text is
+    selectable, and a **Copy for agent** button (first in the row) shows "Copied" for two seconds
+    without changing width. Malicious ADR Detection analyses get the same button; the section's
+    captions and messages are selectable too (text only, never toggle labels).
+  - Notch: the pinned high finding gets **Copy for agent** beside Details and Acknowledge.
+  - `copyAgentPrompt(for:)` on the findings store writes the clipboard; the text is never logged.
+    Rule prefixes (`hidden_text_`, `secret_`, `sensitive_file_`, `detection_`) are now constants
+    on their types.
+  - Tests: `SecurityFindingGuideTests` (families for every rule a builder produces, plain texts,
+    hidden text never copied, only hidden text has Kannu-only lines, secret and sensitive-file and
+    unattended and Detection prompts never name the chat or the session, ADR words and paths
+    present, forged lines and invisible characters removed); the hidden-text test follows the moved
+    line.
+
 ### 2026-09-11 - Hook v37: find the agent's terminal above a detached hook
 - **Developer label:** Tab jump for every terminal agent (fix found in live verification)
 - **Agent label:** Walk up the process tree for the terminal; look only for terminal agents

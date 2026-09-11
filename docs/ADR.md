@@ -63,8 +63,8 @@ Turn the toggle off if something else already schedules Discovery — Kannu then
   light colour — that stays until you acknowledge the finding (default). Settings offers
   *For 5 seconds, then glyph*, *Glyph only* and *Off*. While a Focus mode is on, only the small
   glyph shows; the pill appears when Focus ends. Clicking the pill opens the panel.
-- **In the panel:** the finding is pinned above the primary session with Details and Acknowledge;
-  medium findings appear as a count beside "Recent chats".
+- **In the panel:** the finding is pinned above the primary session with Details, Acknowledge and
+  Copy for agent; medium findings appear as a count beside "Recent chats".
 - **On your phone:** with mobile notifications on, each new high finding is pushed once
   (priority 5, the same as "needs input"); medium ones only if you enable that.
 - **Kannu's own findings:** a session started with permission checks bypassed
@@ -75,8 +75,9 @@ Turn the toggle off if something else already schedules Discovery — Kannu then
   Unicode tag characters ("ASCII smuggling"), bytes hidden in variation selectors, right-to-left
   overrides on a line with no right-to-left letters (Trojan Source), long zero-width runs. No model,
   nothing sent. A sighting is high when it decodes to readable text; the decoded text is only ever
-  shown inside Kannu, never pushed. "Tell the agent when hidden text is found" (off by default)
-  adds one factual sentence to the agent's context — never the hidden text.
+  shown inside Kannu, never pushed and never copied for an agent. "Tell the agent when hidden text
+  is found" (off by default) adds one factual sentence to the agent's context — never the hidden
+  text.
 - **Secrets (Kannu's own, on by default, local):** API keys and private keys in a prompt or in what
   an agent hands a tool (AWS, GitHub, GitLab, Slack, Stripe live, Anthropic, OpenAI, Google, npm,
   Hugging Face, PEM/OpenSSH/PGP private keys). Tool results are never scanned. The hook keeps only
@@ -185,7 +186,13 @@ release.
 
 - Lists them in Settings → Agents → Security findings, highest severity first, with Acknowledge
   and Snooze. Acknowledgements are per finding: if a finding disappears and later returns with
-  different evidence, it is shown again.
+  different evidence, it is shown again. Each finding also says, in plain words, what it means
+  and what to do, and all of its text can be selected and copied.
+- **Copy for agent** puts a plain-text request on the clipboard, ready to paste into Claude Code,
+  Codex or any agent: what the finding means, what to do, and the details, marked as data rather
+  than instructions. It never includes a key, the decoded hidden text, a chat name or a session
+  id, and text that came from files or tools is flattened to one line with invisible characters
+  removed. Nothing is sent until you paste it.
 - Never changes the traffic light. Green, yellow and red keep meaning working, needs input, and
   finished; a security finding is shown with a shield instead.
 - Never terminates a process, edits a configuration file, or installs software.

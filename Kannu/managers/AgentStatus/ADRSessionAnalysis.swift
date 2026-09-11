@@ -94,9 +94,11 @@ struct ADRSessionAnalysis: Codable, Equatable, Identifiable {
 
     /// A malicious verdict becomes a finding — high when the reasoning agent is confident
     /// (ADR's own triage threshold), medium otherwise. A clean verdict is a record, not a finding.
+    static let rulePrefix = "detection_"
+
     func finding(existingFirstSeen: Date? = nil) -> AgentSecurityFinding? {
         guard isMalicious else { return nil }
-        let rule = "detection_" + (tactic ?? "malicious_session")
+        let rule = Self.rulePrefix + (tactic ?? "malicious_session")
         var evidence: [String] = [String(format: "confidence %.2f", confidence)]
         if let threat = threatMessages, let total = totalMessages { evidence.append("\(threat) of \(total) messages flagged") }
         if let model = modelUsed, !model.isEmpty { evidence.append("model \(model)") }

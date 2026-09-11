@@ -72,6 +72,17 @@ struct AgentSecurityFinding: Equatable, Hashable, Identifiable, Codable {
     let assetPath: String?
     let sessionID: String?
     let firstSeen: Date
+    /// Lines shown only inside Kannu — never pushed, never copied for an agent (the decoded
+    /// hidden text is one). Empty by default, so a rebuild that forgets it can only hide a line,
+    /// never leak one: everything that leaves Kannu reads `evidence`.
+    var kannuOnlyEvidence: [String] = []
+
+    /// What Kannu itself shows: Kannu-only lines first, then the evidence, without repeats.
+    var displayedEvidence: [String] {
+        var lines: [String] = []
+        for line in kannuOnlyEvidence + evidence where !lines.contains(line) { lines.append(line) }
+        return lines
+    }
 
     /// `subject` is what the finding is about (an asset id, a session id, a config path);
     /// `evidence` is the proof list. Same inputs, same id — across scans and app launches.
@@ -141,8 +152,13 @@ extension AgentSecurityFinding {
         return sessions
             .filter { $0.isVisible && $0.isUnattended }
             .map { session in
-                let evidence = ["\(AgentSessionStatus.providerLabel(for: session.provider)) session \(session.conversationID.prefix(8)) started without permission prompts"]
-                let id = stableID(source: .kannu, rule: "unattended_execution", subject: session.conversationID, evidence: evidence)
+                let provider = AgentSessionStatus.providerLabel(for: session.provider)
+                // The id keeps its original material, so acknowledgements hold; the shown line no
+                // longer carries a session id (the summary names the chat, and nothing that can
+                // lead to a transcript goes into a copied request).
+                let idEvidence = ["\(provider) session \(session.conversationID.prefix(8)) started without permission prompts"]
+                let evidence = [String(localized: "\(provider) session started without permission prompts")]
+                let id = stableID(source: .kannu, rule: "unattended_execution", subject: session.conversationID, evidence: idEvidence)
                 return AgentSecurityFinding(
                     id: id,
                     source: .kannu,
