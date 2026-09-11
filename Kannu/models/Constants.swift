@@ -1173,6 +1173,13 @@ extension Defaults.Keys {
     static let enableClaudeProvider = Key<Bool>("enableClaudeProvider", default: false)
     static let enableCodexProvider = Key<Bool>("enableCodexProvider", default: false)
     static let enableCursorProvider = Key<Bool>("enableCursorProvider", default: false)
+    /// Usage forecast and alerts. The gauge beside the lights is local; a background quota check
+    /// sends requests and a push sends data out, so both are opt-in.
+    static let showUsageLimitCue = Key<Bool>("showUsageLimitCue", default: true)
+    static let checkQuotaInBackground = Key<Bool>("checkQuotaInBackground", default: false)
+    static let pushUsageLimitAlerts = Key<Bool>("pushUsageLimitAlerts", default: false)
+    static let usageForecastSamples = Key<[String: [UsageForecast.Sample]]>("usageForecastSamples", default: [:])
+    static let usageAlertPushedKeys = Key<[String]>("usageAlertPushedKeys", default: [])
     static let enableAntigravityProvider = Key<Bool>("enableAntigravityProvider", default: false)
     static let llmProviderDefaultsConfigured = Key<Bool>("llmProviderDefaultsConfigured", default: false)
     static let statsStopWhenNotchCloses = Key<Bool>("statsStopWhenNotchCloses", default: true)

@@ -75,6 +75,30 @@ struct UsageSettings: View {
                         .foregroundStyle(.secondary)
                         .font(.caption)
                 }
+
+                Section {
+                    Defaults.Toggle(key: .showUsageLimitCue) {
+                        Text("Show a gauge beside the lights near a limit")
+                    }
+                    .settingsHighlight(id: highlightID("Show a gauge beside the lights near a limit"))
+                    Text("When any usage limit passes 95%, a small gauge appears next to the traffic light. It goes away when the limit resets.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Defaults.Toggle(key: .checkQuotaInBackground) {
+                        Text("Check Codex and Cursor limits in the background")
+                    }
+                    .settingsHighlight(id: highlightID("Check Codex and Cursor limits in the background"))
+                    Text("While a Codex or Cursor agent is working, Kannu asks for your usage every 5 minutes — the same request the Usage tab makes when it is open. Off: they update only while the Usage tab is open.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text("Alerts")
+                } footer: {
+                    Text("Each bar also says where it is heading at your current pace, once Kannu has seen it for a little while. A phone push for a nearly full limit is under Agents › Mobile notifications.")
+                        .multilineTextAlignment(.trailing)
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                }
             }
         }
         .formStyle(.grouped)

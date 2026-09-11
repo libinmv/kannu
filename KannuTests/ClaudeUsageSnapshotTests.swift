@@ -351,4 +351,30 @@ final class ClaudeUsageSnapshotTests: XCTestCase {
         XCTAssertEqual(ClaudeUsageSnapshot.hint(hooksInstalled: true, statusline: nil, cache: lapsed, now: now), .signInNeeded)
         XCTAssertEqual(ClaudeUsageSnapshot.hint(hooksInstalled: true, statusline: nil, cache: nil, now: now), .signInNeeded)
     }
+
+    // MARK: - Statusline fast path
+
+    func testStatuslineWriteIsReadWithinAMinute() {
+        let written = now.addingTimeInterval(-5)
+        XCTAssertTrue(ClaudeUsageSnapshot.shouldReadStatusline(now: now, modifiedAt: written, lastSeenModifiedAt: nil, lastRead: nil))
+        XCTAssertTrue(ClaudeUsageSnapshot.shouldReadStatusline(now: now, modifiedAt: written,
+                                                               lastSeenModifiedAt: now.addingTimeInterval(-300),
+                                                               lastRead: now.addingTimeInterval(-61)))
+    }
+
+    func testUnchangedStatuslineIsNotReRead() {
+        let written = now.addingTimeInterval(-300)
+        XCTAssertFalse(ClaudeUsageSnapshot.shouldReadStatusline(now: now, modifiedAt: written, lastSeenModifiedAt: written,
+                                                                lastRead: now.addingTimeInterval(-3600)))
+        XCTAssertFalse(ClaudeUsageSnapshot.shouldReadStatusline(now: now, modifiedAt: nil, lastSeenModifiedAt: nil, lastRead: nil),
+                       "no file, nothing to read")
+    }
+
+    func testStatuslineReadsAreThrottled() {
+        XCTAssertFalse(ClaudeUsageSnapshot.shouldReadStatusline(now: now, modifiedAt: now,
+                                                                lastSeenModifiedAt: now.addingTimeInterval(-30),
+                                                                lastRead: now.addingTimeInterval(-30)),
+                       "a busy session rewrites the file on every API call; once a minute is enough")
+    }
 }
+

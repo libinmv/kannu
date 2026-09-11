@@ -66,6 +66,17 @@ struct ClaudeUsageSnapshot: Equatable {
         return now.timeIntervalSince(lastRead) >= refreshInterval
     }
 
+    /// The statusline file is rewritten on every API call a Claude session makes, so between the
+    /// full reads above it is re-read alone — at most once a minute, and only when it changed. That
+    /// is what lets the usage forecast see the pace instead of one reading every ten minutes.
+    static let statuslineReadInterval: TimeInterval = 60
+
+    static func shouldReadStatusline(now: Date, modifiedAt: Date?, lastSeenModifiedAt: Date?, lastRead: Date?) -> Bool {
+        guard let modifiedAt, modifiedAt != lastSeenModifiedAt else { return false }
+        guard let lastRead else { return true }
+        return now.timeIntervalSince(lastRead) >= statuslineReadInterval
+    }
+
     enum Freshness: Equatable {
         case fresh
         /// Stale but still meaningful — show dimmed with relative age.

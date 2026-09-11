@@ -64,8 +64,23 @@ struct SecurityShieldGlyph: View {
     }
 }
 
+/// A usage limit is almost reached. White like the shield — never a light colour — and it only
+/// rides along when the lights are already on screen; it never puts the island up by itself.
+struct UsageGaugeGlyph: View {
+    var size: CGFloat = 9
+
+    var body: some View {
+        Image(systemName: "gauge.with.dots.needle.100percent")
+            .font(.system(size: size, weight: .semibold))
+            .foregroundStyle(Color.white.opacity(0.9))
+            .accessibilityLabel(String(localized: "A usage limit is almost reached"))
+    }
+}
+
 struct AgentTrafficLightIndicator: View {
     @ObservedObject var agentStatusMonitor = CursorAgentStatusMonitor.shared
+    @ObservedObject private var usageAlerts = UsageAlertManager.shared
+    @Default(.showUsageLimitCue) private var showUsageLimitCue
     @ObservedObject private var findingsStore = SecurityFindingsStore.shared
     @Default(.showAgentStoppedIndicator) private var showAgentStoppedIndicator
     @Default(.agentTrafficLightStyle) private var trafficLightStyle
@@ -144,6 +159,9 @@ struct AgentTrafficLightIndicator: View {
                 .accessibilityLabel(accessibilityStateDescription)
                 if showsSecurityGlyph {
                     SecurityShieldGlyph()
+                }
+                if showUsageLimitCue && !usageAlerts.nearLimit.isEmpty {
+                    UsageGaugeGlyph()
                 }
             }
         }

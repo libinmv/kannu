@@ -52,6 +52,12 @@ final class CursorAgentStatusMonitor: ObservableObject {
     private var cachedTranscriptAnalysisAt: Date?
     private var lastActivityPulseAt: Date?
     private var lastClaudeUsageReadAt: Date?
+    /// The statusline file's own cadence (see `ClaudeUsageSnapshot.shouldReadStatusline`), and the
+    /// other two sources as last read, merged with it between full reads.
+    private var lastStatuslineReadAt: Date?
+    private var lastStatuslineModifiedAt: Date?
+    private var claudeUsageCache: ClaudeUsageSnapshot?
+    private var claudeUsageDesktop: ClaudeUsageSnapshot?
     /// Chats that went red and then ended, kept on the list for a while (see
     /// `AgentTrafficLightMapper.retainEndedSessions`).
     private var endedRetention: [String: AgentTrafficLightMapper.RetainedEndedSession] = [:]
@@ -358,21 +364,46 @@ final class CursorAgentStatusMonitor: ObservableObject {
     /// history is the fallback for the case the hook cannot cover — a user who runs Claude only in
     /// the desktop app, where the statusline command never fires.
     private func refreshClaudeUsage(now: Date) {
-        guard ClaudeUsageSnapshot.shouldRefresh(
+        let statuslineURL = AgentHookInstaller.statusDirectory.appendingPathComponent(AgentHookInstaller.usageFileName)
+        let statuslineModifiedAt = (try? statuslineURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        if ClaudeUsageSnapshot.shouldRefresh(
             now: now,
             lastRead: lastClaudeUsageReadAt,
             state: trafficLightState,
             hasSnapshot: claudeUsage != nil
+        ) {
+            lastClaudeUsageReadAt = now
+            lastStatuslineReadAt = now
+            lastStatuslineModifiedAt = statuslineModifiedAt
+            apply(Self.loadClaudeUsageSnapshot(now: now))
+            return
+        }
+        // Between full reads: the statusline file alone, merged with the other sources as they
+        // were last read (Claude's cache in ~/.claude.json is large; it stays on the slow cadence).
+        guard ClaudeUsageSnapshot.shouldReadStatusline(
+            now: now,
+            modifiedAt: statuslineModifiedAt,
+            lastSeenModifiedAt: lastStatuslineModifiedAt,
+            lastRead: lastStatuslineReadAt
         ) else { return }
-        lastClaudeUsageReadAt = now
+        lastStatuslineReadAt = now
+        lastStatuslineModifiedAt = statuslineModifiedAt
+        let statusline = ClaudeUsageSnapshot.load(from: statuslineURL)
+        apply(Self.mergeClaudeUsage(statusline: statusline, cache: claudeUsageCache, desktop: claudeUsageDesktop, now: now))
+    }
 
-        let (snapshot, hint) = Self.loadClaudeUsageSnapshot(now: now)
-        if snapshot != claudeUsage {
-            claudeUsage = snapshot
-        }
-        if hint != claudeUsageHint {
-            claudeUsageHint = hint
-        }
+    private struct ClaudeUsageLoad {
+        let snapshot: ClaudeUsageSnapshot?
+        let hint: ClaudeUsageSnapshot.Hint?
+        let cache: ClaudeUsageSnapshot?
+        let desktop: ClaudeUsageSnapshot?
+    }
+
+    private func apply(_ load: ClaudeUsageLoad) {
+        claudeUsageCache = load.cache
+        claudeUsageDesktop = load.desktop
+        if load.snapshot != claudeUsage { claudeUsage = load.snapshot }
+        if load.hint != claudeUsageHint { claudeUsageHint = load.hint }
     }
 
     /// The single source list for Claude usage, best first, merged one window key at a time. The
@@ -382,13 +413,18 @@ final class CursorAgentStatusMonitor: ObservableObject {
     /// whole snapshots) means one rolled-over five-hour window in the cache no longer takes the
     /// still-live per-model bar down with it. One definition, so a fourth source can never be
     /// added to one caller and forgotten in the other.
-    private static func loadClaudeUsageSnapshot(now: Date) -> (snapshot: ClaudeUsageSnapshot?, hint: ClaudeUsageSnapshot.Hint?) {
+    private static func loadClaudeUsageSnapshot(now: Date) -> ClaudeUsageLoad {
         let url = AgentHookInstaller.statusDirectory
             .appendingPathComponent(AgentHookInstaller.usageFileName)
         // All three are local reads on a 600 s cadence, so reading every one is cheap.
         let statusline = ClaudeUsageSnapshot.load(from: url)
-        let cache = ClaudeCachedUsage.load()
-        let sources = [statusline, cache, ClaudeDesktopUsageHistory.load(now: now)]
+        return mergeClaudeUsage(statusline: statusline, cache: ClaudeCachedUsage.load(),
+                                desktop: ClaudeDesktopUsageHistory.load(now: now), now: now)
+    }
+
+    private static func mergeClaudeUsage(statusline: ClaudeUsageSnapshot?, cache: ClaudeUsageSnapshot?,
+                                         desktop: ClaudeUsageSnapshot?, now: Date) -> ClaudeUsageLoad {
+        let sources = [statusline, cache, desktop]
         // Nothing live anywhere: keep the best parsed-but-lapsed snapshot rather than nil, so
         // shouldRefresh keeps its cadence gate (a nil snapshot re-reads on every rescan tick).
         let snapshot = ClaudeUsageSnapshot.merged(sources, now: now) ?? sources.compactMap { $0 }.first
@@ -398,7 +434,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
             cache: cache,
             now: now
         )
-        return (snapshot, hint)
+        return ClaudeUsageLoad(snapshot: snapshot, hint: hint, cache: cache, desktop: desktop)
     }
 
     /// Re-reads the usage sources immediately, bypassing the cadence gate. For the manual button,
@@ -406,9 +442,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
     private func reloadClaudeUsageNow() {
         let now = Date()
         lastClaudeUsageReadAt = now
-        let (snapshot, hint) = Self.loadClaudeUsageSnapshot(now: now)
-        if snapshot != claudeUsage { claudeUsage = snapshot }
-        if hint != claudeUsageHint { claudeUsageHint = hint }
+        lastStatuslineReadAt = now
+        apply(Self.loadClaudeUsageSnapshot(now: now))
     }
 
     /// Triggers Claude Code's own usage fetch, which writes `cachedUsageUtilization` to

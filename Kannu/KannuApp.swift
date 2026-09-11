@@ -902,6 +902,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             CursorAgentStatusMonitor.shared.start()
+            UsageAlertManager.shared.start()
             AgentStatusNotificationBridge.shared.start()
             SecurityFindingsStore.shared.start()
         }
@@ -909,10 +910,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in
                 if change.newValue {
                     CursorAgentStatusMonitor.shared.start()
+                    UsageAlertManager.shared.start()
                     AgentStatusNotificationBridge.shared.start()
                     SecurityFindingsStore.shared.start()
                 } else {
                     CursorAgentStatusMonitor.shared.stop()
+                    UsageAlertManager.shared.stop()
                     AgentStatusNotificationBridge.shared.stop()
                     SecurityFindingsStore.shared.stop()
                 }

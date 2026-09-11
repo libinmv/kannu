@@ -9,6 +9,7 @@ struct NotchAgentStatusView: View {
     @ObservedObject private var skinManager = NotchSkinManager.shared
     @ObservedObject private var caffeinate = CaffeinateManager.shared
     @ObservedObject private var findingsStore = SecurityFindingsStore.shared
+    @ObservedObject private var usageAlerts = UsageAlertManager.shared
     @ObservedObject private var adrConnection = ADRConnection.shared
     @Default(.adrDetectionEnabled) private var detectionEnabled
     @Default(.adrDetectionConfirmEachRun) private var detectionConfirmEachRun
@@ -570,11 +571,22 @@ struct NotchAgentStatusView: View {
             (
                 Text(session.displayState.displayName)
                     .foregroundStyle(stateColor(session.displayState))
-                + Text(session.runOutcomeSuffix)
+                + Text(session.runOutcomeSuffix + resumeSuffix(for: session))
                     .foregroundStyle(.secondary)
             )
             .font(font)
         }
+    }
+
+    /// " · resumes 3:40 PM" on a chat that stopped on a rate limit — only when the matching usage
+    /// window really is full, since a 429 can also be short-term throttling.
+    private func resumeSuffix(for session: AgentSessionStatus) -> String {
+        guard session.displayState == .stopped || session.displayState == .inactive else { return "" }
+        let now = Date()
+        guard let resume = UsageAlertPolicy.resumeDate(provider: session.provider, runError: session.runError,
+                                                       rawState: session.rawState, readings: usageAlerts.readings, now: now)
+        else { return "" }
+        return " · " + String(localized: "resumes \(UsageForecast.clock(resume, now: now))")
     }
 
     private func formattedElapsed(since start: Date, now: Date) -> String {

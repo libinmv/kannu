@@ -4,6 +4,33 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - Usage forecast, a gauge near the limit, "resumes at" on rate-limited stops
+- **Developer label:** Usage forecast + alerts
+- **Agent label:** Forecast each usage window from Kannu's own readings, cue a nearly full limit beside the lights, say when a rate-limited chat can resume, and push a nearly full limit if the user opts in
+- **Changes:**
+  - `UsageForecast` (logic target): providers report only "percent now", so Kannu keeps its own
+    readings per window (throttled to one per 2 min, restarted when the window rolls over or its reset
+    moves) and fits a least-squares pace over 90 min for the 5-hour window, 24 h for weekly and billing
+    windows. Outlooks: steady, lasts until reset (with the projected percent), hits the limit at a
+    time, at the limit. The Usage tab shows a line under a bar only when it matters ("At this pace:
+    full by 3:40 PM", "about 88% at reset", "Limit reached — resets …"). Samples persist for 8 days.
+  - `UsageAlertPolicy`: near limit = a live window at 95 %+ or marked critical; one push key per window
+    instance (id + reset); "resumes at" only when the matching window really is full, because a 429 can
+    also be short-term throttling.
+  - `UsageAlertManager` gathers readings from the Claude sources the monitor already reads and the
+    Codex/Cursor results of the Usage tab. "Check Codex and Cursor limits in the background" (off by
+    default) makes the same request every 5 min, only while such an agent is working and only after a
+    foreground read succeeded this launch, so it can never raise a credential prompt out of the blue.
+  - Fresher Claude numbers: between the 10-minute full reads, the statusline file alone is re-read when
+    it changed (at most once a minute) and merged with the other two sources as last read.
+  - A white gauge beside the lights when any limit passes 95 % (on by default, local); it rides along
+    with the lights and never puts the island up by itself; it clears at the reset. A stopped chat
+    that hit a full window reads "Stopped · rate limited (429) · resumes 3:40 PM".
+  - "Push when a usage limit is almost reached" (off): one push per window cycle with the provider,
+    the window and the reset — no chat names. The bridge's provider switch is now one `send`.
+  - Tests: `UsageForecastTests` (outlooks, admission, captions, near-limit, push keys, resumes-at,
+    Claude readings) and three statusline fast-path cases.
+
 ### 2026-09-11 - Hidden text in what agents read and write, checked locally in the hook
 - **Developer label:** The one inline thing worth adding cheaply, no model: the deterministic hidden-Unicode (ASCII-smuggling) check on tool results via hooks — local, instant, no data leaves. Say if you want that. add this too
 - **Agent label:** Hook v34 scans every hook payload for hidden Unicode and records sightings as Kannu-native security findings; telling the agent is opt-in

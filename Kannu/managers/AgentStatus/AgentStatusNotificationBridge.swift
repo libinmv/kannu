@@ -16,6 +16,8 @@ final class AgentStatusNotificationBridge: ObservableObject {
     /// Findings already pushed, persisted and pruned to what is still open so a relaunch stays
     /// quiet and a finding that returns after vanishing is pushed once more.
     private var pushedFindingIDs: Set<String> = Set(Defaults[.adrPushedFindingIDs])
+    /// Usage windows already pushed, one key per window instance (see `UsageAlertPolicy.pushKey`).
+    private var pushedUsageKeys: Set<String> = Set(Defaults[.usageAlertPushedKeys])
 
     private init() {}
 
@@ -41,6 +43,10 @@ final class AgentStatusNotificationBridge: ObservableObject {
         store.$findings.map { _ in () }
             .merge(with: store.$acknowledgedIDs.map { _ in () }, store.$snoozes.map { _ in () })
             .sink { [weak self] in self?.handleFindingsChange() }
+            .store(in: &cancellables)
+
+        UsageAlertManager.shared.$nearLimit
+            .sink { [weak self] near in self?.handleUsageAlerts(near) }
             .store(in: &cancellables)
     }
 
@@ -77,6 +83,18 @@ final class AgentStatusNotificationBridge: ObservableObject {
             priority: finding.severity == .high ? 5 : 4,
             tag: "security-finding"
         )
+        await send(payload, webhookState: "security_finding", extra: [
+            "rule": finding.rule,
+            "severity": finding.severity == .high ? "high" : "medium",
+            // Not "source": the base body's "source": "Kannu" wins that merge and dropped it.
+            "finding_source": finding.source.rawValue,
+            "asset": finding.assetName ?? "",
+            "summary": finding.summary
+        ])
+    }
+
+    /// One delivery through whichever provider the user configured; records the outcome.
+    private func send(_ payload: NotificationPayload, webhookState: String, extra: [String: Any]) async {
         do {
             switch Defaults[.agentStatusNotificationProvider] {
             case .ntfy:
@@ -84,20 +102,43 @@ final class AgentStatusNotificationBridge: ObservableObject {
             case .pushover:
                 try await sendViaPushover(payload: payload)
             case .webhook:
-                try await sendViaWebhook(payload: payload, stateKey: "security_finding", extra: [
-                    "rule": finding.rule,
-                    "severity": finding.severity == .high ? "high" : "medium",
-                    // Not "source": the base body's "source": "Kannu" wins that merge and dropped it.
-                    "finding_source": finding.source.rawValue,
-                    "asset": finding.assetName ?? "",
-                    "summary": finding.summary
-                ])
+                try await sendViaWebhook(payload: payload, stateKey: webhookState, extra: extra)
             }
             lastError = nil
             lastSentAt = .now
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    // MARK: - Usage limits
+
+    /// Once per window instance, pruned to windows still near their limit so the next cycle of
+    /// the same window can push again. Provider, window and reset only — no chat names.
+    private func handleUsageAlerts(_ near: [UsageWindowReading]) {
+        pushedUsageKeys.formIntersection(Set(near.map(UsageAlertPolicy.pushKey)))
+        var fresh: [UsageWindowReading] = []
+        if Defaults[.enableAgentStatusMobileNotifications], Defaults[.pushUsageLimitAlerts] {
+            fresh = near.filter { !pushedUsageKeys.contains(UsageAlertPolicy.pushKey($0)) }
+            pushedUsageKeys.formUnion(fresh.map(UsageAlertPolicy.pushKey))
+        }
+        let persisted = pushedUsageKeys.sorted()
+        if persisted != Defaults[.usageAlertPushedKeys] { Defaults[.usageAlertPushedKeys] = persisted }
+        guard !fresh.isEmpty else { return }
+        Task { [weak self] in
+            for reading in fresh { await self?.deliverUsageAlert(reading) }
+        }
+    }
+
+    private func deliverUsageAlert(_ reading: UsageWindowReading) async {
+        let text = UsageAlertPolicy.pushText(reading, now: Date())
+        let payload = NotificationPayload(title: text.title, body: text.body, priority: 4, tag: "usage-limit")
+        await send(payload, webhookState: "usage_limit", extra: [
+            "provider": reading.provider,
+            "window": reading.key,
+            "percent": Int(reading.percent.rounded()),
+            "resets_at": reading.resetsAt.map { ISO8601DateFormatter().string(from: $0) } ?? ""
+        ])
     }
 
     func sendTestNotification() async {
