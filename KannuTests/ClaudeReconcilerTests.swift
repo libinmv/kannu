@@ -139,6 +139,44 @@ final class ClaudeReconcilerTests: XCTestCase {
         XCTAssertEqual(promoted[0].desktopSessionID, "local_x", "promote arm")
     }
 
+    func testTheTurnCarriesAcrossEveryReconcilerArm() {
+        // Entry 7's field set grows: the hook's turn (v39) — hook-only, like the terminal.
+        let turn = HookTurn(startedAt: Date(timeIntervalSince1970: 400), toolCalls: 12,
+                            transcriptPath: "/Users/u/.claude/projects/p/c.jsonl", transcriptOffset: 100)
+        var hook = session(rawState: "executing", display: .executing)
+        hook.turn = turn
+        let demoted = reconcile(hooks: [hook], passive: [session(rawState: "stopped", display: .stopped,
+                                                                 updatedAt: Date(timeIntervalSince1970: 1_500))])
+        XCTAssertEqual(demoted[0].displayState, .stopped)
+        XCTAssertEqual(demoted[0].turn, turn, "demote arm")
+        XCTAssertEqual(reconcile(hooks: [hook], passive: [session(rawState: "executing", display: .executing)])[0].turn,
+                       turn, "pass-through arm")
+        var aged = session(rawState: "executing", display: .inactive, updatedAt: Date(timeIntervalSince1970: 500), visible: false)
+        aged.turn = turn
+        let promoted = reconcile(hooks: [aged], passive: [session(rawState: "executing", display: .executing,
+                                                                  updatedAt: Date(timeIntervalSince1970: 1_900))])
+        XCTAssertEqual(promoted[0].displayState, .executing)
+        XCTAssertEqual(promoted[0].turn, turn, "promote arm")
+    }
+
+    func testAKeptSilentChatShowsWhatThePassiveSideShows() {
+        // hookFileOutlivesStaleCap keeps a Claude file mid-workflow past the 30-minute cap. Its
+        // light must be exactly what the passive session alone would show; only the turn is added.
+        let passive = session(chatName: "Workflow", rawState: "executing", display: .executing,
+                              updatedAt: Date(timeIntervalSince1970: 1_900), hostPID: 9)
+        let alone = reconcile(hooks: [], passive: [passive])[0]
+        var kept = session(rawState: "executing", display: .inactive, updatedAt: Date(timeIntervalSince1970: 100), visible: false)
+        kept.turn = HookTurn(startedAt: Date(timeIntervalSince1970: 50), toolCalls: 3)
+        let withFile = reconcile(hooks: [kept], passive: [passive])[0]
+        XCTAssertEqual(withFile.displayState, alone.displayState)
+        XCTAssertEqual(withFile.isVisible, alone.isVisible)
+        XCTAssertEqual(withFile.chatName, "Workflow")
+        XCTAssertEqual(withFile.turn?.toolCalls, 3, "and the request's turn survives")
+        let finished = session(rawState: "stopped", display: .inactive, updatedAt: Date(timeIntervalSince1970: 1_000), visible: false)
+        XCTAssertFalse(reconcile(hooks: [kept], passive: [finished])[0].isVisible,
+                       "a finished passive card past its window is invisible either way")
+    }
+
     func testRunVerdictSeamPrefersTheHookThenTheMoreSpecificReason() {
         // Both sides describe the same stop: the more specific reason wins.
         let hookFailed = session(rawState: "stopped", display: .stopped, runError: .failed)

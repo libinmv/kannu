@@ -112,6 +112,10 @@ struct AgentSessionStatus: Identifiable, Equatable {
     /// used by click-through when no process id is known. Carried by `carryingExtras` as
     /// `self ?? source`.
     var terminal: TerminalLocator? = nil
+    /// This request as the hook recorded it (v39): start, end, tool calls, Claude transcript offset.
+    /// Hook-only, like `terminal`: carried by `carryingExtras` as `self ?? source`; the subagent fold
+    /// sets it explicitly so a parent never adopts a subagent's turn.
+    var turn: HookTurn? = nil
 
     /// True when the hook that produced this session reported work in progress, regardless of
     /// what the staleness ladder later concluded about its age.
@@ -539,6 +543,42 @@ enum AgentTrafficLightMapper {
         provider.lowercased() == "claude" && processAlive && tail == .toolInFlight
     }
 
+    /// Disk rule for a silent Claude hook file past the stale cap (yellow has its own rule above).
+    /// A chat is silent for a whole workflow or a long Bash call — its last event was the PreToolUse
+    /// that started it — and deleting the file there lost the request's turn. It is kept while it
+    /// still reports work in progress and something proves the work is real: the process is alive,
+    /// or a subagent file written within the cap names it as its parent. A subagent's own file is
+    /// kept while its chat's turn is open and it belongs to that turn, so its tool calls stay in the
+    /// count. A stopped file is never kept. What the card shows is unchanged: an aged active file
+    /// is invisible on its own, and the reconciler promotes it only on live passive evidence.
+    static func hookFileOutlivesStaleCap(
+        provider: String,
+        rawState: String,
+        processAlive: Bool,
+        namedByFreshSubagent: Bool,
+        subagentOfOpenTurn: Bool
+    ) -> Bool {
+        guard provider.lowercased() == "claude" else { return false }
+        switch rawState.lowercased() {
+        case "executing", "thinking": return processAlive || namedByFreshSubagent || subagentOfOpenTurn
+        default: return false
+        }
+    }
+
+    /// Whether a new session list is news for the reveal (REGRESSIONS entry 10). The same list with
+    /// only turn metrics changed — a subagent's tool call folded into its chat's count — is not: it
+    /// publishes so the numbers move, but must not keep re-revealing the island while a workflow
+    /// runs. The chat's own hook writes still count (each moves `updatedAt`), as before.
+    static func pulseRelevantChange(from old: [AgentSessionStatus], to new: [AgentSessionStatus]) -> Bool {
+        guard old.count == new.count else { return true }
+        return zip(old, new).contains { lhs, rhs in
+            var lhs = lhs, rhs = rhs
+            lhs.turn = nil
+            rhs.turn = nil
+            return lhs != rhs
+        }
+    }
+
     /// Display rule: does this hook's awaiting_input keep its yellow past the 5-minute window?
     /// Yellow still originates from hooks only — evidence here can corroborate one, never claim
     /// one. Hook-only providers hold because nothing can corroborate or refute; a newer event or
@@ -782,7 +822,8 @@ extension AgentSessionStatus {
     }
 
     /// Copies the fields a memberwise reconstruction silently drops — the tool-error count, the
-    /// unattended flag, the run verdict, the Desktop chat locator. Every site that rebuilds a
+    /// unattended flag, the run verdict, the Desktop chat locator, the sightings, the terminal and
+    /// the hook's turn. Every site that rebuilds a
     /// session from another one must call this: docs/REGRESSIONS.md entry 7 is exactly this
     /// failure, for cwd and hostPID. Across a merge seam the larger count wins and the flag is an
     /// OR (both are monotone within a session); the verdict is `self` unless it has none — see
@@ -795,6 +836,7 @@ extension AgentSessionStatus {
         copy.desktopSessionID = copy.desktopSessionID ?? source.desktopSessionID
         copy.sightings = HookSightings.union(copy.sightings, source.sightings)
         copy.terminal = copy.terminal ?? source.terminal
+        copy.turn = copy.turn ?? source.turn
         return copy
     }
 }

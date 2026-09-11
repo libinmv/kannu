@@ -119,6 +119,48 @@ final class SubagentFoldTests: XCTestCase {
         }
     }
 
+    // MARK: - v39: the turn is the parent's, with its subagents' tool calls
+
+    private func turn(_ start: TimeInterval, calls: Int, ended: TimeInterval? = nil) -> HookTurn {
+        HookTurn(startedAt: t0.addingTimeInterval(start), endedAt: ended.map { t0.addingTimeInterval($0) }, toolCalls: calls,
+                 transcriptPath: "/Users/u/.claude/projects/p/parent.jsonl", transcriptOffset: 10)
+    }
+
+    func testSubagentToolCallsAddToTheOpenTurn() {
+        var parent = session("parent", "executing", .executing, name: "Chat")
+        parent.turn = turn(0, calls: 5)
+        var subA = session("subA", "thinking", .thinking, at: 2)
+        subA.turn = turn(1, calls: 7)
+        var subB = session("subB", "awaiting_input", .awaitingInput, at: 3)
+        subB.turn = turn(2, calls: 1)
+        let merged = fold([parent, subA, subB], ["claude|subA": "parent", "claude|subB": "parent"]).sessions[0]
+        XCTAssertEqual(merged.displayState, .awaitingInput, "the winning arm")
+        XCTAssertEqual(merged.turn?.toolCalls, 13)
+        XCTAssertEqual(merged.turn?.startedAt, parent.turn?.startedAt, "the request is the parent's")
+        XCTAssertEqual(merged.turn?.transcriptPath, parent.turn?.transcriptPath)
+    }
+
+    func testALeftoverSubagentAddsNothing() {
+        var parent = session("parent", "stopped", .stopped)
+        parent.turn = turn(100, calls: 2, ended: 200)
+        var sub = session("sub", "thinking", .thinking, at: 50)
+        sub.turn = turn(10, calls: 40)
+        let merged = fold([parent, sub], ["claude|sub": "parent"]).sessions[0]
+        XCTAssertEqual(merged.turn?.toolCalls, 2, "a subagent from an earlier request is not this one's")
+        XCTAssertEqual(merged.turn?.endedAt, parent.turn?.endedAt)
+    }
+
+    func testAStandInHasNoTurnAndATurnlessParentNeverAdoptsOne() {
+        var sub = session("sub", "executing", .executing)
+        sub.turn = turn(0, calls: 3)
+        XCTAssertNil(fold([sub], ["claude|sub": "parent"]).sessions[0].turn, "a stand-in has no request of its own")
+        let parent = session("parent", "executing", .executing)
+        for order in [[parent, sub], [sub, parent]] {
+            XCTAssertNil(fold(order, ["claude|sub": "parent"]).sessions.first { $0.conversationID == "parent" }?.turn,
+                         "self ?? source would have handed the parent the subagent's turn")
+        }
+    }
+
     func testConversationIDsAreValidated() {
         XCTAssertTrue(M.isHookConversationID("a493e20e-4ef1-487b-98c1-98917240f969"))
         XCTAssertTrue(M.isHookConversationID("a98f5cee53fa799c7"))

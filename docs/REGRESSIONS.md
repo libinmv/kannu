@@ -304,6 +304,16 @@ signals (hook `ended_on_error`, the transcript's `isApiErrorMessage`, Warp `Fail
 Guards: `ClaudeReconcilerTests.testRunVerdictSeamPrefersTheHookThenTheMoreSpecificReason`,
 `RunErrorTests`, and the hook-script cases that pin a recovered or trailing tool failure as clean.
 
+**2026-09-12 addendum — `turn`.** The hook's turn (v39: start, end, tool calls, Claude transcript
+offset) is hook-only and rides `carryingExtras` as `self ?? source`. Two places must NOT take it
+from the seam: the subagent fold (`self ?? source` would hand a parent with no turn its subagent's;
+the fold sets `HookTurn.folding(sub, into: parent)` explicitly on both arms and a stand-in gets
+none) and Cursor's `collapseSubagentSessions` (a rolled-up subagent candidate carries no turn, so
+the parent conversation's own wins whichever arrives first). Guards:
+`ClaudeReconcilerTests.testTheTurnCarriesAcrossEveryReconcilerArm`,
+`AgentTurnMetricsTests.testTheTurnRidesCarryingExtrasAsSelfThenSource`, the three v39
+`SubagentFoldTests`.
+
 ---
 
 ## 8. Never add a flag or env var to the usage spawn without proving a real fetch
@@ -385,6 +395,13 @@ code top to bottom; nothing at the call site says "coalesced".
 is the only source of the verdict and is pinned by `AgentActivityPulseLatchTests`. Keep the
 heartbeat emit last in `rescan()` — it reads the state `applyDisplay` just wrote — and keep
 exactly one consumer of the latch.
+
+**2026-09-12 addendum — turn metrics publish without a pulse.** Since v39 a subagent's tool call
+changes its chat's `turn.toolCalls`, so the session list changes on every subagent write (four
+workflow agents write every few seconds). The list still publishes, but `rescan()` bumps
+`activityPulse` only when `pulseRelevantChange` sees a difference with the turns cleared — or the
+island would never collapse while a workflow runs. The chat's own hook writes still pulse (each
+moves `updatedAt`), exactly as before. Guard: `RegressionGuardTests.testATurnOnlyChangeIsNoRevealPulse`.
 
 ---
 

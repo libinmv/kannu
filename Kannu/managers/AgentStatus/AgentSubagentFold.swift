@@ -32,7 +32,9 @@ extension AgentTrafficLightMapper {
     ///   reconciler name it from the parent's transcript and process.
     ///
     /// Identity, name, project and locators stay the parent's; extras (sightings, the unattended
-    /// flag) ride `carryingExtras` from both sides (docs/REGRESSIONS.md entry 7). Returns the folded
+    /// flag) ride `carryingExtras` from both sides (docs/REGRESSIONS.md entry 7). The turn is the
+    /// parent's with the subagent's tool calls added (`HookTurn.folding`), set explicitly: `self ??
+    /// source` would hand a parent without a turn the subagent's. Returns the folded
     /// subagent conversation ids so retention does not bring a pre-v38 card back.
     static func foldSubagentHookSessions(_ sessions: [AgentSessionStatus],
                                          parentByKey: [String: String]) -> (sessions: [AgentSessionStatus], folded: Set<String>) {
@@ -56,7 +58,7 @@ extension AgentTrafficLightMapper {
             if let index = indexByKey[parentKey] {
                 out[index] = folding(sub, into: out[index])
             } else {
-                let standIn = AgentSessionStatus(
+                var standIn = AgentSessionStatus(
                     id: "\(sub.provider)-\(parentID)",
                     provider: sub.provider,
                     conversationID: parentID,
@@ -70,6 +72,8 @@ extension AgentTrafficLightMapper {
                     cwd: sub.cwd,
                     hostPID: nil
                 ).carryingExtras(from: sub)
+                // The request is the parent's; with no parent file there is none to show.
+                standIn.turn = nil
                 indexByKey[parentKey] = out.count
                 out.append(standIn)
             }
@@ -104,8 +108,13 @@ extension AgentTrafficLightMapper {
         let turnOpen = parent.hasActiveRawState || isAwaitingInputRawState(parent.rawState)
         let subWins = turnOpen && sub.isVisible
             && (!parent.isVisible || turnUrgency(sub.displayState) > turnUrgency(parent.displayState))
-        guard subWins else { return parent.carryingExtras(from: sub) }
-        return AgentSessionStatus(
+        let turn = HookTurn.folding(sub.turn, into: parent.turn)
+        guard subWins else {
+            var kept = parent.carryingExtras(from: sub)
+            kept.turn = turn
+            return kept
+        }
+        var won = AgentSessionStatus(
             id: parent.id,
             provider: parent.provider,
             conversationID: parent.conversationID,
@@ -119,5 +128,7 @@ extension AgentTrafficLightMapper {
             cwd: parent.cwd ?? sub.cwd,
             hostPID: parent.hostPID
         ).carryingExtras(from: parent).carryingExtras(from: sub)
+        won.turn = turn
+        return won
     }
 }

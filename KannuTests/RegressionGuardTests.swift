@@ -98,6 +98,46 @@ final class RegressionGuardTests: XCTestCase {
                        "hook-only providers keep the cap: it is the end of their yellow")
     }
 
+    /// A Claude chat is silent for a whole workflow or a long Bash call; deleting its file at the
+    /// 30-minute cap lost the request's turn (hook v39). Kept only while work is provably real;
+    /// never a stopped file, never another provider (their cap is the end of their card).
+    func testOnlyProvablyLiveClaudeWorkOutlivesTheStaleCap() {
+        typealias M = AgentTrafficLightMapper
+        func keeps(_ provider: String = "claude", _ raw: String = "executing", alive: Bool = false,
+                   named: Bool = false, subOfOpenTurn: Bool = false) -> Bool {
+            M.hookFileOutlivesStaleCap(provider: provider, rawState: raw, processAlive: alive,
+                                       namedByFreshSubagent: named, subagentOfOpenTurn: subOfOpenTurn)
+        }
+        XCTAssertTrue(keeps(alive: true))
+        XCTAssertTrue(keeps("claude", "thinking", alive: true))
+        XCTAssertTrue(keeps(named: true), "a subagent written within the cap proves the chat is working")
+        XCTAssertTrue(keeps("claude", "thinking", subOfOpenTurn: true), "a subagent of the open turn keeps its count")
+        XCTAssertFalse(keeps(), "no evidence: the cap applies")
+        XCTAssertFalse(keeps("claude", "stopped", alive: true, named: true, subOfOpenTurn: true),
+                       "a stopped file would shadow the passive card")
+        XCTAssertFalse(keeps("claude", "awaiting_input", alive: true), "yellow has its own rule (entry 12)")
+        XCTAssertFalse(keeps("cursor", "executing", alive: true, named: true))
+        XCTAssertFalse(keeps("codex", "executing", alive: true))
+    }
+
+    /// Entry 10: a subagent's tool call only moves its chat's count. That publishes the list but
+    /// must not bump the reveal pulse, or the island never collapses while a workflow runs.
+    func testATurnOnlyChangeIsNoRevealPulse() {
+        typealias M = AgentTrafficLightMapper
+        var before = AgentSessionStatus(id: "claude-c", provider: "claude", conversationID: "c", chatName: "Chat",
+                                        projectName: "kannu", rawState: "executing", displayState: .executing,
+                                        updatedAt: Date(timeIntervalSince1970: 1_000), isVisible: true, executionStartedAt: nil)
+        before.turn = HookTurn(startedAt: Date(timeIntervalSince1970: 900), toolCalls: 4)
+        var counted = before
+        counted.turn?.toolCalls = 5
+        XCTAssertNotEqual([before], [counted], "the list still publishes")
+        XCTAssertFalse(M.pulseRelevantChange(from: [before], to: [counted]))
+        let moved = before.withDisplayState(.awaitingInput, visible: true)
+        XCTAssertTrue(M.pulseRelevantChange(from: [before], to: [moved]))
+        XCTAssertTrue(M.pulseRelevantChange(from: [before], to: [before, counted]), "a card appearing is news")
+        XCTAssertFalse(M.pulseRelevantChange(from: [before], to: [before]))
+    }
+
     // MARK: - Chat-name sanitation
 
     /// A tool name must never survive as a chat title. Chat-name resolution has regressed

@@ -4,6 +4,30 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-12 - Every chat card carries its request; a silent workflow keeps its status file
+- **Developer label:** "the total run time of the agent has been about 2 hours now, but the recent chats show it as few mins" (picked: this request)
+- **Agent label:** Follow-up 30, C2 — the Swift half of the turn: parse, carry, fold subagent calls, keep the file through a long silence, and no reveal pulse per subagent call
+- **Changes:**
+  - New `AgentTurnMetrics.swift` (logic target): `HookTurn` (start, end, tool calls, transcript
+    path and offset) read from the status file and re-checked — start ≥ 10¹² ms and at most a
+    minute ahead, end not before the start, calls clamped, integers only (never a Bool or a
+    fraction), and a transcript followed only when it is canonical under `~/.claude/projects/`
+    (no `.`, `..` or empty components, printable ASCII, `.jsonl`, never a subagent's).
+  - `AgentSessionStatus.turn`, carried by `carryingExtras` as `self ?? source`. The subagent fold
+    adds a subagent's tool calls to its chat's turn only when it belongs to that turn, and sets the
+    turn explicitly so a parent never adopts a subagent's; a stand-in has none; Cursor's subagent
+    roll-up keeps the parent conversation's own.
+  - A Claude chat is silent for a whole workflow or a long Bash call; at 30 minutes Kannu deleted
+    its status file and the turn with it. `hookFileOutlivesStaleCap` keeps a Claude file that still
+    reports work while its process is alive or a recent subagent file names it, and a subagent's
+    file while its chat's turn is open. The light is unchanged: an aged file is invisible on its
+    own and only live passive evidence promotes it (pinned).
+  - `pulseRelevantChange`: a change in turn metrics alone publishes the list but no reveal pulse,
+    so subagent tool calls do not keep the island revealed during a workflow.
+  - Tests: `AgentTurnMetricsTests`, three v39 `SubagentFoldTests`, two `ClaudeReconcilerTests`
+    (the turn on every arm; a kept silent chat shows what the passive side shows), two
+    `RegressionGuardTests` (stale-cap table, pulse gate). REGRESSIONS entries 7 and 10 addenda.
+
 ### 2026-09-12 - Hook v39 records each request's start, end, tool calls and Claude transcript offset
 - **Developer label:** "the total run time of the agent has been about 2 hours now, but the recent chats show it as few mins maybe showing time of latest individual session , could we change it to the full time with format 1h 53m 54 s format and also maybe the no of tokens , and maybe no of tools calls" (picked: this request; tokens in and out; trailing column)
 - **Agent label:** Follow-up 30, C1 — the hook half: what Kannu needs on disk to show a request's run time, tool calls and tokens across relaunches

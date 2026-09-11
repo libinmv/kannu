@@ -364,9 +364,13 @@ final class CursorAgentStatusMonitor: ObservableObject {
 
         let sortedSessions = resolvedSessions.sorted { $0.updatedAt > $1.updatedAt }
         if sessions != sortedSessions {
+            // A subagent's tool call only moves its chat's count: publish, but no reveal pulse.
+            let pulse = AgentTrafficLightMapper.pulseRelevantChange(from: sessions, to: sortedSessions)
             sessions = sortedSessions
-            pulseLatch.noteTransition()
-            activityPulse &+= 1
+            if pulse {
+                pulseLatch.noteTransition()
+                activityPulse &+= 1
+            }
         }
         hadHookFilesThisCycle = !hookSessions.isEmpty || hadRecentHookFiles(staleMinutes: staleMinutes)
 
@@ -772,7 +776,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
 
             let candidate: AgentSessionStatus
             if let parentID {
-                candidate = AgentSessionStatus(
+                var rolled = AgentSessionStatus(
                     id: "cursor-\(parentID)",
                     provider: session.provider,
                     conversationID: parentID,
@@ -786,6 +790,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
                     cwd: session.cwd,
                     hostPID: session.hostPID
                 ).carryingExtras(from: session)
+                // The request is the parent conversation's own; never a subagent's turn.
+                rolled.turn = nil
+                candidate = rolled
             } else {
                 candidate = session
             }
@@ -975,7 +982,19 @@ final class CursorAgentStatusMonitor: ObservableObject {
 
         var results: [AgentSessionStatus] = []
         var subagentParentByKey: [String: String] = [:]
+        let homePath = FileManager.default.homeDirectoryForCurrentUser.path
 
+        struct HookFile {
+            let url: URL
+            let mtimeAtRead: Date?
+            let json: [String: Any]
+            let state: String
+            let tsMs: Int64
+            let provider: String
+            let conversationID: String
+            let turn: HookTurn?
+        }
+        var hookFiles: [HookFile] = []
         for file in files where file.pathExtension == "json" {
             // The agent hook replaces this file atomically (mkstemp + os.replace) and can
             // do so between our read and a delete decision below. Deleting is only safe if
@@ -989,16 +1008,6 @@ final class CursorAgentStatusMonitor: ObservableObject {
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let state = json["state"] as? String else { continue }
 
-            func removeIfUnchanged() {
-                // Under the script's lock so a hook mid-read-modify-write cannot have the file
-                // pulled out from under it (it would resurrect the card from its cached copy).
-                _ = Self.withStatusLock(in: directory) {
-                    let mtimeNow = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-                    guard mtimeNow == mtimeAtRead else { return }
-                    try? FileManager.default.removeItem(at: file)
-                }
-            }
-
             var tsMs = (json["ts"] as? NSNumber)?.int64Value ?? 0
             if tsMs <= 0,
                let mtime = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate {
@@ -1008,6 +1017,43 @@ final class CursorAgentStatusMonitor: ObservableObject {
             let provider = (json["provider"] as? String) ?? "unknown"
             let conversationID = file.deletingPathExtension().lastPathComponent
                 .replacingOccurrences(of: "\(provider)-", with: "")
+            hookFiles.append(HookFile(url: file, mtimeAtRead: mtimeAtRead, json: json, state: state, tsMs: tsMs,
+                                      provider: provider, conversationID: conversationID,
+                                      turn: HookTurn(hookFile: json, home: homePath, now: now)))
+        }
+
+        // For the stale-cap rule below: which chats a recently written subagent file names, and
+        // which chats have an open turn (since when).
+        var freshSubagentParentKeys = Set<String>()
+        var openTurnStartByKey: [String: Date] = [:]
+        for hookFile in hookFiles {
+            let providerKey = hookFile.provider.lowercased()
+            if let parent = hookFile.json["parent_id"] as? String, AgentTrafficLightMapper.isHookConversationID(parent),
+               nowMs - hookFile.tsMs <= staleMs {
+                freshSubagentParentKeys.insert(providerKey + "|" + parent)
+            }
+            if let turn = hookFile.turn, turn.endedAt == nil {
+                openTurnStartByKey[providerKey + "|" + hookFile.conversationID] = turn.startedAt
+            }
+        }
+
+        for hookFile in hookFiles {
+            let file = hookFile.url
+            let json = hookFile.json
+            let state = hookFile.state
+            let tsMs = hookFile.tsMs
+            let provider = hookFile.provider
+            let conversationID = hookFile.conversationID
+
+            func removeIfUnchanged() {
+                // Under the script's lock so a hook mid-read-modify-write cannot have the file
+                // pulled out from under it (it would resurrect the card from its cached copy).
+                _ = Self.withStatusLock(in: directory) {
+                    let mtimeNow = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+                    guard mtimeNow == hookFile.mtimeAtRead else { return }
+                    try? FileManager.default.removeItem(at: file)
+                }
+            }
 
             // A prompt nobody has answered keeps its yellow only while evidence says the wait
             // is still open (REGRESSIONS entry 12). `claudeTail` exists only for a Claude process
@@ -1023,11 +1069,27 @@ final class CursorAgentStatusMonitor: ObservableObject {
             // (the hook deletes it), a newer event, or the process dying — the next rescan then
             // finds no live tail and this guard deletes it. Every other provider keeps the cap;
             // for the hook-only ones it is the end of their yellow.
-            let outlivesCap = AgentTrafficLightMapper.isAwaitingInputRawState(state)
+            let awaitingOutlivesCap = AgentTrafficLightMapper.isAwaitingInputRawState(state)
                 && AgentTrafficLightMapper.awaitingInputOutlivesStaleCap(
                     provider: provider, processAlive: claudeTail != nil, tail: claudeTail
                 )
-            guard nowMs - tsMs <= staleMs || outlivesCap else {
+            // A silent chat mid-workflow (or mid long Bash call) keeps its file, and with it the
+            // request's turn; so do its subagents' files while that turn is open.
+            let providerKey = provider.lowercased()
+            let subagentOfOpenTurn: Bool = {
+                guard let parent = json["parent_id"] as? String,
+                      let parentStart = openTurnStartByKey[providerKey + "|" + parent],
+                      let ownStart = hookFile.turn?.startedAt else { return false }
+                return ownStart >= parentStart
+            }()
+            let activeOutlivesCap = AgentTrafficLightMapper.hookFileOutlivesStaleCap(
+                provider: provider,
+                rawState: state,
+                processAlive: claudeTail != nil,
+                namedByFreshSubagent: freshSubagentParentKeys.contains(providerKey + "|" + conversationID),
+                subagentOfOpenTurn: subagentOfOpenTurn
+            )
+            guard nowMs - tsMs <= staleMs || awaitingOutlivesCap || activeOutlivesCap else {
                 removeIfUnchanged()
                 continue
             }
@@ -1052,7 +1114,6 @@ final class CursorAgentStatusMonitor: ObservableObject {
             // brand-new session (no JSONL yet), a >30-min approval wait (quiet transcript),
             // or the per-scan session cap all destroyed hook files written seconds earlier.
             // Their freshness is already enforced by the staleMs check above.
-            let providerKey = provider.lowercased()
             if allowBackingDelete,
                providerKey == "cursor",
                !hasHookSessionBacking(
@@ -1101,6 +1162,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
             session.sightings = HookSightings(hookFile: json)
             // v35: the terminal the agent runs in (validated), for click-through to its tab.
             session.terminal = TerminalLocator(hookFile: json)
+            // v39: this request's start, end, tool calls and Claude transcript offset (validated).
+            session.turn = hookFile.turn
             // v38: a subagent's file names the chat it belongs to (validated: untrusted input).
             if let parent = json["parent_id"] as? String, parent != conversationID,
                AgentTrafficLightMapper.isHookConversationID(parent) {
