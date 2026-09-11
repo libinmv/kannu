@@ -2066,6 +2066,8 @@ private struct HUDAndOSDSettingsView: View {
                         }
                         .frame(width: 44, height: 44)
                 }
+                // The "Enable Custom OSD" search entry lands on the card that enables it.
+                .settingsHighlight(id: SettingsTab.hudAndOSD.highlightID(for: "Enable Custom OSD"))
 
                 HUDSelectionCard(
                     title: String(localized: "Vertical Bar"),
@@ -3600,7 +3602,8 @@ private struct LocalSendSettingsSection: View {
                 }
             }
             .pickerStyle(.menu)
-            
+            .settingsHighlight(id: highlightID("Device Picker Style"))
+
             if glassMode == .customLiquid {
                 Picker("Liquid Glass Variant", selection: $liquidGlassVariant) {
                     ForEach(LiquidGlassVariant.allCases) { variant in
@@ -7074,6 +7077,8 @@ struct SettingsPermissionCallout: View {
             Text(message)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
 
             HStack(spacing: 8) {
                 Button(requestButtonTitle) {

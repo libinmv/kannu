@@ -47,6 +47,9 @@ enum DebugSnapshots {
         if request.tabs == nil || request.tabs?.contains("findings") == true {
             boards.append(("findings", AgentStatusSettings.snapshotFindingRows(DebugSnapshotFixtures.findings)))
         }
+        if request.tabs == nil || request.tabs?.contains("components") == true {
+            boards.append(("components", AnyView(componentsBoard)))
+        }
         for (name, view) in boards {
             for dark in [false, true] {
                 let root = AnyView(view
@@ -58,6 +61,78 @@ enum DebugSnapshots {
         }
         if request.tabs == nil || request.tabs?.contains("notch") == true {
             await render(AnyView(notchBoard), name: "notch-dots", dark: true, width: 360, into: request.directory, scale: 4)
+        }
+    }
+
+    /// The shared Settings components beside the native controls they replace, enabled and disabled,
+    /// and the finding rows collapsed and expanded.
+    private static var componentsBoard: some View {
+        Form {
+            Section {
+                Toggle(isOn: .constant(true)) {
+                    Text(verbatim: "Native two-Text label")
+                    Text(verbatim: "The second Text of a native label, for comparison with the description below.")
+                }
+                SettingsRow(verbatim: "Look for secrets in prompts and tool calls",
+                            description: "Flags API keys and private keys in what you send an agent and in what an agent hands a tool. Kannu keeps only the kind of key, its first few letters, its length and a fingerprint — never the key itself.") {
+                    Toggle(isOn: .constant(true)) { Text(verbatim: "Look for secrets") }
+                }
+                Toggle(isOn: .constant(true)) { Text(verbatim: "Native toggle, on") }
+                SettingsRow(verbatim: "Component toggle, on") {
+                    Toggle(isOn: .constant(true)) { Text(verbatim: "Component toggle, on") }
+                }
+                Toggle(isOn: .constant(false)) { Text(verbatim: "Native toggle, disabled") }
+                    .disabled(true)
+                SettingsRow(verbatim: "Component toggle, disabled", description: "Off until the setting above is on.") {
+                    Toggle(isOn: .constant(false)) { Text(verbatim: "Component toggle, disabled") }
+                }
+                .disabled(true)
+                SettingsRow(verbatim: "High-severity alerts in the notch",
+                            description: "A shield pill stays beside the traffic light until you acknowledge the finding. Click it to open the panel.") {
+                    Picker(selection: .constant(0)) {
+                        Text(verbatim: "Until acknowledged").tag(0)
+                        Text(verbatim: "Glyph only").tag(1)
+                    } label: { Text(verbatim: "High-severity alerts in the notch") }
+                }
+                Picker(selection: .constant(0)) {
+                    Text(verbatim: "Until acknowledged").tag(0)
+                } label: { Text(verbatim: "Native picker") }
+            } header: {
+                Text(verbatim: "Rows")
+            } footer: {
+                SettingsFooter("Findings come from ADR, Uber's open-source agent security toolkit (Apache-2.0). You install it; Kannu only reads its results.")
+            }
+
+            Section {
+                SettingsActionRow("Scan now", description: "Last run by Kannu Sep 11, 2026 at 4:54 AM") {
+                    Button(action: {}) { Text(verbatim: "Scan now") }
+                }
+                LabeledContent {
+                    HStack(spacing: 8) {
+                        SettingsValueText("~/.kannu/adr/discovery")
+                        Button(action: {}) { Text(verbatim: "Choose…") }
+                        Button(action: {}) { Text(verbatim: "Reveal") }
+                    }
+                } label: {
+                    Text(verbatim: "Snapshot folder")
+                }
+                SettingsStatusText("Ready · uv 0.8.3 · ~/code/ADR/Detection", isReady: true)
+                SettingsErrorText("adr-discovery exited with status 1: permission denied reading ~/Library/Application Support")
+                SettingsActionRow {
+                    Button(action: {}) { Text(verbatim: "Show acknowledged and snoozed again") }
+                }
+            } header: {
+                Text(verbatim: "Actions and values")
+            }
+
+            Section {
+                ForEach(Array(DebugSnapshotFixtures.findings.enumerated()), id: \.element.id) { index, finding in
+                    SecurityFindingRow(finding: finding, initiallyExpanded: index == 1,
+                                       copyForAgent: {}, acknowledge: {}, snooze: {})
+                }
+            } header: {
+                Text(verbatim: "Security findings")
+            }
         }
     }
 

@@ -4,6 +4,33 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - Settings building blocks in the System Settings layout; two search entries that scrolled nowhere
+- **Developer label:** "fix the allignment, spacing and padding of settings items, especially these nwe findings sections, dont leave area with lot of empty spacing in rach finfings window / many text in normal areas are also not copypastable, the settings should be enginered like apple does settings"
+- **Agent label:** Shared Settings row components and a compact finding row, checked on a snapshot board; highlight-id inventory test
+- **Changes:**
+  - New `SettingsComponents.swift`: `SettingsRow` (title and description leading, control
+    trailing; the control keeps its own label for VoiceOver and is drawn as a switch, since a
+    Toggle nested in `LabeledContent` falls back to a checkbox), `SettingsRowLabel`,
+    `SettingsFooter`, `SettingsActionRow` (buttons on the trailing side, never hanging on the
+    left), `SettingsMoreMenu` ("…"), `SettingsValueText`, `SettingsStatusText`,
+    `SettingsErrorText` and a self-contained `CopyForAgentButton`. Descriptions, footers, values
+    and statuses can be selected and copied; control labels never are (a selectable label
+    swallows the control's click).
+  - New `SecurityFindingRow.swift`: shield, title, severity and a two-line summary, with Copy
+    for agent and a "…" menu (Acknowledge, Snooze 24h, Reveal in Finder) on the same line;
+    "Details" opens the evidence, what it means and what to do in place. Not wired into the
+    Agents tab yet (next commit).
+  - The DEBUG snapshot harness gains a `components` board (native controls beside the
+    components, enabled and disabled, finding rows collapsed and expanded; light and dark).
+  - Two search entries scrolled nowhere because no row registered their id: "Enable Custom OSD"
+    (now lands on the Custom OSD card) and "LocalSend Device Picker Style" (the picker never
+    applied the id it was handed).
+  - `SettingsPermissionCallout`'s message can be selected and copied.
+  - New `SettingsHighlightInventoryTests` reads the Settings sources and pins the pairing: every
+    search entry lands on a registered row of its own tab, every deep link is registered, and the
+    entry and registration counts are pinned so a layout rework cannot drop a registration
+    unnoticed (it caught both drifts above; verified to fail when a registration is removed).
+
 ### 2026-09-11 - One card per Claude chat: subagents fold into their parent
 - **Developer label:** "did a regression happen in chat names for claude, it shows untitle chat, also 2 chats showingh, maybe duplicated"
 - **Agent label:** Hook v38 parent_id plus a tested fold of subagent hook files into the parent's card
