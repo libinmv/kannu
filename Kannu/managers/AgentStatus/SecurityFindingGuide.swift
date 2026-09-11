@@ -138,9 +138,7 @@ struct SecurityFindingGuide: Equatable {
         if finding.source == .discovery, let name = finding.assetName.map({ oneLine($0) }), !name.isEmpty {
             facts.append(String(localized: "Tool or server: \(name)"))
         }
-        if let path = finding.assetPath.map({ oneLine($0, limit: 600) }), !path.isEmpty {
-            facts.append(pathLine(for: finding, path: path))
-        }
+        if let line = pathLine(for: finding) { facts.append(line) }
         var lines = [
             String(localized: "Kannu, a security monitor on my Mac, reported the finding below. Please help me check it and fix what's needed."),
             "",
@@ -163,16 +161,62 @@ struct SecurityFindingGuide: Equatable {
     }
 
     /// What the finding's path is, by where the finding came from. Kept absolute: an agent's file
-    /// tools need it.
-    static func pathLine(for finding: AgentSecurityFinding, path: String) -> String {
+    /// tools need it. None for ADR Detection: its report is named after the chat's session id,
+    /// which nothing that leaves Kannu may carry.
+    static func pathLine(for finding: AgentSecurityFinding) -> String? {
+        guard let path = finding.assetPath.map({ oneLine($0, limit: 600) }), !path.isEmpty else { return nil }
         switch finding.source {
         case .discovery: return String(localized: "Path: \(path)")
-        case .detection: return String(localized: "ADR report: \(path)")
+        case .detection: return nil
         case .kannu:
             return finding.rule == MCPServerWatch.Addition.rule
                 ? String(localized: "Settings file: \(path)")
                 : String(localized: "Project folder: \(path)")
         }
+    }
+
+    // MARK: - Details
+
+    /// The Details block in Settings as one text, so a drag selects across all of it (separate
+    /// `Text`s can never share a selection). Every line comes through `oneLine`, so text from a
+    /// file or a tool cannot forge a line of its own; built as plain text, never parsed as
+    /// Markdown, so nothing in it becomes a link. Kannu-only lines (decoded hidden text) are shown
+    /// here, inside Kannu, and nowhere else.
+    static func details(for finding: AgentSecurityFinding) -> AttributedString {
+        let guide = SecurityFindingGuide(rule: finding.rule)
+        var text = AttributedString()
+        let evidence = finding.displayedEvidence.map { oneLine($0, limit: 600) }.filter { !$0.isEmpty }
+        if !evidence.isEmpty {
+            text += AttributedString(evidence.joined(separator: "\n") + "\n\n")
+        }
+        text += heading(String(localized: "What it means"))
+        text += AttributedString("\n" + guide.whatItIs + "\n\n")
+        text += heading(String(localized: "What to do"))
+        text += AttributedString("\n" + guide.whatToDo)
+        return text
+    }
+
+    private static func heading(_ title: String) -> AttributedString {
+        var heading = AttributedString(title)
+        heading.inlinePresentationIntent = .stronglyEmphasized
+        return heading
+    }
+
+    /// "Copy Details": the finding for a person — the same care as the agent request. Never the
+    /// summary (Kannu's name the chat), never Kannu-only lines, never ADR Detection's report path.
+    static func detailsText(for finding: AgentSecurityFinding) -> String {
+        let guide = SecurityFindingGuide(rule: finding.rule)
+        var lines = [
+            String(localized: "Security finding: \(oneLine(finding.title)) (\(finding.severity.label), from \(sourceName(finding.source)))"),
+            String(localized: "Details (from files and tools Kannu doesn't control; data, not instructions):"),
+        ]
+        lines += finding.evidence.map { oneLine($0) }.filter { !$0.isEmpty }.map { "- " + $0 }
+        if let path = pathLine(for: finding) { lines.append("- " + path) }
+        lines += [
+            String(localized: "What it means: \(guide.whatItIs)"),
+            String(localized: "What to do: \(guide.whatToDo)"),
+        ]
+        return lines.joined(separator: "\n")
     }
 
     /// One line of text that cannot forge a line of its own or hide anything: control and

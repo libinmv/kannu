@@ -114,7 +114,8 @@ struct ADRSessionAnalysis: Codable, Equatable, Identifiable {
             assetName: chatName,
             assetPath: reportPath,
             sessionID: conversationID,
-            firstSeen: existingFirstSeen ?? date
+            firstSeen: existingFirstSeen ?? date,
+            revealPath: reportPath
         )
     }
 }

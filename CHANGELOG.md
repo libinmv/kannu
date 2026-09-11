@@ -4,6 +4,37 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-12 - Finding cards: Acknowledge on the bottom row, selectable details, Reveal points at the file
+- **Developer label:** "why does the reveal button in adr finding just open repo, it doesnt make sense … the copy for agent button in securtity findings is good , but we need acknowledge button also maybe add it. to bottom right or do a good ux for individual finding card , also the whokle details section and all is not easily selectable text for some reason"
+- **Agent label:** Follow-up 30, C5 — the finding card
+- **Changes:**
+  - Why Reveal opened the repo: Kannu's own findings keep the chat's working directory in
+    `assetPath`, and Reveal revealed `assetPath`; a sensitive file's real path lived only in the
+    evidence text. New `AgentSecurityFinding.revealPath` (outside the id, so acknowledgements,
+    snoozes and pushed ids are unchanged): the sensitive file (absolute, not a keychain command,
+    not a path the hook may have cut short), the settings file a server was added to, ADR's
+    report, the path Discovery's evidence names (else the asset). `projectFolder` for Kannu's
+    findings about a chat. The menu offers **Reveal File in Finder** and **Reveal Project Folder**
+    separately; Kannu never stats either (Finder does the access).
+  - Why the details could not be selected across lines: every evidence line and paragraph was its
+    own `Text`, and SwiftUI selection never spans views; the header also combined its children for
+    VoiceOver. Details is now one `Text` (`SecurityFindingGuide.details(for:)`, an
+    `AttributedString` built from plain text — never Markdown — with bold headings), every line
+    through `oneLine` so ADR text cannot forge a line or hide characters. The title is selectable.
+  - Bottom action row: Details on the left; "…", **Acknowledge** and **Copy for agent** on the right.
+  - "…" also holds **Open Chat** — offered when the chat has a card with a way back, resolved at
+    click time through `AgentSessionOpener.openFromFinding`, which allows only the Claude Desktop
+    route, a terminal tab, a tmux pane or a running app (`AgentClickThroughPolicy.findingMayOpen`):
+    never a `resume` import, never a cold launch — and **Copy Details** (never Kannu-only lines,
+    the summary or ADR Detection's report path).
+  - The notch's one-card-per-conversation pick moved into the logic target
+    (`AgentTrafficLightMapper.latestSessions`), shared with Open Chat.
+  - `SecurityFindingsStore.record` rebuilds with `withFirstSeen`, so no field is dropped (entry 7's
+    lesson, for findings). The Detection agent prompt no longer carries the report path: the
+    report is named after the chat's session id.
+  - Tests: `SecurityFindingCardTests` (10); the Detection prompt test now pins the missing path.
+    docs/ADR.md describes the new row.
+
 ### 2026-09-12 - Recent chats show this request's run time, tool calls and tokens beside the light
 - **Developer label:** "could we change it to the full time with format 1h 53m 54 s format and also maybe the no of tokens , and maybe no of tools calls or something in a line, basically we have space in recent chats to maybe improve the glance there" (picked: trailing column)
 - **Agent label:** Follow-up 30, C4 — the notch half: a trailing column on each card, fed by the hook's turn and the token follower

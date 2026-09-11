@@ -185,11 +185,19 @@ release.
 ## What Kannu does with findings
 
 - Lists them in Settings → Agents → Security findings, highest severity first. Each row is
-  compact — title, severity and a two-line summary, with **Copy for agent** and a "…" menu
-  (Acknowledge, Snooze 24h, Reveal in Finder); **Details** opens the evidence and, in plain words,
-  what the finding means and what to do. All of its text can be selected and copied.
+  compact — title, severity and a two-line summary — with its actions on the bottom row: **Details**
+  on the left, and on the right a "…" menu, **Acknowledge** and **Copy for agent**. Details opens
+  the evidence and, in plain words, what the finding means and what to do, as one block of text
+  that can be selected and copied in one drag. The "…" menu holds Snooze 24h, **Reveal File in
+  Finder** (the file the finding is about: the sensitive file itself, the settings file a server was
+  added to, ADR's report or the path Discovery names), **Reveal Project Folder** (for findings about
+  a chat), **Open Chat** (only where the chat already is — its Claude Desktop chat, terminal tab,
+  tmux pane or running app; never a resume, never a cold launch) and **Copy Details**.
   Acknowledgements are per finding: if a finding disappears and later returns with different
   evidence, it is shown again.
+- **Copy Details** copies the finding for a person: title, severity, source, the evidence and the
+  two plain-language paragraphs — with the same care as Copy for agent (no chat name, no decoded
+  hidden text, no session id; untrusted text flattened to one line).
 - **Copy for agent** puts a plain-text request on the clipboard, ready to paste into Claude Code,
   Codex or any agent: what the finding means, what to do, and the details, marked as data rather
   than instructions. It never includes a key, the decoded hidden text, a chat name or a session

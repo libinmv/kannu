@@ -7792,7 +7792,10 @@ struct AgentStatusSettings: View {
                         finding: finding,
                         copyForAgent: { findingsStore.copyAgentPrompt(for: finding) },
                         acknowledge: { findingsStore.acknowledge(finding.id) },
-                        snooze: { findingsStore.snooze(finding.id, for: 24 * 3600) }
+                        snooze: { findingsStore.snooze(finding.id, for: 24 * 3600) },
+                        openChat: findingsStore.hasChat(for: finding)
+                            ? { if !findingsStore.openChat(for: finding) { NSSound.beep() } }
+                            : nil
                     )
                 }
             }
@@ -8477,7 +8480,8 @@ extension AgentStatusSettings {
         AnyView(Form {
             Section {
                 ForEach(findings) { finding in
-                    SecurityFindingRow(finding: finding, copyForAgent: {}, acknowledge: {}, snooze: {})
+                    SecurityFindingRow(finding: finding, copyForAgent: {}, acknowledge: {}, snooze: {},
+                                       openChat: finding.sessionID == nil ? nil : {})
                 }
             } header: {
                 Text("Security findings")

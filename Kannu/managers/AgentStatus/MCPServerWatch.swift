@@ -294,7 +294,8 @@ enum MCPServerWatch {
                 assetName: appName,
                 assetPath: configPath,
                 sessionID: nil,
-                firstSeen: seen
+                firstSeen: seen,
+                revealPath: configPath
             )
         }
     }

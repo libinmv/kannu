@@ -136,11 +136,37 @@ enum AgentSessionOpener {
         }
     }
 
+    /// "Open Chat" on a security finding: the click-through target, but only where the chat
+    /// already is (`AgentClickThroughPolicy.findingMayOpen`) — never a `resume` import, never a
+    /// cold launch.
+    static func findingTarget(for session: AgentSessionStatus) -> OpenTarget? {
+        guard let target = target(for: session) else { return nil }
+        let destination: AgentClickThroughPolicy.FindingDestination
+        switch target.kind {
+        case .claudeDeepLink(let url): destination = url.host == "resume" ? .desktopImport : .desktopRoute
+        case .terminalHost: destination = .terminal
+        case .tmuxPane: destination = .tmuxPane
+        case .ide(let running, _, _): destination = running != nil ? .runningApp : .coldLaunch
+        }
+        return AgentClickThroughPolicy.findingMayOpen(destination) ? target : nil
+    }
+
+    /// Opens a finding's chat through `findingTarget`, resolved once, so the decision and the
+    /// action cannot disagree.
+    @discardableResult
+    static func openFromFinding(_ session: AgentSessionStatus) -> Bool {
+        guard let target = findingTarget(for: session) else { return false }
+        return open(session, target: target)
+    }
+
     /// Opens the session's host. Returns true when something was activated.
     @discardableResult
     static func open(_ session: AgentSessionStatus) -> Bool {
         guard let target = target(for: session) else { return false }
+        return open(session, target: target)
+    }
 
+    private static func open(_ session: AgentSessionStatus, target: OpenTarget) -> Bool {
         switch target.kind {
         case .claudeDeepLink(let url):
             log.notice("opening chat via Claude Desktop deep link (\(url.absoluteString, privacy: .private))")

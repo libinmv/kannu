@@ -181,6 +181,14 @@ struct SensitivePathSighting: HookSighting {
         return unique
     }
 
+    /// The file itself, for "Reveal in Finder": the hook records absolute paths. Not a keychain
+    /// command ("security find-generic-password"), and not a path at the length limit, which the
+    /// hook may have cut short.
+    var revealPath: String? {
+        guard path.count < Self.pathLimit else { return nil }
+        return AgentSecurityFinding.revealablePath(path)
+    }
+
     func findingID(conversationID: String) -> String {
         AgentSecurityFinding.stableID(source: .kannu, rule: rule, subject: conversationID,
                                       evidence: [access.rawValue, path])
@@ -198,7 +206,8 @@ struct SensitivePathSighting: HookSighting {
             assetName: projectName,
             assetPath: cwd,
             sessionID: conversationID,
-            firstSeen: Date(timeIntervalSince1970: TimeInterval(firstSeenMs) / 1000)
+            firstSeen: Date(timeIntervalSince1970: TimeInterval(firstSeenMs) / 1000),
+            revealPath: revealPath
         )
     }
 }

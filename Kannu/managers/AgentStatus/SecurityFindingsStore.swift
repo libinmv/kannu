@@ -91,6 +91,10 @@ final class SecurityFindingsStore: ObservableObject {
     /// ADR Detection verdicts, newest first, one per conversation (capped).
     @Published private(set) var analyses: [ADRSessionAnalysis] = []
     @Published private(set) var analyzingConversationIDs: Set<String> = []
+    /// Conversations that have a chat card right now, for "Open Chat" on a finding. Published only
+    /// when the set changes (chats come and go rarely), never per rescan: the notch observes this
+    /// store.
+    @Published private(set) var chatConversationIDs: Set<String> = []
     @Published private(set) var lastAnalysisError: String?
     private static let analysisCap = 50
     private var cancellables = Set<AnyCancellable>()
@@ -189,6 +193,8 @@ final class SecurityFindingsStore: ObservableObject {
             .sink { [weak self] sessions in
                 self?.updateNativeFindings(from: sessions)
                 self?.recordSightings(from: sessions)
+                let ids = Set(sessions.filter(Self.mayHaveAWayBack).map(\.conversationID))
+                if ids != self?.chatConversationIDs { self?.chatConversationIDs = ids }
             }
             .store(in: &cancellables)
         // The hook reads marker files for the local-check settings; keep them in step.
@@ -262,6 +268,29 @@ final class SecurityFindingsStore: ObservableObject {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(SecurityFindingGuide.agentPrompt(for: finding), forType: .string)
+    }
+
+    /// Cheap and render-safe: a live process, a Claude Desktop chat, a reported terminal, or an
+    /// app-hosted agent. The real target is resolved only on click.
+    private static func mayHaveAWayBack(_ session: AgentSessionStatus) -> Bool {
+        if session.hostPID != nil || session.desktopSessionID != nil || session.terminal != nil { return true }
+        return ["cursor", "vscode", "antigravity", "warp", "claudedesktop"].contains(session.provider.lowercased())
+    }
+
+    /// Whether "Open Chat" can be offered for a finding: its chat has a card now.
+    func hasChat(for finding: AgentSecurityFinding) -> Bool {
+        finding.sessionID.map(chatConversationIDs.contains) ?? false
+    }
+
+    /// Opens the chat a finding came from, looked up at click time, only where it already is
+    /// (`AgentSessionOpener.openFromFinding`: never a resume, never a cold launch). False when it
+    /// cannot be reached.
+    @discardableResult
+    func openChat(for finding: AgentSecurityFinding) -> Bool {
+        guard let id = finding.sessionID,
+              let session = AgentTrafficLightMapper.latestSessions(CursorAgentStatusMonitor.shared.sessions)
+                .first(where: { $0.conversationID == id }) else { return false }
+        return AgentSessionOpener.openFromFinding(session)
     }
 
     // MARK: - Kannu-run scans
@@ -649,10 +678,7 @@ final class SecurityFindingsStore: ObservableObject {
         detectionFindings = list.compactMap { $0.finding(existingFirstSeen: nil) }
             .map { finding in
                 guard let seen = firstSeen[finding.id] else { return finding }
-                return AgentSecurityFinding(id: finding.id, source: finding.source, rule: finding.rule, severity: finding.severity,
-                                            title: finding.title, summary: finding.summary, evidence: finding.evidence,
-                                            assetName: finding.assetName, assetPath: finding.assetPath, sessionID: finding.sessionID,
-                                            firstSeen: seen, kannuOnlyEvidence: finding.kannuOnlyEvidence)
+                return finding.withFirstSeen(seen)
             }
         publishFindings()
     }

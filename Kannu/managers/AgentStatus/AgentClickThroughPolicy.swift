@@ -49,6 +49,28 @@ enum AgentClickThroughPolicy {
         return displayState == .inactive && canResume ? .resume : .none
     }
 
+    /// Where "Open Chat" on a security finding would land.
+    enum FindingDestination: Equatable {
+        case desktopRoute
+        /// `claude://resume`: Desktop imports the transcript as a new chat.
+        case desktopImport
+        case terminal
+        case tmuxPane
+        case runningApp
+        /// The provider's app is not running and would be launched.
+        case coldLaunch
+    }
+
+    /// A finding goes back to its chat only where the chat already is. Never an import — it would
+    /// re-open a transcript the finding may be about, possibly in a second host (entry 13) — and
+    /// never a cold launch from a Settings row.
+    static func findingMayOpen(_ destination: FindingDestination) -> Bool {
+        switch destination {
+        case .desktopRoute, .terminal, .tmuxPane, .runningApp: return true
+        case .desktopImport, .coldLaunch: return false
+        }
+    }
+
     /// Terminal agents without a Desktop app to fall back on: their terminal, or nothing.
     static func cli(host: Host) -> Action {
         switch host {

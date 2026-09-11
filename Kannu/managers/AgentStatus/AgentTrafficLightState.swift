@@ -669,6 +669,35 @@ enum AgentTrafficLightMapper {
         return visible.map(\.displayState).max() ?? .inactive
     }
 
+    /// One card per conversation, as the notch lists them: the higher state wins, then the card
+    /// with a real title, then the newer. Shared with "Open Chat" on a finding, so both pick the
+    /// same card.
+    static func latestSessions(_ sessions: [AgentSessionStatus]) -> [AgentSessionStatus] {
+        var latestByConversationID: [String: AgentSessionStatus] = [:]
+        var order: [String] = []
+        for session in sessions {
+            guard let existing = latestByConversationID[session.conversationID] else {
+                latestByConversationID[session.conversationID] = session
+                order.append(session.conversationID)
+                continue
+            }
+            latestByConversationID[session.conversationID] = preferredSession(existing: existing, incoming: session)
+        }
+        return order.compactMap { latestByConversationID[$0] }
+    }
+
+    static func preferredSession(existing: AgentSessionStatus, incoming: AgentSessionStatus) -> AgentSessionStatus {
+        if existing.displayState != incoming.displayState {
+            return existing.displayState > incoming.displayState ? existing : incoming
+        }
+        let existingHasReliableTitle = hasReliableChatName(existing.chatName)
+        let incomingHasReliableTitle = hasReliableChatName(incoming.chatName)
+        if existingHasReliableTitle != incomingHasReliableTitle {
+            return incomingHasReliableTitle ? incoming : existing
+        }
+        return incoming.updatedAt >= existing.updatedAt ? incoming : existing
+    }
+
     static func primarySession(from sessions: [AgentSessionStatus]) -> AgentSessionStatus? {
         let visible = sessions.filter { $0.isVisible && !isSimulationSession($0) }
         guard !visible.isEmpty else { return nil }

@@ -166,11 +166,12 @@ final class SecurityFindingGuideTests: XCTestCase {
     func testADRDetectionPromptCarriesTheExplanationNeverTheChat() throws {
         let analysis = try ADRSessionAnalysis.parse(
             Data(#"{"schema":1,"is_malicious":true,"confidence":0.91,"tactic":"permission_abuse","explanation":"Ran sudo after reading an issue.","threat_messages":2,"total_messages":30,"model_used":"claude-sonnet-4-6"}"#.utf8),
-            conversationID: conversation, chatName: chat, reportPath: "/Users/u/.kannu/adr/report.json", now: Date(timeIntervalSince1970: 1_000))
+            conversationID: conversation, chatName: chat, reportPath: "/Users/u/.kannu/adr/analyses/\(conversation).json",
+            now: Date(timeIntervalSince1970: 1_000))
         let finding = try XCTUnwrap(analysis.finding())
         let prompt = Guide.agentPrompt(for: finding)
         XCTAssertTrue(prompt.contains("- ADR says: “Ran sudo after reading an issue.”"))
-        XCTAssertTrue(prompt.contains("- ADR report: /Users/u/.kannu/adr/report.json"))
+        XCTAssertFalse(prompt.contains("ADR report"), "the report is named after the session id")
         XCTAssertTrue(prompt.contains("from ADR Detection"))
         XCTAssertFalse(prompt.contains(chat), "for Detection the asset name is the chat name")
         XCTAssertFalse(prompt.contains(conversation))

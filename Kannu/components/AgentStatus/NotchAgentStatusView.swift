@@ -44,7 +44,7 @@ struct NotchAgentStatusView: View {
 #endif
 
     private var dedupedSessions: [AgentSessionStatus] {
-        deduplicateLatestSessions(sourceSessions)
+        AgentTrafficLightMapper.latestSessions(sourceSessions)
     }
 
     private var visibleSessions: [AgentSessionStatus] {
@@ -62,36 +62,6 @@ struct NotchAgentStatusView: View {
 
     private var primarySession: AgentSessionStatus? {
         AgentTrafficLightMapper.primarySession(from: visibleSessions)
-    }
-
-    private func deduplicateLatestSessions(_ sessions: [AgentSessionStatus]) -> [AgentSessionStatus] {
-        var latestByConversationID: [String: AgentSessionStatus] = [:]
-        for session in sessions {
-            guard let existing = latestByConversationID[session.conversationID] else {
-                latestByConversationID[session.conversationID] = session
-                continue
-            }
-            latestByConversationID[session.conversationID] = preferredSession(existing: existing, incoming: session)
-        }
-        return Array(latestByConversationID.values)
-    }
-
-    private func preferredSession(existing: AgentSessionStatus, incoming: AgentSessionStatus) -> AgentSessionStatus {
-        if existing.displayState != incoming.displayState {
-            return existing.displayState > incoming.displayState ? existing : incoming
-        }
-        let existingHasReliableTitle = hasReliableChatName(existing.chatName)
-        let incomingHasReliableTitle = hasReliableChatName(incoming.chatName)
-        if existingHasReliableTitle != incomingHasReliableTitle {
-            return incomingHasReliableTitle ? incoming : existing
-        }
-        return incoming.updatedAt >= existing.updatedAt ? incoming : existing
-    }
-
-    private func hasReliableChatName(_ value: String?) -> Bool {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !trimmed.isEmpty else { return false }
-        return !CursorAgentStatusMonitor.looksLikeToolName(trimmed)
     }
 
     private struct ProviderInstallStatus {

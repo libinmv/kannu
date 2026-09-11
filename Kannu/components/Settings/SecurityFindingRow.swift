@@ -20,28 +20,33 @@ import AppKit
 import SwiftUI
 
 /// One security finding in Settings, compact until asked: the title, severity and a two-line
-/// summary, with "Copy for agent" and a "…" menu (Acknowledge, Snooze, Reveal in Finder) on the
-/// trailing side. "Details" opens the rest in place — the full summary, the evidence, what the
-/// finding means and what to do. All of the text can be selected and copied.
+/// summary; "Details" opens the rest in place as one block of selectable text (the evidence, what
+/// the finding means and what to do). The actions sit on the bottom row, trailing: a "…" menu
+/// (Snooze, Reveal File, Reveal Project Folder, Open Chat, Copy Details), Acknowledge and Copy for
+/// agent.
 ///
 /// The row shows `displayedEvidence` (Kannu-only lines such as decoded hidden text included);
-/// the copied request is built elsewhere and never carries those lines.
+/// Copy for agent and Copy Details are built elsewhere and never carry those lines.
 struct SecurityFindingRow: View {
     let finding: AgentSecurityFinding
     let copyForAgent: () -> Void
     let acknowledge: () -> Void
     let snooze: () -> Void
+    /// Nil when the chat the finding came from has no card to go back to.
+    let openChat: (() -> Void)?
 
     /// Survives re-renders; SwiftUI keys it on the finding's id through the enclosing `ForEach`.
     @State private var isExpanded: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(finding: AgentSecurityFinding, initiallyExpanded: Bool = false,
-         copyForAgent: @escaping () -> Void, acknowledge: @escaping () -> Void, snooze: @escaping () -> Void) {
+         copyForAgent: @escaping () -> Void, acknowledge: @escaping () -> Void, snooze: @escaping () -> Void,
+         openChat: (() -> Void)? = nil) {
         self.finding = finding
         self.copyForAgent = copyForAgent
         self.acknowledge = acknowledge
         self.snooze = snooze
+        self.openChat = openChat
         _isExpanded = State(initialValue: initiallyExpanded)
     }
 
@@ -53,43 +58,68 @@ struct SecurityFindingRow: View {
                 .foregroundStyle(isHigh ? Color.orange : Color.secondary)
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(verbatim: finding.title)
                             .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                            .accessibilityLabel(Text("Security finding, \(finding.severity.label): \(finding.title)"))
                         severityBadge
                     }
                     Text(verbatim: finding.summary)
                         .settingsDescriptionStyle()
                         .lineLimit(isExpanded ? nil : 2)
                 }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(Text("Security finding, \(finding.severity.label): \(finding.title). \(finding.summary)"))
 
-                detailsToggle
                 if isExpanded {
-                    details
+                    // One Text: a drag selects across every line (separate Texts never share a selection).
+                    Text(SecurityFindingGuide.details(for: finding))
+                        .settingsDescriptionStyle()
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
+
+                HStack(spacing: 8) {
+                    detailsToggle
+                    Spacer(minLength: 8)
+                    moreMenu
+                    Button("Acknowledge", action: acknowledge)
+                    CopyForAgentButton(copy: copyForAgent)
+                }
+                .controlSize(.small)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-
-            HStack(spacing: 6) {
-                CopyForAgentButton(copy: copyForAgent)
-                SettingsMoreMenu(accessibilityLabel: Text("More")) {
-                    Button("Acknowledge", action: acknowledge)
-                    Button("Snooze 24h", action: snooze)
-                    if let path = finding.assetPath {
-                        Divider()
-                        Button("Reveal in Finder") {
-                            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
-                        }
-                    }
-                }
-            }
-            .controlSize(.small)
         }
         .padding(.vertical, 2)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var moreMenu: some View {
+        SettingsMoreMenu(accessibilityLabel: Text("More actions")) {
+            Button("Snooze 24h", action: snooze)
+            if finding.revealPath != nil || finding.projectFolder != nil || openChat != nil {
+                Divider()
+            }
+            if let path = finding.revealPath {
+                Button("Reveal File in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                }
+            }
+            if let folder = finding.projectFolder {
+                Button("Reveal Project Folder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: folder, isDirectory: true)])
+                }
+            }
+            if let openChat {
+                Button("Open Chat", action: openChat)
+            }
+            Divider()
+            Button("Copy Details") {
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                pasteboard.setString(SecurityFindingGuide.detailsText(for: finding), forType: .string)
+            }
+        }
     }
 
     private var severityBadge: some View {
@@ -100,6 +130,7 @@ struct SecurityFindingRow: View {
             .padding(.vertical, 1)
             .background(Capsule().fill((isHigh ? Color.orange : Color.secondary).opacity(0.15)))
             .fixedSize()
+            .accessibilityHidden(true)
     }
 
     private var detailsToggle: some View {
@@ -122,34 +153,5 @@ struct SecurityFindingRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(isExpanded ? Text("Hide details") : Text("Show details"))
-    }
-
-    private var details: some View {
-        let guide = SecurityFindingGuide(rule: finding.rule)
-        return VStack(alignment: .leading, spacing: 6) {
-            if !finding.displayedEvidence.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(finding.displayedEvidence, id: \.self) { line in
-                        Text(verbatim: line)
-                    }
-                }
-                .settingsDescriptionStyle()
-            }
-            detailParagraph(Text("What it means"), guide.whatItIs)
-            detailParagraph(Text("What to do"), guide.whatToDo)
-        }
-        .padding(.leading, 14)
-        .padding(.top, 2)
-    }
-
-    private func detailParagraph(_ heading: Text, _ body: String) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            heading
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(verbatim: body)
-                .settingsDescriptionStyle()
-        }
-        .textSelection(.enabled)
     }
 }

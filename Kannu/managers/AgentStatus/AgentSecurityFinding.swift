@@ -71,11 +71,38 @@ struct AgentSecurityFinding: Equatable, Hashable, Identifiable, Codable {
     let assetName: String?
     let assetPath: String?
     let sessionID: String?
-    let firstSeen: Date
+    var firstSeen: Date
     /// Lines shown only inside Kannu — never pushed, never copied for an agent (the decoded
     /// hidden text is one). Empty by default, so a rebuild that forgets it can only hide a line,
     /// never leak one: everything that leaves Kannu reads `evidence`.
     var kannuOnlyEvidence: [String] = []
+    /// The file "Reveal in Finder" selects: the sensitive file itself, the settings file a server
+    /// was added to, ADR's report, the path Discovery points at. Nil when there is no file (a key
+    /// in a prompt, hidden text). Outside the id, so ids, acknowledgements and snoozes are unchanged.
+    var revealPath: String? = nil
+
+    /// The chat's project folder, for Kannu's own findings about a chat (`assetPath` is the chat's
+    /// working directory there); nil for ADR's findings and for the new-server check.
+    var projectFolder: String? {
+        guard source == .kannu, rule != MCPServerWatch.Addition.rule, let path = assetPath, path.hasPrefix("/") else { return nil }
+        return path
+    }
+
+    /// The same finding first seen at `date` — a rebuild that keeps every other field.
+    func withFirstSeen(_ date: Date) -> AgentSecurityFinding {
+        var copy = self
+        copy.firstSeen = date
+        return copy
+    }
+
+    /// A path Finder can be asked to show: absolute (or under `~/`), with no `..` in it. Kannu
+    /// never touches the file itself.
+    static func revealablePath(_ path: String?) -> String? {
+        guard var path = path?.trimmingCharacters(in: .whitespaces), !path.isEmpty else { return nil }
+        if path.hasPrefix("~/") { path = (path as NSString).expandingTildeInPath }
+        guard path.hasPrefix("/"), !path.split(separator: "/").contains("..") else { return nil }
+        return path
+    }
 
     /// What Kannu itself shows: Kannu-only lines first, then the evidence, without repeats.
     var displayedEvidence: [String] {
@@ -122,6 +149,8 @@ struct AgentSecurityFinding: Equatable, Hashable, Identifiable, Codable {
                 item.path.isEmpty ? item.proof : "\(item.proof) — \(item.path)"
             }
             let id = stableID(source: .discovery, rule: finding.rule, subject: finding.assetId, evidence: evidence)
+            // The file the finding is about (a config, a binary) when ADR names one; else the asset.
+            let reveal = finding.evidence.lazy.compactMap { revealablePath($0.path) }.first ?? revealablePath(asset?.installPath)
             return AgentSecurityFinding(
                 id: id,
                 source: .discovery,
@@ -133,7 +162,8 @@ struct AgentSecurityFinding: Equatable, Hashable, Identifiable, Codable {
                 assetName: asset?.name,
                 assetPath: asset?.installPath,
                 sessionID: nil,
-                firstSeen: firstSeenByID[id] ?? now
+                firstSeen: firstSeenByID[id] ?? now,
+                revealPath: reveal
             )
         }
     }
