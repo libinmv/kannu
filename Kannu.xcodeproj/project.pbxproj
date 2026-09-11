@@ -60,6 +60,7 @@
 		AA100000000000000000007D /* SecurityFindingGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000007C /* SecurityFindingGuide.swift */; };
 		AA100000000000000000007F /* AgentTrafficLightAttention.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000007E /* AgentTrafficLightAttention.swift */; };
 		AA1000000000000000000081 /* AgentSubagentFold.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000080 /* AgentSubagentFold.swift */; };
+		AA1000000000000000000083 /* TranscriptListingInvalidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000082 /* TranscriptListingInvalidation.swift */; };
 		AA1000000000000000000065 /* TerminalTabMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000064 /* TerminalTabMatcher.swift */; };
 		AA1000000000000000000055 /* ADRDetectionCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000054 /* ADRDetectionCommand.swift */; };
 		AA1000000000000000000047 /* ADRSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000046 /* ADRSnapshot.swift */; };
@@ -127,6 +128,7 @@
 		AA100000000000000000007C /* SecurityFindingGuide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SecurityFindingGuide.swift; path = Kannu/managers/AgentStatus/SecurityFindingGuide.swift; sourceTree = SOURCE_ROOT; };
 		AA100000000000000000007E /* AgentTrafficLightAttention.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentTrafficLightAttention.swift; path = Kannu/managers/AgentStatus/AgentTrafficLightAttention.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000080 /* AgentSubagentFold.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentSubagentFold.swift; path = Kannu/managers/AgentStatus/AgentSubagentFold.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000082 /* TranscriptListingInvalidation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TranscriptListingInvalidation.swift; path = Kannu/managers/AgentStatus/TranscriptListingInvalidation.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000064 /* TerminalTabMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TerminalTabMatcher.swift; path = Kannu/managers/AgentStatus/TerminalTabMatcher.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000054 /* ADRDetectionCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ADRDetectionCommand.swift; path = Kannu/managers/AgentStatus/ADRDetectionCommand.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000046 /* ADRSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ADRSnapshot.swift; path = Kannu/managers/AgentStatus/ADRSnapshot.swift; sourceTree = SOURCE_ROOT; };
@@ -542,6 +544,7 @@
 				AA100000000000000000007D /* SecurityFindingGuide.swift in Sources */,
 				AA100000000000000000007F /* AgentTrafficLightAttention.swift in Sources */,
 				AA1000000000000000000081 /* AgentSubagentFold.swift in Sources */,
+				AA1000000000000000000083 /* TranscriptListingInvalidation.swift in Sources */,
 				AA1000000000000000000065 /* TerminalTabMatcher.swift in Sources */,
 				AA1000000000000000000055 /* ADRDetectionCommand.swift in Sources */,
 				AA1000000000000000000047 /* ADRSnapshot.swift in Sources */,

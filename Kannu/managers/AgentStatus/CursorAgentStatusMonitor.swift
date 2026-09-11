@@ -169,12 +169,20 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 | kFSEventStreamCreateFlagNoDefer
         )
 
-        let callback: FSEventStreamCallback = { _, info, _, _, _, _ in
+        let callback: FSEventStreamCallback = { _, info, numEvents, eventPaths, eventFlags, _ in
             guard let info else { return }
             let monitor = Unmanaged<CursorAgentStatusMonitor>.fromOpaque(info).takeUnretainedValue()
+            // kFSEventStreamCreateFlagUseCFTypes: the paths arrive as a CFArray of CFString.
+            let paths = (Unmanaged<CFArray>.fromOpaque(eventPaths).takeUnretainedValue() as NSArray) as? [String] ?? []
+            let events = (0..<min(numEvents, paths.count)).map { (path: paths[$0], flags: UInt32(eventFlags[$0])) }
             Task { @MainActor in
-                CursorTranscriptParser.invalidatePathCache()
-                AgentSessionLogParser.invalidatePathCache()
+                // Appends and hook writes leave the transcript lists valid (see
+                // TranscriptListingInvalidation); dropping them on every event re-walked both
+                // project trees on the main actor several times a second while agents worked.
+                if TranscriptListingInvalidation.shouldInvalidate(events: events, transcriptRoots: CursorAgentStatusMonitor.transcriptRootPaths) {
+                    CursorTranscriptParser.invalidatePathCache()
+                    AgentSessionLogParser.invalidatePathCache()
+                }
                 monitor.scheduleRescan(delay: 0.35)
             }
         }
@@ -192,6 +200,15 @@ final class CursorAgentStatusMonitor: ObservableObject {
         eventStream = stream
         FSEventStreamSetDispatchQueue(stream, DispatchQueue.main)
         FSEventStreamStart(stream)
+    }
+
+    /// Trees whose file list the path caches hold.
+    private static var transcriptRootPaths: [String] {
+        [
+            CursorTranscriptParser.projectsDirectory.path,
+            AgentSessionLogParser.claudeProjectsDirectory.path,
+            AgentSessionLogParser.codexSessionsDirectory.path,
+        ]
     }
 
     /// Immediate refresh when hook status JSON files change (sub-100ms).

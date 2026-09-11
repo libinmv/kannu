@@ -200,9 +200,34 @@ enum CursorTranscriptParser {
         return results
     }
 
+    /// Head-derived facts (the first prompt's title, the assistant snippets), remembered against
+    /// (mtime, size): each rescan asks for every recent transcript, and re-reading and parsing each
+    /// 32 KB head on the main actor was most of a rescan.
+    private static var headTitleCache: [String: (mtime: Date, size: Int, title: String?)] = [:]
+    private static var headSnippetCache: [String: (mtime: Date, size: Int, snippets: [String])] = [:]
+
+    private static func fileStamp(_ path: URL) -> (mtime: Date, size: Int)? {
+        let values = try? path.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        guard let mtime = values?.contentModificationDate, let size = values?.fileSize else { return nil }
+        return (mtime, size)
+    }
+
     /// Last-resort title derived from the first user prompt in an agent transcript.
     /// Prefer composer headers and Glass agent plan titles before using this.
     static func displayChatName(from path: URL) -> String? {
+        let stamp = fileStamp(path)
+        if let stamp, let cached = headTitleCache[path.path], cached.mtime == stamp.mtime, cached.size == stamp.size {
+            return cached.title
+        }
+        let title = uncachedDisplayChatName(from: path)
+        if let stamp {
+            if headTitleCache.count > 2 * maxTranscriptsPerScan { headTitleCache.removeAll() }
+            headTitleCache[path.path] = (stamp.mtime, stamp.size, title)
+        }
+        return title
+    }
+
+    private static func uncachedDisplayChatName(from path: URL) -> String? {
         guard let text = readLeadingLines(at: path, byteLimit: 32_000) else { return nil }
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
             guard let data = line.data(using: .utf8),
@@ -247,6 +272,19 @@ enum CursorTranscriptParser {
     /// Assistant narration lines from an agent transcript — used to reject
     /// interim hook/Glass titles that mirror in-chat agent prose.
     static func assistantSnippets(from path: URL) -> [String] {
+        let stamp = fileStamp(path)
+        if let stamp, let cached = headSnippetCache[path.path], cached.mtime == stamp.mtime, cached.size == stamp.size {
+            return cached.snippets
+        }
+        let snippets = uncachedAssistantSnippets(from: path)
+        if let stamp {
+            if headSnippetCache.count > 2 * maxTranscriptsPerScan { headSnippetCache.removeAll() }
+            headSnippetCache[path.path] = (stamp.mtime, stamp.size, snippets)
+        }
+        return snippets
+    }
+
+    private static func uncachedAssistantSnippets(from path: URL) -> [String] {
         guard let text = readLeadingLines(at: path, byteLimit: 32_000) else { return [] }
         var snippets: [String] = []
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {

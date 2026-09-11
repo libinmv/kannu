@@ -258,6 +258,21 @@ final class AgentSessionLogParserTests: XCTestCase {
         try handle.close()
     }
 
+    // MARK: - Head snippets are remembered, and refreshed when the file changes
+
+    func testAssistantSnippetsFollowTheFileWhenItChanges() throws {
+        let url = try transcript([#"{"type":"assistant","message":{"content":[{"type":"text","text":"Reading the config first"}]}}"#])
+        // A fresh URL per read: Foundation caches resource values on a URL object.
+        XCTAssertEqual(AgentSessionLogParser.assistantSnippets(from: URL(fileURLWithPath: url.path), provider: .claude),
+                       ["Reading the config first"])
+        XCTAssertEqual(AgentSessionLogParser.assistantSnippets(from: URL(fileURLWithPath: url.path), provider: .claude),
+                       ["Reading the config first"], "unchanged file: same answer (served from the cache)")
+
+        try append([#"{"type":"assistant","message":{"content":[{"type":"text","text":"Now running the tests"}]}}"#], to: url)
+        XCTAssertEqual(AgentSessionLogParser.assistantSnippets(from: URL(fileURLWithPath: url.path), provider: .claude),
+                       ["Reading the config first", "Now running the tests"], "a changed file is read again")
+    }
+
     /// ~1.1 MB of ordinary records with no title in them.
     private var padding: [String] {
         let text = String(repeating: "x", count: 900)

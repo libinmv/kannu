@@ -399,6 +399,18 @@ not for TCC — `~/Library/Application Support/Claude` is not protected — but 
 are 100+ KB each and rewritten on every Desktop turn. Only the reduced id map crosses back, and
 it is compared as a map so a timestamp bump alone never schedules a rescan.
 
+**2026-09-11 addendum — the main actor, not only TCC.** Every FSEvents batch dropped both lists of
+recent transcripts, so an append to a running chat or a hook's status write made the next rescan
+walk `~/.claude/projects` and `~/.cursor/projects` (hundreds to thousands of files) on the main
+actor, and every rescan re-read and parsed the first 32 KB of up to 24 transcripts per provider.
+Under bursty hook traffic Kannu averaged 18 % CPU with 80 % peaks. Rule: drop the lists only when
+`TranscriptListingInvalidation.shouldInvalidate` says a transcript may have appeared, gone or moved
+(or events were lost); appends ride the lists' two-second lifetime. Head-derived facts (snippets,
+Cursor titles) are remembered against (mtime, size), like the title and tail caches. Guards:
+`TranscriptListingInvalidationTests` (flag values pinned to CoreServices),
+`AgentSessionLogParserTests.testAssistantSnippetsFollowTheFileWhenItChanges` (verified to fail
+when the cache ignores a changed file).
+
 ## 13. A live Claude session is never resumed
 
 **Rule:** `claude://resume?session=<id>` imports a transcript into Claude Desktop and starts a new

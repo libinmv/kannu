@@ -4,6 +4,30 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - Rescans stop re-walking the transcript folders on every file event
+- **Developer label:** "Kannu uses about 5% CPU while an agent works ... is this a bit too much, will it draw down so much battery, how can we optimize that"
+- **Agent label:** Plan item D7, triggered by the after-measurement: drop transcript lists only on create/remove/rename; cache head reads
+- **Changes:**
+  - Measured after the Settings work, with hook events arriving in bursts (several tool calls at
+    once): 18.2 % average CPU, 79 % peaks. `sample` put it on the main actor: every FSEvents batch
+    (an append to a running chat's transcript, a hook status write) dropped both transcript
+    lists, so each rescan walked `~/.claude/projects` (543 files here) and `~/.cursor/projects`
+    (1,187), and each rescan re-read and JSON-parsed the first 32 KB of up to 24 transcripts per
+    provider for chat names and snippets.
+  - New pure `TranscriptListingInvalidation` (logic target): a batch drops the lists only when an
+    item under a transcript root was created, removed or renamed, or events were lost
+    (must-scan, dropped, root changed). Appends and hook writes leave them; the lists still
+    refresh on their two-second lifetime, so a resumed old chat appears within two seconds (its
+    hooks show it sooner). The FSEvents callback now reads the event paths and flags.
+  - `AgentSessionLogParser.assistantSnippets` and `CursorTranscriptParser`'s head title and
+    snippets are remembered against (mtime, size), as titles and tails already were.
+  - Same burst pattern after the change: 3.7 % average, 13.9 % peak. Steady green with no hook
+    traffic stays about 0.3 %.
+  - Tests: `TranscriptListingInvalidationTests` (appends and hook writes keep the lists; create,
+    remove, rename and lost events drop them; sibling folders are not roots; flag values match
+    CoreServices) and a snippet-cache test that fails if a changed file is served from the cache.
+    REGRESSIONS entry 11 addendum.
+
 ### 2026-09-11 - Stats, Extensions, About and Spotify in the System Settings layout; final sweep
 - **Developer label:** "the settings should be enginered like apple does settings" (scope picked: "Rework every tab")
 - **Agent label:** Last tabs, then a sweep so no footer is right-aligned and no caption sits in a row of its own

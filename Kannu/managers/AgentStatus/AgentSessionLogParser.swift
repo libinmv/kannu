@@ -249,7 +249,16 @@ enum AgentSessionLogParser {
         return results
     }
 
+    /// Snippets from the transcript's first 32 KB, remembered against (mtime, size): every rescan
+    /// asks for all recent transcripts, and re-reading and parsing each head was most of a rescan.
+    private static var snippetCache: [String: (mtime: Date, size: Int, snippets: [String])] = [:]
+
     static func assistantSnippets(from path: URL, provider: AgentSessionLogProvider) -> [String] {
+        let values = try? path.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        if let mtime = values?.contentModificationDate, let size = values?.fileSize,
+           let cached = snippetCache[path.path], cached.mtime == mtime, cached.size == size {
+            return cached.snippets
+        }
         guard let text = readLeadingLines(at: path) else { return [] }
         var snippets: [String] = []
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
@@ -260,6 +269,10 @@ enum AgentSessionLogParser {
                 continue
             }
             snippets.append(snippet)
+        }
+        if let mtime = values?.contentModificationDate, let size = values?.fileSize {
+            if snippetCache.count > 2 * maxSessionsPerScan { snippetCache.removeAll() }
+            snippetCache[path.path] = (mtime, size, snippets)
         }
         return snippets
     }
