@@ -18,6 +18,12 @@ final class AgentStatusNotificationBridge: ObservableObject {
     private var pushedFindingIDs: Set<String> = Set(Defaults[.adrPushedFindingIDs])
     /// Usage windows already pushed, one key per window instance (see `UsageAlertPolicy.pushKey`).
     private var pushedUsageKeys: Set<String> = Set(Defaults[.usageAlertPushedKeys])
+    private var waitReminder = AgentWaitReminder()
+    /// Overdue waits seen shortly after start are marked, not pushed (no burst on relaunch).
+    private var suppressOverdueUntil: Date = .distantPast
+    private var waitRecheckTask: Task<Void, Never>?
+    private var waitRecheckDate: Date?
+    private var waitRemindersEnabled = false
 
     private init() {}
 
@@ -35,6 +41,7 @@ final class AgentStatusNotificationBridge: ObservableObject {
         Defaults.publisher(.enableAgentStatusMobileNotifications, options: [])
             .sink { [weak self] _ in
                 self?.lastNotifiedState = nil
+                Task { @MainActor in self?.handleWaitReminders(CursorAgentStatusMonitor.shared.sessions) }
             }
             .store(in: &cancellables)
 
@@ -48,13 +55,76 @@ final class AgentStatusNotificationBridge: ObservableObject {
         UsageAlertManager.shared.$nearLimit
             .sink { [weak self] near in self?.handleUsageAlerts(near) }
             .store(in: &cancellables)
+
+        // "Still waiting on you" needs per-session wait times, not the aggregate light.
+        waitReminder = AgentWaitReminder()
+        waitRemindersEnabled = false
+        suppressOverdueUntil = Date().addingTimeInterval(15)
+        CursorAgentStatusMonitor.shared.$sessions
+            .sink { [weak self] sessions in self?.handleWaitReminders(sessions) }
+            .store(in: &cancellables)
+        Defaults.publisher(.agentWaitReminderMinutes, options: [])
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.handleWaitReminders(CursorAgentStatusMonitor.shared.sessions) }
+            }
+            .store(in: &cancellables)
     }
 
     func stop() {
         debounceTask?.cancel()
         debounceTask = nil
+        waitRecheckTask?.cancel()
+        waitRecheckTask = nil
+        waitRecheckDate = nil
+        waitReminder = AgentWaitReminder()
         cancellables.removeAll()
         lastNotifiedState = nil
+    }
+
+    // MARK: - Still waiting on you
+
+    private func handleWaitReminders(_ sessions: [AgentSessionStatus], now: Date = Date()) {
+        let minutes = Defaults[.agentWaitReminderMinutes]
+        let threshold: TimeInterval? = Defaults[.enableAgentStatusMobileNotifications] && minutes > 0 ? TimeInterval(minutes * 60) : nil
+        // Waits already overdue when reminders switch on (launch, or the setting just turned on)
+        // are marked, not pushed: changing a setting never fires an instant push.
+        let turningOn = threshold != nil && !waitRemindersEnabled
+        waitRemindersEnabled = threshold != nil
+        let due = waitReminder.update(sessions, now: now, threshold: threshold,
+                                      suppressOverdue: turningOn || now < suppressOverdueUntil)
+        // The session list does not republish when a wait crosses the threshold: arm that moment.
+        // Re-armed only when the moment changes, not on every rescan.
+        let next = threshold.flatMap { waitReminder.nextCheck(now: now, threshold: $0) }
+        if next != waitRecheckDate {
+            waitRecheckTask?.cancel()
+            waitRecheckTask = nil
+            waitRecheckDate = next
+            if let next {
+                let delay = max(1, next.timeIntervalSince(now) + 1)
+                waitRecheckTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .seconds(delay))
+                    guard !Task.isCancelled else { return }
+                    self?.waitRecheckDate = nil
+                    self?.handleWaitReminders(CursorAgentStatusMonitor.shared.sessions)
+                }
+            }
+        }
+        guard !due.isEmpty else { return }
+        Task { [weak self] in
+            for reminder in due { await self?.deliverWaitReminder(reminder) }
+        }
+    }
+
+    /// The app's name and how long — never the chat's name.
+    private func deliverWaitReminder(_ reminder: AgentWaitReminder.Due) async {
+        let app = AgentSessionStatus.providerLabel(for: reminder.provider)
+        let payload = NotificationPayload(
+            title: String(localized: "Still waiting on you"),
+            body: String(localized: "\(app) has waited \(reminder.minutes) minutes for your answer."),
+            priority: 4,
+            tag: "still-waiting"
+        )
+        await send(payload, webhookState: "still_waiting", extra: ["provider": reminder.provider, "minutes": reminder.minutes])
     }
 
     // MARK: - Security findings

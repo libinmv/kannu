@@ -893,6 +893,7 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .llmUsage, title: "Cursor Provider", keywords: ["llm", "cursor", "provider", "toggle"], highlightID: SettingsTab.llmUsage.highlightID(for: "Cursor Provider")),
             SettingsSearchEntry(tab: .llmUsage, title: "Show a gauge beside the lights near a limit", keywords: ["usage", "limit", "gauge", "alert", "95", "quota", "forecast"], highlightID: SettingsTab.llmUsage.highlightID(for: "Show a gauge beside the lights near a limit")),
             SettingsSearchEntry(tab: .llmUsage, title: "Check Codex and Cursor limits in the background", keywords: ["usage", "background", "codex", "cursor", "quota", "limit"], highlightID: SettingsTab.llmUsage.highlightID(for: "Check Codex and Cursor limits in the background")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Remind me when an agent is still waiting", keywords: ["remind", "reminder", "waiting", "yellow", "push", "approval", "nudge"], highlightID: SettingsTab.agentStatus.highlightID(for: "Remind me when an agent is still waiting")),
             SettingsSearchEntry(tab: .agentStatus, title: "Open the exact terminal tab", keywords: ["terminal", "iterm", "tmux", "tab", "click", "open", "pane"], highlightID: SettingsTab.agentStatus.highlightID(for: "Open the exact terminal tab")),
             SettingsSearchEntry(tab: .agentStatus, title: "Push when a usage limit is almost reached", keywords: ["push", "usage", "limit", "quota", "mobile", "ntfy", "pushover", "webhook"], highlightID: SettingsTab.agentStatus.highlightID(for: "Push when a usage limit is almost reached")),
             SettingsSearchEntry(tab: .llmUsage, title: "Antigravity Provider", keywords: ["antigravity", "gemini", "provider", "usage", "sessions"], highlightID: SettingsTab.llmUsage.highlightID(for: "Antigravity Provider")),
@@ -7673,6 +7674,7 @@ struct AgentStatusSettings: View {
     @State private var pushoverAppToken = ""
     @State private var webhookURL = ""
     @Default(.agentStatusNotifyOnInactive) var notifyOnInactive
+    @Default(.agentWaitReminderMinutes) var agentWaitReminderMinutes
     @State private var isSendingTestNotification = false
 
     private func highlightID(_ title: String) -> String {
@@ -7935,6 +7937,22 @@ struct AgentStatusSettings: View {
                         Defaults.Toggle(key: .agentStatusNotifyOnInactive) {
                             Text("Notify when inactive")
                         }
+                        HStack {
+                            Text("Remind me when an agent is still waiting")
+                            Spacer()
+                            Picker("", selection: $agentWaitReminderMinutes) {
+                                Text("Off").tag(0)
+                                Text("After 3 minutes").tag(3)
+                                Text("After 10 minutes").tag(10)
+                                Text("After 20 minutes").tag(20)
+                            }
+                            .pickerStyle(.menu)
+                            .frame(minWidth: 140)
+                        }
+                        .settingsHighlight(id: highlightID("Remind me when an agent is still waiting"))
+                        Text("One more push if an agent is still waiting for your answer after this long. Only the app's name and how long it has waited are sent.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         Defaults.Toggle(key: .adrPushHighFindings) {
                             Text("Push high security findings")
                         }

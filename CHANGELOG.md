@@ -4,6 +4,25 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - "Still waiting on you": one reminder push when an agent waits too long
+- **Developer label:** Waiting reminder + tab jump
+- **Agent label:** Push once more when a session has waited on the user past a chosen time
+- **Changes:**
+  - `AgentWaitReminder` (logic target): a wait starts when a session is first seen yellow and keeps
+    that start until it leaves yellow (so a Cursor transcript yellow whose timestamp moves is still
+    one wait); one reminder per wait; leaving yellow and coming back is a new wait; waits already
+    overdue in the first seconds after launch, or when the setting is switched on, are marked,
+    not pushed — no burst on relaunch and no instant push from changing the setting.
+  - The bridge watches the per-session list, arms a one-shot for the moment the next wait crosses
+    the threshold (the list does not republish then), and pushes "Still waiting on you — Claude Code
+    has waited 10 minutes for your answer." (the app's name and the wait only; webhook state
+    `still_waiting`).
+  - Settings › Mobile notifications: "Remind me when an agent is still waiting" — Off (default),
+    after 3, 10 or 20 minutes. 20 is the cap because hook-only yellows end at the 30-minute stale limit;
+    5 is left out because an uncorroborated yellow ends at exactly 5.
+  - Tests: `AgentWaitReminderTests` (once per wait, a new wait reminds again, moving timestamps, leaving
+    yellow cancels, no launch burst, off clears, next check, hidden sessions ignored).
+
 ### 2026-09-11 - Click-through opens the exact Terminal or iTerm2 tab and tmux pane; a live chat is never resumed
 - **Developer label:** Waiting reminder + tab jump
 - **Agent label:** Pick the agent's own terminal tab (and tmux pane) on click, and stop resuming live Claude chats whose host the parent walk cannot reach

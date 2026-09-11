@@ -1310,6 +1310,8 @@ extension Defaults.Keys {
     static let agentStatusPushoverAppToken = Key<String>("agentStatusPushoverAppToken", default: "")
     static let agentStatusWebhookURL = Key<String>("agentStatusWebhookURL", default: "")
     static let agentStatusNotifyOnInactive = Key<Bool>("agentStatusNotifyOnInactive", default: false)
+    /// "Still waiting on you": one more push after this many minutes of unanswered yellow; 0 = off.
+    static let agentWaitReminderMinutes = Key<Int>("agentWaitReminderMinutes", default: 0)
 
     // MARK: Screen Assistant Feature
     static let enableScreenAssistant = Key<Bool>("enableScreenAssistant", default: false)
