@@ -928,6 +928,7 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .agentStatus, title: "Connect ADR", keywords: ["adr", "uber", "security", "discovery", "sensor", "connect", "install", "uv", "pipx"], highlightID: SettingsTab.agentStatus.highlightID(for: "Connect ADR")),
             SettingsSearchEntry(tab: .agentStatus, title: "Security findings", keywords: ["security", "finding", "mcp", "unpinned", "plaintext", "undeclared", "acknowledge", "snooze", "shield"], highlightID: SettingsTab.agentStatus.highlightID(for: "Security findings")),
             SettingsSearchEntry(tab: .agentStatus, title: "Snapshot folder", keywords: ["snapshot", "folder", "directory", "adr", "discovery", "output"], highlightID: SettingsTab.agentStatus.highlightID(for: "Snapshot folder")),
+            SettingsSearchEntry(tab: .agentStatus, title: "ADR tools folder", keywords: ["adr", "tools", "folder", "path", "uv", "pipx", "sensor", "discovery", "install", "not found"], highlightID: SettingsTab.agentStatus.highlightID(for: "ADR tools folder")),
             SettingsSearchEntry(tab: .agentStatus, title: "Let Kannu run scans", keywords: ["scan", "adr", "discovery", "automatic", "daily", "schedule"], highlightID: SettingsTab.agentStatus.highlightID(for: "Let Kannu run scans")),
             SettingsSearchEntry(tab: .agentStatus, title: "Scan now", keywords: ["scan", "adr", "discovery", "run", "now"], highlightID: SettingsTab.agentStatus.highlightID(for: "Scan now")),
             SettingsSearchEntry(tab: .agentStatus, title: "Policy file", keywords: ["policy", "tenant", "domains", "approved", "forbidden", "adr"], highlightID: SettingsTab.agentStatus.highlightID(for: "Policy file")),
@@ -7841,6 +7842,28 @@ struct AgentStatusSettings: View {
 
             LabeledContent {
                 HStack(spacing: 8) {
+                    SettingsValueText(adrToolDirectory.isEmpty
+                                      ? String(localized: "Standard places")
+                                      : adrToolDirectory.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                    Button("Choose…") { chooseToolDirectory() }
+                    if !adrToolDirectory.isEmpty {
+                        Button("Clear") {
+                            adrToolDirectory = ""
+                            adr.checkAgain()
+                            adr.checkDetection()
+                        }
+                    }
+                }
+            } label: {
+                SettingsRowLabel("ADR tools folder", description: "Only if the tools are somewhere else: Kannu already looks in ~/.local/bin, uv's tool folders, /opt/homebrew/bin and /usr/local/bin.")
+            }
+            .settingsHighlight(id: highlightID("ADR tools folder"))
+            if let protected = ADRToolFolder.protectedFolderName(for: adrToolDirectory, home: NSHomeDirectory()) {
+                SettingsErrorText(String(localized: "This folder is in \(protected). macOS asks for permission whenever Kannu looks for the tools there; a folder outside it avoids the prompt."))
+            }
+
+            LabeledContent {
+                HStack(spacing: 8) {
                     SettingsValueText(SecurityFindingsStore.snapshotDirectory.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
                     Button("Choose…") { chooseSnapshotDirectory() }
                     Button("Reveal") {
@@ -8184,22 +8207,51 @@ struct AgentStatusSettings: View {
     private func adrToolRow(_ tool: ADRConnection.Tool) -> some View {
         let status = tool == .discovery ? adr.discovery : adr.sensor
         return LabeledContent {
-            if tool == .discovery {
+            HStack(spacing: 8) {
+                // Kannu never installs software: the command is copied for the user to run.
+                if tool == .sensor, status.state == .notFound {
+                    Button("Copy install command") {
+                        let pasteboard = NSPasteboard.general
+                        pasteboard.clearContents()
+                        pasteboard.setString(tool.installCommand, forType: .string)
+                    }
+                }
                 Button(adr.isChecking ? "Checking…" : "Check again") { adr.checkAgain() }
                     .disabled(adr.isChecking)
             }
         } label: {
             VStack(alignment: .leading, spacing: 2) {
-                Text(tool.displayName)
-                SettingsStatusText(adrStatusCaption(status), isReady: status.isFound)
+                if tool == .sensor {
+                    Text("ADR Sensor") + Text(verbatim: " · ") + Text("Optional").foregroundStyle(.secondary)
+                } else {
+                    Text(tool.displayName)
+                }
+                SettingsStatusText(adrStatusCaption(status, optional: tool == .sensor), isReady: status.isFound)
+                if tool == .sensor {
+                    Text("Not needed for findings, and Kannu does not use it yet. It exports agent sessions for a security team's SIEM.")
+                        .settingsDescriptionStyle()
+                }
             }
         }
     }
 
-    private func adrStatusCaption(_ status: ADRConnection.Status) -> String {
+    private func chooseToolDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = String(localized: "Use folder")
+        if panel.runModal() == .OK, let url = panel.url {
+            adrToolDirectory = url.path
+            adr.checkAgain()
+            adr.checkDetection()
+        }
+    }
+
+    private func adrStatusCaption(_ status: ADRConnection.Status, optional: Bool = false) -> String {
         switch status.state {
         case .unchecked: return String(localized: "Not checked yet")
-        case .notFound: return String(localized: "Not installed")
+        case .notFound: return optional ? String(localized: "Not installed — optional") : String(localized: "Not installed")
         case .found(let executable, let version):
             let shortPath = executable.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
             return version.map { "\($0) · \(shortPath)" } ?? shortPath

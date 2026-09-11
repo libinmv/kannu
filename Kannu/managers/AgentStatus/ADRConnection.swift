@@ -198,9 +198,16 @@ final class ADRConnection: ObservableObject {
         return nil
     }
 
+    /// A check asked for while one runs (the tools folder changed): run again when it ends,
+    /// rather than drop it.
+    private var recheckQueued = false
+
     /// Re-runs detection. Version reads happen off the main actor; results are published back.
     func checkAgain() {
-        guard !isChecking else { return }
+        guard !isChecking else {
+            recheckQueued = true
+            return
+        }
         isChecking = true
         let directories = Self.candidateDirectories(userDirectory: Defaults[.adrToolDirectory])
         DispatchQueue.global(qos: .utility).async {
@@ -220,6 +227,10 @@ final class ADRConnection: ObservableObject {
                     self.lastCheckedAt = Date()
                     self.isChecking = false
                     Self.logger.info("ADR check: discovery=\(self.discovery.isFound, privacy: .public) sensor=\(self.sensor.isFound, privacy: .public)")
+                    if self.recheckQueued {
+                        self.recheckQueued = false
+                        self.checkAgain()
+                    }
                 }
             }
         }

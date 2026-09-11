@@ -4,6 +4,25 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-12 - The ADR Sensor row says what it is; a folder row for tools installed elsewhere
+- **Developer label:** "adr sensor not installed showing, but can we give an install button or something as good ux"
+- **Agent label:** Follow-up 30, C7 — Kannu never installs software, so the row explains itself and hands over the command
+- **Changes:**
+  - The Sensor row reads "ADR Sensor · Optional", "Not installed — optional", and says what it is:
+    not needed for findings, not used by Kannu yet, an export for a security team's SIEM. It gains
+    **Copy install command** (`uv tool install adr-sensor`, pasteboard only) and **Check again**,
+    which Discovery already had. Kannu still never installs anything.
+  - New **ADR tools folder** row for `Defaults[.adrToolDirectory]`, which the code has searched
+    since the ADR work began and nothing exposed: Choose…/Clear, each re-running the tool check and
+    the Detection check. A check asked for while one runs is queued instead of dropped. A folder
+    inside Documents, Desktop, Downloads or iCloud Drive is called out, because macOS then asks for
+    permission every time Kannu looks there.
+  - docs/ADR.md: the Sensor section says Kannu does not use it, the sections are back in order
+    (7 before 8), and the install section names the new row and the privacy-prompt trap.
+  - Tests: new `ADRDocsTests` (every watched settings file is documented, the schedule's wording,
+    the Sensor's, the finding card's, and the section numbering); the Settings inventory is now
+    199 entries / 250 registrations / 244 ids.
+
 ### 2026-09-12 - ADR Discovery retries a failed scan within the hour and shows the next scan
 - **Developer label:** "also when does automatic scans run for securtity findings"
 - **Agent label:** Follow-up 30, C6 — the answer, and the three bugs found tracing it

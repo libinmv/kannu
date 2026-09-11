@@ -151,3 +151,22 @@ struct ADRKannuScanWindow: Equatable {
             && modified <= (finishedAt ?? .distantFuture).addingTimeInterval(2)
     }
 }
+
+/// The optional folder Kannu also searches for `adr-discovery`, `adr-sensor` and `uv`.
+enum ADRToolFolder {
+    /// macOS asks the user before an app reads these; Kannu checks the folder at every launch, so a
+    /// tools folder inside one would raise that prompt again and again. Returns the folder's name.
+    static func protectedFolderName(for path: String, home: String) -> String? {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !home.isEmpty else { return nil }
+        let expanded = trimmed.hasPrefix("~/") || trimmed == "~" ? home + trimmed.dropFirst() : trimmed
+        let protected: [(folder: String, name: String)] = [
+            ("Documents", "Documents"), ("Desktop", "Desktop"), ("Downloads", "Downloads"),
+            ("Library/Mobile Documents", "iCloud Drive"),
+        ]
+        for entry in protected where expanded == home + "/" + entry.folder || expanded.hasPrefix(home + "/" + entry.folder + "/") {
+            return entry.name
+        }
+        return nil
+    }
+}

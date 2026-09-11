@@ -23,7 +23,9 @@ pipx install "git+https://github.com/uber/ADR#subdirectory=Discovery"
 
 Then open Kannu → Settings → Agents → **ADR Discovery** and press **Check again**. Kannu looks
 in `~/.local/bin`, uv's tool directory, `/opt/homebrew/bin` and `/usr/local/bin`; a different
-location can be set with the "ADR tool directory" setting.
+location can be set in the **ADR tools folder** row (choose the folder that holds `adr-discovery`,
+`adr-sensor` or `uv`; leave it empty for the standard places). Avoid a folder inside Documents,
+Desktop, Downloads or iCloud Drive: macOS asks for permission every time Kannu looks there.
 
 ## 2. Produce a snapshot
 
@@ -154,6 +156,14 @@ Discovery accepts `--policy policy.json` with `approved`, `forbidden` and `tenan
 for the format. Point Kannu at it with Settings → Agents → ADR Discovery → **Policy file**; Kannu passes
 it to every scan it runs.
 
+## 7. ADR Sensor (optional, not used yet)
+
+`adr-sensor` exports normalised session records for Claude Code, Cursor, Codex, Warp, Claude
+Desktop, Cline and opencode. **Kannu does not use it**: it reads those sources itself, and no
+finding depends on the Sensor. It is listed because a security team may want those sessions in a
+SIEM. Settings shows whether it is installed and offers **Copy install command**
+(`uv tool install adr-sensor`) — Kannu never installs anything itself.
+
 ## 8. Session analysis with ADR Detection (opt-in, off by default)
 
 Detection (`ADR/Detection`) judges a *finished* chat's transcript: a local hidden-Unicode check,
@@ -187,14 +197,6 @@ What leaves the Mac, exactly: the chosen transcript text, to Anthropic (your log
 and, only with triage on, to OpenAI. Nothing else, nothing automatic, nothing without your click.
 The adapter Kannu runs is its own GPL script (`scripts/adr-analyze-session.py`, written to
 `~/.kannu/adr/detection/` at run time); it imports ADR from your checkout and copies nothing.
-
-## 7. ADR Sensor (optional)
-
-`adr-sensor` exports normalised session records for Claude Code, Cursor, Codex, Warp, Claude
-Desktop, Cline and opencode. Kannu already reads those sources itself; the Sensor is useful when
-your security team wants sessions in a SIEM. Install with `uv tool install adr-sensor`. Kannu will
-read `adr-sensor --save-sessions` output from `~/.cache/adr_sensor` (changeable) in a later
-release.
 
 ## What Kannu does with findings
 
