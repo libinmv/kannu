@@ -1542,9 +1542,17 @@ final class CursorAgentStatusMonitor: ObservableObject {
         _ sessions: [AgentSessionStatus],
         maxAgeMinutes: Int
     ) -> [AgentSessionStatus] {
-        let cursorProjectBySessionID = projectNamesFromTranscriptPaths(maxAgeMinutes: maxAgeMinutes)
+        // Hook files carry their project (from cwd), so usually nothing needs a name. Build only the
+        // maps a nameless session needs: listing Cursor's transcript folders and reading every
+        // provider's logs ran on each hook event before, for no change in the result.
+        let needing = sessions.filter { normalizedProjectName($0.projectName) == nil }
+        guard !needing.isEmpty else { return sessions }
+        let cursorProjectBySessionID = needing.contains { $0.provider.lowercased() == "cursor" }
+            ? projectNamesFromTranscriptPaths(maxAgeMinutes: maxAgeMinutes)
+            : [:]
         var logProjectBySessionID: [String: [String: String]] = [:]
-        for logProvider in AgentSessionLogProvider.allCases {
+        let neededLogProviders = Set(needing.compactMap { AgentSessionLogProvider.from(hookProvider: $0.provider.lowercased()) })
+        for logProvider in AgentSessionLogProvider.allCases where neededLogProviders.contains(logProvider) {
             logProjectBySessionID[logProvider.rawValue] = AgentSessionLogParser.projectNamesBySessionID(
                 provider: logProvider,
                 maxAgeMinutes: maxAgeMinutes

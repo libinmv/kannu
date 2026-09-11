@@ -4,6 +4,17 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - Hook events no longer re-list Cursor's transcripts for nothing
+- **Developer label:** "how can we optimize that" (the notch's CPU while an agent works)
+- **Agent label:** Skip project-name enrichment when every session already has a project
+- **Changes:**
+  - Profiling a busy Claude session showed the main thread's rescan time dominated by
+    `enrichProjectNamesFromTranscripts`, which listed every recent Cursor transcript folder and read
+    every provider's logs on each hook event — before checking whether any session lacked a project
+    name. Hook files carry their project (from cwd), so usually none do. It now returns at once when
+    nothing needs a name and builds only the maps a nameless session needs. Same result, same
+    tests; the work simply is not done when it cannot change anything.
+
 ### 2026-09-11 - Claude chat names hold on very long transcripts, and cost less to read
 - **Developer label:** "did a regression happen in chat names for claude, it shows untitled chat"
 - **Agent label:** Keep the last tail-found title, skip non-title records, skip the head when cached
