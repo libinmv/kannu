@@ -47,6 +47,9 @@ enum DebugSnapshots {
         if request.tabs == nil || request.tabs?.contains("findings") == true {
             boards.append(("findings", AgentStatusSettings.snapshotFindingRows(DebugSnapshotFixtures.findings)))
         }
+        if request.tabs == nil || request.tabs?.contains("detection") == true {
+            boards.append(("detection", AgentStatusSettings.snapshotDetectionRows()))
+        }
         if request.tabs == nil || request.tabs?.contains("components") == true {
             boards.append(("components", AnyView(componentsBoard)))
         }

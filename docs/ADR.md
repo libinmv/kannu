@@ -21,7 +21,7 @@ pipx works the same way:
 pipx install "git+https://github.com/uber/ADR#subdirectory=Discovery"
 ```
 
-Then open Kannu → Settings → Agents → **Security findings** and press **Check again**. Kannu looks
+Then open Kannu → Settings → Agents → **ADR Discovery** and press **Check again**. Kannu looks
 in `~/.local/bin`, uv's tool directory, `/opt/homebrew/bin` and `/usr/local/bin`; a different
 location can be set with the "ADR tool directory" setting.
 
@@ -50,7 +50,7 @@ and no access at all under personal folders such as `~/.ssh`, `Documents`, `Mail
 
 ## 3. Let Kannu run it (default once connected)
 
-With Discovery connected, Settings → Agents → Security findings → **Let Kannu run scans** makes
+With Discovery connected, Settings → Agents → ADR Discovery → **Let Kannu run scans** makes
 Kannu invoke `adr-discovery --json --output-dir <snapshot folder>` itself: once a day, sooner
 after one of your MCP configuration files changes on disk (`~/.claude.json`, `~/.claude/mcp.json`,
 `~/.cursor/mcp.json`, `~/.codex/config.toml`, Claude Desktop's config), and whenever you press
@@ -137,7 +137,7 @@ snapshot folder at wherever those snapshots land.
 
 Discovery accepts `--policy policy.json` with `approved`, `forbidden` and `tenant_domains` lists;
 `tenant_domains` enables the *third-party destination* finding. See the upstream Discovery README
-for the format. Point Kannu at it with Settings → Security findings → **Policy file**; Kannu passes
+for the format. Point Kannu at it with Settings → Agents → ADR Discovery → **Policy file**; Kannu passes
 it to every scan it runs.
 
 ## 8. Session analysis with ADR Detection (opt-in, off by default)
@@ -154,7 +154,7 @@ git clone https://github.com/uber/ADR && cd ADR/Detection && uv sync   # Python 
 npm install -g @anthropic-ai/claude-code && claude auth login           # if not already
 ```
 
-Then Settings → Agents → Security findings → **Analyze chats with ADR Detection** (a consent
+Then Settings → Agents → Session analysis → **Analyze chats with ADR Detection** (a consent
 alert names what leaves the Mac), choose the `Detection` folder, and optionally store keys:
 an OpenAI key if you turn **Triage with OpenAI first** on (off = Claude only), an Anthropic API
 key if you would rather spend API credits than your subscription's 5-hour/weekly quota.
@@ -184,10 +184,12 @@ release.
 
 ## What Kannu does with findings
 
-- Lists them in Settings → Agents → Security findings, highest severity first, with Acknowledge
-  and Snooze. Acknowledgements are per finding: if a finding disappears and later returns with
-  different evidence, it is shown again. Each finding also says, in plain words, what it means
-  and what to do, and all of its text can be selected and copied.
+- Lists them in Settings → Agents → Security findings, highest severity first. Each row is
+  compact — title, severity and a two-line summary, with **Copy for agent** and a "…" menu
+  (Acknowledge, Snooze 24h, Reveal in Finder); **Details** opens the evidence and, in plain words,
+  what the finding means and what to do. All of its text can be selected and copied.
+  Acknowledgements are per finding: if a finding disappears and later returns with different
+  evidence, it is shown again.
 - **Copy for agent** puts a plain-text request on the clipboard, ready to paste into Claude Code,
   Codex or any agent: what the finding means, what to do, and the details, marked as data rather
   than instructions. It never includes a key, the decoded hidden text, a chat name or a session
