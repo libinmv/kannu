@@ -76,7 +76,7 @@ final class RegressionGuardTests: XCTestCase {
         XCTAssertFalse(M.holdsAwaitingInput(provider: "claude", processAlive: false, tail: .toolInFlight, cursorPendingApproval: false))
         XCTAssertTrue(M.holdsAwaitingInput(provider: "cursor", processAlive: false, tail: nil, cursorPendingApproval: true))
         XCTAssertFalse(M.holdsAwaitingInput(provider: "cursor", processAlive: false, tail: nil, cursorPendingApproval: false))
-        for provider in ["vscode", "codex", "antigravity"] {
+        for provider in ["vscode", "codex", "antigravity", "copilot", "gemini", "qwen", "opencode"] {
             XCTAssertTrue(M.holdsAwaitingInput(provider: provider, processAlive: false, tail: nil, cursorPendingApproval: false),
                           "\(provider): nothing can corroborate or refute; the stale cap ends it")
         }

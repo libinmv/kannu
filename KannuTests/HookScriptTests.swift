@@ -63,13 +63,15 @@ final class HookScriptTests: XCTestCase {
     @discardableResult
     private func launch(state: String, event: String, conversation: String, toolName: String = "Bash",
                         provider: String = "claude", extra: [String: Any] = [:], rawPayload: Data? = nil,
-                        path: String = HookScriptTests.defaultPath) throws -> Process {
+                        path: String = HookScriptTests.defaultPath, environment: [String: String] = [:]) throws -> Process {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = [Self.scriptURL.path, state, provider, event]
         var env = ProcessInfo.processInfo.environment
         env["HOME"] = home.path
         env["PATH"] = path
+        env["COPILOT_CLI"] = nil
+        env.merge(environment) { _, new in new }
         process.environment = env
         let stdin = Pipe()
         process.standardInput = stdin
@@ -98,9 +100,9 @@ final class HookScriptTests: XCTestCase {
     @discardableResult
     private func run(state: String, event: String, conversation: String, toolName: String = "Bash",
                      provider: String = "claude", extra: [String: Any] = [:], rawPayload: Data? = nil,
-                     path: String = HookScriptTests.defaultPath) throws -> String {
+                     path: String = HookScriptTests.defaultPath, environment: [String: String] = [:]) throws -> String {
         let process = try launch(state: state, event: event, conversation: conversation, toolName: toolName,
-                                 provider: provider, extra: extra, rawPayload: rawPayload, path: path)
+                                 provider: provider, extra: extra, rawPayload: rawPayload, path: path, environment: environment)
         process.waitUntilExit()
         XCTAssertEqual(process.terminationStatus, 0, "hook exited \(process.terminationStatus)")
         // The wrapper always exits 0; a Python traceback is the only sign the writer died.
@@ -698,6 +700,117 @@ final class HookScriptTests: XCTestCase {
         XCTAssertGreaterThan((json["tty_sid"] as? NSNumber)?.intValue ?? 0, 1)
         XCTAssertGreaterThan((json["tty_start"] as? NSNumber)?.intValue ?? 0, 1_700_000_000)
         XCTAssertEqual(json["state"] as? String, "stopped", "the second event carried it")
+    }
+
+    // MARK: - v36: Copilot CLI, Gemini CLI, Qwen Code
+
+    private let copilot = ["COPILOT_CLI": "1"]
+    private static let allowLine = #"{"permission":"allow","continue":true}"#
+
+    func testVSCodeWithoutATerminalStaysVSCode() throws {
+        XCTAssertEqual(try run(state: "thinking", event: "UserPromptSubmit", conversation: "v1", provider: "vscode"), Self.allowLine)
+        XCTAssertEqual(try readState("v1", provider: "vscode"), "thinking")
+        XCTAssertNil(try readState("v1", provider: "copilot"))
+    }
+
+    func testCopilotCLIPermissionRequestIsNotYellow() throws {
+        try run(state: "executing", event: "PreToolUse", conversation: "c1", provider: "vscode", environment: copilot)
+        XCTAssertEqual(try readState("c1", provider: "copilot"), "executing")
+        let out = try run(state: "awaiting_input", event: "PermissionRequest", conversation: "c1", provider: "vscode", environment: copilot)
+        XCTAssertEqual(out, "{}")
+        XCTAssertEqual(try readState("c1", provider: "copilot"), "executing",
+                       "it fires before Copilot's own rules and auto-allow: not a prompt yet")
+    }
+
+    func testCopilotCLIPermissionPromptNotificationIsYellow() throws {
+        try run(state: "executing", event: "PreToolUse", conversation: "c2", provider: "vscode", environment: copilot)
+        try run(state: "awaiting_input", event: "Notification", conversation: "c2", provider: "vscode",
+                extra: ["notification_type": "idle_prompt"], environment: copilot)
+        XCTAssertEqual(try readState("c2", provider: "copilot"), "executing", "an idle reminder changes nothing")
+        try run(state: "awaiting_input", event: "Notification", conversation: "c2", provider: "vscode",
+                extra: ["notification_type": "elicitation_dialog"], environment: copilot)
+        XCTAssertEqual(try readState("c2", provider: "copilot"), "awaiting_input")
+    }
+
+    func testCopilotReplacesItsOldVSCodeFile() throws {
+        try run(state: "thinking", event: "UserPromptSubmit", conversation: "c3", provider: "vscode")
+        XCTAssertNotNil(try readState("c3", provider: "vscode"))
+        try run(state: "executing", event: "PreToolUse", conversation: "c3", provider: "vscode", environment: copilot)
+        XCTAssertNil(try readState("c3", provider: "vscode"), "the card a v35 hook filed under VS Code goes")
+        XCTAssertEqual(try readState("c3", provider: "copilot"), "executing")
+    }
+
+    func testGeminiEventsDriveTheLight() throws {
+        let steps: [(String, String, [String: Any], String?)] = [
+            ("SessionStart", "idle", ["source": "startup"], "idle"),
+            ("BeforeAgent", "thinking", ["prompt": "fix it"], "thinking"),
+            ("BeforeTool", "executing", ["tool_input": ["command": "ls"]], "executing"),
+            ("Notification", "awaiting_input", ["notification_type": "ToolPermission", "details": ["type": "exec"]], "awaiting_input"),
+            ("AfterTool", "thinking", ["tool_response": ["llmContent": "ok"]], "thinking"),
+            ("AfterAgent", "stopped", ["prompt_response": "done"], "stopped"),
+        ]
+        for (event, state, extra, expected) in steps {
+            let out = try run(state: state, event: event, conversation: "g1", toolName: "run_shell_command", provider: "gemini", extra: extra)
+            XCTAssertEqual(out, "{}", "Gemini parses stdout as JSON: \(event)")
+            XCTAssertEqual(try readState("g1", provider: "gemini"), expected, event)
+        }
+        try run(state: "session_end", event: "SessionEnd", conversation: "g1", provider: "gemini", extra: ["reason": "exit"])
+        XCTAssertNil(try readState("g1", provider: "gemini"))
+    }
+
+    func testGeminiPrintsAnEmptyObjectEvenWithoutPython() throws {
+        let out = try run(state: "thinking", event: "BeforeAgent", conversation: "g2", provider: "gemini", path: "/bin")
+        XCTAssertEqual(out, "{}")
+        XCTAssertEqual(try run(state: "thinking", event: "UserPromptSubmit", conversation: "q0", provider: "qwen", path: "/bin"), "{}")
+    }
+
+    func testGeminiAfterToolResultsAreNotScannedForSecrets() throws {
+        try run(state: "thinking", event: "AfterTool", conversation: "g3", provider: "gemini",
+                extra: ["tool_response": ["llmContent": "KEY=" + Self.awsKey]])
+        XCTAssertTrue(try secrets("g3", provider: "gemini").isEmpty)
+        try run(state: "executing", event: "BeforeTool", conversation: "g3", provider: "gemini",
+                extra: ["tool_input": ["command": "echo " + Self.githubToken]])
+        XCTAssertEqual(try secrets("g3", provider: "gemini").first?["where"] as? String, "tool_input")
+        try run(state: "thinking", event: "AfterTool", conversation: "g4", toolName: "read_file", provider: "gemini",
+                extra: ["tool_input": ["absolute_path": home.path + "/.ssh/id_rsa"]])
+        XCTAssertEqual(try sensitivePaths("g4", provider: "gemini").first?["category"] as? String, "ssh_key")
+    }
+
+    func testQwenPermissionRequestYellowIdlePromptNot() throws {
+        XCTAssertEqual(try run(state: "executing", event: "PreToolUse", conversation: "q1", provider: "qwen"), "{}")
+        try run(state: "awaiting_input", event: "PermissionRequest", conversation: "q1", provider: "qwen")
+        XCTAssertEqual(try readState("q1", provider: "qwen"), "awaiting_input", "Qwen fires it when the dialog is shown")
+        // A separate session: a Stop within 2 s of a PermissionRequest is held yellow on purpose
+        // (the parallel-group carry), which is not what this checks.
+        try run(state: "stopped", event: "Stop", conversation: "q1b", provider: "qwen")
+        try run(state: "awaiting_input", event: "Notification", conversation: "q1b", provider: "qwen",
+                extra: ["notification_type": "idle_prompt"])
+        XCTAssertEqual(try readState("q1b", provider: "qwen"), "stopped", "waiting at the prompt is not a question")
+    }
+
+    func testQwenYoloIsUnattended() throws {
+        try run(state: "thinking", event: "UserPromptSubmit", conversation: "q2", provider: "qwen", extra: ["permission_mode": "yolo"])
+        XCTAssertEqual(try readJSON("q2", provider: "qwen")?["unattended"] as? Bool, true)
+    }
+
+    func testClaudeMatchedNotificationsAreUnchanged() throws {
+        // Claude's Notification groups carry a matcher key: the generic rule never applies to them.
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = [Self.scriptURL.path, "stopped", "claude", "Notification", "completed"]
+        var env = ProcessInfo.processInfo.environment
+        env["HOME"] = home.path
+        env["PATH"] = Self.defaultPath
+        process.environment = env
+        let stdin = Pipe()
+        process.standardInput = stdin
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        stdin.fileHandleForWriting.write(try JSONSerialization.data(withJSONObject: ["session_id": "n1", "notification_type": "agent_completed"]))
+        try stdin.fileHandleForWriting.close()
+        process.waitUntilExit()
+        XCTAssertEqual(try readState("n1"), "stopped")
     }
 
     /// REGRESSIONS entry 1: the embedded copy is the one users run; the mirror is the one these

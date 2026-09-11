@@ -28,7 +28,7 @@ final class AgentHookInstaller: ObservableObject {
     private static let logger = os.Logger(subsystem: "com.kannu.app", category: "AgentHookInstaller")
 
     static let scriptName = AgentHookLayout.scriptName
-    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=35"
+    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=36"
 
     private static var home: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -122,6 +122,13 @@ final class AgentHookInstaller: ObservableObject {
             case .antigravity:
                 try Self.writeScript(to: Self.antigravityScriptURL)
                 try Self.mergeAntigravityHooksConfig()
+            case .gemini:
+                // Timeouts in milliseconds; the name shows in Gemini's "hook running" indicator.
+                try Self.installSharedSettingsHooks(for: .gemini, events: AgentHookLayout.geminiEvents,
+                                                    handlerName: AgentHookLayout.handlerName, timeout: 10_000)
+            case .qwen:
+                try Self.installSharedSettingsHooks(for: .qwen, events: AgentHookLayout.qwenEvents,
+                                                    handlerName: nil, timeout: 10)
             }
         } catch {
             lastError = "\(provider.displayName): \(error.localizedDescription)"
@@ -178,17 +185,8 @@ final class AgentHookInstaller: ObservableObject {
         ("stop", "stopped")
     ]
 
-    /// VS Code Copilot / Codex hook events (PascalCase, Claude-compatible).
-    private static let claudeStyleEvents: [(event: String, state: String)] = [
-        // idle, not thinking: opening a session must not paint the green "running" light
-        // (thinking stays visible for activeStaleMs, minutes of false "running").
-        ("SessionStart", "idle"),
-        ("UserPromptSubmit", "thinking"),
-        ("PreToolUse", "executing"),
-        ("PostToolUse", "thinking"),
-        ("PermissionRequest", "awaiting_input"),
-        ("Stop", "stopped")
-    ]
+    /// VS Code Copilot / Codex hook events — see `AgentHookLayout.claudeStyleEvents`.
+    private static var claudeStyleEvents: [(event: String, state: String)] { AgentHookLayout.claudeStyleEvents }
 
     /// Claude Code hook coverage. Richer than `claudeStyleEvents` because Claude supports
     /// matcher-scoped groups, which is the only way to reach the states that matter:
@@ -263,7 +261,13 @@ final class AgentHookInstaller: ObservableObject {
           TS=$(($(date +%s) * 1000))
           printf '{"state":"%s","ts":%s,"provider":"%s"}' "$KANNU_STATE" "$TS" "$KANNU_PROVIDER" > "$KANNU_STATUS_DIR/$KANNU_PROVIDER-default.json"
           # Codex validates hook output strictly and rejects this line; empty stdout is its success.
-          [ "$KANNU_PROVIDER" = "codex" ] || echo '{"permission":"allow","continue":true}'
+          # Gemini CLI parses stdout as JSON; Qwen Code and Copilot CLI need nothing: an empty object.
+          case "$KANNU_PROVIDER" in
+            codex) ;;
+            gemini|qwen) echo '{}' ;;
+            vscode) if [ -n "$COPILOT_CLI" ]; then echo '{}'; else echo '{"permission":"allow","continue":true}'; fi ;;
+            *) echo '{"permission":"allow","continue":true}' ;;
+          esac
           exit 0
         fi
 
@@ -337,7 +341,7 @@ final class AgentHookInstaller: ObservableObject {
         HT_WARN_MARKER = ".kannu-hidden-text-warn-agent"
         HT_SKIP_EVENTS = {"SessionStart", "SessionEnd", "Notification", "PermissionRequest",
                           "beforeShellExecution", "beforeMCPExecution"}
-        HT_POST_EVENTS = {"PostToolUse", "postToolUse", "PostToolUseFailure", "postToolUseFailure"}
+        HT_POST_EVENTS = {"PostToolUse", "postToolUse", "PostToolUseFailure", "postToolUseFailure", "AfterTool"}
         HT_POST_SKIP_KEYS = {"tool_input", "input", "arguments", "tool"}
         HT_WHERE = {
             "tool_response": "tool_result", "tool_output": "tool_result", "result_json": "tool_result",
@@ -345,7 +349,7 @@ final class AgentHookInstaller: ObservableObject {
             "prompt": "prompt",
             "tool_input": "tool_input", "input": "tool_input", "arguments": "tool_input",
             "tool": "tool_input", "command": "tool_input", "edits": "tool_input",
-            "last_assistant_message": "agent_reply", "text": "agent_reply",
+            "last_assistant_message": "agent_reply", "text": "agent_reply", "prompt_response": "agent_reply",
         }
         HT_KIND_RANK = {"tags": 4, "variation_selectors": 3, "bidi": 2, "zero_width": 1}
         HT_WHERE_RANK = {"tool_result": 5, "prompt": 4, "tool_input": 3, "agent_reply": 2, "other": 1}
@@ -601,10 +605,17 @@ final class AgentHookInstaller: ObservableObject {
             "cursor": {"postToolUse"},
         }
 
+        EMPTY_OBJECT_PROVIDERS = {"gemini", "qwen", "copilot"}
+
         def emit(notes=("", "")):
             # The only stdout this script writes. Codex rejects unknown keys ("permission") and takes
-            # empty stdout with exit 0 as success; every other host keeps the historical line.
+            # empty stdout with exit 0 as success; every other host keeps the historical line. Gemini
+            # CLI parses stdout as JSON (and falls back to stderr when it is empty); Qwen Code and
+            # Copilot CLI need nothing from Kannu. An empty object says nothing.
             agent_note, user_note = notes
+            if provider in EMPTY_OBJECT_PROVIDERS:
+                print("{}")
+                return
             if not agent_note or hook_event not in HT_NOTE_EVENTS.get(provider, ()):
                 if provider != "codex":
                     print(ALLOW_JSON)
@@ -630,9 +641,9 @@ final class AgentHookInstaller: ObservableObject {
         # and files that run code at login or configure an agent. Still no backslash anywhere.
         SEC_OFF_MARKER = ".kannu-secrets-off"
         SP_OFF_MARKER = ".kannu-sensitive-paths-off"
-        SEC_PROMPT_EVENTS = {"UserPromptSubmit", "beforeSubmitPrompt"}
-        SEC_TOOL_EVENTS = {"PreToolUse", "preToolUse", "beforeShellExecution", "beforeMCPExecution"}
-        SP_EVENTS = {"PostToolUse", "postToolUse", "PostToolUseFailure", "postToolUseFailure"}
+        SEC_PROMPT_EVENTS = {"UserPromptSubmit", "beforeSubmitPrompt", "BeforeAgent"}
+        SEC_TOOL_EVENTS = {"PreToolUse", "preToolUse", "beforeShellExecution", "beforeMCPExecution", "BeforeTool"}
+        SP_EVENTS = {"PostToolUse", "postToolUse", "PostToolUseFailure", "postToolUseFailure", "AfterTool"}
         SP_FAILURE_EVENTS = {"PostToolUseFailure", "postToolUseFailure"}
         SEC_MAX_ENTRIES = 5
         SP_MAX_ENTRIES = 5
@@ -1182,6 +1193,20 @@ final class AgentHookInstaller: ObservableObject {
                 return True
             return False
 
+        # v36: Copilot CLI reads the same ~/.copilot/hooks file as VS Code, so its events arrive as
+        # "vscode". The CLI runs in a terminal and sets COPILOT_CLI for what it spawns; VS Code's extension
+        # host has no controlling terminal. Anything unclear stays vscode, as before.
+        def has_controlling_terminal():
+            try:
+                fd = os.open("/dev/tty", os.O_RDONLY | os.O_NOCTTY | os.O_NONBLOCK)
+            except Exception:
+                return False
+            os.close(fd)
+            return True
+
+        if provider == "vscode" and (os.environ.get("COPILOT_CLI") or has_controlling_terminal()):
+            provider = "copilot"
+
         # Timing (Cursor):
         # - WebSearch approval card appears BEFORE preToolUse. preToolUse runs after approve.
         # - So WebSearch must NOT set awaiting_input on preToolUse (that paints yellow too late).
@@ -1205,8 +1230,33 @@ final class AgentHookInstaller: ObservableObject {
         elif hook_event in {"beforeShellExecution"}:
             # Fires for auto-approved commands too, so it means "running", not "waiting".
             state = "executing"
+        elif hook_event == "PermissionRequest" and provider == "copilot":
+            # Copilot CLI fires this before its own rules, session approvals and auto-allow, so most
+            # never become a prompt. Its Notification says when one is on screen.
+            emit()
+            raise SystemExit(0)
         elif hook_event in {"PermissionRequest"}:
             state = "awaiting_input"
+        elif hook_event == "Notification":
+            # Notifications without a matcher (VS Code and Copilot CLI, Gemini CLI, Qwen Code): only a
+            # prompt on screen is yellow. Idle reminders and other notices change nothing. Claude's
+            # Notification groups carry matcher keys and never get here.
+            if pick_str(data.get("notification_type"), data.get("notificationType")) in {"ToolPermission", "permission_prompt", "elicitation_dialog"}:
+                state = "awaiting_input"
+            else:
+                emit()
+                raise SystemExit(0)
+        elif hook_event == "BeforeAgent":
+            # Gemini CLI: a prompt was submitted.
+            state = "thinking"
+        elif hook_event == "BeforeTool":
+            # Gemini CLI runs this before its policy check; a prompt, if any, follows as a Notification.
+            state = "executing"
+        elif hook_event == "AfterTool":
+            state = "thinking"
+        elif hook_event == "AfterAgent":
+            # Gemini CLI: the turn ended. (Esc does not fire it; the stale ladder ends that card.)
+            state = "stopped"
         elif hook_event in {"postToolUse", "postToolUseFailure", "PostToolUse", "PostToolUseFailure", "PostInvocation"}:
             state = "thinking"
         elif hook_event in {"stop", "Stop", "StopFailure"}:
@@ -1293,6 +1343,13 @@ final class AgentHookInstaller: ObservableObject {
             fcntl.flock(_lock_fh.fileno(), fcntl.LOCK_EX)
         except Exception:
             _lock_fh = None
+
+        # A Copilot CLI session that a v35 hook filed as vscode: drop that card, it is this one.
+        if provider == "copilot":
+            try:
+                (status_dir / ("vscode-" + conversation_id + ".json")).unlink()
+            except Exception:
+                pass
 
         # SessionStart also fires for /compact and /resume, which happen mid-conversation —
         # writing "idle" there dims (or with the stopped-indicator on, reddens) a session that
@@ -1395,7 +1452,7 @@ final class AgentHookInstaller: ObservableObject {
         _raw_errors = existing.get("tool_errors")
         tool_errors = _raw_errors if isinstance(_raw_errors, int) and not isinstance(_raw_errors, bool) and _raw_errors >= 0 else 0
         antigravity_stop_error = provider == "antigravity" and hook_event == "Stop" and state != "quota_exceeded" and bool(pick_str(data.get("error")))
-        if hook_event in {"UserPromptSubmit", "beforeSubmitPrompt"}:
+        if hook_event in {"UserPromptSubmit", "beforeSubmitPrompt", "BeforeAgent"}:
             tool_errors = 0
         elif hook_event in {"PostToolUseFailure", "postToolUseFailure", "StopFailure"}:
             if data.get("is_interrupt") is not True:
@@ -1479,7 +1536,7 @@ final class AgentHookInstaller: ObservableObject {
         if state == "quota_exceeded":
             name = "Quota exceeded"  # more useful than whatever chat title was already cached
 
-        if hook_event in {"preToolUse", "beforeMCPExecution", "postToolUse", "postToolUseFailure", "PreToolUse", "PostToolUse", "PostToolUseFailure"}:
+        if hook_event in {"preToolUse", "beforeMCPExecution", "postToolUse", "postToolUseFailure", "PreToolUse", "PostToolUse", "PostToolUseFailure", "BeforeTool", "AfterTool"}:
             if normalize_token(name) == normalize_token(tool):
                 name = ""
 
@@ -1613,7 +1670,7 @@ final class AgentHookInstaller: ObservableObject {
 
     private static func writeVSCodeHookFile() throws {
         var events: [String: Any] = [:]
-        for (event, state) in claudeStyleEvents {
+        for (event, state) in AgentHookLayout.vscodeEvents {
             events[event] = [[
                 "type": "command",
                 "command": "\(vscodeScriptURL.path) \(state) vscode \(event)",
@@ -1821,6 +1878,8 @@ final class AgentHookInstaller: ObservableObject {
             // migration skip the very installs that need upgrading.
             return claudeCoreInstalledEvents
         case .antigravity: return antigravityEvents.map(\.event)
+        case .gemini: return ["BeforeAgent", "BeforeTool", "AfterAgent"]
+        case .qwen: return ["UserPromptSubmit", "PreToolUse", "Stop"]
         }
     }
 
@@ -2042,6 +2101,35 @@ final class AgentHookInstaller: ObservableObject {
     /// destroying every user-defined hook (and for `~/.claude/settings.json`, the user's
     /// whole settings file) over one stray trailing comma. Absent stays mergeable;
     /// unparseable-but-present must abort the install with a visible error instead.
+    /// Gemini CLI and Qwen Code: the script first, then Kannu's groups merged into the tool's own
+    /// settings.json (a file the user edits by hand — refused, not rewritten, when it has comments).
+    private static func installSharedSettingsHooks(for provider: AgentHookProvider, events: [(event: String, state: String)],
+                                                   handlerName: String?, timeout: Int) throws {
+        let files = layout.files(for: provider)
+        guard let target = files.configs.first(where: { $0.write == .always }) else { return }
+        let config = try readJSONRefusingComments(at: target.url)
+        try writeScript(to: files.script)
+        let merged = AgentHookLayout.mergingKannuGroups(into: config, events: events, script: files.script,
+                                                        provider: provider.rawValue, handlerName: handlerName, timeout: timeout)
+        try writeJSON(merged, to: target.url)
+    }
+
+    /// Gemini CLI and Qwen Code read settings.json with comments allowed. Kannu's writer would
+    /// drop them, so such a file is refused with a plain reason instead of being rewritten.
+    private static func readJSONRefusingComments(at url: URL) throws -> [String: Any] {
+        guard FileManager.default.fileExists(atPath: url.path) else { return [:] }
+        if let json = readJSON(at: url) { return json }
+        if let data = try? Data(contentsOf: url),
+           (try? JSONSerialization.jsonObject(with: data, options: [.json5Allowed])) is [String: Any] {
+            throw NSError(
+                domain: "Kannu.AgentHookInstaller", code: 2,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "\(url.lastPathComponent) has comments or trailing commas. Kannu won't rewrite it and lose them — remove them, or add the hook by hand (nothing was changed)."]
+            )
+        }
+        return try readJSONForMerge(at: url)
+    }
+
     private static func readJSONForMerge(at url: URL) throws -> [String: Any] {
         guard FileManager.default.fileExists(atPath: url.path) else { return [:] }
         guard let json = readJSON(at: url) else {

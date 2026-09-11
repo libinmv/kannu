@@ -924,7 +924,7 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .agentStatus, title: "Stopped color", keywords: ["stopped", "red", "color", "traffic", "light", "palette", "agent"], highlightID: SettingsTab.agentStatus.highlightID(for: "Stopped color")),
             SettingsSearchEntry(tab: .agentStatus, title: "Show a red light when no agents are running", keywords: ["red", "light", "idle", "no agents", "stopped", "indicator", "always"], highlightID: SettingsTab.agentStatus.highlightID(for: "Show a red light when no agents are running")),
             SettingsSearchEntry(tab: .agentStatus, title: "Reset traffic light colors", keywords: ["reset", "color", "traffic", "light", "default"], highlightID: SettingsTab.agentStatus.highlightID(for: "Reset traffic light colors")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Editor Hooks", keywords: ["agent", "cursor", "vscode", "copilot", "codex", "claude", "hook", "install", "integration"], highlightID: SettingsTab.agentStatus.highlightID(for: "Cursor Hook")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Editor Hooks", keywords: ["agent", "cursor", "vscode", "copilot", "copilot cli", "codex", "claude", "antigravity", "gemini", "gemini cli", "qwen", "hook", "install", "integration"], highlightID: SettingsTab.agentStatus.highlightID(for: "Cursor Hook")),
             SettingsSearchEntry(tab: .agentStatus, title: "Connect ADR", keywords: ["adr", "uber", "security", "discovery", "sensor", "connect", "install", "uv", "pipx"], highlightID: SettingsTab.agentStatus.highlightID(for: "Connect ADR")),
             SettingsSearchEntry(tab: .agentStatus, title: "Security findings", keywords: ["security", "finding", "mcp", "unpinned", "plaintext", "undeclared", "acknowledge", "snooze", "shield"], highlightID: SettingsTab.agentStatus.highlightID(for: "Security findings")),
             SettingsSearchEntry(tab: .agentStatus, title: "Snapshot folder", keywords: ["snapshot", "folder", "directory", "adr", "discovery", "output"], highlightID: SettingsTab.agentStatus.highlightID(for: "Snapshot folder")),
@@ -7880,7 +7880,7 @@ struct AgentStatusSettings: View {
                 } header: {
                     Text("Editor Hooks")
                 } footer: {
-                    Text("Install hooks for Cursor, VS Code Copilot, Codex CLI, or Claude Code. Each hook writes agent status into ~/.kannu/agent-status for the notch traffic light and Recent chats list.")
+                    Text("Install hooks for Cursor, VS Code and Copilot CLI, Codex CLI, Claude Code, Antigravity, Gemini CLI or Qwen Code. Each hook writes agent status into ~/.kannu/agent-status for the notch traffic light and Recent chats list. Copilot CLI uses the VS Code hook.")
                 }
 
                 securityFindingsSection
@@ -8526,6 +8526,7 @@ struct AgentStatusSettings: View {
     @ViewBuilder
     private func hookRow(for provider: AgentHookProvider) -> some View {
         let installed = hookInstaller.isInstalled(provider)
+        let present = AgentHookInstaller.layout.toolIsPresent(provider)
         HStack(spacing: 10) {
             Circle()
                 .fill(installed ? Color.green : Color.secondary.opacity(0.5))
@@ -8533,6 +8534,11 @@ struct AgentStatusSettings: View {
             AgentProviderIconView(source: .init(hookProvider: provider), size: 18)
             Text(provider.displayName)
             Spacer()
+            if !installed && !present {
+                Text("Not found on this Mac")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Button(installed ? "Remove" : "Install") {
                 if installed {
                     hookInstaller.uninstall(provider)
@@ -8540,6 +8546,7 @@ struct AgentStatusSettings: View {
                     hookInstaller.install(provider)
                 }
             }
+            .disabled(!installed && !present)
         }
     }
 

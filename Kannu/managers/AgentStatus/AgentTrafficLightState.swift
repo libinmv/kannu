@@ -150,6 +150,10 @@ struct AgentSessionStatus: Identifiable, Equatable {
         case "antigravity": return "Antigravity"
         case "warp": return "Warp"
         case "claudedesktop": return "Claude Desktop"
+        case "copilot": return "Copilot CLI"
+        case "gemini": return "Gemini CLI"
+        case "qwen": return "Qwen Code"
+        case "opencode": return "opencode"
         default: return provider.capitalized
         }
     }
@@ -551,7 +555,9 @@ enum AgentTrafficLightMapper {
             return awaitingInputOutlivesStaleCap(provider: provider, processAlive: processAlive, tail: tail)
         case "cursor":
             return cursorPendingApproval
-        case "vscode", "codex", "antigravity":
+        case "vscode", "codex", "antigravity", "copilot", "gemini", "qwen", "opencode":
+            // Hook-only: nothing on disk can corroborate or refute a prompt; a newer event or
+            // the stale cap ends it (REGRESSIONS entry 12).
             return true
         default:
             return false

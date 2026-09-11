@@ -415,7 +415,8 @@ Nobody asked whether a *true* yellow could outlive it.
 **How it works now.** `buildClaudeSessions` runs before `parseHookSessions` and hands over
 `liveTailByConversationID`; the parser computes `holdsAwaitingInput` per file, passes
 `holdAwaitingInput:` to `resolveHookState`, and exempts a corroborated Claude prompt from the stale
-deletion (`awaitingInputOutlivesStaleCap`). Hook-only providers (vscode/codex/antigravity) hold on
+deletion (`awaitingInputOutlivesStaleCap`). Hook-only providers (vscode/codex/antigravity, and since v36 copilot/gemini/qwen/opencode — a new
+hook-only provider must join this list or its yellow dies at 5 minutes) hold on
 display and keep the stale cap — it is the end of their yellow. Claude's `idle_prompt`, a dead
 process and Cursor's sticky yellow without an approval stay on the clock. Caffeinate keeps its own
 5-minute bound (`awaitingInputCaffeinateSeconds` + the `awaiting window` recheck), so a held

@@ -130,8 +130,8 @@ enum AgentSessionOpener {
             // provider bundle id intentionally isn't used — it points at an unrelated desktop app.
             if let pid = session.hostPID { return terminalTarget(for: hostChain(agentPID: pid)) }
             return liveTerminalChain(session.terminal).flatMap(terminalTarget(for:))
-        case .unknown:
-            // A terminal agent Kannu has no icon for yet still has a terminal to open.
+        case .copilotCLI, .gemini, .qwen, .opencode, .unknown:
+            // Terminal agents: the terminal their hook reported (v35) is the way back.
             return liveTerminalChain(session.terminal).flatMap(terminalTarget(for:))
         }
     }

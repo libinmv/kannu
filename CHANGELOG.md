@@ -4,6 +4,43 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - Hook v36: Copilot CLI, Gemini CLI and Qwen Code
+- **Developer label:** More agents: Copilot CLI fix + support, Gemini CLI + Qwen Code
+- **Agent label:** Label Copilot CLI apart from VS Code and add Gemini CLI and Qwen Code hooks
+- **Changes:**
+  - Hook script v36 (mirror and embedded copy regenerated; no backslash):
+    - Copilot CLI already read Kannu's `~/.copilot/hooks` file and was filed as "vscode". Events
+      from that file with `COPILOT_CLI` set or a controlling terminal now become "copilot"
+      (VS Code's extension host has none; anything unclear stays vscode). Its `PermissionRequest`
+      no longer paints yellow — it fires before Copilot's own rules and auto-allow — and a
+      v35 `vscode-<id>.json` for the same session is removed.
+    - Notifications without a matcher (VS Code/Copilot CLI, Gemini CLI, Qwen Code): only
+      `ToolPermission`, `permission_prompt` and `elicitation_dialog` are yellow; idle reminders and
+      other notices write nothing. Claude's matcher-scoped groups are unaffected.
+    - Gemini CLI events: `BeforeAgent` (thinking; prompt scans; resets the error count),
+      `BeforeTool` (executing; tool-input secret scan), `AfterTool` (thinking; hidden-text and
+      sensitive-file scans, never the secret scan), `AfterAgent` (stopped).
+    - Gemini CLI, Qwen Code and Copilot CLI get `{}` on stdout, also from the no-python fallback
+      (Gemini parses stdout as JSON and falls back to stderr when it is empty).
+  - Installer: providers `gemini` (script `~/.gemini/kannu-agent-status.sh`, groups in
+    `~/.gemini/settings.json` with the handler name `kannu-agent-status` and millisecond timeouts)
+    and `qwen` (`~/.qwen/settings.json`, Claude-style groups). A settings file with comments or
+    trailing commas is refused with a plain reason instead of being rewritten. The merge and strip
+    are pure functions on `AgentHookLayout`; the event tables move there too. VS Code's own file
+    gains `Notification` and `SessionEnd`; Codex keeps its list (it validates strictly). The new
+    tools are never auto-installed at first launch; their rows say "Not found on this Mac" and
+    disable Install until the tool has run here (`~/.gemini` alone is Antigravity's too).
+  - App: icons, labels ("Copilot CLI", "Gemini CLI", "Qwen Code", "opencode"), click-through through
+    the hook's terminal, and `holdsAwaitingInput` lists the four new hook-only ids (REGRESSIONS 12).
+    The VS Code row reads "VS Code and Copilot CLI". Not done: the detected-editors grid (cut).
+  - Tests: 11 hook-script cases (VS Code without a terminal, Copilot's PermissionRequest and
+    Notification, the old vscode card replaced, Gemini's event ladder and `{}` everywhere including
+    without Python, Gemini results never secret-scanned, Qwen's PermissionRequest and idle prompt,
+    Qwen yolo, Claude's matched Notification unchanged), layout merge and strip, event tables, tool
+    presence, and the hold rule for the new ids.
+  - Unverified live: none of the three CLIs is installed here. Needs a live check when they are:
+    whether hooks inherit `COPILOT_CLI`, Copilot's PascalCase `Notification`, Gemini's event order.
+
 ### 2026-09-11 - One table for where every hook lives
 - **Developer label:** Groundwork for more agents
 - **Agent label:** Refactor hook install, uninstall, detection and migrations onto a single layout table

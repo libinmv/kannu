@@ -9,6 +9,11 @@ enum AgentProviderIconSource: Equatable {
     case antigravity
     case warp
     case claudeDesktop
+    /// Terminal agents reported by their hooks; no app bundle to show or activate.
+    case copilotCLI
+    case gemini
+    case qwen
+    case opencode
     case unknown(String)
 
     init(providerID: ProviderID) {
@@ -29,6 +34,10 @@ enum AgentProviderIconSource: Equatable {
         case "antigravity": self = .antigravity
         case "warp": self = .warp
         case "claudedesktop", "claude-desktop", "claude_desktop": self = .claudeDesktop
+        case "copilot": self = .copilotCLI
+        case "gemini": self = .gemini
+        case "qwen": self = .qwen
+        case "opencode": self = .opencode
         default: self = .unknown(rawProvider)
         }
     }
@@ -40,6 +49,8 @@ enum AgentProviderIconSource: Equatable {
         case .codex: self = .codex
         case .claude: self = .claude
         case .antigravity: self = .antigravity
+        case .gemini: self = .gemini
+        case .qwen: self = .qwen
         }
     }
 }
@@ -87,7 +98,7 @@ extension AgentProviderIconSource {
             return WarpAgentStore.bundleIdentifiers
         case .claudeDesktop:
             return [ClaudeDesktopAgentSessionStore.bundleIdentifier]
-        case .unknown:
+        case .copilotCLI, .gemini, .qwen, .opencode, .unknown:
             return []
         }
     }
@@ -108,7 +119,7 @@ extension AgentProviderIconSource {
             return ["/Applications/Warp.app"]
         case .claudeDesktop:
             return ["/Applications/Claude.app"]
-        case .unknown:
+        case .copilotCLI, .gemini, .qwen, .opencode, .unknown:
             return []
         }
     }
@@ -122,6 +133,10 @@ extension AgentProviderIconSource {
         case .antigravity: return "atom"
         case .warp: return "terminal.fill"
         case .claudeDesktop: return "sparkles"
+        case .copilotCLI: return "terminal"
+        case .gemini: return "sparkle"
+        case .qwen: return "q.circle.fill"
+        case .opencode: return "curlybraces.square"
         case .unknown: return "app.fill"
         }
     }
@@ -135,6 +150,10 @@ extension AgentProviderIconSource {
         case .antigravity: return Color(red: 0.26, green: 0.52, blue: 0.96)
         case .warp: return Color(red: 0.55, green: 0.40, blue: 0.95)
         case .claudeDesktop: return Color(red: 0.85, green: 0.47, blue: 0.36)
+        case .copilotCLI: return Color(red: 0.51, green: 0.35, blue: 0.85)
+        case .gemini: return Color(red: 0.30, green: 0.45, blue: 0.95)
+        case .qwen: return Color(red: 0.42, green: 0.33, blue: 0.93)
+        case .opencode: return .primary
         case .unknown: return .secondary
         }
     }
