@@ -28,7 +28,7 @@ final class AgentHookInstaller: ObservableObject {
     private static let logger = os.Logger(subsystem: "com.kannu.app", category: "AgentHookInstaller")
 
     static let scriptName = AgentHookLayout.scriptName
-    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=38"
+    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=39"
 
     private static var home: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -1167,6 +1167,139 @@ final class AgentHookInstaller: ObservableObject {
                 return (tty, ht_int(existing.get("tty_sid")), ht_int(existing.get("tty_start")))
             return ("", 0, 0)
 
+        # --- Turn metrics (v39) ----------------------------------------------------------------
+        # A turn is one request: it starts when the user sends a prompt and ends at the Stop that
+        # answers it. Work after that Stop without a new prompt -- a background task finishing, a stop
+        # hook sending the agent back -- reopens the same turn, so its time still counts from the
+        # prompt. Kannu shows how long the turn ran and how many tools it called, and for Claude adds
+        # up the tokens the transcript gained after the size recorded at the start. Carried on every
+        # write; never touches state or ts.
+        TURN_KEYS = ("turn_started_ms", "turn_ended_ms", "turn_tool_calls", "turn_tool_ids", "turn_transcript_offset")
+        TURN_PROMPT_EVENTS = {"UserPromptSubmit", "beforeSubmitPrompt", "BeforeAgent"}
+        TURN_WAKE_EVENTS = {"PreToolUse", "preToolUse", "beforeShellExecution", "beforeMCPExecution",
+                            "BeforeTool", "PreInvocation", "PermissionRequest"}
+        TURN_END_EVENTS = {"Stop", "StopFailure", "stop", "AfterAgent"}
+        TURN_DONE_EVENTS = HT_POST_EVENTS
+        TURN_MAX_IDS = 16
+        TURN_MAX_CALLS = 99999
+        TURN_MAX_OFFSET = 9007199254740992
+        TURN_PATH_MAX = 1024
+        TURN_NOID_WINDOW_MS = 2000
+        TURN_ROOT = os.path.expanduser("~") + "/.claude/projects/"
+
+        def turn_path(value):
+            # Claude's main transcript only: under ~/.claude/projects, a .jsonl, never a subagent's.
+            # Kannu checks the same rule again before it reads the file.
+            if not isinstance(value, str) or not value or len(value) > TURN_PATH_MAX:
+                return ""
+            if printable_ascii(value, TURN_PATH_MAX) != value or os.path.normpath(value) != value:
+                return ""
+            if not value.startswith(TURN_ROOT) or not value.endswith(".jsonl") or "/subagents/" in value:
+                return ""
+            return value
+
+        def turn_size(path):
+            # The transcript's size, without following a symlink: None while it does not exist yet,
+            # -1 when it is not a plain file or cannot be read (then no offset is recorded).
+            try:
+                st = os.lstat(path)
+            except FileNotFoundError:
+                return None
+            except Exception:
+                return -1
+            if (st.st_mode & 0o170000) != 0o100000:
+                return -1
+            return min(st.st_size, TURN_MAX_OFFSET)
+
+        def turn_ids(value):
+            out = []
+            for item in (value if isinstance(value, list) else [])[-TURN_MAX_IDS:]:
+                token = ht_token(item)
+                if token:
+                    out.append(token)
+            return out
+
+        def carried_turn(doc, now_ms):
+            # The turn keys of a status file (untrusted input), re-checked; {} without a plausible start.
+            start = ht_int(doc.get("turn_started_ms"))
+            if start < HT_PLAUSIBLE_MS or start > now_ms + 60000:
+                return {}
+            turn = {"turn_started_ms": start,
+                    "turn_tool_calls": min(ht_int(doc.get("turn_tool_calls")), TURN_MAX_CALLS),
+                    "turn_tool_ids": turn_ids(doc.get("turn_tool_ids"))}
+            end = ht_int(doc.get("turn_ended_ms"))
+            if start <= end <= now_ms + 60000:
+                turn["turn_ended_ms"] = end
+            offset = ht_int(doc.get("turn_transcript_offset"), -1)
+            if 0 <= offset <= TURN_MAX_OFFSET:
+                turn["turn_transcript_offset"] = offset
+            return turn
+
+        def parent_turn_start():
+            # When the current turn of a subagent's chat began (0 when unknown). Read under the lock.
+            try:
+                doc = json.loads((status_dir / (provider + "-" + parent_id + ".json")).read_text())
+                return ht_int(doc.get("turn_started_ms")) if isinstance(doc, dict) else 0
+            except Exception:
+                return 0
+
+        def turn_call_key(turn, now_ms):
+            # (key, already counted). The tool call's id when the agent sends one; otherwise the tool and
+            # the size of its input, so one completion delivered twice within 2 s counts once.
+            if sighting_call:
+                return sighting_call, sighting_call in turn["turn_tool_ids"]
+            stem = "nx:" + sighting_tool[:24] + ":" + str(len(str(tool_input))) + ":"
+            for token in turn["turn_tool_ids"]:
+                tail = token[len(stem):] if token.startswith(stem) else ""
+                if tail.isdigit() and now_ms - int(tail) <= TURN_NOID_WINDOW_MS:
+                    return "", True
+            return stem + str(now_ms), False
+
+        def next_turn(existing, now_ms):
+            # (turn keys, transcript path) for this write.
+            turn = carried_turn(existing, now_ms)
+            previous = existing.get("hook_event") if isinstance(existing.get("hook_event"), str) else ""
+            main_thread = provider == "claude" and not parent_id
+            transcript = turn_path(existing.get("transcript_path")) if main_thread else ""
+            fresh = turn_path(data.get("transcript_path")) if main_thread else ""
+            if fresh and fresh != transcript:
+                # First seen, or the chat moved to another file mid-turn: no offset rather than a wrong one.
+                turn.pop("turn_transcript_offset", None)
+                transcript = fresh
+            if hook_event == "SessionStart":
+                # A startup or /clear. opencode spawns SessionStart and the first prompt without waiting,
+                # so a prompt that won the lock keeps its open turn.
+                if "turn_ended_ms" in turn or previous not in TURN_PROMPT_EVENTS:
+                    turn = {}
+                return turn, transcript
+            starts = hook_event in TURN_PROMPT_EVENTS or (hook_event in TURN_WAKE_EVENTS and not turn)
+            if parent_id and turn and hook_event in TURN_WAKE_EVENTS and parent_turn_start() > turn["turn_started_ms"]:
+                # A subagent resumed in a later request of its chat.
+                starts = True
+            if starts:
+                turn = {"turn_started_ms": now_ms, "turn_tool_calls": 0, "turn_tool_ids": []}
+                if transcript:
+                    size = turn_size(transcript)
+                    if size is None:
+                        # Not written yet: the whole file is this turn, but only for a chat that has just
+                        # started. Any other chat may be about to copy an earlier history into it.
+                        if previous == "SessionStart":
+                            turn["turn_transcript_offset"] = 0
+                    elif size >= 0:
+                        turn["turn_transcript_offset"] = size
+            elif turn and hook_event in TURN_WAKE_EVENTS:
+                # Working again after the Stop without a new prompt: still the same request.
+                turn.pop("turn_ended_ms", None)
+            if turn and hook_event in TURN_DONE_EVENTS:
+                key, seen = turn_call_key(turn, now_ms)
+                if not seen:
+                    turn["turn_tool_calls"] = min(turn["turn_tool_calls"] + 1, TURN_MAX_CALLS)
+                    turn["turn_tool_ids"] = (turn["turn_tool_ids"] + [key])[-TURN_MAX_IDS:]
+            if turn and hook_event in TURN_END_EVENTS and ("turn_ended_ms" not in turn or data.get("stop_hook_active") is True):
+                # The first Stop ends the turn; a Stop after a stop hook's continuation moves the end.
+                turn["turn_ended_ms"] = now_ms
+            return turn, transcript
+
         tool = pick_str(
             data.get("tool_name"),
             data.get("toolName"),
@@ -1542,6 +1675,17 @@ final class AgentHookInstaller: ObservableObject {
                     # kept state forever instead of resolving one parallel-group race.
                     preserved_ts = existing_ts_ms
 
+        # v39: after the merge, which changes only state and ts, so the turn rides every write. A
+        # failure here must cost neither the light nor the allow line: fall back to what was on disk.
+        try:
+            turn, transcript = next_turn(existing, sighting_ms)
+        except Exception:
+            try:
+                turn = carried_turn(existing, sighting_ms)
+            except Exception:
+                turn = {}
+            transcript = ""
+
         roots = data.get("workspace_roots") or data.get("workspacePaths") or data.get("workspace_paths")
         project = ""
         workdir = ""
@@ -1621,6 +1765,11 @@ final class AgentHookInstaller: ObservableObject {
                             existing[_key] = _value
                         else:
                             existing.pop(_key, None)
+                    for _key in TURN_KEYS + ("transcript_path",):
+                        existing.pop(_key, None)
+                    existing.update(turn)
+                    if transcript:
+                        existing["transcript_path"] = transcript
                     write_status(status_file, existing)
                     emit(hidden_notes_out)
                     raise SystemExit(0)
@@ -1657,6 +1806,9 @@ final class AgentHookInstaller: ObservableObject {
             payload["tty"] = terminal[0]
             if terminal[2]:
                 payload["tty_start"] = terminal[2]
+        payload.update(turn)
+        if transcript:
+            payload["transcript_path"] = transcript
         write_status(status_file, payload)
         emit(hidden_notes_out)
         PY

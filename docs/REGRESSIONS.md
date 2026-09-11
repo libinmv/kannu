@@ -73,6 +73,20 @@ when the markers agree. The Claude statusline script (`writeUsageScript` ↔
 `scripts/kannu-usage-status.sh`, `KANNU_USAGE_SCRIPT_VERSION`) has the same two-copy shape; since v4
 the pre-commit hook checks its markers too and `KannuTests/UsageScriptTests.swift` executes its mirror.
 
+**v39 addendum — turn keys ride every write, and never the clock.** `turn_started_ms`,
+`turn_ended_ms`, `turn_tool_calls`, `turn_tool_ids`, `turn_transcript_offset` and
+`transcript_path` are computed after the priority merge and written by all three write paths
+(payload, the 2 s merge's preserved `ts`, the sticky-yellow rewrite of `existing`). They never
+change `state` or `ts` (entry 12). A turn starts only on a prompt event, or on a wake event when the
+file has no turn; work after a Stop without a new prompt reopens the same turn — keying a restart
+on "woken after a stop" made every background-task wake restart the displayed run time. The
+computation is wrapped in `try/except` with the carried turn as fallback: an uncaught error there
+would cost the light and the allow line. Two known holes: a payload over ~1 MiB never reaches
+Python (the `KANNU_INPUT` environment variable hits ARG_MAX), so that call is uncounted; and a
+file Kannu deletes as stale takes its turn with it — never "fix" that by treating an empty file as
+the end of a turn, which would split it. Guards: the `HookScriptTests` "v39" group, run twice
+(Homebrew's Python and `/usr/bin/python3` 3.9).
+
 ---
 
 ## 2. The active-state staleness window must exceed the longest tool call

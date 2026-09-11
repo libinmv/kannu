@@ -4,6 +4,37 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-12 - Hook v39 records each request's start, end, tool calls and Claude transcript offset
+- **Developer label:** "the total run time of the agent has been about 2 hours now, but the recent chats show it as few mins maybe showing time of latest individual session , could we change it to the full time with format 1h 53m 54 s format and also maybe the no of tokens , and maybe no of tools calls" (picked: this request; tokens in and out; trailing column)
+- **Agent label:** Follow-up 30, C1 — the hook half: what Kannu needs on disk to show a request's run time, tool calls and tokens across relaunches
+- **Changes:**
+  - Why the row showed minutes: its timer is Kannu's in-memory `executionStartedAt`, which
+    restarts on a relaunch and on any gap in the state (issue #14); the status file recorded no
+    turn at all.
+  - New optional keys, written on every write path and re-checked from the untrusted file like
+    the other carried keys: `turn_started_ms`, `turn_ended_ms`, `turn_tool_calls` (completed tool
+    calls, 0–99 999), `turn_tool_ids` (≤16 ids already counted), `transcript_path` (Claude's main
+    thread only) and `turn_transcript_offset` (the transcript's size when the turn began). `state`
+    and `ts` are never touched.
+  - A turn starts on the user's prompt (`UserPromptSubmit`, `beforeSubmitPrompt`, `BeforeAgent`),
+    or on a wake event when the file has none. It ends on `Stop`/`StopFailure`/`stop`/`AfterAgent`
+    (the event, not the merged state, so a held yellow still ends it). Work after a Stop without a
+    new prompt — a background task finishing, a stop hook sending the agent back — reopens the same
+    turn, so the time counts from the user's message; a `Stop` with `stop_hook_active` moves the
+    end. `SessionStart` (startup, clear) drops an ended turn; opencode's back-to-back SessionStart
+    keeps a prompt's open turn.
+  - Tool calls: the existing post-tool events plus Gemini's `AfterTool`, once per `tool_use_id`;
+    an id-less completion delivered twice within 2 s counts once. A model call (`PostInvocation`)
+    is not a tool.
+  - Transcript offset: `lstat` only (a symlink is never followed), a path under
+    `~/.claude/projects/` ending `.jsonl`, normalised, printable ASCII, no `/subagents/`. A missing
+    file counts from 0 only for a chat that has just started; otherwise no offset, so a forked or
+    resumed history is never counted. A path first seen mid-turn waits for the next prompt.
+  - The whole turn block is exception-safe (falls back to what was on disk), so it can never cost
+    the light or the allow line.
+  - Tests: 21 `HookScriptTests` cases for the turn rules, run twice (Homebrew's Python and
+    macOS's 3.9); helpers gain a matcher argument. REGRESSIONS entry 1 addendum.
+
 ### 2026-09-11 - Rescans stop re-walking the transcript folders on every file event
 - **Developer label:** "Kannu uses about 5% CPU while an agent works ... is this a bit too much, will it draw down so much battery, how can we optimize that"
 - **Agent label:** Plan item D7, triggered by the after-measurement: drop transcript lists only on create/remove/rename; cache head reads

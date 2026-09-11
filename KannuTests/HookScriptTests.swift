@@ -63,10 +63,11 @@ final class HookScriptTests: XCTestCase {
     @discardableResult
     private func launch(state: String, event: String, conversation: String, toolName: String = "Bash",
                         provider: String = "claude", extra: [String: Any] = [:], rawPayload: Data? = nil,
-                        path: String = HookScriptTests.defaultPath, environment: [String: String] = [:]) throws -> Process {
+                        path: String = HookScriptTests.defaultPath, environment: [String: String] = [:],
+                        matcher: String = "") throws -> Process {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = [Self.scriptURL.path, state, provider, event]
+        process.arguments = [Self.scriptURL.path, state, provider, event] + (matcher.isEmpty ? [] : [matcher])
         var env = ProcessInfo.processInfo.environment
         env["HOME"] = home.path
         env["PATH"] = path
@@ -100,9 +101,11 @@ final class HookScriptTests: XCTestCase {
     @discardableResult
     private func run(state: String, event: String, conversation: String, toolName: String = "Bash",
                      provider: String = "claude", extra: [String: Any] = [:], rawPayload: Data? = nil,
-                     path: String = HookScriptTests.defaultPath, environment: [String: String] = [:]) throws -> String {
+                     path: String = HookScriptTests.defaultPath, environment: [String: String] = [:],
+                     matcher: String = "") throws -> String {
         let process = try launch(state: state, event: event, conversation: conversation, toolName: toolName,
-                                 provider: provider, extra: extra, rawPayload: rawPayload, path: path, environment: environment)
+                                 provider: provider, extra: extra, rawPayload: rawPayload, path: path, environment: environment,
+                                 matcher: matcher)
         process.waitUntilExit()
         XCTAssertEqual(process.terminationStatus, 0, "hook exited \(process.terminationStatus)")
         // The wrapper always exits 0; a Python traceback is the only sign the writer died.
@@ -881,6 +884,365 @@ final class HookScriptTests: XCTestCase {
         try run(state: "awaiting_input", event: "PermissionRequest", conversation: "p3", extra: ["agent_id": "s3"])
         try run(state: "executing", event: "PreToolUse", conversation: "p3", extra: ["agent_id": "s3"])
         XCTAssertEqual(try readState("s3"), "awaiting_input", "the 2 s urgent carry still applies to its own file")
+    }
+
+    // MARK: - v39: turn metrics
+
+    /// PATH for the turn tests; `testTheTurnRulesHoldUnderTheSystemPython` runs them all again
+    /// under macOS's own Python 3.9.
+    private var turnPath = HookScriptTests.defaultPath
+
+    private var projectsDir: URL { home.appendingPathComponent(".claude/projects/p", isDirectory: true) }
+
+    /// A transcript under the fake home's ~/.claude/projects holding `bytes` bytes.
+    @discardableResult
+    private func transcript(_ name: String, bytes: Int = 0) throws -> String {
+        try FileManager.default.createDirectory(at: projectsDir, withIntermediateDirectories: true)
+        let url = projectsDir.appendingPathComponent("\(name).jsonl")
+        try Data(repeating: 0x61, count: bytes).write(to: url)
+        return url.path
+    }
+
+    private func append(_ bytes: Int, to path: String) throws {
+        let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(repeating: 0x62, count: bytes))
+        try handle.close()
+    }
+
+    /// The turn keys (and transcript path) of a status file.
+    private func turn(_ conversation: String, provider: String = "claude") throws -> [String: Any] {
+        (try readJSON(conversation, provider: provider) ?? [:]).filter { $0.key.hasPrefix("turn_") || $0.key == "transcript_path" }
+    }
+
+    private func int(_ value: Any?) -> Int64? { (value as? NSNumber)?.int64Value }
+
+    @discardableResult
+    private func turnEvent(_ event: String, _ conversation: String, state: String = "thinking", provider: String = "claude",
+                           extra: [String: Any] = [:], matcher: String = "", toolName: String = "Bash") throws -> [String: Any] {
+        try run(state: state, event: event, conversation: conversation, toolName: toolName, provider: provider,
+                extra: extra, path: turnPath, matcher: matcher)
+        return try turn(conversation, provider: provider)
+    }
+
+    /// Hook clocks are milliseconds; this keeps two writes from sharing one.
+    private func tick() { usleep(15_000) }
+
+    func testAPromptStartsATurnAtTheTranscriptsSize() throws {
+        let path = try transcript("a1", bytes: 100)
+        let before = Self.nowMs
+        let started = try turnEvent("UserPromptSubmit", "t1", extra: ["transcript_path": path])
+        let start = try XCTUnwrap(int(started["turn_started_ms"]))
+        XCTAssertGreaterThanOrEqual(start, before)
+        XCTAssertLessThanOrEqual(start, Self.nowMs)
+        XCTAssertEqual(int(started["turn_tool_calls"]), 0)
+        XCTAssertEqual(int(started["turn_transcript_offset"]), 100)
+        XCTAssertEqual(started["transcript_path"] as? String, path)
+        XCTAssertNil(started["turn_ended_ms"])
+        XCTAssertEqual(try readState("t1"), "thinking", "the light is untouched")
+    }
+
+    func testTheFirstStopEndsTheTurnAndOnlyAStopHookContinuationMovesIt() throws {
+        try turnEvent("UserPromptSubmit", "t2")
+        tick()
+        let ended = try XCTUnwrap(int(try turnEvent("Stop", "t2", state: "stopped")["turn_ended_ms"]))
+        tick()
+        try turnEvent("Notification", "t2", state: "stopped", extra: ["notification_type": "agent_completed"], matcher: "completed")
+        XCTAssertEqual(int(try turn("t2")["turn_ended_ms"]), ended, "a completed notice is not an end")
+        tick()
+        XCTAssertEqual(int(try turnEvent("Stop", "t2", state: "stopped")["turn_ended_ms"]), ended, "the first Stop wins")
+        tick()
+        let moved = try XCTUnwrap(int(try turnEvent("Stop", "t2", state: "stopped", extra: ["stop_hook_active": true])["turn_ended_ms"]))
+        XCTAssertGreaterThan(moved, ended, "a stop hook's continuation is part of the same request")
+    }
+
+    func testTheIdleNoticeKeepsTheEndedTurnAndLaterWorkReopensIt() throws {
+        try turnEvent("UserPromptSubmit", "t3")
+        let start = int(try turn("t3")["turn_started_ms"])
+        try turnEvent("PostToolUse", "t3", extra: ["tool_use_id": "c1"])
+        try turnEvent("Stop", "t3", state: "stopped")
+        tick()
+        let idle = try turnEvent("Notification", "t3", state: "awaiting_input",
+                                 extra: ["notification_type": "idle_prompt"], matcher: "needs_input")
+        XCTAssertEqual(try readState("t3"), "awaiting_input")
+        XCTAssertNotNil(idle["turn_ended_ms"], "the idle notice is yellow, not work")
+        tick()
+        let woken = try turnEvent("PreToolUse", "t3", state: "executing", extra: ["tool_use_id": "c2"])
+        XCTAssertNil(woken["turn_ended_ms"], "a background task finishing reopens the request")
+        XCTAssertEqual(int(woken["turn_started_ms"]), start, "still counted from the prompt")
+        XCTAssertEqual(int(try turnEvent("PostToolUse", "t3", extra: ["tool_use_id": "c2"])["turn_tool_calls"]), 2)
+    }
+
+    func testANewPromptStartsANewTurn() throws {
+        try turnEvent("UserPromptSubmit", "t4")
+        let first = try XCTUnwrap(int(try turn("t4")["turn_started_ms"]))
+        try turnEvent("PostToolUse", "t4", extra: ["tool_use_id": "c1"])
+        try turnEvent("Stop", "t4", state: "stopped")
+        tick()
+        let next = try turnEvent("UserPromptSubmit", "t4")
+        XCTAssertGreaterThan(try XCTUnwrap(int(next["turn_started_ms"])), first)
+        XCTAssertEqual(int(next["turn_tool_calls"]), 0)
+        XCTAssertNil(next["turn_ended_ms"])
+    }
+
+    func testAStopHeldYellowByTheUrgentCarryStillEndsTheTurn() throws {
+        try turnEvent("UserPromptSubmit", "t5")
+        try turnEvent("PermissionRequest", "t5", state: "awaiting_input")
+        let held = try turnEvent("Stop", "t5", state: "stopped")
+        XCTAssertEqual(try readState("t5"), "awaiting_input", "the 2 s carry keeps the light")
+        XCTAssertNotNil(held["turn_ended_ms"], "the event ended the turn")
+        XCTAssertNil(try turnEvent("PreToolUse", "t5", state: "executing")["turn_ended_ms"])
+    }
+
+    func testAWakeWithNoTurnStartsOneAndTheNextKeepsIt() throws {
+        try writeStatus("t6", state: "stopped", event: "Stop", tsMs: Self.nowMs - 5000)   // a v38 file
+        let start = try XCTUnwrap(int(try turnEvent("PreToolUse", "t6", state: "executing")["turn_started_ms"]))
+        tick()
+        XCTAssertEqual(int(try turnEvent("PreToolUse", "t6", state: "executing")["turn_started_ms"]), start)
+        XCTAssertNil(try turnEvent("PostToolUse", "t7")["turn_started_ms"], "a completion alone starts nothing")
+    }
+
+    func testALateCompletionAfterStopCountsIntoTheEndedTurn() throws {
+        try turnEvent("UserPromptSubmit", "t8")
+        try turnEvent("Stop", "t8", state: "stopped")
+        let late = try turnEvent("PostToolUse", "t8", extra: ["tool_use_id": "late"])
+        XCTAssertEqual(int(late["turn_tool_calls"]), 1)
+        XCTAssertNotNil(late["turn_ended_ms"])
+    }
+
+    func testToolCallsCountOncePerCall() throws {
+        try turnEvent("UserPromptSubmit", "t9")
+        try turnEvent("PostToolUse", "t9", extra: ["tool_use_id": "a"])
+        try turnEvent("PostToolUse", "t9", extra: ["tool_use_id": "a"])
+        XCTAssertEqual(int(try turn("t9")["turn_tool_calls"]), 1, "the same call once")
+        try turnEvent("PostToolUseFailure", "t9", extra: ["tool_use_id": "b"])
+        try turnEvent("PostToolUseFailure", "t9", extra: ["tool_use_id": "c", "is_interrupt": true])
+        try turnEvent("PreToolUse", "t9", state: "executing", extra: ["tool_use_id": "d"])
+        XCTAssertEqual(int(try turn("t9")["turn_tool_calls"]), 3, "failures count; the start of a call does not")
+        try turnEvent("PostToolUse", "t9", extra: ["tool_input": ["command": "ls"]])
+        try turnEvent("PostToolUse", "t9", extra: ["tool_input": ["command": "ls"]])
+        XCTAssertEqual(int(try turn("t9")["turn_tool_calls"]), 4, "an id-less completion delivered twice counts once")
+        try turnEvent("PostToolUse", "t9", extra: ["tool_input": ["command": "pwd"]], toolName: "Read")
+        XCTAssertEqual(int(try turn("t9")["turn_tool_calls"]), 5)
+    }
+
+    func testTheCallIdsAreCapped() throws {
+        try turnEvent("UserPromptSubmit", "cap1")
+        for index in 0..<18 {
+            try turnEvent("PostToolUse", "cap1", extra: ["tool_use_id": "id\(index)"])
+        }
+        let capped = try turn("cap1")
+        XCTAssertEqual(int(capped["turn_tool_calls"]), 18)
+        XCTAssertEqual((capped["turn_tool_ids"] as? [String])?.count, 16)
+    }
+
+    func testCursorCountsItsPostEventsOnly() throws {
+        try turnEvent("beforeSubmitPrompt", "cu1", provider: "cursor")
+        try turnEvent("preToolUse", "cu1", state: "executing", provider: "cursor", extra: ["tool_use_id": "x"])
+        try turnEvent("beforeShellExecution", "cu1", state: "executing", provider: "cursor", extra: ["command": "ls"])
+        try turnEvent("postToolUse", "cu1", provider: "cursor", extra: ["tool_use_id": "x"])
+        let done = try turnEvent("stop", "cu1", state: "stopped", provider: "cursor")
+        XCTAssertEqual(int(done["turn_tool_calls"]), 1)
+        XCTAssertNotNil(done["turn_ended_ms"])
+        XCTAssertNil(done["transcript_path"], "only Claude records a transcript")
+    }
+
+    func testGeminiOpencodeAndAntigravityCountTheirToolCalls() throws {
+        try turnEvent("BeforeAgent", "g1", provider: "gemini")
+        try turnEvent("BeforeTool", "g1", state: "executing", provider: "gemini")
+        try turnEvent("AfterTool", "g1", provider: "gemini")
+        let gemini = try turnEvent("AfterAgent", "g1", state: "stopped", provider: "gemini")
+        XCTAssertEqual(int(gemini["turn_tool_calls"]), 1)
+        XCTAssertNotNil(gemini["turn_ended_ms"])
+
+        try turnEvent("UserPromptSubmit", "o1", provider: "opencode")
+        XCTAssertEqual(int(try turnEvent("PostToolUse", "o1", provider: "opencode", extra: ["tool_use_id": "call_1"])["turn_tool_calls"]), 1)
+
+        try turnEvent("UserPromptSubmit", "ag1", provider: "antigravity")
+        XCTAssertEqual(int(try turnEvent("PostInvocation", "ag1", provider: "antigravity")["turn_tool_calls"]), 0, "a model call is not a tool")
+        XCTAssertEqual(int(try turnEvent("PostToolUse", "ag1", provider: "antigravity")["turn_tool_calls"]), 1)
+    }
+
+    func testTheTurnRidesThePriorityMergeWithTheOldClock() throws {
+        let path = try transcript("m1", bytes: 10)
+        try turnEvent("UserPromptSubmit", "m1", extra: ["transcript_path": path])
+        try turnEvent("PermissionRequest", "m1", state: "awaiting_input", extra: ["transcript_path": path])
+        let ts = int(try readJSON("m1")?["ts"])
+        let merged = try turnEvent("PreToolUse", "m1", state: "executing", extra: ["transcript_path": path])
+        XCTAssertEqual(try readState("m1"), "awaiting_input")
+        XCTAssertEqual(int(try readJSON("m1")?["ts"]), ts, "ts is never refreshed (entry 12)")
+        XCTAssertNotNil(merged["turn_started_ms"])
+        XCTAssertEqual(merged["transcript_path"] as? String, path)
+        XCTAssertEqual(int(merged["turn_transcript_offset"]), 10)
+    }
+
+    func testTheTurnRidesTheStickyYellowRewriteSanitised() throws {
+        try turnEvent("beforeSubmitPrompt", "sy1", provider: "cursor")
+        let start = int(try turn("sy1", provider: "cursor")["turn_started_ms"])
+        try turnEvent("preToolUse", "sy1", state: "executing", provider: "cursor", toolName: "AskQuestion")
+        XCTAssertEqual(try readState("sy1", provider: "cursor"), "awaiting_input")
+        var doc = try XCTUnwrap(try readJSON("sy1", provider: "cursor"))
+        doc["turn_tool_calls"] = "junk"
+        doc["turn_tool_ids"] = [1, "ok", ""]
+        try JSONSerialization.data(withJSONObject: doc).write(to: statusFile("sy1", provider: "cursor"))
+        let ts = int(doc["ts"])
+        let kept = try turnEvent("afterAgentThought", "sy1", provider: "cursor")
+        XCTAssertEqual(try readState("sy1", provider: "cursor"), "awaiting_input", "sticky yellow holds")
+        XCTAssertEqual(int(try readJSON("sy1", provider: "cursor")?["ts"]), ts)
+        XCTAssertEqual(int(kept["turn_started_ms"]), start)
+        XCTAssertEqual(int(kept["turn_tool_calls"]), 0)
+        XCTAssertEqual(kept["turn_tool_ids"] as? [String], ["ok"])
+    }
+
+    func testSessionStartClearsAnEndedTurnButCompactKeepsIt() throws {
+        let path = try transcript("ss1", bytes: 5)
+        try turnEvent("UserPromptSubmit", "ss1", extra: ["transcript_path": path])
+        try turnEvent("Stop", "ss1", state: "stopped", extra: ["transcript_path": path])
+        try turnEvent("SessionStart", "ss1", state: "idle", extra: ["source": "compact", "transcript_path": path])
+        XCTAssertNotNil(try turn("ss1")["turn_started_ms"], "compact writes nothing")
+        let cleared = try turnEvent("SessionStart", "ss1", state: "idle", extra: ["source": "clear", "transcript_path": path])
+        XCTAssertNil(cleared["turn_started_ms"])
+        XCTAssertEqual(cleared["transcript_path"] as? String, path)
+        // opencode spawns SessionStart and the first prompt without waiting; the prompt may win.
+        try turnEvent("UserPromptSubmit", "os1", provider: "opencode")
+        XCTAssertNotNil(try turnEvent("SessionStart", "os1", state: "idle", provider: "opencode",
+                                      extra: ["source": "startup"])["turn_started_ms"])
+    }
+
+    func testOnlyAClaudeMainTranscriptUnderProjectsIsRecorded() throws {
+        let good = try transcript("v1", bytes: 3)
+        let projects = home.appendingPathComponent(".claude/projects").path
+        let bad = [
+            "p/v1.jsonl",
+            "/tmp/v1.jsonl",
+            home.appendingPathComponent("Documents/x.jsonl").path,
+            projects + "/p/v1.txt",
+            projects + "/p/../../../Documents/x.jsonl",
+            projects + "//p/v1.jsonl",
+            projects + "/p/v1/subagents/agent-1.jsonl",
+            projects + "/p/caf\u{e9}.jsonl",
+            projects + "/p/" + String(repeating: "a", count: 1100) + ".jsonl",
+        ]
+        for (index, path) in bad.enumerated() {
+            let started = try turnEvent("UserPromptSubmit", "vb\(index)", extra: ["transcript_path": path])
+            XCTAssertNil(started["transcript_path"], path)
+            XCTAssertNil(started["turn_transcript_offset"], path)
+            XCTAssertNotNil(started["turn_started_ms"], "the turn itself still starts")
+        }
+        XCTAssertEqual(try turnEvent("UserPromptSubmit", "vg", extra: ["transcript_path": good])["transcript_path"] as? String, good)
+        XCTAssertNil(try turnEvent("beforeSubmitPrompt", "vc", provider: "cursor", extra: ["transcript_path": good])["transcript_path"])
+        try run(state: "executing", event: "PreToolUse", conversation: "vp", extra: ["agent_id": "vsub", "transcript_path": good], path: turnPath)
+        XCTAssertNotNil(try turn("vsub")["turn_started_ms"])
+        XCTAssertNil(try turn("vsub")["transcript_path"], "a subagent's payload names its parent's transcript")
+    }
+
+    func testASymlinkedTranscriptGetsNoOffset() throws {
+        let target = try transcript("real", bytes: 40)
+        let link = projectsDir.appendingPathComponent("link.jsonl").path
+        try FileManager.default.createSymbolicLink(atPath: link, withDestinationPath: target)
+        XCTAssertNil(try turnEvent("UserPromptSubmit", "sl1", extra: ["transcript_path": link])["turn_transcript_offset"], "never followed")
+    }
+
+    func testTheOffsetIsTheSizeWhenTheTurnStarts() throws {
+        let path = try transcript("o1", bytes: 100)
+        XCTAssertEqual(int(try turnEvent("UserPromptSubmit", "of1", extra: ["transcript_path": path])["turn_transcript_offset"]), 100)
+        try append(50, to: path)
+        XCTAssertEqual(int(try turnEvent("PostToolUse", "of1", extra: ["transcript_path": path])["turn_transcript_offset"]), 100)
+        XCTAssertEqual(int(try turnEvent("Stop", "of1", state: "stopped", extra: ["transcript_path": path])["turn_transcript_offset"]), 100)
+        XCTAssertEqual(int(try turnEvent("PreToolUse", "of1", state: "executing", extra: ["transcript_path": path])["turn_transcript_offset"]),
+                       100, "reopened, not restarted")
+        XCTAssertEqual(int(try turnEvent("UserPromptSubmit", "of1", extra: ["transcript_path": path])["turn_transcript_offset"]), 150)
+    }
+
+    func testAMissingTranscriptIsOffsetZeroOnlyForAChatThatJustStarted() throws {
+        let missing = projectsDir.appendingPathComponent("new.jsonl").path
+        try turnEvent("SessionStart", "mz1", state: "idle", extra: ["source": "startup", "transcript_path": missing])
+        XCTAssertEqual(int(try turnEvent("UserPromptSubmit", "mz1", extra: ["transcript_path": missing])["turn_transcript_offset"]), 0)
+        let other = try turnEvent("UserPromptSubmit", "mz2", extra: ["transcript_path": missing])
+        XCTAssertNil(other["turn_transcript_offset"], "a resumed or forked chat may be about to copy its history in")
+        XCTAssertEqual(other["transcript_path"] as? String, missing)
+    }
+
+    func testAPathFirstSeenMidTurnHasNoOffsetUntilTheNextPrompt() throws {
+        let path = try transcript("mid", bytes: 70)
+        try turnEvent("UserPromptSubmit", "md1")
+        let mid = try turnEvent("PostToolUse", "md1", extra: ["transcript_path": path])
+        XCTAssertEqual(mid["transcript_path"] as? String, path)
+        XCTAssertNil(mid["turn_transcript_offset"])
+        XCTAssertEqual(int(try turnEvent("UserPromptSubmit", "md1", extra: ["transcript_path": path])["turn_transcript_offset"]), 70)
+    }
+
+    func testCarriedTurnKeysAreUntrusted() throws {
+        let now = Self.nowMs
+        try writeStatus("u1", state: "thinking", event: "PostToolUse", tsMs: now, extra: [
+            "turn_started_ms": "soon", "turn_tool_calls": -5, "turn_tool_ids": "x", "turn_ended_ms": true,
+            "turn_transcript_offset": 1e30, "transcript_path": "/etc/passwd", "hook_event": ["not", "a", "string"],
+        ])
+        XCTAssertEqual(try run(state: "thinking", event: "PostToolUse", conversation: "u1", path: turnPath), Self.allowJSON)
+        XCTAssertTrue(try turn("u1").isEmpty, "no plausible start: no turn, and a completion starts none")
+        try writeStatus("u2", state: "thinking", event: "PostToolUse", tsMs: now, extra: [
+            "turn_started_ms": now - 1000, "turn_tool_calls": 5, "turn_tool_ids": [1, "", "ok", ["x"]],
+            "turn_ended_ms": now - 5000, "turn_transcript_offset": -3,
+        ])
+        let u2 = try turnEvent("PostToolUse", "u2", extra: ["tool_use_id": "new"])
+        XCTAssertEqual(int(u2["turn_tool_calls"]), 6)
+        XCTAssertEqual(u2["turn_tool_ids"] as? [String], ["ok", "new"])
+        XCTAssertNil(u2["turn_ended_ms"], "an end before the start is dropped")
+        XCTAssertNil(u2["turn_transcript_offset"])
+        try writeStatus("u3", state: "thinking", event: "PostToolUse", tsMs: now, extra: ["turn_started_ms": now + 3_600_000])
+        XCTAssertTrue(try turnEvent("PostToolUse", "u3").isEmpty, "a start in the future is not trusted")
+        // SessionStart reads the previous event's name: a list there must not break the write.
+        try writeStatus("u4", state: "thinking", event: "x", tsMs: now, extra: ["turn_started_ms": now - 1000, "hook_event": ["x"]])
+        try turnEvent("SessionStart", "u4", state: "idle", extra: ["source": "startup"])
+        XCTAssertEqual(try readState("u4"), "idle")
+    }
+
+    func testASubagentCountsItsOwnCallsAndRestartsForALaterRequest() throws {
+        try turnEvent("UserPromptSubmit", "sp1")
+        let parentStart = try XCTUnwrap(int(try turn("sp1")["turn_started_ms"]))
+        try run(state: "executing", event: "PreToolUse", conversation: "sp1", extra: ["agent_id": "sa1", "tool_use_id": "s-1"], path: turnPath)
+        try run(state: "thinking", event: "PostToolUse", conversation: "sp1", extra: ["agent_id": "sa1", "tool_use_id": "s-1"], path: turnPath)
+        let sub = try turn("sa1")
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(int(sub["turn_started_ms"])), parentStart)
+        XCTAssertEqual(int(sub["turn_tool_calls"]), 1)
+        XCTAssertNil(sub["transcript_path"])
+        XCTAssertEqual(int(try turn("sp1")["turn_tool_calls"]), 0, "the parent's own file counts only its own calls")
+        tick()
+        try turnEvent("UserPromptSubmit", "sp1")
+        let secondStart = try XCTUnwrap(int(try turn("sp1")["turn_started_ms"]))
+        tick()
+        try run(state: "executing", event: "PreToolUse", conversation: "sp1", extra: ["agent_id": "sa1", "tool_use_id": "s-2"], path: turnPath)
+        let resumed = try turn("sa1")
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(int(resumed["turn_started_ms"])), secondStart)
+        XCTAssertEqual(int(resumed["turn_tool_calls"]), 0)
+    }
+
+    /// `/usr/bin/python3` is 3.9 on macOS; the default PATH finds Homebrew's newer one first, so
+    /// a 3.10-only construct in a branch only these tests reach would otherwise pass.
+    func testTheTurnRulesHoldUnderTheSystemPython() throws {
+        try XCTSkipUnless(FileManager.default.isExecutableFile(atPath: "/usr/bin/python3"), "no system python3")
+        turnPath = "/usr/bin:/bin"
+        try testAPromptStartsATurnAtTheTranscriptsSize()
+        try testTheFirstStopEndsTheTurnAndOnlyAStopHookContinuationMovesIt()
+        try testTheIdleNoticeKeepsTheEndedTurnAndLaterWorkReopensIt()
+        try testANewPromptStartsANewTurn()
+        try testAStopHeldYellowByTheUrgentCarryStillEndsTheTurn()
+        try testAWakeWithNoTurnStartsOneAndTheNextKeepsIt()
+        try testALateCompletionAfterStopCountsIntoTheEndedTurn()
+        try testToolCallsCountOncePerCall()
+        try testTheCallIdsAreCapped()
+        try testCursorCountsItsPostEventsOnly()
+        try testGeminiOpencodeAndAntigravityCountTheirToolCalls()
+        try testTheTurnRidesThePriorityMergeWithTheOldClock()
+        try testTheTurnRidesTheStickyYellowRewriteSanitised()
+        try testSessionStartClearsAnEndedTurnButCompactKeepsIt()
+        try testOnlyAClaudeMainTranscriptUnderProjectsIsRecorded()
+        try testASymlinkedTranscriptGetsNoOffset()
+        try testTheOffsetIsTheSizeWhenTheTurnStarts()
+        try testAMissingTranscriptIsOffsetZeroOnlyForAChatThatJustStarted()
+        try testAPathFirstSeenMidTurnHasNoOffsetUntilTheNextPrompt()
+        try testCarriedTurnKeysAreUntrusted()
+        try testASubagentCountsItsOwnCallsAndRestartsForALaterRequest()
     }
 
     /// REGRESSIONS entry 1: the embedded copy is the one users run; the mirror is the one these
