@@ -138,13 +138,13 @@ final class HiddenTextIncidentTests: XCTestCase {
         var s = AgentSessionStatus(id: "claude-a", provider: "claude", conversationID: "a", chatName: "Chat", projectName: "proj",
                                    rawState: "executing", displayState: .executing, updatedAt: Date(timeIntervalSince1970: 1_000),
                                    isVisible: true, executionStartedAt: nil, cwd: nil, hostPID: nil)
-        s.hiddenText = [incident()]
-        XCTAssertEqual(s.withDisplayState(.stopped, visible: true).hiddenText, [incident()])
-        XCTAssertEqual(s.replacingChatName("x").hiddenText, [incident()])
-        XCTAssertEqual(s.replacingProjectName("y").hiddenText, [incident()])
+        s.sightings.hiddenText = [incident()]
+        XCTAssertEqual(s.withDisplayState(.stopped, visible: true).sightings.hiddenText, [incident()])
+        XCTAssertEqual(s.replacingChatName("x").sightings.hiddenText, [incident()])
+        XCTAssertEqual(s.replacingProjectName("y").sightings.hiddenText, [incident()])
         var bare = s
-        bare.hiddenText = []
-        XCTAssertEqual(bare.carryingExtras(from: s).hiddenText, [incident()])
+        bare.sightings = HookSightings()
+        XCTAssertEqual(bare.carryingExtras(from: s).sightings.hiddenText, [incident()])
     }
 
     // MARK: - Persisted records
@@ -153,20 +153,21 @@ final class HiddenTextIncidentTests: XCTestCase {
         var session = AgentSessionStatus(id: "claude-a", provider: "claude", conversationID: "a", chatName: nil, projectName: "proj",
                                          rawState: "executing", displayState: .executing, updatedAt: Date(timeIntervalSince1970: 1_000),
                                          isVisible: true, executionStartedAt: nil, cwd: "/p", hostPID: nil)
-        XCTAssertEqual(Incident.Record.upserting([session], into: [], cap: 5), [], "no sighting, nothing to do")
-        session.hiddenText = [incident()]
-        let once = Incident.Record.upserting([session], into: [], cap: 5)
+        typealias Record = HookSightingRecord<Incident>
+        XCTAssertEqual(Record.upserting([session], \.hiddenText, into: [], cap: 5), [], "no sighting, nothing to do")
+        session.sightings.hiddenText = [incident()]
+        let once = Record.upserting([session], \.hiddenText, into: [], cap: 5)
         XCTAssertEqual(once.count, 1)
         XCTAssertEqual(once[0].chatName, "Untitled chat")
-        XCTAssertEqual(Incident.Record.upserting([session], into: once, cap: 5), once, "unchanged input, unchanged output")
-        session.hiddenText = [incident(events: 2, last: t0 + 1_000)]
-        let refreshed = Incident.Record.upserting([session], into: once, cap: 5)
+        XCTAssertEqual(Record.upserting([session], \.hiddenText, into: once, cap: 5), once, "unchanged input, unchanged output")
+        session.sightings.hiddenText = [incident(events: 2, last: t0 + 1_000)]
+        let refreshed = Record.upserting([session], \.hiddenText, into: once, cap: 5)
         XCTAssertEqual(refreshed.count, 1)
-        XCTAssertEqual(refreshed[0].incident.eventCount, 2)
+        XCTAssertEqual(refreshed[0].sighting.eventCount, 2)
         XCTAssertEqual(refreshed[0].finding.id, once[0].finding.id)
-        session.hiddenText = [incident(first: t0 + 10), incident(.bidi, first: t0 + 20)]
-        let capped = Incident.Record.upserting([session], into: refreshed, cap: 2)
+        session.sightings.hiddenText = [incident(first: t0 + 10), incident(.bidi, first: t0 + 20)]
+        let capped = Record.upserting([session], \.hiddenText, into: refreshed, cap: 2)
         // Last seen: the refreshed record at t0+1000, the bidi one at t0+20, the new tags one at t0+10.
-        XCTAssertEqual(capped.map { $0.incident.firstSeenMs }, [t0, t0 + 20], "the least recently seen is evicted")
+        XCTAssertEqual(capped.map { $0.sighting.firstSeenMs }, [t0, t0 + 20], "the least recently seen is evicted")
     }
 }

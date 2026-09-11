@@ -1072,9 +1072,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
             // v33: the run ended on an error (StopFailure, or an Antigravity Stop carrying one).
             // Only a literal `true` counts — the file is untrusted input.
             if (json["ended_on_error"] as? Bool) == true { session.runError = .failed }
-            // v34: hidden Unicode the hook found in this session's input or output. Untrusted
-            // input, re-sanitised by the parser.
-            session.hiddenText = HiddenTextIncident.list(fromHookValue: json["hidden_text"])
+            // v34+: what the hook's local checks found in this session's input or output.
+            // Untrusted input, re-sanitised by each kind's parser.
+            session.sightings = HookSightings(hookFile: json)
             results.append(session)
         }
 

@@ -4,6 +4,23 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - One container for what the hook's local checks see
+- **Developer label:** Local security checks (groundwork)
+- **Agent label:** Refactor hidden-text plumbing into a shared sightings container before adding more checks
+- **Changes:**
+  - New `HookSightings.swift` (logic target): `HookSighting` protocol (key, first/last seen, cap,
+    finding) with the set union moved from `HiddenTextIncident`; `HookSightings` (one list per check,
+    parsed from the status file, unioned across seams); generic `HookSightingRecord` with the
+    least-recently-seen eviction moved from `HiddenTextIncident.Record`; `HookSightingRecords`, the
+    persisted lists, decoding a missing or unreadable list as empty so one bad list never loses the
+    others.
+  - `AgentSessionStatus.hiddenText` becomes `sightings`; `carryingExtras` unions the container. The
+    secrets and sensitive-path checks that follow add a list, not a field (REGRESSIONS entry 7 note).
+  - Defaults key `hiddenTextIncidents` becomes `hookSightingRecords` (hook v34 never shipped; a
+    sighting saved by a dev build is re-read from its status file while that exists).
+  - Behaviour unchanged. Tests: `HookSightingsTests` (parse, per-kind union, record round trip,
+    unreadable list); hidden-text and reconciler tests moved to the new names.
+
 ### 2026-09-11 - "Still waiting on you": one reminder push when an agent waits too long
 - **Developer label:** Waiting reminder + tab jump
 - **Agent label:** Push once more when a session has waited on the user past a chosen time

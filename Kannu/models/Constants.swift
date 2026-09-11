@@ -1261,7 +1261,8 @@ extension Defaults.Keys {
     // it is on; telling the agent changes what it sees, so that is opt-in.
     static let detectHiddenText = Key<Bool>("detectHiddenText", default: true)
     static let warnAgentAboutHiddenText = Key<Bool>("warnAgentAboutHiddenText", default: false)
-    static let hiddenTextIncidents = Key<[HiddenTextIncident.Record]>("hiddenTextIncidents", default: [])
+    /// Sightings from the hook's local checks, kept past their session until acknowledged.
+    static let hookSightingRecords = Key<HookSightingRecords>("hookSightingRecords", default: HookSightingRecords())
 
     // ADR Detection — session analysis. Everything off by default; the user opts in, picks each
     // chat, and by default confirms each run. Keys live in the Keychain (`SecureSecretsStore`).

@@ -45,7 +45,7 @@ struct ADRScanRecord: Codable, Equatable, Defaults.Serializable {
 
 extension SecurityFindingSnooze: Defaults.Serializable {}
 extension ADRSessionAnalysis: Defaults.Serializable {}
-extension HiddenTextIncident.Record: Defaults.Serializable {}
+extension HookSightingRecords: Defaults.Serializable {}
 
 /// Owns the findings the user sees, their acknowledgements and snoozes, and the watch on the
 /// snapshot directory. Watch mode is the whole of phase 0: whoever runs `adr-discovery` (a
@@ -77,10 +77,9 @@ final class SecurityFindingsStore: ObservableObject {
     private var discoveryFindings: [AgentSecurityFinding] = []
     private var nativeFindings: [AgentSecurityFinding] = []
     private var detectionFindings: [AgentSecurityFinding] = []
-    /// Hidden-text sightings, kept past their session until acknowledged (capped).
-    private var hiddenTextRecords: [HiddenTextIncident.Record] = []
-    private var hiddenTextFindings: [AgentSecurityFinding] = []
-    static let hiddenTextCap = 50
+    /// Sightings from the hook's local checks, kept past their session until acknowledged.
+    private var sightingRecords = HookSightingRecords()
+    private var sightingFindings: [AgentSecurityFinding] = []
     /// ADR Detection verdicts, newest first, one per conversation (capped).
     @Published private(set) var analyses: [ADRSessionAnalysis] = []
     @Published private(set) var analyzingConversationIDs: Set<String> = []
@@ -106,8 +105,8 @@ final class SecurityFindingsStore: ObservableObject {
         lastKannuScanAt = Defaults[.adrLastKannuScanAt]
         analyses = Defaults[.adrSessionAnalyses]
         detectionFindings = analyses.compactMap { $0.finding() }
-        hiddenTextRecords = Defaults[.hiddenTextIncidents]
-        hiddenTextFindings = hiddenTextRecords.map(\.finding)
+        sightingRecords = Defaults[.hookSightingRecords]
+        sightingFindings = sightingRecords.findings
     }
 
     func analysis(for conversationID: String) -> ADRSessionAnalysis? {
@@ -161,7 +160,7 @@ final class SecurityFindingsStore: ObservableObject {
         CursorAgentStatusMonitor.shared.$sessions
             .sink { [weak self] sessions in
                 self?.updateNativeFindings(from: sessions)
-                self?.recordHiddenText(from: sessions)
+                self?.recordSightings(from: sessions)
             }
             .store(in: &cancellables)
         // The hook reads two marker files for the hidden-text settings; keep them in step.
@@ -334,15 +333,18 @@ final class SecurityFindingsStore: ObservableObject {
         publishFindings()
     }
 
-    // MARK: - Hidden text (Kannu's own check, hook v34)
+    // MARK: - Sightings (Kannu's own local checks in the hook, v34+)
 
-    private func recordHiddenText(from sessions: [AgentSessionStatus]) {
-        guard Defaults[.detectHiddenText] else { return }
-        let updated = HiddenTextIncident.Record.upserting(sessions, into: hiddenTextRecords, cap: Self.hiddenTextCap)
-        guard updated != hiddenTextRecords else { return }
-        hiddenTextRecords = updated
-        Defaults[.hiddenTextIncidents] = updated
-        hiddenTextFindings = updated.map(\.finding)
+    private func recordSightings(from sessions: [AgentSessionStatus]) {
+        let updated = sightingRecords.upserting(sessions, includeHiddenText: Defaults[.detectHiddenText])
+        guard updated != sightingRecords else { return }
+        storeSightingRecords(updated)
+    }
+
+    private func storeSightingRecords(_ records: HookSightingRecords) {
+        sightingRecords = records
+        Defaults[.hookSightingRecords] = records
+        sightingFindings = records.findings
         publishFindings()
     }
 
@@ -367,16 +369,15 @@ final class SecurityFindingsStore: ObservableObject {
         }
         place(HiddenTextIncident.detectionOffMarker, present: !detect)
         place(HiddenTextIncident.warnAgentMarker, present: warn)
-        if !detect, !hiddenTextRecords.isEmpty {
-            hiddenTextRecords = []
-            Defaults[.hiddenTextIncidents] = []
-            hiddenTextFindings = []
-            publishFindings()
+        if !detect, !sightingRecords.hiddenText.isEmpty {
+            var records = sightingRecords
+            records.hiddenText = []
+            storeSightingRecords(records)
         }
     }
 
     private func publishFindings() {
-        let combined = discoveryFindings + nativeFindings + detectionFindings + hiddenTextFindings
+        let combined = discoveryFindings + nativeFindings + detectionFindings + sightingFindings
         if combined != findings { findings = combined }
     }
 

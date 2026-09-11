@@ -18,7 +18,7 @@ final class ClaudeReconcilerTests: XCTestCase {
         unattended: Bool = false,
         runError: RunError? = nil,
         desktopSessionID: String? = nil,
-        hiddenText: [HiddenTextIncident] = []
+        sightings: HookSightings = HookSightings()
     ) -> AgentSessionStatus {
         var session = AgentSessionStatus(
             id: "\(provider)-\(conversation)",
@@ -38,7 +38,7 @@ final class ClaudeReconcilerTests: XCTestCase {
         session.isUnattended = unattended
         session.runError = runError
         session.desktopSessionID = desktopSessionID
-        session.hiddenText = hiddenText
+        session.sightings = sightings
         return session
     }
 
@@ -65,7 +65,7 @@ final class ClaudeReconcilerTests: XCTestCase {
 
     func testInheritedFieldsCarryAcrossOnDemote() {
         let hook = session(rawState: "executing", display: .executing,
-                           updatedAt: Date(timeIntervalSince1970: 1_000), hiddenText: [sighting])
+                           updatedAt: Date(timeIntervalSince1970: 1_000), sightings: HookSightings(hiddenText: [sighting]))
         let passive = session(chatName: "Fix the parser", projectName: "kannu",
                               rawState: "stopped", display: .stopped,
                               updatedAt: Date(timeIntervalSince1970: 1_500),
@@ -84,7 +84,7 @@ final class ClaudeReconcilerTests: XCTestCase {
         XCTAssertEqual(merged.toolErrorCount, 2, "the tool-error count keeps the larger side")
         XCTAssertTrue(merged.isUnattended, "the unattended flag rides the seam too")
         XCTAssertEqual(merged.runError, .apiError(status: 429), "the transcript's verdict fills a hook that has none")
-        XCTAssertEqual(merged.hiddenText, [sighting], "the hook's hidden-text sighting survives the demote")
+        XCTAssertEqual(merged.sightings.hiddenText, [sighting], "the hook's hidden-text sighting survives the demote")
     }
 
     // MARK: - Entry 12: a held yellow survives passive activity, dies with the process
@@ -156,14 +156,14 @@ final class ClaudeReconcilerTests: XCTestCase {
     func testInheritedFieldsCarryAcrossOnUnchangedSession() {
         // Hook active, passive ALSO active (no demote, no promote arm change) — the
         // pass-through exit must still inherit. This is the arm that lost fields twice.
-        let hook = session(rawState: "executing", display: .executing, hiddenText: [sighting])
+        let hook = session(rawState: "executing", display: .executing, sightings: HookSightings(hiddenText: [sighting]))
         let passive = session(chatName: "Title", rawState: "executing", display: .executing,
                               updatedAt: Date(timeIntervalSince1970: 900), hostPID: 7)
         let out = reconcile(hooks: [hook], passive: [passive])
         XCTAssertEqual(out[0].chatName, "Title")
         XCTAssertEqual(out[0].hostPID, 7)
         XCTAssertEqual(out[0].displayState, .executing)
-        XCTAssertEqual(out[0].hiddenText, [sighting], "and the pass-through arm")
+        XCTAssertEqual(out[0].sightings.hiddenText, [sighting], "and the pass-through arm")
     }
 
     // MARK: - Demotion

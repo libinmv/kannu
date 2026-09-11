@@ -245,6 +245,9 @@ call sites.
 wins, the newest three are kept, empty is the identity — never a replace, or a reconstruction from a
 side that has not seen the sighting would erase it. Guards: `ClaudeReconcilerTests` (demote and
 pass-through arms carry it) and `HiddenTextIncidentTests.testReconstructionHelpersKeepTheField`.
+Since the sightings refactor the field is `sightings` (`HookSightings`, one list per hook-side check)
+and the union is `HookSighting.union` per list; a new check adds a list to `HookSightings`, never a
+new field on `AgentSessionStatus`.
 
 **2026-09-09 addendum — the run verdict is not additive.** `runError` (why the run ended, nil for
 a clean finish) is a per-turn *verdict*, replaced by every stopped write. It rides the same

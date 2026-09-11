@@ -26,7 +26,7 @@ import Foundation
 /// ADR): Unicode tag characters (U+E0000–E007F, "ASCII smuggling"; flag emoji excluded per
 /// UTS #51), bytes hidden in variation-selector runs (Butler 2025), right-to-left overrides on a
 /// line with no right-to-left letters (Trojan Source, CVE-2021-42574), long zero-width runs.
-struct HiddenTextIncident: Codable, Equatable {
+struct HiddenTextIncident: HookSighting {
     enum Kind: String, Codable, CaseIterable {
         case tags
         case variationSelectors = "variation_selectors"
@@ -98,25 +98,9 @@ struct HiddenTextIncident: Codable, Equatable {
         return clean.isEmpty ? nil : clean
     }
 
-    // MARK: - Merging across reconstruction seams (REGRESSIONS entry 7)
+    // MARK: - Merging across reconstruction seams (REGRESSIONS entry 7; `HookSighting.union`)
 
     var key: String { "\(kind.rawValue)|\(location.rawValue)|\(firstSeenMs)" }
-
-    /// A set union keyed by (kind, location, firstSeenMs); the newer copy of one sighting wins,
-    /// newest three kept. Empty is the identity.
-    static func union(_ lhs: [HiddenTextIncident], _ rhs: [HiddenTextIncident]) -> [HiddenTextIncident] {
-        if rhs.isEmpty || lhs == rhs { return lhs }
-        if lhs.isEmpty { return rhs }
-        var byKey: [String: HiddenTextIncident] = [:]
-        for incident in lhs + rhs {
-            if let kept = byKey[incident.key], kept.lastSeenMs >= incident.lastSeenMs { continue }
-            byKey[incident.key] = incident
-        }
-        let sorted = byKey.values.sorted {
-            $0.firstSeenMs != $1.firstSeenMs ? $0.firstSeenMs < $1.firstSeenMs : $0.key < $1.key
-        }
-        return Array(sorted.suffix(maxPerSession))
-    }
 
     // MARK: - As a finding
 
@@ -214,55 +198,5 @@ struct HiddenTextIncident: Codable, Equatable {
             sessionID: conversationID,
             firstSeen: Date(timeIntervalSince1970: TimeInterval(firstSeenMs) / 1000)
         )
-    }
-
-    // MARK: - Persisted sightings
-
-    /// What Kannu keeps after the session's status file is gone, so an incident stays until the
-    /// user acknowledges it.
-    struct Record: Codable, Equatable {
-        let conversationID: String
-        let provider: String
-        var chatName: String
-        var projectName: String?
-        var cwd: String?
-        var incident: HiddenTextIncident
-
-        var key: String { "\(conversationID)|\(incident.key)" }
-
-        var finding: AgentSecurityFinding {
-            incident.finding(conversationID: conversationID, provider: provider, chatName: chatName,
-                             projectName: projectName, cwd: cwd)
-        }
-
-        /// New sightings appended, known ones refreshed; least-recently-seen evicted past `cap`.
-        /// Returns `records` unchanged when no session carries a sighting.
-        static func upserting(_ sessions: [AgentSessionStatus], into records: [Record], cap: Int) -> [Record] {
-            guard sessions.contains(where: { !$0.hiddenText.isEmpty }) else { return records }
-            var out = records
-            var index = Dictionary(out.enumerated().map { ($0.element.key, $0.offset) }, uniquingKeysWith: { a, _ in a })
-            for session in sessions {
-                for incident in session.hiddenText {
-                    let fresh = Record(conversationID: session.conversationID, provider: session.provider,
-                                       chatName: session.displayChatName, projectName: session.displayProjectName,
-                                       cwd: session.cwd, incident: incident)
-                    if let i = index[fresh.key] {
-                        var kept = out[i]
-                        if incident.lastSeenMs >= kept.incident.lastSeenMs { kept.incident = incident }
-                        kept.chatName = fresh.chatName
-                        kept.projectName = fresh.projectName ?? kept.projectName
-                        kept.cwd = fresh.cwd ?? kept.cwd
-                        out[i] = kept
-                    } else {
-                        index[fresh.key] = out.count
-                        out.append(fresh)
-                    }
-                }
-            }
-            out.sort {
-                $0.incident.lastSeenMs != $1.incident.lastSeenMs ? $0.incident.lastSeenMs > $1.incident.lastSeenMs : $0.key < $1.key
-            }
-            return Array(out.prefix(cap))
-        }
     }
 }

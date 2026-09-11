@@ -51,6 +51,7 @@
 		AA1000000000000000000063 /* UsageForecast.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000062 /* UsageForecast.swift */; };
 		AA1000000000000000000067 /* AgentClickThroughPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000066 /* AgentClickThroughPolicy.swift */; };
 		AA1000000000000000000069 /* AgentWaitReminder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000068 /* AgentWaitReminder.swift */; };
+		AA1000000000000000000071 /* HookSightings.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000070 /* HookSightings.swift */; };
 		AA1000000000000000000065 /* TerminalTabMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000064 /* TerminalTabMatcher.swift */; };
 		AA1000000000000000000055 /* ADRDetectionCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000054 /* ADRDetectionCommand.swift */; };
 		AA1000000000000000000047 /* ADRSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000046 /* ADRSnapshot.swift */; };
@@ -109,6 +110,7 @@
 		AA1000000000000000000062 /* UsageForecast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UsageForecast.swift; path = Kannu/managers/LLMUsage/UsageForecast.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000066 /* AgentClickThroughPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentClickThroughPolicy.swift; path = Kannu/managers/AgentStatus/AgentClickThroughPolicy.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000068 /* AgentWaitReminder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentWaitReminder.swift; path = Kannu/managers/AgentStatus/AgentWaitReminder.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000070 /* HookSightings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HookSightings.swift; path = Kannu/managers/AgentStatus/HookSightings.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000064 /* TerminalTabMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TerminalTabMatcher.swift; path = Kannu/managers/AgentStatus/TerminalTabMatcher.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000054 /* ADRDetectionCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ADRDetectionCommand.swift; path = Kannu/managers/AgentStatus/ADRDetectionCommand.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000046 /* ADRSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ADRSnapshot.swift; path = Kannu/managers/AgentStatus/ADRSnapshot.swift; sourceTree = SOURCE_ROOT; };
@@ -515,6 +517,7 @@
 				AA1000000000000000000063 /* UsageForecast.swift in Sources */,
 				AA1000000000000000000067 /* AgentClickThroughPolicy.swift in Sources */,
 				AA1000000000000000000069 /* AgentWaitReminder.swift in Sources */,
+				AA1000000000000000000071 /* HookSightings.swift in Sources */,
 				AA1000000000000000000065 /* TerminalTabMatcher.swift in Sources */,
 				AA1000000000000000000055 /* ADRDetectionCommand.swift in Sources */,
 				AA1000000000000000000047 /* ADRSnapshot.swift in Sources */,
