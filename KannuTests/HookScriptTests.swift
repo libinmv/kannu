@@ -669,22 +669,35 @@ final class HookScriptTests: XCTestCase {
     }
 
     func testNoTerminalMeansNoTTY() throws {
-        try run(state: "thinking", event: "UserPromptSubmit", conversation: "t0", extra: ["prompt": "hi"])
-        let json = try XCTUnwrap(try readJSON("t0"))
-        XCTAssertNil(json["tty"], "the test runner has no controlling terminal")
-        XCTAssertNotNil(json["tty_sid"], "the session is still noted, so the next event skips the lookup")
+        try run(state: "thinking", event: "UserPromptSubmit", conversation: "t0", provider: "codex", extra: ["prompt": "hi"])
+        let json = try XCTUnwrap(try readJSON("t0", provider: "codex"))
+        XCTAssertNil(json["tty"], "the test runner has no controlling terminal, nor do its parents")
+        XCTAssertNil(json["tty_sid"])
     }
 
-    /// `script` gives the hook a pseudo-terminal, as Terminal.app would.
-    func testTheTerminalIsRecordedUnderAPseudoTerminal() throws {
+    func testOnlyTerminalAgentsLookForATerminal() throws {
+        // Claude's own session file names its process, and IDE agents have no terminal: no lookup.
+        try runUnderPseudoTerminal(provider: "claude", conversation: "t2", events: ["UserPromptSubmit"])
+        XCTAssertNil(try readJSON("t2")?["tty"])
+    }
+
+    /// Runs hook events inside `script`'s pseudo-terminal, as Terminal.app would. With `detached`,
+    /// each hook starts in a session of its own first — what Claude Code does with its hooks — so
+    /// the terminal must be found on an ancestor.
+    private func runUnderPseudoTerminal(provider: String, conversation: String, events: [String], detached: Bool = false) throws {
         try XCTSkipUnless(FileManager.default.isExecutableFile(atPath: "/usr/bin/script"), "script(1) not available")
-        let payload = home.appendingPathComponent("payload.json")
-        try JSONSerialization.data(withJSONObject: ["session_id": "t1", "prompt": "hi"]).write(to: payload)
+        let payload = home.appendingPathComponent("payload-\(conversation).json")
+        try JSONSerialization.data(withJSONObject: ["session_id": conversation, "prompt": "hi"]).write(to: payload)
+        let launcher = detached
+            ? "/usr/bin/python3 -c 'import os, sys; os.setsid(); os.execv(\"/bin/bash\", [\"/bin/bash\"] + sys.argv[1:])'"
+            : "/bin/bash"
+        let commands = events.map { event -> String in
+            let state = event == "Stop" ? "stopped" : "thinking"
+            return "\(launcher) \"$0\" \(state) \(provider) \(event) < \"$1\""
+        }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/script")
-        process.arguments = ["-q", "/dev/null", "/bin/bash", "-c",
-                             "/bin/bash \"$0\" thinking claude UserPromptSubmit < \"$1\"; /bin/bash \"$0\" stopped claude Stop < \"$1\"",
-                             Self.scriptURL.path, payload.path]
+        process.arguments = ["-q", "/dev/null", "/bin/bash", "-c", commands.joined(separator: "; "), Self.scriptURL.path, payload.path]
         var env = ProcessInfo.processInfo.environment
         env["HOME"] = home.path
         env["PATH"] = Self.defaultPath
@@ -694,7 +707,18 @@ final class HookScriptTests: XCTestCase {
         process.standardError = FileHandle.nullDevice
         try process.run()
         process.waitUntilExit()
-        let json = try XCTUnwrap(try readJSON("t1"))
+    }
+
+    func testATerminalIsFoundAboveADetachedHook() throws {
+        try runUnderPseudoTerminal(provider: "codex", conversation: "t3", events: ["UserPromptSubmit", "Stop"], detached: true)
+        let json = try XCTUnwrap(try readJSON("t3", provider: "codex"))
+        XCTAssertNotNil(TerminalLocator(hookFile: json), "found on the parent, not on the hook's own session")
+        XCTAssertEqual(json["state"] as? String, "stopped", "the second event carried it")
+    }
+
+    func testTheTerminalIsRecordedUnderAPseudoTerminal() throws {
+        try runUnderPseudoTerminal(provider: "codex", conversation: "t1", events: ["UserPromptSubmit", "Stop"])
+        let json = try XCTUnwrap(try readJSON("t1", provider: "codex"))
         let tty = try XCTUnwrap(json["tty"] as? String)
         XCTAssertNotNil(TerminalLocator(hookFile: json), "\(tty) validates")
         XCTAssertGreaterThan((json["tty_sid"] as? NSNumber)?.intValue ?? 0, 1)
@@ -730,6 +754,13 @@ final class HookScriptTests: XCTestCase {
         try run(state: "awaiting_input", event: "Notification", conversation: "c2", provider: "vscode",
                 extra: ["notification_type": "elicitation_dialog"], environment: copilot)
         XCTAssertEqual(try readState("c2", provider: "copilot"), "awaiting_input")
+    }
+
+    func testACopilotConversationStaysCopilot() throws {
+        try run(state: "thinking", event: "UserPromptSubmit", conversation: "c4", provider: "vscode", environment: copilot)
+        try run(state: "executing", event: "PreToolUse", conversation: "c4", provider: "vscode")
+        XCTAssertEqual(try readState("c4", provider: "copilot"), "executing", "filed once, kept without the variable")
+        XCTAssertNil(try readState("c4", provider: "vscode"))
     }
 
     func testCopilotReplacesItsOldVSCodeFile() throws {

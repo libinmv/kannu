@@ -4,6 +4,26 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - Hook v37: find the agent's terminal above a detached hook
+- **Developer label:** Tab jump for every terminal agent (fix found in live verification)
+- **Agent label:** Walk up the process tree for the terminal; look only for terminal agents
+- **Changes:**
+  - Found on this Mac after installing v36: the `tty_sid` in a Claude status file changed on every
+    event. Claude Code starts each hook in a session of its own, so the hook's session never has the
+    terminal; v35's lookup came back empty and, because the session id kept changing, ran on every
+    event.
+  - `ancestor_terminal()` walks from the hook up the parent chain (libproc `pbi_ppid`) to the nearest
+    process with a controlling terminal and records that terminal, its session leader
+    (`os.getsid`) and the leader's start time. Only terminal agents look (Codex, Copilot CLI, Gemini
+    CLI, Qwen Code, opencode): Claude's session file already names its process and IDE agents have
+    no terminal. The lookup runs when a session starts, on each prompt and on a conversation's first
+    event, and is carried in between.
+  - Copilot CLI detection: `COPILOT_CLI`, `/dev/tty`, or a conversation already filed as Copilot;
+    the process walk runs only on a conversation's first event, so VS Code events stay cheap.
+  - Tests: a hook run under `script` in a session of its own still finds the terminal; Claude records
+    none; a Copilot conversation stays Copilot without the variable; the no-terminal case records
+    neither key.
+
 ### 2026-09-11 - opencode, through a small plugin
 - **Developer label:** More agents: opencode
 - **Agent label:** Add an opencode plugin that feeds the shared status script

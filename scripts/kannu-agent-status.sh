@@ -1,6 +1,6 @@
 #!/bin/bash
 # Installed by Kannu: reports AI agent status for the notch traffic light.
-# KANNU_HOOK_SCRIPT_VERSION=36
+# KANNU_HOOK_SCRIPT_VERSION=37
 # Usage: kannu-agent-status.sh <state> <provider> [hook_event] [matcher_key]
 #        (hook JSON arrives on stdin)
 
@@ -864,41 +864,58 @@ def record_path(entries, hit, now_ms, tool_name, tool_use_id, failed):
                     "tool_use_id": tool_use_id})
     del entries[:-SP_MAX_ENTRIES]
 
-def terminal_probe(sid):
-    # libproc's proc_bsdinfo for the session leader: its controlling terminal (e_tdev, byte 108)
-    # and start time (byte 120) -- about 2 ms, no process spawned.
+TERMINAL_PROVIDERS = {"codex", "copilot", "gemini", "qwen", "opencode"}
+TTY_PROBE_EVENTS = {"SessionStart", "UserPromptSubmit", "beforeSubmitPrompt", "BeforeAgent"}
+
+def ancestor_terminal(max_hops=12):
+    # (tty, session leader pid, its start time) of the nearest process, this one or an ancestor,
+    # that has a controlling terminal. An agent may start each hook in a session of its own --
+    # Claude Code does -- so the hook's own session says nothing; the agent that spawned it still
+    # sits in the terminal. libproc's proc_bsdinfo gives the parent (byte 16), the terminal
+    # (e_tdev, byte 108) and the start time (byte 120); about 2 ms, no process spawned.
     import ctypes
     lib = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
-    size = 136
-    buf = ctypes.create_string_buffer(size)
-    if lib.proc_pidinfo(ctypes.c_int(sid), ctypes.c_int(3), ctypes.c_uint64(0), buf, ctypes.c_int(size)) != size:
-        return ("", sid, 0)
-    raw = buf.raw
-    if int.from_bytes(raw[12:16], "little") != sid:
-        return ("", sid, 0)
-    start = int.from_bytes(raw[120:128], "little")
-    tdev = int.from_bytes(raw[108:112], "little", signed=True)
-    if tdev == -1:
-        return ("", sid, start)
     lib.devname.restype = ctypes.c_char_p
-    name = lib.devname(ctypes.c_int32(tdev), ctypes.c_uint16(0o020000))
-    name = name.decode("ascii", "replace") if name else ""
-    if not re.fullmatch(TTY_DEVICE_RE, name):
-        return ("", sid, start)
-    return ("/dev/" + name, sid, start)
+
+    def bsdinfo(pid):
+        buf = ctypes.create_string_buffer(136)
+        if lib.proc_pidinfo(ctypes.c_int(pid), ctypes.c_int(3), ctypes.c_uint64(0), buf, ctypes.c_int(136)) != 136:
+            return None
+        raw = buf.raw
+        return raw if int.from_bytes(raw[12:16], "little") == pid else None
+
+    pid = os.getpid()
+    for _ in range(max_hops):
+        raw = bsdinfo(pid)
+        if raw is None:
+            break
+        tdev = int.from_bytes(raw[108:112], "little", signed=True)
+        if tdev != -1:
+            name = lib.devname(ctypes.c_int32(tdev), ctypes.c_uint16(0o020000))
+            name = name.decode("ascii", "replace") if name else ""
+            sid = os.getsid(pid)
+            leader = bsdinfo(sid) if sid > 1 else None
+            if not re.fullmatch(TTY_DEVICE_RE, name) or leader is None:
+                return ("", 0, 0)
+            return ("/dev/" + name, sid, int.from_bytes(leader[120:128], "little"))
+        parent = int.from_bytes(raw[16:20], "little")
+        if parent <= 1 or parent == pid:
+            break
+        pid = parent
+    return ("", 0, 0)
 
 def session_terminal(existing):
-    # (tty, session leader pid, its start time). Same leader as the last write means the same
-    # terminal -- a session never changes its terminal -- so it is carried without a lookup.
-    sid = os.getsid(0)
-    if sid <= 1:
+    # Only terminal agents need it: Claude's own session file already names its process, and the
+    # IDE agents have no terminal. Looked up when a session starts, on each prompt and on a
+    # conversation's first event; carried in between (a session does not change terminals).
+    if provider not in TERMINAL_PROVIDERS:
         return ("", 0, 0)
-    if ht_int(existing.get("tty_sid")) == sid:
-        tty = existing.get("tty")
-        if isinstance(tty, str) and re.fullmatch(TTY_PATH_RE, tty):
-            return (tty, sid, ht_int(existing.get("tty_start")))
-        return ("", sid, 0)
-    return terminal_probe(sid)
+    if hook_event in TTY_PROBE_EVENTS or not existing:
+        return ancestor_terminal()
+    tty = existing.get("tty")
+    if isinstance(tty, str) and re.fullmatch(TTY_PATH_RE, tty) and ht_int(existing.get("tty_sid")) > 1:
+        return (tty, ht_int(existing.get("tty_sid")), ht_int(existing.get("tty_start")))
+    return ("", 0, 0)
 
 tool = pick_str(
     data.get("tool_name"),
@@ -950,9 +967,28 @@ def looks_gated_payload(name: str, payload) -> bool:
         return True
     return False
 
+conversation_id = pick_str(
+    data.get("agentId"),
+    data.get("agent_id"),
+    data.get("composerId"),
+    data.get("composer_id"),
+    data.get("conversation_id"),
+    data.get("conversationId"),
+    data.get("session_id"),
+    data.get("sessionId"),
+    data.get("thread_id"),
+)
+conversation_id = re.sub(r"[^A-Za-z0-9_-]", "", conversation_id) or "default"
+# Cap the id: session ids are UUID-sized in practice, and an oversized hostile id
+# would push the status/lock paths past NAME_MAX — the resulting os.replace failure
+# kills the hook before it prints its allow JSON, which for permission-shaped hooks
+# is undefined behaviour in the host tool.
+conversation_id = conversation_id[:64]
+
 # v36: Copilot CLI reads the same ~/.copilot/hooks file as VS Code, so its events arrive as
-# "vscode". The CLI runs in a terminal and sets COPILOT_CLI for what it spawns; VS Code's extension
-# host has no controlling terminal. Anything unclear stays vscode, as before.
+# "vscode". The CLI sets COPILOT_CLI for what it spawns and runs in a terminal; VS Code's extension
+# host has neither. A conversation already filed either way keeps it (the process walk runs once);
+# anything unclear stays vscode, as before.
 def has_controlling_terminal():
     try:
         fd = os.open("/dev/tty", os.O_RDONLY | os.O_NOCTTY | os.O_NONBLOCK)
@@ -961,8 +997,16 @@ def has_controlling_terminal():
     os.close(fd)
     return True
 
-if provider == "vscode" and (os.environ.get("COPILOT_CLI") or has_controlling_terminal()):
-    provider = "copilot"
+if provider == "vscode":
+    if (os.environ.get("COPILOT_CLI") or has_controlling_terminal()
+            or (status_dir / ("copilot-" + conversation_id + ".json")).exists()):
+        provider = "copilot"
+    elif not (status_dir / ("vscode-" + conversation_id + ".json")).exists():
+        try:
+            if ancestor_terminal()[0]:
+                provider = "copilot"
+        except Exception:
+            pass
 
 # Timing (Cursor):
 # - WebSearch approval card appears BEFORE preToolUse. preToolUse runs after approve.
@@ -1034,23 +1078,6 @@ elif hook_event in {"stop", "Stop", "StopFailure"}:
 elif hook_event == "SessionEnd":
     state = "session_end"
 
-conversation_id = pick_str(
-    data.get("agentId"),
-    data.get("agent_id"),
-    data.get("composerId"),
-    data.get("composer_id"),
-    data.get("conversation_id"),
-    data.get("conversationId"),
-    data.get("session_id"),
-    data.get("sessionId"),
-    data.get("thread_id"),
-)
-conversation_id = re.sub(r"[^A-Za-z0-9_-]", "", conversation_id) or "default"
-# Cap the id: session ids are UUID-sized in practice, and an oversized hostile id
-# would push the status/lock paths past NAME_MAX — the resulting os.replace failure
-# kills the hook before it prints its allow JSON, which for permission-shaped hooks
-# is undefined behaviour in the host tool.
-conversation_id = conversation_id[:64]
 status_file = status_dir / f"{provider}-{conversation_id}.json"
 
 # v34: scanned before the directory lock below (it serialises every session's hooks; this is

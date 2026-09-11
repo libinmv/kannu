@@ -60,7 +60,10 @@ classes with `chr()` (the hidden-text scan does exactly that). The pre-commit ho
 test reject any backslash in the mirror's Python body. v35 keeps to it: the secret patterns use
 lookarounds and character classes, not `\b`, and check the "no word character before" edge in code
 (a leading lookbehind also made a 1 MB scan 40 times slower — a regex that starts with its literal
-lets the engine skip ahead). Before this guard existed, the rule was: diff
+lets the engine skip ahead). v37: never read the agent's terminal from the hook's own session —
+Claude Code starts every hook in a session of its own, so v35's lookup found nothing and re-ran on
+every event; the terminal is the nearest ancestor that has one
+(`HookScriptTests.testATerminalIsFoundAboveADetachedHook`). Before this guard existed, the rule was: diff
 the two Python bodies (extract each heredoc, strip the embedded copy's 8-space indent) and expect
 byte identity. Regenerate the mirror from the embedded literal
 rather than hand-editing it; hand-editing is how `quota_exceeded` had to be typed into both copies
