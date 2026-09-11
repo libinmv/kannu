@@ -4,6 +4,24 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - Stats, Extensions, About and Spotify in the System Settings layout; final sweep
+- **Developer label:** "the settings should be enginered like apple does settings" (scope picked: "Rework every tab")
+- **Agent label:** Last tabs, then a sweep so no footer is right-aligned and no caption sits in a row of its own
+- **Changes:**
+  - Stats: footers no longer right-aligned; "Stop monitoring after closing the notch" explains
+    itself under the title (it was a tooltip); the update interval shows its value beside the
+    slider with its explanation under the title; Clear Data and Start/Stop sit on the trailing
+    side (Start/Stop was a filled button with red or blue text on the accent fill).
+  - Extensions: the three notch-experience toggles that shared one indented row are three rows;
+    footers selectable; an app's bundle identifier can be copied.
+  - About: the version reads "1.2.0 (2)" and can be copied — the build number used to hide behind
+    a click on the row, and a missing version read "unkown"; Check for Updates… sits trailing.
+  - Spotify session (shown with Spotify as the media source): session status with Sign in on the
+    trailing side, the cookie field on its own row, Paste/Validate/Clear trailing, the manual
+    steps selectable, both explanations in the footer.
+  - Sweep: no `.multilineTextAlignment(.trailing)` or `Divider()` row remains in any Settings
+    Form (the Dividers left are inside popovers, menus, the sidebar and the slot editor).
+
 ### 2026-09-11 - Timer, Notes, Clipboard, Screen Assistant, Shelf, Downloads and Shortcuts in the System Settings layout
 - **Developer label:** "the settings should be enginered like apple does settings" (scope picked: "Rework every tab")
 - **Agent label:** Same row rules on the remaining productivity tabs, plus four visible bugs fixed

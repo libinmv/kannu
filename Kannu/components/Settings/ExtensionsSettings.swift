@@ -67,23 +67,19 @@ struct ExtensionsSettingsView: View {
             if Defaults[.enableThirdPartyExtensions] {
                 Defaults.Toggle(String(localized:"Allow extension live activities"), key: .enableExtensionLiveActivities)
                     .settingsHighlight(id: highlightID("Allow extension live activities"))
-                
-                                Defaults.Toggle(String(localized:"Allow extension lock screen widgets"), key: .enableExtensionLockScreenWidgets)
+
+
+                Defaults.Toggle(String(localized:"Allow extension lock screen widgets"), key: .enableExtensionLockScreenWidgets)
                     .settingsHighlight(id: highlightID("Allow extension lock screen widgets"))
 
-                                                Defaults.Toggle(String(localized:"Allow extension notch experiences"), key: .enableExtensionNotchExperiences)
+                Defaults.Toggle(String(localized:"Allow extension notch experiences"), key: .enableExtensionNotchExperiences)
                     .settingsHighlight(id: highlightID("Allow extension notch experiences"))
 
                 if Defaults[.enableExtensionNotchExperiences] {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Defaults.Toggle(String(localized:"Show extension tabs"), key: .enableExtensionNotchTabs)
-                            .tint(.accentColor)
-                        Defaults.Toggle(String(localized:"Allow minimalistic overrides"), key: .enableExtensionNotchMinimalisticOverrides)
-                            .tint(.accentColor)
-                        Defaults.Toggle(String(localized:"Allow interactive web content"), key: .enableExtensionNotchInteractiveWebViews)
-                            .tint(.accentColor)
-                    }
-                    .padding(.leading, 4)
+                    // One row each; they used to share a single packed row.
+                    Defaults.Toggle(String(localized:"Show extension tabs"), key: .enableExtensionNotchTabs)
+                    Defaults.Toggle(String(localized:"Allow minimalistic overrides"), key: .enableExtensionNotchMinimalisticOverrides)
+                    Defaults.Toggle(String(localized:"Allow interactive web content"), key: .enableExtensionNotchInteractiveWebViews)
                 }
                 
                 Defaults.Toggle(String(localized:"Enable extension diagnostics logging"), key: .extensionDiagnosticsLoggingEnabled)
@@ -93,13 +89,9 @@ struct ExtensionsSettingsView: View {
             Text("Global Settings")
         } footer: {
             if Defaults[.enableThirdPartyExtensions] {
-                Text("Third-party apps using Extension Kit can display live activities, lock screen widgets, and dedicated notch experiences. Toggle features above or manage individual app permissions below.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                SettingsFooter("Third-party apps using Extension Kit can display live activities, lock screen widgets, and dedicated notch experiences. Toggle features above or manage individual app permissions below.")
             } else {
-                Text("Enable extensions to allow third-party apps to display live activities and lock screen widgets in Kannu.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                SettingsFooter("Enable extensions to allow third-party apps to display live activities and lock screen widgets in Kannu.")
             }
         }
     }
@@ -194,6 +186,7 @@ private struct ExtensionEntryRow: View {
                     Text(entry.bundleIdentifier)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
                 }
                 
                 Spacer()

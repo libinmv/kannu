@@ -3167,41 +3167,34 @@ struct Media: View {
 
 
 struct About: View {
-    @State private var showBuildNumber: Bool = false
+    /// "1.2.0 (2)" — the build used to hide behind a tap; it is what a bug report needs.
+    private var versionText: String {
+        let version = Bundle.main.releaseVersionNumber ?? String(localized: "unknown")
+        guard let build = Bundle.main.buildVersionNumber, !build.isEmpty else { return version }
+        return "\(version) (\(build))"
+    }
 
     var body: some View {
-        VStack {
-            Form {
-                Section {
-                    HStack {
-                        Text("Release name")
-                        Spacer()
-                        Text(ReleaseInfo.codename)
-                            .foregroundStyle(.secondary)
-                    }
-                    HStack {
-                        Text("Version")
-                        Spacer()
-                        if showBuildNumber {
-                            Text("(\(Bundle.main.buildVersionNumber ?? ""))")
-                                .foregroundStyle(.secondary)
-                        }
-                        Text(Bundle.main.releaseVersionNumber ?? "unkown")
-                            .foregroundStyle(.secondary)
-                    }
-                    .onTapGesture {
-                        withAnimation {
-                            showBuildNumber.toggle()
-                        }
-                    }
-                    if SparkleUpdaterController.shared.isEnabled {
+        Form {
+            Section {
+                LabeledContent("Release name") {
+                    Text(ReleaseInfo.codename)
+                        .textSelection(.enabled)
+                }
+                LabeledContent("Version") {
+                    Text(versionText)
+                        .monospacedDigit()
+                        .textSelection(.enabled)
+                }
+                if SparkleUpdaterController.shared.isEnabled {
+                    SettingsActionRow {
                         Button("Check for Updates…") {
                             SparkleUpdaterController.shared.checkForUpdates(nil)
                         }
                     }
-                } header: {
-                    Text("Version info")
                 }
+            } header: {
+                Text("Version info")
             }
         }
         .navigationTitle("About")
@@ -6249,34 +6242,33 @@ struct StatsSettings: View {
             } header: {
                 Text("General")
             } footer: {
-                Text("When enabled, the Stats tab will display real-time system performance graphs. This feature requires system permissions and may use additional battery.")
-                    .multilineTextAlignment(.trailing)
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
+                SettingsFooter("When enabled, the Stats tab will display real-time system performance graphs. This feature requires system permissions and may use additional battery.")
             }
 
             if enableStatsFeature {
                 Section {
-                    Defaults.Toggle(key: .statsStopWhenNotchCloses) {
-                        Text("Stop monitoring after closing the notch")
+                    SettingsRow("Stop monitoring after closing the notch", description: "When enabled, stats monitoring stops a few seconds after the notch closes.") {
+                        Defaults.Toggle(key: .statsStopWhenNotchCloses) {
+                            Text("Stop monitoring after closing the notch")
+                        }
                     }
                     .settingsHighlight(id: highlightID("Stop monitoring after closing the notch"))
-                    .help("When enabled, stats monitoring stops a few seconds after the notch closes.")
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Update interval")
-                            Spacer()
-                            Text(formattedUpdateInterval)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Slider(value: $statsUpdateInterval, in: 1...60, step: 1)
+                    LabeledContent {
+                        HStack(spacing: 8) {
+                            Slider(value: $statsUpdateInterval, in: 1...60, step: 1) {
+                                Text("Update interval")
+                            }
+                            .labelsHidden()
                             .accessibilityLabel("Stats update interval")
-
-                        Text("Controls how often system metrics refresh while monitoring is active.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            Text(formattedUpdateInterval)
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                                .frame(minWidth: 72, alignment: .trailing)
+                        }
+                        .frame(width: 240)
+                    } label: {
+                        SettingsRowLabel("Update interval", description: "Controls how often system metrics refresh while monitoring is active.")
                     }
 
                     if shouldShowStatsBatteryWarning {
@@ -6292,10 +6284,7 @@ struct StatsSettings: View {
                 } header: {
                     Text("Monitoring Behavior")
                 } footer: {
-                    Text("Sampling can continue while the notch is closed when the timeout is disabled.")
-                        .multilineTextAlignment(.trailing)
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
+                    SettingsFooter("Sampling can continue while the notch is closed when the timeout is disabled.")
                 }
 
                 Section {
@@ -6333,15 +6322,9 @@ struct StatsSettings: View {
                     Text("Graph Visibility")
                 } footer: {
                     if enabledGraphsCount >= 4 {
-                        Text("With \(enabledGraphsCount) graphs enabled, the Dynamic Island will expand horizontally to accommodate all graphs in a single row.")
-                            .multilineTextAlignment(.trailing)
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
+                        SettingsFooter("With \(enabledGraphsCount) graphs enabled, the Dynamic Island will expand horizontally to accommodate all graphs in a single row.")
                     } else {
-                        Text("Each graph can be individually enabled or disabled. Network activity shows download/upload speeds, and disk I/O shows read/write speeds.")
-                            .multilineTextAlignment(.trailing)
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
+                        SettingsFooter("Each graph can be individually enabled or disabled. Network activity shows download/upload speeds, and disk I/O shows read/write speeds.")
                     }
                 }
 
@@ -6430,7 +6413,12 @@ struct StatsSettings: View {
                 }
 
                 Section {
-                    HStack {
+                    SettingsActionRow {
+                        Button("Clear Data") {
+                            statsManager.clearHistory()
+                        }
+                        .disabled(statsManager.isMonitoring)
+
                         Button(statsManager.isMonitoring ? "Stop Monitoring" : "Start Monitoring") {
                             if statsManager.isMonitoring {
                                 statsManager.stopMonitoring()
@@ -6438,16 +6426,6 @@ struct StatsSettings: View {
                                 statsManager.startMonitoring()
                             }
                         }
-                        .buttonStyle(.borderedProminent)
-                        .foregroundColor(statsManager.isMonitoring ? .red : .blue)
-
-                        Spacer()
-
-                        Button("Clear Data") {
-                            statsManager.clearHistory()
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(statsManager.isMonitoring)
                     }
                 } header: {
                     Text("Controls")

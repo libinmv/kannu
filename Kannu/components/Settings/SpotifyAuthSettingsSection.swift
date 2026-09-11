@@ -31,41 +31,34 @@ struct SpotifyAuthSettingsSection: View {
 
     var body: some View {
         Section {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Sign in to Spotify to capture the `sp_dc` cookie automatically, or paste it in below.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
+            LabeledContent {
                 Button {
                     showingLoginSheet = true
                 } label: {
                     Label("Sign in with Spotify", systemImage: "person.crop.circle.badge.checkmark")
                 }
-                .buttonStyle(.borderedProminent)
-
-                TextField("sp_dc cookie", text: $spotifySPDCCookie, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.caption.monospaced())
-                    .lineLimit(2...4)
-                    .textSelection(.enabled)
+            } label: {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(spotifyAuthManager.isAuthenticated ? Color.green : (hasCookie ? Color.orange : Color.secondary))
+                        .frame(width: 8, height: 8)
+                        .accessibilityHidden(true)
+                    Text(spotifyAuthManager.sessionStatusText)
+                        .textSelection(.enabled)
+                }
             }
 
-            HStack(spacing: 10) {
-                Circle()
-                    .fill(spotifyAuthManager.isAuthenticated ? Color.green : (hasCookie ? Color.orange : Color.secondary))
-                    .frame(width: 8, height: 8)
-
-                Text(spotifyAuthManager.sessionStatusText)
-                    .foregroundStyle(.secondary)
-            }
+            TextField("sp_dc cookie", text: $spotifySPDCCookie, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .font(.caption.monospaced())
+                .lineLimit(2...4)
+                .textSelection(.enabled)
 
             if let authErrorMessage = spotifyAuthManager.authErrorMessage, !authErrorMessage.isEmpty {
-                Text(authErrorMessage)
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                SettingsErrorText(authErrorMessage)
             }
 
-            HStack {
+            SettingsActionRow {
                 Button("Paste from Clipboard") {
                     pasteCookieFromClipboard()
                 }
@@ -103,6 +96,7 @@ struct SpotifyAuthSettingsSection: View {
                     }
                     .font(.caption)
                 }
+                .textSelection(.enabled)
                 .padding(.top, 4)
             }
             .font(.caption)
@@ -110,9 +104,10 @@ struct SpotifyAuthSettingsSection: View {
         } header: {
             Text("Spotify Canvas Session")
         } footer: {
-            Text("Kannu uses the local `sp_dc` cookie only to request Spotify's internal web-player token and fetch the matching Canvas for the current track.")
-                .foregroundStyle(.secondary)
-                .font(.caption)
+            VStack(alignment: .leading, spacing: 4) {
+                SettingsFooter("Sign in to Spotify to capture the `sp_dc` cookie automatically, or paste it in below.")
+                SettingsFooter("Kannu uses the local `sp_dc` cookie only to request Spotify's internal web-player token and fetch the matching Canvas for the current track.")
+            }
         }
         .sheet(isPresented: $showingLoginSheet) {
             SpotifyLoginSheet { capturedValue in
