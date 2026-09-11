@@ -1,26 +1,6 @@
 import Foundation
 import os
 
-enum AgentHookProvider: String, CaseIterable, Identifiable {
-    case cursor
-    case vscode
-    case codex
-    case claude
-    case antigravity
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .cursor: return "Cursor"
-        case .vscode: return "VS Code (Copilot)"
-        case .codex: return "Codex CLI"
-        case .claude: return "Claude Code"
-        case .antigravity: return "Antigravity"
-        }
-    }
-}
-
 /// Installs agent-status hooks for the supported AI coding tools. Every hook
 /// runs the same shell script, which writes a small per-conversation status
 /// file into a shared directory that `CursorAgentStatusMonitor` watches.
@@ -47,7 +27,7 @@ final class AgentHookInstaller: ObservableObject {
 
     private static let logger = os.Logger(subsystem: "com.kannu.app", category: "AgentHookInstaller")
 
-    static let scriptName = "kannu-agent-status.sh"
+    static let scriptName = AgentHookLayout.scriptName
     private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=35"
 
     private static var home: URL {
@@ -59,34 +39,30 @@ final class AgentHookInstaller: ObservableObject {
         home.appendingPathComponent(".kannu/agent-status", isDirectory: true)
     }
 
-    // MARK: - Per-provider paths
+    // MARK: - Per-provider paths (all from `AgentHookLayout`; REGRESSIONS entry 6)
 
-    static var cursorHooksConfigURL: URL { home.appendingPathComponent(".cursor/hooks.json") }
-    static var cursorScriptURL: URL { home.appendingPathComponent(".cursor/hooks/\(scriptName)") }
+    static var layout: AgentHookLayout { AgentHookLayout(home: home) }
 
-    static var vscodeHookFileURL: URL { home.appendingPathComponent(".copilot/hooks/kannu-agent-status.json") }
-    static var vscodeScriptURL: URL { home.appendingPathComponent(".copilot/\(scriptName)") }
+    static var cursorHooksConfigURL: URL { layout.cursorHooksConfig }
+    static var cursorScriptURL: URL { layout.cursorScript }
 
-    static var codexHooksConfigURL: URL { home.appendingPathComponent(".codex/hooks.json") }
-    static var codexConfigTomlURL: URL { home.appendingPathComponent(".codex/config.toml") }
-    static var codexScriptURL: URL { home.appendingPathComponent(".codex/\(scriptName)") }
+    static var vscodeHookFileURL: URL { layout.vscodeHookFile }
+    static var vscodeScriptURL: URL { layout.vscodeScript }
 
-    static var claudeSettingsURL: URL { home.appendingPathComponent(".claude/settings.json") }
-    static var claudeScriptURL: URL { home.appendingPathComponent(".claude/\(scriptName)") }
+    static var codexHooksConfigURL: URL { layout.codexHooksConfig }
+    static var codexConfigTomlURL: URL { layout.codexConfigToml }
+    static var codexScriptURL: URL { layout.codexScript }
 
-    static var antigravityHooksConfigURL: URL { home.appendingPathComponent(".gemini/antigravity-ide/hooks.json") }
-    static var antigravityConfigHooksURL: URL { home.appendingPathComponent(".gemini/config/hooks.json") }
-    static var antigravityRootHooksURL: URL { home.appendingPathComponent(".gemini/hooks.json") }
-    static var antigravityScriptURL: URL { home.appendingPathComponent(".gemini/antigravity-ide/\(scriptName)") }
+    static var claudeSettingsURL: URL { layout.claudeSettings }
+    static var claudeScriptURL: URL { layout.claudeScript }
+
+    static var antigravityHooksConfigURL: URL { layout.antigravityIDEHooks }
+    static var antigravityConfigHooksURL: URL { layout.antigravityConfigHooks }
+    static var antigravityRootHooksURL: URL { layout.antigravityRootHooks }
+    static var antigravityScriptURL: URL { layout.antigravityScript }
 
     static func scriptURL(for provider: AgentHookProvider) -> URL {
-        switch provider {
-        case .cursor: return cursorScriptURL
-        case .vscode: return vscodeScriptURL
-        case .codex: return codexScriptURL
-        case .claude: return claudeScriptURL
-        case .antigravity: return antigravityScriptURL
-        }
+        layout.files(for: provider).script
     }
 
     private init() {
@@ -157,28 +133,23 @@ final class AgentHookInstaller: ObservableObject {
     func uninstall(_ provider: AgentHookProvider) {
         lastError = nil
         do {
-            switch provider {
-            case .cursor:
-                try Self.stripEntries(configURL: Self.cursorHooksConfigURL)
-                try Self.removeIfExists(Self.cursorScriptURL)
-            case .vscode:
-                try Self.removeIfExists(Self.vscodeHookFileURL)
-                try Self.removeIfExists(Self.vscodeScriptURL)
-            case .codex:
-                try Self.stripEntries(configURL: Self.codexHooksConfigURL)
-                try Self.removeIfExists(Self.codexScriptURL)
-            case .claude:
-                try Self.stripEntries(configURL: Self.claudeSettingsURL)
-                try Self.removeIfExists(Self.claudeScriptURL)
+            let files = Self.layout.files(for: provider)
+            // Every file the layout lists, whatever install's write policy: install may have found
+            // an optional one present and merged into it. Only a file install always writes may
+            // fail the uninstall; a broken optional one is skipped.
+            for config in files.configs {
+                switch (config.shape, config.write) {
+                case (.ownFile, _):
+                    try Self.removeIfExists(config.url)
+                case (_, .always):
+                    try Self.stripEntries(config)
+                case (_, .onlyIfPresent):
+                    try? Self.stripEntries(config)
+                }
+            }
+            try Self.removeIfExists(files.script)
+            if provider == .claude {
                 try Self.stripClaudeUsageStatusLine()
-            case .antigravity:
-                // Install merges into every location that exists, so uninstall has to clear
-                // all of them — stripping only the IDE path left orphaned entries pointing at
-                // a script we just deleted.
-                try Self.stripEntries(configURL: Self.antigravityHooksConfigURL)
-                try? Self.stripEntries(configURL: Self.antigravityConfigHooksURL)
-                try? Self.stripEntries(configURL: Self.antigravityRootHooksURL)
-                try Self.removeIfExists(Self.antigravityScriptURL)
             }
         } catch {
             lastError = "\(provider.displayName): \(error.localizedDescription)"
@@ -1734,14 +1705,14 @@ final class AgentHookInstaller: ObservableObject {
         // hooks the user had defined in them.
         // Documented global location first (antigravity.google/docs/hooks lists
         // ~/.gemini/config/hooks.json), then the IDE-specific and legacy root paths.
-        let targets = [antigravityConfigHooksURL, antigravityHooksConfigURL, antigravityRootHooksURL]
         var primaryError: Error?
 
-        for target in targets {
+        for config in layout.files(for: .antigravity).configs {
+            let target = config.url
             // The documented path is authoritative and always written. The others are only
             // updated when they already exist — creating them would scatter config the user
             // never asked for, and uninstall only strips what it finds.
-            let isPrimary = target == antigravityConfigHooksURL
+            let isPrimary = config.write == .always
             guard isPrimary || FileManager.default.fileExists(atPath: target.path) else { continue }
 
             // Match the write-side policy below: a broken non-primary file is skipped
@@ -1837,91 +1808,63 @@ final class AgentHookInstaller: ObservableObject {
 
     // MARK: - Install detection
 
-    private static func checkInstalled(_ provider: AgentHookProvider) -> Bool {
+    /// The events whose entries must be present for a provider to count as installed.
+    private static func requiredInstalledEvents(_ provider: AgentHookProvider) -> [String] {
         switch provider {
-        case .cursor:
-            guard FileManager.default.fileExists(atPath: cursorScriptURL.path),
-                  let config = readJSON(at: cursorHooksConfigURL),
-                  let hooks = config["hooks"] as? [String: Any] else { return false }
-            return cursorEvents.allSatisfy { event, _ in
-                guard let entries = hooks[event] as? [[String: Any]] else { return false }
-                return entries.contains { (($0["command"] as? String)?.contains(scriptName)) == true }
-            }
-        case .vscode:
-            return FileManager.default.fileExists(atPath: vscodeHookFileURL.path)
-                && FileManager.default.fileExists(atPath: vscodeScriptURL.path)
-        case .codex:
-            guard FileManager.default.fileExists(atPath: codexScriptURL.path),
-                  let config = readJSON(at: codexHooksConfigURL),
-                  let hooks = config["hooks"] as? [String: Any] else { return false }
-            return claudeStyleEvents.allSatisfy { event, _ in
-                guard let groups = hooks[event] as? [[String: Any]] else { return false }
-                return groups.contains { group in
-                    guard let handlers = group["hooks"] as? [[String: Any]] else { return false }
-                    return handlers.contains { (($0["command"] as? String)?.contains(scriptName)) == true }
-                }
-            }
+        case .cursor: return cursorEvents.map(\.event)
+        case .vscode: return []
+        case .codex: return claudeStyleEvents.map(\.event)
         case .claude:
-            guard FileManager.default.fileExists(atPath: claudeScriptURL.path),
-                  let config = readJSON(at: claudeSettingsURL),
-                  let hooks = config["hooks"] as? [String: Any] else { return false }
             // Only the core events, deliberately. Requiring every entry in `claudeHookEntries`
             // would make an install from an older Kannu report "not installed" the moment the
             // table grows — which flips the Settings toggle off and, worse, makes the version
             // migration skip the very installs that need upgrading.
-            return claudeCoreInstalledEvents.allSatisfy { event in
-                guard let groups = hooks[event] as? [[String: Any]] else { return false }
-                return groups.contains { group in
-                    guard let handlers = group["hooks"] as? [[String: Any]] else { return false }
-                    return handlers.contains { (($0["command"] as? String)?.contains(scriptName)) == true }
-                }
-            }
-        case .antigravity:
-            guard FileManager.default.fileExists(atPath: antigravityScriptURL.path) else { return false }
-            // Installed if ANY supported location carries our entries — Antigravity reads
-            // whichever exists, and older installs seeded only the IDE path.
-            let configs = [antigravityConfigHooksURL, antigravityHooksConfigURL, antigravityRootHooksURL]
-            return configs.contains { url in
-                guard let config = readJSON(at: url),
-                      let hooks = config["hooks"] as? [String: Any] else { return false }
-                return antigravityEvents.allSatisfy { event, _ in
-                    guard let groups = hooks[event] as? [[String: Any]] else { return false }
-                    return groups.contains { group in
-                        guard let handlers = group["hooks"] as? [[String: Any]] else { return false }
-                        return handlers.contains { (($0["command"] as? String)?.contains(scriptName)) == true }
-                    }
-                }
+            return claudeCoreInstalledEvents
+        case .antigravity: return antigravityEvents.map(\.event)
+        }
+    }
+
+    /// Installed: the script exists and ANY file the layout lists carries every required entry —
+    /// Antigravity reads whichever of its files exists, and older installs seeded only one.
+    private static func checkInstalled(_ provider: AgentHookProvider) -> Bool {
+        let files = layout.files(for: provider)
+        guard FileManager.default.fileExists(atPath: files.script.path) else { return false }
+        let events = requiredInstalledEvents(provider)
+        return files.configs.contains { hasEntries(in: $0, events: events) }
+    }
+
+    private static func hasEntries(in config: AgentHookLayout.ConfigFile, events: [String]) -> Bool {
+        if config.shape == .ownFile {
+            return FileManager.default.fileExists(atPath: config.url.path)
+        }
+        guard let json = readJSON(at: config.url), let hooks = json["hooks"] as? [String: Any] else { return false }
+        func isOurs(_ handler: [String: Any]) -> Bool { ((handler["command"] as? String)?.contains(scriptName)) == true }
+        return events.allSatisfy { event in
+            guard let entries = hooks[event] as? [[String: Any]] else { return false }
+            switch config.shape {
+            case .flatEntries:
+                return entries.contains(where: isOurs)
+            case .matcherGroups:
+                return entries.contains { (($0["hooks"] as? [[String: Any]])?.contains(where: isOurs)) == true }
+            case .ownFile:
+                return true
             }
         }
     }
 
-    /// Configs whose entries are matcher groups (`{"hooks": [{"command": …}]}`) rather than
-    /// Cursor's flat `{"command": …}`. Routing has to match what `merge…HooksConfig` wrote:
-    /// `mergeAntigravityHooksConfig` writes group-shaped entries to *all three* Antigravity
-    /// locations, so sending two of them to `stripCursorEntries` — which looks for a top-level
-    /// `command` — matched nothing and left live entries behind in `~/.gemini/config/hooks.json`,
-    /// the primary path install always writes. Antigravity then ran a command whose script had
-    /// just been deleted, and `checkInstalled` still reported it installed.
-    private static var matcherGroupConfigs: Set<URL> {
-        [
-            codexHooksConfigURL,
-            claudeSettingsURL,
-            antigravityHooksConfigURL,
-            antigravityConfigHooksURL,
-            antigravityRootHooksURL
-        ]
-    }
-
-    private static func stripEntries(configURL: URL) throws {
-        guard var config = readJSON(at: configURL),
-              var hooks = config["hooks"] as? [String: Any] else { return }
-        if matcherGroupConfigs.contains(configURL) {
-            stripCodexEntries(from: &hooks)
-        } else {
-            stripCursorEntries(from: &hooks)
+    /// Strips Kannu's entries in the shape the layout says the file has. Routing by a separate list
+    /// once sent two Antigravity files to the flat-entry stripper, which matched nothing and left
+    /// live entries behind in the file install always writes.
+    private static func stripEntries(_ config: AgentHookLayout.ConfigFile) throws {
+        guard var json = readJSON(at: config.url),
+              var hooks = json["hooks"] as? [String: Any] else { return }
+        switch config.shape {
+        case .matcherGroups: stripCodexEntries(from: &hooks)
+        case .flatEntries: stripCursorEntries(from: &hooks)
+        case .ownFile: return
         }
-        config["hooks"] = hooks
-        try writeJSON(config, to: configURL)
+        json["hooks"] = hooks
+        try writeJSON(json, to: config.url)
     }
 
     // MARK: - Legacy migration
@@ -1944,13 +1887,7 @@ final class AgentHookInstaller: ObservableObject {
 
     /// Reinstalls hooks when the shared status script gains new approval-detection logic.
     private func migrateHookScriptVersionIfNeeded() {
-        let scriptURLs = [
-            Self.cursorScriptURL,
-            Self.vscodeScriptURL,
-            Self.codexScriptURL,
-            Self.claudeScriptURL,
-            Self.antigravityScriptURL
-        ]
+        let scriptURLs = AgentHookProvider.allCases.map(Self.scriptURL(for:))
         let needsRefresh = scriptURLs.contains { url in
             guard FileManager.default.fileExists(atPath: url.path),
                   let content = try? String(contentsOf: url, encoding: .utf8) else { return false }
@@ -2027,17 +1964,9 @@ final class AgentHookInstaller: ObservableObject {
                 guard needsEventArg else { continue }
                 install(provider)
                 continue
-            case .codex:
-                configURLs = [Self.codexHooksConfigURL]
-            case .claude:
-                configURLs = [Self.claudeSettingsURL]
-            case .antigravity:
-                // Same set `checkInstalled(.antigravity)` accepts.
-                configURLs = [
-                    Self.antigravityConfigHooksURL,
-                    Self.antigravityHooksConfigURL,
-                    Self.antigravityRootHooksURL
-                ]
+            case .codex, .claude, .antigravity:
+                // The same files `checkInstalled` accepts: the layout's.
+                configURLs = Self.layout.files(for: provider).configs.filter { $0.shape == .matcherGroups }.map(\.url)
             default:
                 continue
             }
@@ -2084,14 +2013,7 @@ final class AgentHookInstaller: ObservableObject {
     private func migrateLegacyHookScriptsIfNeeded() {
         let legacyMarkers = ["atoll-agent-status", ".atoll/agent-status", ".cursor/atoll/agent-status"]
         for provider in AgentHookProvider.allCases {
-            let scriptURL: URL
-            switch provider {
-            case .cursor: scriptURL = Self.cursorScriptURL
-            case .vscode: scriptURL = Self.vscodeScriptURL
-            case .codex: scriptURL = Self.codexScriptURL
-            case .claude: scriptURL = Self.claudeScriptURL
-            case .antigravity: scriptURL = Self.antigravityScriptURL
-            }
+            let scriptURL = Self.scriptURL(for: provider)
             guard FileManager.default.fileExists(atPath: scriptURL.path),
                   let content = try? String(contentsOf: scriptURL, encoding: .utf8),
                   legacyMarkers.contains(where: { content.contains($0) }) else { continue }

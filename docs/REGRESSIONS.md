@@ -188,8 +188,15 @@ script while `checkInstalled` still reported installed.
 **Why it keeps happening:** the four path sets are written independently in four places, and
 adding a provider means remembering all four.
 
-**Guard — missing.** A test asserting the four path sets are equal per provider would be
-cheap and would have caught both occurrences.
+**Guard — exists (2026-09-11).** The four sets are one now: `AgentHookLayout` lists each
+provider's script and every settings file its entries can be in, with the file's shape and
+whether install always writes it or only merges into it when present. `install` (the Antigravity
+merge), `uninstall` (every listed file, whatever the write policy), `checkInstalled` (any listed
+file with the required entries), `stripEntries` (routed by the listed shape), and the version,
+legacy-script and event-argument migrations all read it. `AgentHookLayoutTests` pins the table
+(a script per provider, an always-written file per provider, one owner per file) and fails if a
+hook path literal reappears in `AgentHookInstaller.swift` code. A new provider is one more case in
+the layout.
 
 ---
 

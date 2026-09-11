@@ -4,6 +4,22 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-11 - One table for where every hook lives
+- **Developer label:** Groundwork for more agents
+- **Agent label:** Refactor hook install, uninstall, detection and migrations onto a single layout table
+- **Changes:**
+  - New `AgentHookLayout.swift` (logic target): `AgentHookProvider` moves here; per provider the
+    script and every settings file (shape: flat entries, matcher groups or a file of Kannu's own;
+    written always or only when present), plus shared settings uninstall leaves alone (Codex
+    `features.hooks`).
+  - `AgentHookInstaller`: the path properties forward to the layout; `uninstall` strips every
+    listed file and removes Kannu's own ones; `checkInstalled` is one rule (script present and any
+    listed file carries the required events) with the per-provider event lists kept; `stripEntries`
+    routes by the listed shape instead of a separate set; the Antigravity merge, the script-version,
+    legacy-script and event-argument migrations iterate the layout. Behaviour unchanged.
+  - REGRESSIONS entry 6: guard now exists. `AgentHookLayoutTests` pins the table and scans the
+    installer's code (not comments, not the embedded script) for hook path literals.
+
 ### 2026-09-11 - Notice new MCP servers; Discovery scans follow server changes
 - **Developer label:** Local security checks (new MCP servers)
 - **Agent label:** Watch agents' MCP settings for added servers and fix the dropped config-change scan
