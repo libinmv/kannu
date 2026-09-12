@@ -269,12 +269,13 @@ enum DebugSnapshotFixtures {
     /// Recent chats with and without a v39 turn: running for hours, ended, the pre-v39 fallback, a
     /// prompt, and a chat that stopped without a Stop (no time shown).
     static func recentChats(now: Date) -> [AgentSessionStatus] {
-        // Built with explicit types and appends: as one array literal of calls with inline
-        // arithmetic, Swift 6.1 (macos-15) gives up type-checking the expression.
+        // Explicit types, appends, and plain numbers: arithmetic over literals in a typed context
+        // ("-(1 * 3600 + 53 * 60 + 54)" as a TimeInterval) makes Swift 6.1 on macos-15 give up
+        // type-checking the expression, while macOS 26's compiler takes it.
         let path = "/Users/example/.claude/projects/-Users-example-kannu/a.jsonl"
-        let liveStart: TimeInterval = -(1 * 3600 + 53 * 60 + 54)
+        let liveStart: TimeInterval = -6834      // 1h 53m 54s ago, still running
         let endedStart: TimeInterval = -8000
-        let endedStop: TimeInterval = -8000 + 7392
+        let endedStop: TimeInterval = -608       // ran 2h 3m 12s
 
         func card(_ id: String, _ provider: String, _ chat: String, _ raw: String,
                   _ state: AgentTrafficLightState, ago: TimeInterval,

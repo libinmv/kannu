@@ -13,10 +13,11 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     both paths itself, but a script that reads a transcript full of secrets and writes a file should
     not take a caller's word for it — SonarCloud rated the new code C for exactly that
     (`pythonsecurity:S8707`, three paths). The embedded copy and the marker move to 2 with it.
-  - `DebugSnapshotFixtures.recentChats` builds its cards with explicit types and appends: as one
-    array literal of calls with inline arithmetic, Swift 6.1 on the macos-15 runner gave up
-    type-checking it ("unable to type-check this expression in reasonable time") while macOS 26's
-    compiler managed. The snapshot boards are unchanged.
+  - `DebugSnapshotFixtures.recentChats` builds its cards with explicit types, appends and plain
+    numbers: as one array literal of calls, and then still with literal arithmetic in a typed
+    context (`-(1 * 3600 + 53 * 60 + 54)` as a `TimeInterval`), Swift 6.1 on the macos-15 runner
+    gave up type-checking it ("unable to type-check this expression in reasonable time") while
+    macOS 26's compiler managed. The snapshot boards are unchanged.
   - The adapter test writes its transcript under `~/.kannu/tests/` instead of the system temp
     folder, which is what the new rule allows and what Kannu actually passes.
 
