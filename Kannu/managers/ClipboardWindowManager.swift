@@ -58,13 +58,16 @@ class ClipboardWindowManager: ObservableObject {
         window.minSize = NSSize(width: 350, height: 250)
         window.maxSize = NSSize(width: 600, height: 500)
         
-        // Center the window on the current screen (important for fullscreen apps)
-        let currentScreen = NSScreen.main ?? NSScreen.screens.first!
-        let screenFrame = currentScreen.frame  // Use full frame instead of visibleFrame for fullscreen compatibility
-        let windowFrame = window.frame
-        let x = (screenFrame.width - windowFrame.width) / 2 + screenFrame.minX
-        let y = (screenFrame.height - windowFrame.height) / 2 + screenFrame.minY
-        window.setFrameOrigin(NSPoint(x: x, y: y))
+        // Center the window on the current screen (important for fullscreen apps). With no screen
+        // at all — clamshell, every display asleep — leave the window where AppKit put it rather
+        // than force-unwrapping an empty list.
+        if let currentScreen = NSScreen.main ?? NSScreen.screens.first {
+            let screenFrame = currentScreen.frame  // Use full frame instead of visibleFrame for fullscreen compatibility
+            let windowFrame = window.frame
+            let x = (screenFrame.width - windowFrame.width) / 2 + screenFrame.minX
+            let y = (screenFrame.height - windowFrame.height) / 2 + screenFrame.minY
+            window.setFrameOrigin(NSPoint(x: x, y: y))
+        }
         
         // Set the content view
         let contentView = ClipboardWindow()

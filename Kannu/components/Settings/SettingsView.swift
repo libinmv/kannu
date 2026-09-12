@@ -5987,10 +5987,9 @@ struct TimerSettings: View {
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
 
-        if panel.runModal() == .OK {
-            if let url = panel.url {
-                customTimerSoundPath = url.path
-            }
+        SettingsFilePicker.present(panel) { response in
+            guard response == .OK, let url = panel.url else { return }
+            customTimerSoundPath = url.path
         }
     }
 }
@@ -7924,6 +7923,9 @@ struct AgentStatusSettings: View {
                     Text("Policy file")
                 }
                 .settingsHighlight(id: highlightID("Policy file"))
+                if SecurityFindingsStore.policyFileIsMissing {
+                    SettingsErrorText(String(localized: "That policy file is not there any more, so scans run without it. Choose it again, or clear it."))
+                }
             }
         } header: {
             Text("ADR Discovery")
@@ -8196,7 +8198,8 @@ struct AgentStatusSettings: View {
         panel.allowsMultipleSelection = false
         panel.prompt = String(localized: "Use checkout")
         panel.message = String(localized: "Choose the ADR/Detection folder you cloned and synced with uv")
-        if panel.runModal() == .OK, let url = panel.url {
+        SettingsFilePicker.present(panel) { response in
+            guard response == .OK, let url = panel.url else { return }
             adrDetectionCheckout = url.path
             adr.checkDetection()
         }
@@ -8241,7 +8244,8 @@ struct AgentStatusSettings: View {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = String(localized: "Use folder")
-        if panel.runModal() == .OK, let url = panel.url {
+        SettingsFilePicker.present(panel) { response in
+            guard response == .OK, let url = panel.url else { return }
             adrToolDirectory = url.path
             adr.checkAgain()
             adr.checkDetection()
@@ -8323,7 +8327,8 @@ struct AgentStatusSettings: View {
         panel.allowsMultipleSelection = false
         panel.allowedContentTypes = [.json]
         panel.prompt = String(localized: "Use policy")
-        if panel.runModal() == .OK, let url = panel.url {
+        SettingsFilePicker.present(panel) { response in
+            guard response == .OK, let url = panel.url else { return }
             adrPolicyFile = url.path
         }
     }
@@ -8336,7 +8341,8 @@ struct AgentStatusSettings: View {
         panel.allowsMultipleSelection = false
         panel.directoryURL = SecurityFindingsStore.snapshotDirectory
         panel.prompt = String(localized: "Use folder")
-        if panel.runModal() == .OK, let url = panel.url {
+        SettingsFilePicker.present(panel) { response in
+            guard response == .OK, let url = panel.url else { return }
             adrSnapshotDirectory = url.path
             findingsStore.directoryChanged()
         }

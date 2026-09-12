@@ -4,6 +4,42 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-12 - Settings file pickers stop freezing the app
+- **Developer label:** "when clicking on policy upload it crashed the app" / "app is stuck"
+- **Agent label:** Follow-up 33 — caught live: a sample of the stuck process parked in choosePolicyFile
+- **Changes:**
+  - The five Settings pickers (ADR policy file, snapshot folder, tools folder, Detection checkout,
+    custom timer sound) called `panel.runModal()`, entering a nested modal run loop from inside a
+    SwiftUI action. A sample of the hung app caught it exactly there:
+    `AgentStatusSettings.choosePolicyFile()` → `-[NSSavePanel runModal]` →
+    `-[NSApplication runModalForWindow:]`, parked in `__CFRunLoopRun` for 1,596 of 1,599 samples at
+    0 % CPU. The panel was out of reach, so Kannu looked frozen — and force-quitting it is what
+    "it crashed" meant.
+  - New `SettingsFilePicker.present`: activates the app, then shows the panel as a **sheet on the
+    Settings window**, falling back to an asynchronous `begin` when that window is not up. The run
+    loop keeps turning and the completion arrives on the main actor. This also removes the
+    re-entrancy that produced the 2026-08-29 SIGABRT in `NSHostingView` (CHANGELOG, that date):
+    while the modal loop blocked, `ADRConnection`, `SecurityFindingsStore` and the session monitor
+    kept publishing on the main queue and re-entered layout on the Settings hosting view.
+  - `KannuViewModel.open()` now refuses while any modal window or sheet is up. The notch overrides
+    `canBecomeKey`/`canBecomeMain` at `.mainMenu + 3`, and hover or the global click monitor could
+    order it in front of the very panel the user had to answer.
+  - A policy file that has been moved or renamed was silently dropped while Settings still showed
+    its path; the row says so now.
+
+### 2026-09-12 - Three ways Kannu could die with no report
+- **Developer label:** "some users also reported random crashing"
+- **Agent label:** Follow-up 33 — the trap sites found while mapping the display code
+- **Changes:**
+  - `NSScreen.main ?? NSScreen.screens.first!` in `KannuApp` (two window-creation paths) and in
+    `ClipboardWindowManager`. `NSScreen.screens` is empty in clamshell and while every display
+    sleeps, and a force-unwrap there is a Swift trap: no catchable exception, no crash report that
+    explains itself. Kannu now waits for the next screen change instead, and the clipboard window
+    keeps the position AppKit gave it.
+  - `CustomOSDWindowManager.ensureWindow` ended its switch with
+    `fatalError("Unsupported OSD type: …")` — one unexpected sneak-peek type killed the app. It
+    returns nil and logs now; the caller skips that screen.
+
 ### 2026-09-12 - The Detection adapter checks the paths it is handed; fixture builds on Swift 6.1
 - **Developer label:** CI and SonarCloud on the pull request
 - **Agent label:** Follow-up 32, phase 2 — two findings from the first run against the branch

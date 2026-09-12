@@ -22,6 +22,7 @@ import SwiftUI
 import SkyLightWindow
 import QuartzCore
 import Defaults
+import os
 
 /// Manages custom OSD windows for volume, brightness, and keyboard backlight controls
 /// Mimics macOS native OSD behavior with custom styling
@@ -42,6 +43,8 @@ final class CustomOSDWindowManager {
     private let osdWidth: CGFloat = 200
     private let osdHeight: CGFloat = 200
     
+    private static let logger = os.Logger(subsystem: "com.kannu.app", category: "CustomOSD")
+
     private init() {}
     
     // MARK: - Public API
@@ -85,7 +88,7 @@ final class CustomOSDWindowManager {
         
         // Show on target screen(s)
         for screen in screens {
-            let window = ensureWindow(for: type, screen: screen)
+            guard let window = ensureWindow(for: type, screen: screen) else { continue }
             updateContent(window: window, type: type, value: value, icon: icon)
             
             let targetFrame = calculateFrame(for: screen)
@@ -103,7 +106,9 @@ final class CustomOSDWindowManager {
         scheduleHide(for: type)
     }
     
-    private func ensureWindow(for type: SneakContentType, screen: NSScreen) -> OSDWindow {
+    /// nil for a content type this manager does not draw. It used to `fatalError` here, which
+    /// turned one unexpected sneak-peek type into a crash with no report and no way back.
+    private func ensureWindow(for type: SneakContentType, screen: NSScreen) -> OSDWindow? {
         switch type {
         case .volume:
             if let existing = volumeWindows[screen] {
@@ -127,7 +132,8 @@ final class CustomOSDWindowManager {
             backlightWindows[screen] = window
             return window
         default:
-            fatalError("Unsupported OSD type: \(type)")
+            Self.logger.error("no custom OSD for \(String(describing: type), privacy: .public); nothing shown")
+            return nil
         }
     }
     
