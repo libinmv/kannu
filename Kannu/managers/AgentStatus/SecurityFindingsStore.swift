@@ -169,6 +169,13 @@ final class SecurityFindingsStore: ObservableObject {
     /// The MCP configuration files whose edits should prompt a fresh scan. Read for mtime only.
     static var homePath: String { FileManager.default.homeDirectoryForCurrentUser.path }
 
+    /// True when a policy file is configured but no longer where it was. Scans keep running
+    /// unpoliced in that case, so Settings says so rather than showing a path that does nothing.
+    static var policyFileIsMissing: Bool {
+        let raw = Defaults[.adrPolicyFile].trimmingCharacters(in: .whitespacesAndNewlines)
+        return !raw.isEmpty && policyFileURL == nil
+    }
+
     static var policyFileURL: URL? {
         let raw = Defaults[.adrPolicyFile].trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else { return nil }
