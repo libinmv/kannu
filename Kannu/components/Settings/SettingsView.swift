@@ -949,6 +949,7 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .agentStatus, title: "Confirm before every analysis", keywords: ["adr", "detection", "confirm", "consent"], highlightID: SettingsTab.agentStatus.highlightID(for: "Confirm before every analysis")),
             SettingsSearchEntry(tab: .agentStatus, title: "Mobile notifications", keywords: ["mobile", "push", "ntfy", "pushover", "webhook", "iphone", "android"], highlightID: SettingsTab.agentStatus.highlightID(for: "Mobile notifications")),
             SettingsSearchEntry(tab: .agentStatus, title: "Send test notification", keywords: ["test", "mobile", "push", "notification"], highlightID: SettingsTab.agentStatus.highlightID(for: "Send test notification")),
+            SettingsSearchEntry(tab: .about, title: "Watch for freezes", keywords: ["freeze", "frozen", "hang", "stuck", "unresponsive", "beachball", "spinning", "crash", "report", "diagnostics", "developer"], highlightID: SettingsTab.about.highlightID(for: "Watch for freezes")),
         ]
     }
 
@@ -3168,6 +3169,12 @@ struct Media: View {
 
 
 struct About: View {
+    @Default(.hangWatchdogEnabled) var hangWatchdogEnabled
+
+    private func highlightID(_ title: String) -> String {
+        SettingsTab.about.highlightID(for: title)
+    }
+
     /// "1.2.0 (2)" — the build used to hide behind a tap; it is what a bug report needs.
     private var versionText: String {
         let version = Bundle.main.releaseVersionNumber ?? String(localized: "unknown")
@@ -3196,6 +3203,20 @@ struct About: View {
                 }
             } header: {
                 Text("Version info")
+            }
+
+            Section {
+                SettingsRow(
+                    "Watch for freezes",
+                    description: "If Kannu's interface stops responding for five seconds, it writes down what it was doing to ~/Library/Logs/Kannu and offers you the note next time it starts. Nothing is shown while it is stuck, and nothing is sent anywhere. On by default for the Developer profile."
+                ) {
+                    Toggle("", isOn: $hangWatchdogEnabled)
+                }
+                .settingsHighlight(id: highlightID("Watch for freezes"))
+            } header: {
+                Text("Diagnostics")
+            } footer: {
+                SettingsFooter("A freeze leaves no crash report, so without this there is nothing to look at afterwards. The check costs one wake every two seconds.")
             }
         }
         .navigationTitle("About")

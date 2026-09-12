@@ -38,6 +38,39 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     status-item menu, the export-logs result alerts, and the Settings crash-report alerts.
   - Also here: the memory alert said "DynamicIsland", a name from before the fork.
 
+### 2026-09-12 - The next freeze explains itself
+- **Developer label:** "on only when the developer mode is selected during launch, also does this consume battery heavily" / "Nothing now, offer it next launch"
+- **Agent label:** Follow-up 34 — the freeze was only diagnosable because a sample was taken while it was stuck
+- **Changes:**
+  - New `HangWatchdog`: a background thread posts a token to the main run loop every two seconds,
+    and if one goes unanswered for five it suspends the main thread just long enough to read its
+    registers and walk its frame pointers, then writes `~/Library/Logs/Kannu/hang-<date>.txt`. No
+    process is spawned and no permission is needed. Every memory read goes through
+    `mach_vm_read_overwrite`, which reports a bad address instead of faulting, and symbolisation
+    happens after the thread is resumed because `dladdr` takes the dyld lock.
+  - Nothing is shown while the app is stuck — anything drawn would have to go through the wedged
+    thread. On the next launch the user is offered the report: *Report It* opens a GitHub issue with
+    the build, the macOS version, the duration and the stack already filled in, *Show the Log*
+    reveals the file, *Ignore* does nothing. Kannu never posts anything itself, and the report
+    carries no username and no machine identifier: the home folder becomes `~` and any other
+    `/Users/<name>` becomes `/Users/redacted`.
+  - Off unless `Defaults[.hangWatchdogEnabled]`. Picking the Developer profile at onboarding turns
+    it on, and About › Diagnostics has the switch for everyone else — including anyone who
+    onboarded before this, since the profile choice was never recorded until now
+    (`applyProfileSettings` flipped feature keys and forgot who asked for them; it writes
+    `Defaults[.userProfiles]` as well now).
+  - Verified live on this Mac, not only in tests: a deliberate nine-second block produced a report
+    with a full 31-frame stack naming the blocking function through AppKit down to `dyld start`, and
+    the app survived the walk. With the switch off, nothing was written.
+  - The first live run also caught the watchdog reporting *its own* dialog as a freeze, which is
+    fixed two ways. The token is posted with `CFRunLoopPerformBlock` in the common and event-tracking
+    modes rather than on the main queue, so a context menu or a drag the user holds open answers it;
+    and `ModalPresenter.runAppModal` brackets its modal session so a dialog Kannu deliberately put
+    on screen does not count — which is only cheap because `runModal()` now lives in one place. A
+    modal loop entered anywhere else is still reported: that is the bug this whole change is about.
+  - Cost: one wake every two seconds and one run-loop block, against the 20 Hz hover poll the app
+    already runs whenever a hidden island is on screen.
+
 ### 2026-09-12 - The sixth one cannot be written
 - **Developer label:** "this wont happen again later for other users right ?"
 - **Agent label:** Follow-up 34 — ban it, do not just fix it

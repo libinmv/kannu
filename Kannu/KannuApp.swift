@@ -675,6 +675,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         autoEnableLaunchAtLoginIfNeeded()
         repairLoginItemIfStale()
 
+        // Starts before the managers, so a freeze during startup is still caught. The offer for a
+        // previous freeze waits: with no window on screen that alert is app-modal, and one of those
+        // here would stop the rest of launch.
+        HangWatchdog.shared.start()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+            HangWatchdog.shared.offerNewestReport()
+        }
+
         LockScreenLiveActivityWindowManager.shared.configure(viewModel: vm)
         LockScreenManager.shared.configure(viewModel: vm)
         // Spin up the caffeinate manager at launch: a toggle left on must take effect

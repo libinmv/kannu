@@ -103,7 +103,9 @@ enum ModalPresenter {
     static func runAppModal(_ alert: NSAlert) -> NSApplication.ModalResponse {
         NSApp.activate(ignoringOtherApps: true)
         raiseAboveOwnWindows(alert)
-        return alert.runModal()
+        // A dialog waiting for the user is a stopped main thread on purpose, so the hang watchdog
+        // must not call it a freeze. This is the only place that has to say so.
+        return HangWatchdog.shared.duringExpectedStall { alert.runModal() }
     }
 
     private static func raiseAboveOwnWindows(_ alert: NSAlert) {
