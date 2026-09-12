@@ -8,20 +8,43 @@ struct NotchAgentStatusView: View {
     @ObservedObject private var monitor = CursorAgentStatusMonitor.shared
     @ObservedObject private var skinManager = NotchSkinManager.shared
     @ObservedObject private var caffeinate = CaffeinateManager.shared
+    @ObservedObject private var findingsStore = SecurityFindingsStore.shared
+    @ObservedObject private var usageAlerts = UsageAlertManager.shared
+    @ObservedObject private var adrConnection = ADRConnection.shared
+    @Default(.adrDetectionEnabled) private var detectionEnabled
+    @Default(.adrDetectionConfirmEachRun) private var detectionConfirmEachRun
     /// Defaults-backed, not @State: this tab is torn down and rebuilt on every tab switch.
     @Default(.caffeinateEnabled) private var caffeinateEnabled
     @Default(.smartCaffeinate) private var smartCaffeinate
     @Default(.agentActiveColor) private var activePaletteColor
     @Default(.agentAwaitingInputColor) private var awaitingPaletteColor
     @Default(.agentStoppedColor) private var stoppedPaletteColor
+    /// The 420/340 pt panels have no room for the run-time column; the status line carries the time.
+    @Default(.enableMinimalisticUI) private var minimalistic
     @State private var isSuppressingScrollGesture = false
     @State private var redBlinkStartTimes: [String: Date] = [:]
+    /// The pinned finding whose "Copy for agent" was just pressed; cleared after 2 s.
+    @State private var copiedFindingID: String?
+    /// Bumped once when a red badge's blink window ends, so the 10 Hz blink stops on time.
+    @State private var blinkWake = Date.distantPast
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let scrollSuppressionToken = UUID()
 
     private var hasSkin: Bool { skinManager.selectedSkinImage != nil }
 
+#if DEBUG
+    /// Snapshot boards only (`DebugSnapshots`): fixture sessions and panel mode instead of the live ones.
+    var snapshotSessions: [AgentSessionStatus]? = nil
+    var snapshotMinimalistic: Bool? = nil
+    private var sourceSessions: [AgentSessionStatus] { snapshotSessions ?? monitor.sessions }
+    private var isMinimalistic: Bool { snapshotMinimalistic ?? minimalistic }
+#else
+    private var sourceSessions: [AgentSessionStatus] { monitor.sessions }
+    private var isMinimalistic: Bool { minimalistic }
+#endif
+
     private var dedupedSessions: [AgentSessionStatus] {
-        deduplicateLatestSessions(monitor.sessions)
+        AgentTrafficLightMapper.latestSessions(sourceSessions)
     }
 
     private var visibleSessions: [AgentSessionStatus] {
@@ -39,36 +62,6 @@ struct NotchAgentStatusView: View {
 
     private var primarySession: AgentSessionStatus? {
         AgentTrafficLightMapper.primarySession(from: visibleSessions)
-    }
-
-    private func deduplicateLatestSessions(_ sessions: [AgentSessionStatus]) -> [AgentSessionStatus] {
-        var latestByConversationID: [String: AgentSessionStatus] = [:]
-        for session in sessions {
-            guard let existing = latestByConversationID[session.conversationID] else {
-                latestByConversationID[session.conversationID] = session
-                continue
-            }
-            latestByConversationID[session.conversationID] = preferredSession(existing: existing, incoming: session)
-        }
-        return Array(latestByConversationID.values)
-    }
-
-    private func preferredSession(existing: AgentSessionStatus, incoming: AgentSessionStatus) -> AgentSessionStatus {
-        if existing.displayState != incoming.displayState {
-            return existing.displayState > incoming.displayState ? existing : incoming
-        }
-        let existingHasReliableTitle = hasReliableChatName(existing.chatName)
-        let incomingHasReliableTitle = hasReliableChatName(incoming.chatName)
-        if existingHasReliableTitle != incomingHasReliableTitle {
-            return incomingHasReliableTitle ? incoming : existing
-        }
-        return incoming.updatedAt >= existing.updatedAt ? incoming : existing
-    }
-
-    private func hasReliableChatName(_ value: String?) -> Bool {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !trimmed.isEmpty else { return false }
-        return !CursorAgentStatusMonitor.looksLikeToolName(trimmed)
     }
 
     private struct ProviderInstallStatus {
@@ -97,6 +90,14 @@ struct NotchAgentStatusView: View {
                 source: .antigravity, name: "Antigravity",
                 detected: fm.fileExists(atPath: home.appendingPathComponent(".gemini").path)
             ),
+            ProviderInstallStatus(
+                source: .warp, name: "Warp",
+                detected: WarpAgentStore.databaseURL != nil
+            ),
+            ProviderInstallStatus(
+                source: .claudeDesktop, name: "Desktop",
+                detected: fm.fileExists(atPath: ClaudeDesktopAgentSessionStore.defaultRoot.path)
+            ),
         ]
     }
 
@@ -104,6 +105,10 @@ struct NotchAgentStatusView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 caffeinateRow
+
+                if let pinned = findingsStore.ranking.pinned {
+                    securityPinnedCard(pinned)
+                }
 
                 if let primary = primarySession {
                     clickableSession(primary) { primaryCard(primary) }
@@ -140,7 +145,7 @@ struct NotchAgentStatusView: View {
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.center)
-            Text("Fire up Cursor, Claude Code, Codex, or Antigravity and start a session — we'll watch the lights for you.")
+            Text("Fire up Cursor, Claude Code, Codex, Antigravity, Warp, or Claude Desktop and start a session — we'll watch the lights for you.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -196,6 +201,23 @@ struct NotchAgentStatusView: View {
                 Text("Recent chats")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
+            }
+            // Medium findings never interrupt: one count, one click to Settings.
+            if openFindingCount > 0 {
+                Button {
+                    SettingsWindowController.shared.showWindow(
+                        navigatingToAgentStatusHighlight: SettingsDeepLink.securityFindingsHighlightID
+                    )
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "exclamationmark.shield").font(.system(size: 9))
+                        Text(openFindingCount == 1 ? String(localized: "1 finding") : String(localized: "\(openFindingCount) findings"))
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .hoverTooltip(String(localized: "Security findings — click for Settings"), edge: .below, pointingHandCursor: true)
             }
             Spacer(minLength: 0)
             if smartCaffeinate {
@@ -270,6 +292,82 @@ struct NotchAgentStatusView: View {
         .frame(maxWidth: .infinity)
     }
 
+    /// Open findings other than the pinned one (which has its own card).
+    private var openFindingCount: Int {
+        let ranking = findingsStore.ranking
+        return ranking.visible.count - (ranking.pinned == nil ? 0 : 1)
+    }
+
+    /// The one high finding that owns the closed-notch cue, pinned above the primary session.
+    /// Monochrome shield; the severity word is text, so nothing here competes with the lights.
+    @ViewBuilder
+    private func securityPinnedCard(_ finding: AgentSecurityFinding) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.shield.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.primary)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(finding.title)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Text(finding.severity.label)
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(Capsule().fill(Color.white.opacity(0.12)))
+                }
+                Text(finding.summary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                if let evidence = finding.displayedEvidence.first {
+                    Text(evidence)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                HStack(spacing: 8) {
+                    Button(String(localized: "Details")) {
+                        SettingsWindowController.shared.showWindow(
+                            navigatingToAgentStatusHighlight: SettingsDeepLink.securityFindingsHighlightID
+                        )
+                    }
+                    Button(String(localized: "Acknowledge")) {
+                        findingsStore.acknowledge(finding.id)
+                    }
+                    Button {
+                        findingsStore.copyAgentPrompt(for: finding)
+                        let id = finding.id
+                        copiedFindingID = id
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .seconds(2))
+                            if copiedFindingID == id { copiedFindingID = nil }
+                        }
+                    } label: {
+                        // The hidden label keeps the width while "Copied" shows.
+                        Text(String(localized: "Copy for agent"))
+                            .opacity(copiedFindingID == finding.id ? 0 : 1)
+                            .overlay { if copiedFindingID == finding.id { Text(String(localized: "Copied")) } }
+                    }
+                }
+                .controlSize(.small)
+                .padding(.top, 2)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(hasSkin ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.white.opacity(0.08)))
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Color.white.opacity(0.22), lineWidth: 0.5)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Security finding, \(finding.severity.label): \(finding.title). \(finding.summary)")
+    }
+
     /// Bare cup glyph, no tooltip — use inside a container that supplies its own `.help`.
     private var cupImage: some View {
         Image(systemName: caffeinate.isKeepingAwake ? "cup.and.saucer.fill" : "cup.and.saucer")
@@ -305,10 +403,77 @@ struct NotchAgentStatusView: View {
                 content()
             }
             .buttonStyle(.plain)
-            .hoverTooltip(String(localized: "Open in \(target.appName)"), pointingHandCursor: true)
+            .hoverTooltip(target.actionLabel, pointingHandCursor: true)
             .accessibilityHint("Opens \(target.appName)")
+            .contextMenu { analysisMenu(for: session) }
         } else {
             content()
+                .contextMenu { analysisMenu(for: session) }
+        }
+    }
+
+    // MARK: - ADR Detection (explicit request only)
+
+    private func canAnalyze(_ session: AgentSessionStatus) -> Bool {
+        detectionEnabled && adrConnection.detection.isReady
+            && session.provider.lowercased() == "claude"
+            && !session.displayState.isActiveRun
+            && !findingsStore.isAnalyzing(session.conversationID)
+    }
+
+    @ViewBuilder
+    private func analysisMenu(for session: AgentSessionStatus) -> some View {
+        if canAnalyze(session) {
+            Button(String(localized: "Analyze with ADR Detection…")) { requestAnalysis(session) }
+        }
+        if let analysis = findingsStore.analysis(for: session.conversationID) {
+            if let path = analysis.reportPath, FileManager.default.fileExists(atPath: path) {
+                Button(String(localized: "Reveal ADR report in Finder")) {
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                }
+            }
+            Button(String(localized: "Forget this analysis")) { findingsStore.forgetAnalysis(for: session.conversationID) }
+        }
+    }
+
+    /// "ADR: clean · 0.08" under the status line, once a chat has been analysed.
+    @ViewBuilder
+    private func analysisLine(for session: AgentSessionStatus) -> some View {
+        if findingsStore.isAnalyzing(session.conversationID) {
+            Text("ADR: analysing…").font(.caption2).foregroundStyle(.secondary)
+        } else if let analysis = findingsStore.analysis(for: session.conversationID) {
+            Text("ADR: \(analysis.shortLabel)")
+                .font(.caption2)
+                .foregroundStyle(analysis.isMalicious ? .primary : .secondary)
+        }
+    }
+
+    /// The consent moment: names what leaves the Mac and where, every time unless the user
+    /// turned that off. Nothing runs without this click.
+    private func requestAnalysis(_ session: AgentSessionStatus) {
+        switch findingsStore.analysisPlan(for: session) {
+        case .failure(let failure):
+            let alert = NSAlert()
+            alert.messageText = String(localized: "Cannot analyse this chat")
+            alert.informativeText = failure.message
+            alert.runModal()
+        case .success(let plan):
+            guard detectionConfirmEachRun else { findingsStore.runAnalysis(plan); return }
+            let options = SecurityFindingsStore.analysisOptions()
+            let alert = NSAlert()
+            alert.messageText = String(localized: "Send this chat to ADR Detection?")
+            var lines = [String(localized: "The transcript \"\(session.displayChatName)\" (up to \(options.maxMessages) messages) leaves this Mac:")]
+            lines.append(String(localized: "• Anthropic, via \(Defaults[.adrDetectionUseAnthropicAPIKey] ? "your API key" : "your Claude Code login (uses your quota)"), model \(options.reasoningModel)"))
+            if options.triageEnabled { lines.append(String(localized: "• OpenAI, via your API key, model \(options.triageModel) (triage first)")) }
+            lines.append(String(localized: "ADR runs an unattended Claude session on this Mac to reason about it (file edits disallowed). Nothing else is sent, and nothing runs automatically."))
+            alert.informativeText = lines.joined(separator: "\n")
+            alert.addButton(withTitle: String(localized: "Analyze"))
+            alert.addButton(withTitle: String(localized: "Cancel"))
+            alert.showsSuppressionButton = true
+            alert.suppressionButton?.title = String(localized: "Don't ask again for each chat")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            if alert.suppressionButton?.state == .on { detectionConfirmEachRun = false }
+            findingsStore.runAnalysis(plan)
         }
     }
 
@@ -328,6 +493,7 @@ struct NotchAgentStatusView: View {
                     marqueeWidth: 220
                 )
                 statusText(for: session, font: .subheadline)
+                analysisLine(for: session)
                 AgentChatNameLabel(
                     text: session.displayChatName,
                     font: .caption2,
@@ -335,7 +501,12 @@ struct NotchAgentStatusView: View {
                     marqueeWidth: 180
                 )
             }
-            Spacer(minLength: 0)
+            .layoutPriority(1)
+            if isMinimalistic {
+                Spacer(minLength: 0)
+            } else {
+                AgentTurnMetricsView(session: session, prominent: true)
+            }
             stateBadge(session.displayState, sessionId: session.id, large: true)
         }
         .padding(12)
@@ -369,12 +540,18 @@ struct NotchAgentStatusView: View {
                     )
                 }
                 statusText(for: session, font: .caption2)
+                analysisLine(for: session)
                 AgentChatNameLabel(
                     text: session.displayChatName,
                     marqueeWidth: 140
                 )
             }
-            Spacer(minLength: 0)
+            .layoutPriority(1)
+            if isMinimalistic {
+                Spacer(minLength: 0)
+            } else {
+                AgentTurnMetricsView(session: session)
+            }
             stateBadge(session.displayState, sessionId: session.id, large: false)
         }
         .padding(10)
@@ -390,30 +567,46 @@ struct NotchAgentStatusView: View {
         }
     }
 
+    /// The state word and why it stopped. The run time sits in the trailing column
+    /// (`AgentTurnMetricsView`); on the minimalistic panels, which have no room for it, it follows
+    /// here instead.
     @ViewBuilder
     private func statusText(for session: AgentSessionStatus, font: Font) -> some View {
-        if session.displayState.isActiveRun, let startedAt = session.executionStartedAt {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                (
-                    Text(session.displayState.displayName).foregroundStyle(stateColor(session.displayState))
-                    + Text(" " + formattedElapsed(since: startedAt, now: context.date))
-                        .foregroundStyle(.secondary)
-                )
-                .font(font)
-                .monospacedDigit()
+        let suffix = session.runOutcomeSuffix + resumeSuffix(for: session)
+        if isMinimalistic, let display = AgentTurnMetricsView.display(for: session) {
+            switch display {
+            case let .live(since):
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    statusLine(session, suffix: suffix + " · " + AgentTurnFormat.duration(context.date.timeIntervalSince(since)), font: font)
+                }
+            case let .ended(interval):
+                statusLine(session, suffix: suffix + " · " + AgentTurnFormat.duration(interval), font: font)
             }
         } else {
-            Text(session.displayState.displayName)
-                .font(font)
-                .foregroundStyle(stateColor(session.displayState))
+            statusLine(session, suffix: suffix, font: font)
         }
     }
 
-    private func formattedElapsed(since start: Date, now: Date) -> String {
-        let elapsed = max(0, Int(now.timeIntervalSince(start)))
-        let minutes = elapsed / 60
-        let seconds = elapsed % 60
-        return String(format: "%02d:%02d", minutes, seconds)
+    private func statusLine(_ session: AgentSessionStatus, suffix: String, font: Font) -> some View {
+        (
+            Text(session.displayState.displayName)
+                .foregroundStyle(stateColor(session.displayState))
+            + Text(suffix)
+                .foregroundStyle(.secondary)
+        )
+        .font(font)
+        .monospacedDigit()
+    }
+
+    /// " · resumes 3:40 PM" on a chat that stopped on a rate limit — only when the matching usage
+    /// window really is full, since a 429 can also be short-term throttling.
+    private func resumeSuffix(for session: AgentSessionStatus) -> String {
+        guard session.displayState == .stopped || session.displayState == .inactive else { return "" }
+        let now = Date()
+        guard let resume = UsageAlertPolicy.resumeDate(provider: session.provider, runError: session.runError,
+                                                       rawState: session.rawState, readings: usageAlerts.readings, now: now)
+        else { return "" }
+        return " · " + String(localized: "resumes \(UsageForecast.clock(resume, now: now))")
     }
 
     // Neon variants come from the user's palette choices; the defaults reproduce the
@@ -427,8 +620,13 @@ struct NotchAgentStatusView: View {
         let width: CGFloat = large ? 28 : 20
         let height: CGFloat = large ? 36 : 28
         let dotSize: CGFloat = large ? 8 : 6
+        let _ = blinkWake
         let blinkStart = redBlinkStartTimes[sessionId]
-        let shouldBlink = state.showsRedTrafficLight && blinkStart.map { Date().timeIntervalSince($0) < 5 } ?? false
+        let now = Date()
+        // Bounded to its 5 s window by the one-shot wake below (the 10 Hz timeline used to keep
+        // ticking until something else redrew the panel), and off under Reduce Motion.
+        let shouldBlink = !reduceMotion && state.showsRedTrafficLight && AgentTrafficLightAttention.blinks(startedAt: blinkStart, now: now)
+        let blinkEnd = state.showsRedTrafficLight ? AgentTrafficLightAttention.blinkChange(startedAt: blinkStart, now: now) : nil
 
         VStack(spacing: 3) {
             if shouldBlink {
@@ -444,6 +642,11 @@ struct NotchAgentStatusView: View {
             neonDot(neonGreen, size: dotSize, opacity: state.showsGreenTrafficLight ? 1 : 0.2, glowRadius: state.showsGreenTrafficLight ? (large ? 5 : 3.5) : 0)
         }
         .frame(width: width, height: height)
+        .task(id: blinkEnd) {
+            guard let blinkEnd else { return }
+            try? await Task.sleep(for: .seconds(max(0, blinkEnd.timeIntervalSinceNow) + 0.05))
+            if !Task.isCancelled { blinkWake = Date() }
+        }
         .onChange(of: state.showsRedTrafficLight) { _, isRed in
             if isRed && (blinkStart == nil || Date().timeIntervalSince(blinkStart!) > 5) {
                 redBlinkStartTimes[sessionId] = Date()

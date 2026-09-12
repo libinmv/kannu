@@ -42,6 +42,102 @@ final class RegressionGuardTests: XCTestCase {
         XCTAssertTrue(resolved.state.isActiveRun, "Five minutes is still within the 360s active window.")
     }
 
+    // MARK: - Entry 12: yellow follows evidence, not the clock
+
+    /// An unanswered prompt whose session is provably still waiting keeps its yellow however
+    /// long it sits. The 300 s window is only the fallback for waits nothing can corroborate.
+    func testHeldAwaitingInputStaysYellowAtOneHour() {
+        let resolved = AgentTrafficLightMapper.resolveHookState(
+            rawState: "awaiting_input", ageMs: 3_600_000, collapseMs: 5_000, inactiveMs: 5_000,
+            holdAwaitingInput: true
+        )
+        XCTAssertEqual(resolved.state, .awaitingInput)
+        XCTAssertTrue(resolved.visible)
+    }
+
+    func testUnheldAwaitingInputExpiresAfterFiveMinutes() {
+        let inside = AgentTrafficLightMapper.resolveHookState(
+            rawState: "awaiting_input", ageMs: 300_000, collapseMs: 5_000, inactiveMs: 5_000)
+        XCTAssertEqual(inside.state, .awaitingInput)
+        XCTAssertTrue(inside.visible)
+        let past = AgentTrafficLightMapper.resolveHookState(
+            rawState: "awaiting_input", ageMs: 300_001, collapseMs: 5_000, inactiveMs: 5_000)
+        XCTAssertEqual(past.state, .inactive, "Claude idle_prompt, a dead process, Cursor's sticky yellow: the clock still rules")
+        XCTAssertFalse(past.visible)
+    }
+
+    func testAwaitingInputHoldFollowsEvidencePerProvider() {
+        typealias M = AgentTrafficLightMapper
+        XCTAssertTrue(M.holdsAwaitingInput(provider: "claude", processAlive: true, tail: .toolInFlight, cursorPendingApproval: false))
+        for tail: AgentSessionLogParser.ClaudeTailState? in [.working, .turnFinished, .unknown, nil] {
+            XCTAssertFalse(M.holdsAwaitingInput(provider: "claude", processAlive: true, tail: tail, cursorPendingApproval: true),
+                           "a live Claude with no outstanding tool_use is not waiting on a prompt")
+        }
+        XCTAssertFalse(M.holdsAwaitingInput(provider: "claude", processAlive: false, tail: .toolInFlight, cursorPendingApproval: false))
+        XCTAssertTrue(M.holdsAwaitingInput(provider: "cursor", processAlive: false, tail: nil, cursorPendingApproval: true))
+        XCTAssertFalse(M.holdsAwaitingInput(provider: "cursor", processAlive: false, tail: nil, cursorPendingApproval: false))
+        for provider in ["vscode", "codex", "antigravity", "copilot", "gemini", "qwen", "opencode"] {
+            XCTAssertTrue(M.holdsAwaitingInput(provider: provider, processAlive: false, tail: nil, cursorPendingApproval: false),
+                          "\(provider): nothing can corroborate or refute; the stale cap ends it")
+        }
+        for provider in ["warp", "claudedesktop", "unknown"] {
+            XCTAssertFalse(M.holdsAwaitingInput(provider: provider, processAlive: true, tail: .toolInFlight, cursorPendingApproval: true))
+        }
+        XCTAssertTrue(M.isAwaitingInputRawState("awaiting_input"))
+        XCTAssertTrue(M.isAwaitingInputRawState("AwaitingInput"))
+        XCTAssertFalse(M.isAwaitingInputRawState("executing"))
+    }
+
+    func testOnlyACorroboratedClaudePromptOutlivesTheStaleCap() {
+        typealias M = AgentTrafficLightMapper
+        XCTAssertTrue(M.awaitingInputOutlivesStaleCap(provider: "claude", processAlive: true, tail: .toolInFlight))
+        XCTAssertFalse(M.awaitingInputOutlivesStaleCap(provider: "claude", processAlive: false, tail: .toolInFlight))
+        XCTAssertFalse(M.awaitingInputOutlivesStaleCap(provider: "claude", processAlive: true, tail: .turnFinished))
+        XCTAssertFalse(M.awaitingInputOutlivesStaleCap(provider: "cursor", processAlive: true, tail: .toolInFlight))
+        XCTAssertFalse(M.awaitingInputOutlivesStaleCap(provider: "vscode", processAlive: true, tail: .toolInFlight),
+                       "hook-only providers keep the cap: it is the end of their yellow")
+    }
+
+    /// A Claude chat is silent for a whole workflow or a long Bash call; deleting its file at the
+    /// 30-minute cap lost the request's turn (hook v39). Kept only while work is provably real;
+    /// never a stopped file, never another provider (their cap is the end of their card).
+    func testOnlyProvablyLiveClaudeWorkOutlivesTheStaleCap() {
+        typealias M = AgentTrafficLightMapper
+        func keeps(_ provider: String = "claude", _ raw: String = "executing", alive: Bool = false,
+                   named: Bool = false, subOfOpenTurn: Bool = false) -> Bool {
+            M.hookFileOutlivesStaleCap(provider: provider, rawState: raw, processAlive: alive,
+                                       namedByFreshSubagent: named, subagentOfOpenTurn: subOfOpenTurn)
+        }
+        XCTAssertTrue(keeps(alive: true))
+        XCTAssertTrue(keeps("claude", "thinking", alive: true))
+        XCTAssertTrue(keeps(named: true), "a subagent written within the cap proves the chat is working")
+        XCTAssertTrue(keeps("claude", "thinking", subOfOpenTurn: true), "a subagent of the open turn keeps its count")
+        XCTAssertFalse(keeps(), "no evidence: the cap applies")
+        XCTAssertFalse(keeps("claude", "stopped", alive: true, named: true, subOfOpenTurn: true),
+                       "a stopped file would shadow the passive card")
+        XCTAssertFalse(keeps("claude", "awaiting_input", alive: true), "yellow has its own rule (entry 12)")
+        XCTAssertFalse(keeps("cursor", "executing", alive: true, named: true))
+        XCTAssertFalse(keeps("codex", "executing", alive: true))
+    }
+
+    /// Entry 10: a subagent's tool call only moves its chat's count. That publishes the list but
+    /// must not bump the reveal pulse, or the island never collapses while a workflow runs.
+    func testATurnOnlyChangeIsNoRevealPulse() {
+        typealias M = AgentTrafficLightMapper
+        var before = AgentSessionStatus(id: "claude-c", provider: "claude", conversationID: "c", chatName: "Chat",
+                                        projectName: "kannu", rawState: "executing", displayState: .executing,
+                                        updatedAt: Date(timeIntervalSince1970: 1_000), isVisible: true, executionStartedAt: nil)
+        before.turn = HookTurn(startedAt: Date(timeIntervalSince1970: 900), toolCalls: 4)
+        var counted = before
+        counted.turn?.toolCalls = 5
+        XCTAssertNotEqual([before], [counted], "the list still publishes")
+        XCTAssertFalse(M.pulseRelevantChange(from: [before], to: [counted]))
+        let moved = before.withDisplayState(.awaitingInput, visible: true)
+        XCTAssertTrue(M.pulseRelevantChange(from: [before], to: [moved]))
+        XCTAssertTrue(M.pulseRelevantChange(from: [before], to: [before, counted]), "a card appearing is news")
+        XCTAssertFalse(M.pulseRelevantChange(from: [before], to: [before]))
+    }
+
     // MARK: - Chat-name sanitation
 
     /// A tool name must never survive as a chat title. Chat-name resolution has regressed

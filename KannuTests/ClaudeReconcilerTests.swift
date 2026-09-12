@@ -13,9 +13,14 @@ final class ClaudeReconcilerTests: XCTestCase {
         updatedAt: Date = Date(timeIntervalSince1970: 1_000),
         visible: Bool = true,
         cwd: String? = nil,
-        hostPID: Int? = nil
+        hostPID: Int? = nil,
+        toolErrorCount: Int = 0,
+        unattended: Bool = false,
+        runError: RunError? = nil,
+        desktopSessionID: String? = nil,
+        sightings: HookSightings = HookSightings()
     ) -> AgentSessionStatus {
-        AgentSessionStatus(
+        var session = AgentSessionStatus(
             id: "\(provider)-\(conversation)",
             provider: provider,
             conversationID: conversation,
@@ -29,7 +34,17 @@ final class ClaudeReconcilerTests: XCTestCase {
             cwd: cwd,
             hostPID: hostPID
         )
+        session.toolErrorCount = toolErrorCount
+        session.isUnattended = unattended
+        session.runError = runError
+        session.desktopSessionID = desktopSessionID
+        session.sightings = sightings
+        return session
     }
+
+    private let sighting = HiddenTextIncident(kind: .tags, location: .toolResult, tool: "Read", characterCount: 25,
+                                              eventCount: 1, preview: "hidden words", firstSeenMs: 1_789_000_000_000,
+                                              lastSeenMs: 1_789_000_000_000)
 
     private func reconcile(
         hooks: [AgentSessionStatus],
@@ -50,11 +65,12 @@ final class ClaudeReconcilerTests: XCTestCase {
 
     func testInheritedFieldsCarryAcrossOnDemote() {
         let hook = session(rawState: "executing", display: .executing,
-                           updatedAt: Date(timeIntervalSince1970: 1_000))
+                           updatedAt: Date(timeIntervalSince1970: 1_000), sightings: HookSightings(hiddenText: [sighting]))
         let passive = session(chatName: "Fix the parser", projectName: "kannu",
                               rawState: "stopped", display: .stopped,
                               updatedAt: Date(timeIntervalSince1970: 1_500),
-                              cwd: "/tmp/proj", hostPID: 4242)
+                              cwd: "/tmp/proj", hostPID: 4242, toolErrorCount: 2, unattended: true,
+                              runError: .apiError(status: 429))
         let out = reconcile(hooks: [hook], passive: [passive])
         XCTAssertEqual(out.count, 1)
         let merged = out[0]
@@ -65,18 +81,127 @@ final class ClaudeReconcilerTests: XCTestCase {
         XCTAssertEqual(merged.projectName, "kannu")
         XCTAssertEqual(merged.cwd, "/tmp/proj")
         XCTAssertEqual(merged.hostPID, 4242)
+        XCTAssertEqual(merged.toolErrorCount, 2, "the tool-error count keeps the larger side")
+        XCTAssertTrue(merged.isUnattended, "the unattended flag rides the seam too")
+        XCTAssertEqual(merged.runError, .apiError(status: 429), "the transcript's verdict fills a hook that has none")
+        XCTAssertEqual(merged.sightings.hiddenText, [sighting], "the hook's hidden-text sighting survives the demote")
+    }
+
+    // MARK: - Entry 12: a held yellow survives passive activity, dies with the process
+
+    func testHeldYellowSurvivesPassiveToolInFlight() {
+        // The hook's yellow is old (a prompt left open); the passive side sees a live process
+        // with an outstanding tool_use — an active run, so the demote arm must not fire.
+        let hook = session(rawState: "awaiting_input", display: .awaitingInput,
+                           updatedAt: Date(timeIntervalSince1970: 1_000))
+        let passive = session(chatName: "Ask", rawState: "executing", display: .executing,
+                              updatedAt: Date(timeIntervalSince1970: 1_900), hostPID: 4242)
+        let out = reconcile(hooks: [hook], passive: [passive])
+        XCTAssertEqual(out.count, 1)
+        XCTAssertEqual(out[0].displayState, .awaitingInput)
+        XCTAssertTrue(out[0].isVisible)
+        XCTAssertEqual(out[0].hostPID, 4242)
+        XCTAssertEqual(out[0].chatName, "Ask")
+    }
+
+    func testHeldYellowDemotesWhenTheProcessDies() {
+        let hook = session(rawState: "awaiting_input", display: .awaitingInput,
+                           updatedAt: Date(timeIntervalSince1970: 1_000))
+        let passive = session(rawState: "stopped", display: .stopped,
+                              updatedAt: Date(timeIntervalSince1970: 1_950))
+        XCTAssertEqual(reconcile(hooks: [hook], passive: [passive], dead: ["conv-1"])[0].displayState, .stopped)
+        XCTAssertFalse(reconcile(hooks: [hook], passive: [], dead: ["conv-1"])[0].displayState.isActiveRun)
+    }
+
+    func testAgedYellowIsNotPromotedByPassiveActivity() {
+        // An expired, unheld yellow stays out of the promote arm: one unreadable tail on a live
+        // process (entry 3 maps it to thinking) must not turn it green.
+        let hook = session(rawState: "awaiting_input", display: .inactive,
+                           updatedAt: Date(timeIntervalSince1970: 500), visible: false)
+        let passive = session(rawState: "thinking", display: .thinking,
+                              updatedAt: Date(timeIntervalSince1970: 1_900))
+        let out = reconcile(hooks: [hook], passive: [passive])
+        XCTAssertEqual(out[0].displayState, .inactive)
+        XCTAssertFalse(out[0].isVisible)
+    }
+
+    func testDesktopSessionIDCarriesAcrossBothReconcilerArms() {
+        // Entry 7's field set grows: the Desktop chat locator is passive-only, like hostPID.
+        let passiveStopped = session(rawState: "stopped", display: .stopped,
+                                     updatedAt: Date(timeIntervalSince1970: 1_500), desktopSessionID: "local_x")
+        let demoted = reconcile(hooks: [session(rawState: "executing", display: .executing)], passive: [passiveStopped])
+        XCTAssertEqual(demoted[0].displayState, .stopped)
+        XCTAssertEqual(demoted[0].desktopSessionID, "local_x", "demote arm")
+        let passiveActive = session(rawState: "executing", display: .executing, desktopSessionID: "local_x")
+        let unchanged = reconcile(hooks: [session(rawState: "executing", display: .executing)], passive: [passiveActive])
+        XCTAssertEqual(unchanged[0].desktopSessionID, "local_x", "pass-through arm")
+        let promoted = reconcile(hooks: [session(rawState: "thinking", display: .inactive)], passive: [passiveActive])
+        XCTAssertEqual(promoted[0].desktopSessionID, "local_x", "promote arm")
+    }
+
+    func testTheTurnCarriesAcrossEveryReconcilerArm() {
+        // Entry 7's field set grows: the hook's turn (v39) — hook-only, like the terminal.
+        let turn = HookTurn(startedAt: Date(timeIntervalSince1970: 400), toolCalls: 12,
+                            transcriptPath: "/Users/u/.claude/projects/p/c.jsonl", transcriptOffset: 100)
+        var hook = session(rawState: "executing", display: .executing)
+        hook.turn = turn
+        let demoted = reconcile(hooks: [hook], passive: [session(rawState: "stopped", display: .stopped,
+                                                                 updatedAt: Date(timeIntervalSince1970: 1_500))])
+        XCTAssertEqual(demoted[0].displayState, .stopped)
+        XCTAssertEqual(demoted[0].turn, turn, "demote arm")
+        XCTAssertEqual(reconcile(hooks: [hook], passive: [session(rawState: "executing", display: .executing)])[0].turn,
+                       turn, "pass-through arm")
+        var aged = session(rawState: "executing", display: .inactive, updatedAt: Date(timeIntervalSince1970: 500), visible: false)
+        aged.turn = turn
+        let promoted = reconcile(hooks: [aged], passive: [session(rawState: "executing", display: .executing,
+                                                                  updatedAt: Date(timeIntervalSince1970: 1_900))])
+        XCTAssertEqual(promoted[0].displayState, .executing)
+        XCTAssertEqual(promoted[0].turn, turn, "promote arm")
+    }
+
+    func testAKeptSilentChatShowsWhatThePassiveSideShows() {
+        // hookFileOutlivesStaleCap keeps a Claude file mid-workflow past the 30-minute cap. Its
+        // light must be exactly what the passive session alone would show; only the turn is added.
+        let passive = session(chatName: "Workflow", rawState: "executing", display: .executing,
+                              updatedAt: Date(timeIntervalSince1970: 1_900), hostPID: 9)
+        let alone = reconcile(hooks: [], passive: [passive])[0]
+        var kept = session(rawState: "executing", display: .inactive, updatedAt: Date(timeIntervalSince1970: 100), visible: false)
+        kept.turn = HookTurn(startedAt: Date(timeIntervalSince1970: 50), toolCalls: 3)
+        let withFile = reconcile(hooks: [kept], passive: [passive])[0]
+        XCTAssertEqual(withFile.displayState, alone.displayState)
+        XCTAssertEqual(withFile.isVisible, alone.isVisible)
+        XCTAssertEqual(withFile.chatName, "Workflow")
+        XCTAssertEqual(withFile.turn?.toolCalls, 3, "and the request's turn survives")
+        let finished = session(rawState: "stopped", display: .inactive, updatedAt: Date(timeIntervalSince1970: 1_000), visible: false)
+        XCTAssertFalse(reconcile(hooks: [kept], passive: [finished])[0].isVisible,
+                       "a finished passive card past its window is invisible either way")
+    }
+
+    func testRunVerdictSeamPrefersTheHookThenTheMoreSpecificReason() {
+        // Both sides describe the same stop: the more specific reason wins.
+        let hookFailed = session(rawState: "stopped", display: .stopped, runError: .failed)
+        let passiveApi = session(rawState: "stopped", display: .stopped, runError: .apiError(status: 429))
+        XCTAssertEqual(reconcile(hooks: [hookFailed], passive: [passiveApi])[0].runError, .apiError(status: 429))
+        // Stop never says whether the turn went well; the transcript saw the API error.
+        let hookClean = session(rawState: "stopped", display: .stopped)
+        XCTAssertEqual(reconcile(hooks: [hookClean], passive: [passiveApi])[0].runError, .apiError(status: 429))
+        // The hook's verdict stands when the transcript has none.
+        let passiveClean = session(rawState: "stopped", display: .stopped)
+        XCTAssertEqual(reconcile(hooks: [hookFailed], passive: [passiveClean])[0].runError, .failed)
+        XCTAssertNil(reconcile(hooks: [hookClean], passive: [passiveClean])[0].runError)
     }
 
     func testInheritedFieldsCarryAcrossOnUnchangedSession() {
         // Hook active, passive ALSO active (no demote, no promote arm change) — the
         // pass-through exit must still inherit. This is the arm that lost fields twice.
-        let hook = session(rawState: "executing", display: .executing)
+        let hook = session(rawState: "executing", display: .executing, sightings: HookSightings(hiddenText: [sighting]))
         let passive = session(chatName: "Title", rawState: "executing", display: .executing,
                               updatedAt: Date(timeIntervalSince1970: 900), hostPID: 7)
         let out = reconcile(hooks: [hook], passive: [passive])
         XCTAssertEqual(out[0].chatName, "Title")
         XCTAssertEqual(out[0].hostPID, 7)
         XCTAssertEqual(out[0].displayState, .executing)
+        XCTAssertEqual(out[0].sightings.hiddenText, [sighting], "and the pass-through arm")
     }
 
     // MARK: - Demotion

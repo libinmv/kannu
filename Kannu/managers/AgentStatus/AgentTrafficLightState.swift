@@ -86,6 +86,36 @@ struct AgentSessionStatus: Identifiable, Equatable {
     /// PID of the agent process itself (Claude passive sessions). The parent chain of this
     /// PID leads to the hosting terminal or IDE, which is what click-through activates.
     var hostPID: Int? = nil
+    /// Claude Desktop's own id for a Code-tab chat (`local_…`), resolved from Desktop's on-disk
+    /// index by CLI session id (`ClaudeDesktopSessionIndex`). A locator like `hostPID`:
+    /// click-through opens Desktop's session route (`ClaudeDesktopSessionIndex.focusDeepLink`),
+    /// which focuses the chat and creates nothing, so it is safe for live and stopped sessions.
+    var desktopSessionID: String? = nil
+    /// Tool failures the hook has counted since the last user prompt. Diagnostic only since
+    /// hook v33: a failure the agent recovered from is not the turn's outcome, so nothing
+    /// displays it — `runError` is what the card reports. Additive: see `carryingExtras(from:)`.
+    var toolErrorCount: Int = 0
+    /// The session runs with permission checks bypassed (`--dangerously-skip-permissions`,
+    /// Codex `approval_policy = never`), as reported by the hook. Sticky for the session's life;
+    /// additive like the error count. ADR Discovery cannot see this on macOS (its process
+    /// listing carries no argv), so it is Kannu's own finding.
+    var isUnattended: Bool = false
+    /// Why the run ended, when it ended on an error; nil is a clean finish. A per-turn verdict —
+    /// replaced by every stopped write, never accumulated — unlike the two additive fields above.
+    /// Sources: the hook's `ended_on_error` (StopFailure, an Antigravity Stop with an error), the
+    /// Claude transcript's API-error record, Warp `Failed`, Claude Desktop's `result.is_error`.
+    var runError: RunError? = nil
+    /// What the hook's local checks found in what this session read or wrote (hook v34+: hidden
+    /// Unicode). Hook-only and additive: carried by `carryingExtras` as a union (`HookSightings`).
+    var sightings = HookSightings()
+    /// The terminal the agent runs in, as its hook reported it (v35+): a locator like `hostPID`,
+    /// used by click-through when no process id is known. Carried by `carryingExtras` as
+    /// `self ?? source`.
+    var terminal: TerminalLocator? = nil
+    /// This request as the hook recorded it (v39): start, end, tool calls, Claude transcript offset.
+    /// Hook-only, like `terminal`: carried by `carryingExtras` as `self ?? source`; the subagent fold
+    /// sets it explicitly so a parent never adopts a subagent's turn.
+    var turn: HookTurn? = nil
 
     /// True when the hook that produced this session reported work in progress, regardless of
     /// what the staleness ladder later concluded about its age.
@@ -110,16 +140,24 @@ struct AgentSessionStatus: Identifiable, Equatable {
             executionStartedAt: executionStartedAt,
             cwd: cwd,
             hostPID: hostPID
-        )
+        ).carryingExtras(from: self)
     }
 
-    var providerLabel: String {
+    var providerLabel: String { Self.providerLabel(for: provider) }
+
+    static func providerLabel(for provider: String) -> String {
         switch provider.lowercased() {
         case "cursor": return "Cursor"
         case "vscode": return "VS Code"
         case "codex": return "Codex"
         case "claude": return "Claude"
         case "antigravity": return "Antigravity"
+        case "warp": return "Warp"
+        case "claudedesktop": return "Claude Desktop"
+        case "copilot": return "Copilot CLI"
+        case "gemini": return "Gemini CLI"
+        case "qwen": return "Qwen Code"
+        case "opencode": return "opencode"
         default: return provider.capitalized
         }
     }
@@ -193,12 +231,32 @@ enum AgentTrafficLightMapper {
         }
     }
 
+    /// A prompt nobody answers must not hold the Mac awake all night: yellow is caffeinate-worthy
+    /// only inside its first 5 minutes — the window the light itself used before the evidence
+    /// hold (REGRESSIONS entry 12). Derived from the same constant so the two cannot drift.
+    static let awaitingInputCaffeinateSeconds: TimeInterval = TimeInterval(awaitingInputStaleMs) / 1000
+
     /// Whether any session justifies smart caffeinate holding the Mac awake: visible, not a
-    /// simulation, and in an active run — the same definition the traffic light uses.
-    static func hasCaffeinateWorthySession(_ sessions: [AgentSessionStatus]) -> Bool {
-        sessions.contains {
-            $0.isVisible && !isSimulationSession($0) && $0.displayState.isActiveRun
+    /// simulation, and in an active run — the same definition the traffic light uses, except
+    /// that a wait on the user only counts for its first five minutes.
+    static func hasCaffeinateWorthySession(_ sessions: [AgentSessionStatus], now: Date = Date()) -> Bool {
+        sessions.contains { session in
+            guard session.isVisible, !isSimulationSession(session), session.displayState.isActiveRun else { return false }
+            if session.displayState == .awaitingInput {
+                return now.timeIntervalSince(session.updatedAt) <= awaitingInputCaffeinateSeconds
+            }
+            return true
         }
+    }
+
+    /// When the earliest currently qualifying yellow stops qualifying; nil when none does. The
+    /// session list does not republish at that moment, so the caffeinate manager arms a recheck.
+    static func caffeinateRecheckDate(_ sessions: [AgentSessionStatus], now: Date = Date()) -> Date? {
+        sessions
+            .filter { $0.isVisible && !isSimulationSession($0) && $0.displayState == .awaitingInput }
+            .map { $0.updatedAt.addingTimeInterval(awaitingInputCaffeinateSeconds) }
+            .filter { $0 > now }
+            .min()
     }
 
     /// Merges Claude hook sessions with passive transcript/PID evidence. Pure — lives here
@@ -256,6 +314,11 @@ enum AgentTrafficLightMapper {
                 if repaired.hostPID == nil, let hostPID = passive.hostPID {
                     repaired.hostPID = hostPID
                 }
+                // The additive fields, the run verdict and the Desktop chat locator ride the
+                // seam here: the count keeps the larger side, the flag ORs, the verdict is the
+                // hook's unless it has none (`RunError.preferred`), and `desktopSessionID` —
+                // passive-only, like hostPID — fills in when the hook side has none.
+                repaired = repaired.carryingExtras(from: passive)
                 return repaired
             }
 
@@ -421,13 +484,17 @@ enum AgentTrafficLightMapper {
         ageMs: Int64,
         collapseMs: Int64,
         inactiveMs: Int64,
-        activeStaleMs: Int64 = 360_000
+        activeStaleMs: Int64 = 360_000,
+        holdAwaitingInput: Bool = false
     ) -> (state: AgentTrafficLightState, visible: Bool) {
         switch rawState.lowercased() {
         case "executing" where ageMs <= activeStaleMs:
             return (.executing, true)
         case "awaiting_input", "awaitinginput", "awaiting":
-            if ageMs <= awaitingInputStaleMs { return (.awaitingInput, true) }
+            // Held: live evidence says the prompt is still open (`holdsAwaitingInput`), so the
+            // clock does not apply. Unheld: the 5-minute window is the fallback for waits nothing
+            // can corroborate — REGRESSIONS entry 12.
+            if holdAwaitingInput || ageMs <= awaitingInputStaleMs { return (.awaitingInput, true) }
             return (.inactive, false)
         case "thinking" where ageMs <= activeStaleMs:
             return (.thinking, true)
@@ -452,6 +519,106 @@ enum AgentTrafficLightMapper {
             return (.inactive, true)
         }
         return (.inactive, false)
+    }
+
+    // MARK: - Yellow follows evidence, not the clock (REGRESSIONS entry 12)
+
+    /// The raw states `resolveHookState` reads as "waiting on the user". Keep in step with its
+    /// case list.
+    static func isAwaitingInputRawState(_ rawState: String) -> Bool {
+        switch rawState.lowercased() {
+        case "awaiting_input", "awaitinginput", "awaiting": return true
+        default: return false
+        }
+    }
+
+    /// Disk rule: may this awaiting_input hook file outlive the stale cap? Claude only — the one
+    /// provider whose liveness Kannu can see. A live process whose transcript tail still shows the
+    /// tool_use with no result is a prompt nobody has answered.
+    static func awaitingInputOutlivesStaleCap(
+        provider: String,
+        processAlive: Bool,
+        tail: AgentSessionLogParser.ClaudeTailState?
+    ) -> Bool {
+        provider.lowercased() == "claude" && processAlive && tail == .toolInFlight
+    }
+
+    /// Does the process holding a session record's pid still belong to that session? The record is
+    /// written a moment *after* the CLI starts — 13 s on this Mac for a session that resumed a
+    /// 130 MB transcript — so requiring the kernel's start time to match `startedAt` within five
+    /// seconds marked a live chat dead: the reconciler then demoted its green card to stopped, the
+    /// card lost its process id (no click-through), and it went invisible ten seconds later.
+    ///
+    /// What the check is actually for is pid reuse, and a reused pid always belongs to a process
+    /// that started *after* the record was written. So: the record's own `procStart` decides when
+    /// the CLI writes one (exact, ±5 s); otherwise the process may start any time up to ten
+    /// minutes before the record and no later than five seconds after it.
+    static func processMatchesSessionRecord(processStartMs: Int64, recordStartedAtMs: Int64,
+                                            recordProcStartMs: Int64? = nil) -> Bool {
+        if let recordProcStartMs { return abs(processStartMs - recordProcStartMs) < 5_000 }
+        return processStartMs <= recordStartedAtMs + 5_000
+            && recordStartedAtMs - processStartMs <= 600_000
+    }
+
+    /// Disk rule for a silent Claude hook file past the stale cap (yellow has its own rule above).
+    /// A chat is silent for a whole workflow or a long Bash call — its last event was the PreToolUse
+    /// that started it — and deleting the file there lost the request's turn. It is kept while it
+    /// still reports work in progress and something proves the work is real: the process is alive,
+    /// or a subagent file written within the cap names it as its parent. A subagent's own file is
+    /// kept while its chat's turn is open and it belongs to that turn, so its tool calls stay in the
+    /// count. A stopped file is never kept. What the card shows is unchanged: an aged active file
+    /// is invisible on its own, and the reconciler promotes it only on live passive evidence.
+    static func hookFileOutlivesStaleCap(
+        provider: String,
+        rawState: String,
+        processAlive: Bool,
+        namedByFreshSubagent: Bool,
+        subagentOfOpenTurn: Bool
+    ) -> Bool {
+        guard provider.lowercased() == "claude" else { return false }
+        switch rawState.lowercased() {
+        case "executing", "thinking": return processAlive || namedByFreshSubagent || subagentOfOpenTurn
+        default: return false
+        }
+    }
+
+    /// Whether a new session list is news for the reveal (REGRESSIONS entry 10). The same list with
+    /// only turn metrics changed — a subagent's tool call folded into its chat's count — is not: it
+    /// publishes so the numbers move, but must not keep re-revealing the island while a workflow
+    /// runs. The chat's own hook writes still count (each moves `updatedAt`), as before.
+    static func pulseRelevantChange(from old: [AgentSessionStatus], to new: [AgentSessionStatus]) -> Bool {
+        guard old.count == new.count else { return true }
+        return zip(old, new).contains { lhs, rhs in
+            var lhs = lhs, rhs = rhs
+            lhs.turn = nil
+            rhs.turn = nil
+            return lhs != rhs
+        }
+    }
+
+    /// Display rule: does this hook's awaiting_input keep its yellow past the 5-minute window?
+    /// Yellow still originates from hooks only — evidence here can corroborate one, never claim
+    /// one. Hook-only providers hold because nothing can corroborate or refute; a newer event or
+    /// the stale cap ends theirs. Claude's `idle_prompt` (tail `.turnFinished`), a dead process
+    /// and Cursor's sticky yellow without a pending approval all stay on the clock.
+    static func holdsAwaitingInput(
+        provider: String,
+        processAlive: Bool,
+        tail: AgentSessionLogParser.ClaudeTailState?,
+        cursorPendingApproval: Bool
+    ) -> Bool {
+        switch provider.lowercased() {
+        case "claude":
+            return awaitingInputOutlivesStaleCap(provider: provider, processAlive: processAlive, tail: tail)
+        case "cursor":
+            return cursorPendingApproval
+        case "vscode", "codex", "antigravity", "copilot", "gemini", "qwen", "opencode":
+            // Hook-only: nothing on disk can corroborate or refute a prompt; a newer event or
+            // the stale cap ends it (REGRESSIONS entry 12).
+            return true
+        default:
+            return false
+        }
     }
 
     /// A passive `.working` verdict stays green only this long past its last evidence.
@@ -519,6 +686,35 @@ enum AgentTrafficLightMapper {
         return visible.map(\.displayState).max() ?? .inactive
     }
 
+    /// One card per conversation, as the notch lists them: the higher state wins, then the card
+    /// with a real title, then the newer. Shared with "Open Chat" on a finding, so both pick the
+    /// same card.
+    static func latestSessions(_ sessions: [AgentSessionStatus]) -> [AgentSessionStatus] {
+        var latestByConversationID: [String: AgentSessionStatus] = [:]
+        var order: [String] = []
+        for session in sessions {
+            guard let existing = latestByConversationID[session.conversationID] else {
+                latestByConversationID[session.conversationID] = session
+                order.append(session.conversationID)
+                continue
+            }
+            latestByConversationID[session.conversationID] = preferredSession(existing: existing, incoming: session)
+        }
+        return order.compactMap { latestByConversationID[$0] }
+    }
+
+    static func preferredSession(existing: AgentSessionStatus, incoming: AgentSessionStatus) -> AgentSessionStatus {
+        if existing.displayState != incoming.displayState {
+            return existing.displayState > incoming.displayState ? existing : incoming
+        }
+        let existingHasReliableTitle = hasReliableChatName(existing.chatName)
+        let incomingHasReliableTitle = hasReliableChatName(incoming.chatName)
+        if existingHasReliableTitle != incomingHasReliableTitle {
+            return incomingHasReliableTitle ? incoming : existing
+        }
+        return incoming.updatedAt >= existing.updatedAt ? incoming : existing
+    }
+
     static func primarySession(from sessions: [AgentSessionStatus]) -> AgentSessionStatus? {
         let visible = sessions.filter { $0.isVisible && !isSimulationSession($0) }
         guard !visible.isEmpty else { return nil }
@@ -556,6 +752,77 @@ enum AgentTrafficLightMapper {
     static func aggregate(_ sessions: [AgentSessionStatus]) -> AgentTrafficLightState {
         resolveDisplayState(from: sessions)
     }
+
+    // MARK: - Kannu's own /usage probe
+
+    /// The manual usage refresh spawns an interactive `claude` and types `/usage`. That session
+    /// registers like any other (session file, hook file, transcript), so it would show up as a
+    /// phantom chat. The monitor recognises it by process ancestry while it runs and remembers
+    /// its conversation id, capped, so the dead session file is ignored afterwards too.
+    static let usageProbeIDCap = 32
+
+    static func isUsageProbeSession(conversationID: String, probeIDs: [String]) -> Bool {
+        probeIDs.contains(conversationID)
+    }
+
+    /// Appends `id` (moving it to the newest slot if already present) and trims the oldest.
+    static func rememberingProbeConversationID(_ id: String, in ids: [String], cap: Int = usageProbeIDCap) -> [String] {
+        var out = ids.filter { $0 != id }
+        out.append(id)
+        if out.count > cap { out.removeFirst(out.count - cap) }
+        return out
+    }
+
+    // MARK: - Ended chats stay listed
+
+    /// How long a chat that went red and then ended stays in Recent chats as a dim card.
+    static let endedChatRetentionSeconds: TimeInterval = 69
+
+    struct RetainedEndedSession: Equatable {
+        let session: AgentSessionStatus
+        let endedAt: Date
+    }
+
+    /// Keeps a conversation that was visibly red (`.stopped`) in `previous` and has since gone —
+    /// its status file deleted by SessionEnd, or its collapse+dim window elapsed — on the list as
+    /// an inactive, visible card for `retention`. Purely a list concern: the copy is `.inactive`,
+    /// so the traffic light, caffeinate and the primary-session pick ignore it. A retained
+    /// conversation is dropped the moment it shows up live (or red) again, and after `retention`.
+    static func retainEndedSessions(
+        previous: [AgentSessionStatus],
+        current: [AgentSessionStatus],
+        retained: [String: RetainedEndedSession],
+        now: Date,
+        retention: TimeInterval = endedChatRetentionSeconds
+    ) -> (sessions: [AgentSessionStatus], retained: [String: RetainedEndedSession]) {
+        var map = retained.filter { now.timeIntervalSince($0.value.endedAt) < retention }
+        let currentByID = Dictionary(current.map { ($0.conversationID, $0) }, uniquingKeysWith: { first, _ in first })
+
+        // Live or red again: the real session owns the row.
+        for (id, session) in currentByID where session.isVisible && session.displayState != .inactive {
+            map.removeValue(forKey: id)
+        }
+
+        for prior in previous
+        where prior.isVisible && prior.displayState == .stopped && !isSimulationSession(prior) && map[prior.conversationID] == nil {
+            let nowEntry = currentByID[prior.conversationID]
+            guard nowEntry == nil || nowEntry?.isVisible == false else { continue }
+            map[prior.conversationID] = RetainedEndedSession(
+                session: prior.withDisplayState(.inactive, visible: true, updatedAt: now),
+                endedAt: now
+            )
+        }
+
+        var out = current.map { session -> AgentSessionStatus in
+            guard !session.isVisible, let kept = map[session.conversationID] else { return session }
+            return kept.session
+        }
+        let listed = Set(out.map(\.conversationID))
+        for (id, kept) in map where !listed.contains(id) {
+            out.append(kept.session)
+        }
+        return (out, map)
+    }
 }
 
 extension AgentSessionStatus {
@@ -573,7 +840,7 @@ extension AgentSessionStatus {
             executionStartedAt: executionStartedAt,
             cwd: cwd,
             hostPID: hostPID
-        )
+        ).carryingExtras(from: self)
     }
 
     func replacingProjectName(_ projectName: String) -> AgentSessionStatus {
@@ -590,7 +857,33 @@ extension AgentSessionStatus {
             executionStartedAt: executionStartedAt,
             cwd: cwd,
             hostPID: hostPID
-        )
+        ).carryingExtras(from: self)
+    }
+
+    /// "Stopped · rate limited (429)": the verdict, rendered only once the run has stopped —
+    /// including the dim, retained card an ended chat leaves behind. Empty for a clean finish.
+    var runOutcomeSuffix: String {
+        guard displayState == .stopped || displayState == .inactive, let runError else { return "" }
+        return " · " + runError.label
+    }
+
+    /// Copies the fields a memberwise reconstruction silently drops — the tool-error count, the
+    /// unattended flag, the run verdict, the Desktop chat locator, the sightings, the terminal and
+    /// the hook's turn. Every site that rebuilds a
+    /// session from another one must call this: docs/REGRESSIONS.md entry 7 is exactly this
+    /// failure, for cwd and hostPID. Across a merge seam the larger count wins and the flag is an
+    /// OR (both are monotone within a session); the verdict is `self` unless it has none — see
+    /// `RunError.preferred`; the locator is `self` unless nil.
+    func carryingExtras(from source: AgentSessionStatus) -> AgentSessionStatus {
+        var copy = self
+        copy.toolErrorCount = max(copy.toolErrorCount, source.toolErrorCount)
+        copy.isUnattended = copy.isUnattended || source.isUnattended
+        copy.runError = RunError.preferred(copy.runError, source.runError)
+        copy.desktopSessionID = copy.desktopSessionID ?? source.desktopSessionID
+        copy.sightings = HookSightings.union(copy.sightings, source.sightings)
+        copy.terminal = copy.terminal ?? source.terminal
+        copy.turn = copy.turn ?? source.turn
+        return copy
     }
 }
 
@@ -616,5 +909,53 @@ struct AgentActivityPulseLatch {
     mutating func consume() -> Bool {
         defer { heartbeatOnly = true }
         return heartbeatOnly
+    }
+}
+
+// MARK: - Run outcome
+
+/// Why a run ended, when it ended on an error. Only a run-terminating signal becomes one: a tool
+/// failure the agent recovered from is a count (`toolErrorCount`), never a verdict.
+enum RunError: Equatable, Hashable {
+    /// The model's turn died on the API — `isApiErrorMessage` in a Claude transcript, or a
+    /// Claude Desktop `result` carrying `api_error_status`. `status` is the HTTP status when known.
+    case apiError(status: Int?)
+    /// A run that ended failing without saying why: the hook's `StopFailure`, an Antigravity
+    /// `Stop` carrying an error, a Warp `Failed` exchange, a Claude Desktop `result` with `is_error`.
+    case failed
+
+    /// Short and user-facing, appended to "Stopped".
+    var label: String {
+        switch self {
+        case .failed:
+            return String(localized: "failed")
+        case .apiError(let status):
+            switch status {
+            case 429: return String(localized: "rate limited (429)")
+            case 529: return String(localized: "API overloaded (529)")
+            case 401: return String(localized: "signed out (401)")
+            case .some(let code): return String(localized: "API error \(code)")
+            case .none: return String(localized: "API error")
+            }
+        }
+    }
+
+    /// The more specific reason wins when two sources describe the same stop.
+    var specificity: Int {
+        switch self {
+        case .apiError: return 2
+        case .failed: return 1
+        }
+    }
+
+    /// `own ?? other`, refined: nil yields to the other side, and when both carry a verdict the
+    /// more specific one wins (a tie keeps `own`). Never an OR or a max: the verdict must reset
+    /// to nil every turn, and under OR/max nil is the identity, so one stale verdict would pin
+    /// "failed" onto every later clean turn. The passive side is fresh by construction — its
+    /// verdict exists only while the newest conversational record is the error.
+    static func preferred(_ own: RunError?, _ other: RunError?) -> RunError? {
+        guard let own else { return other }
+        guard let other else { return own }
+        return other.specificity > own.specificity ? other : own
     }
 }

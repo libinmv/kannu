@@ -10,6 +10,11 @@ here has never cost a real bug, delete it.
 
 **Read this before touching anything under `Kannu/managers/AgentStatus/`.**
 
+> **The commit hashes cited below predate the 2026-09-03 history reset.** `main` was rebuilt that
+> day on a new root commit, so those hashes do not resolve in a fresh clone — they survive only in
+> archived copies of the pre-reset history. Every rule, failure mode and guard described here is
+> unaffected; treat the hashes as provenance for the story, not as something you can `git show`.
+
 ---
 
 ## How to use this
@@ -43,16 +48,47 @@ the script got a version without the `flock` serialisation and without the atomi
 temp-then-`os.replace` write — the exact races later measured at 11/200 lost urgent states
 and 14/4825 torn reads.
 
-**Guard — exists, partial.** `.githooks/pre-commit` compares the two version markers and rejects the
-commit on mismatch. It does **not** compare bodies, so a body edit without a version bump ships
-silently — after any edit, diff the two Python bodies (extract each heredoc, strip the embedded
-copy's 8-space indent) and expect byte identity. Regenerate the mirror from the embedded literal
+**Guard — exists.** `.githooks/pre-commit` compares the two version markers and, since v34, the
+bodies too (the embedded literal de-indented by 8 spaces, the marker interpolation substituted,
+against the mirror byte for byte) — a body edit without a matching copy fails the commit.
+`HookScriptTests.testEmbeddedScriptMatchesTheMirror` runs the same comparison in CI.
+
+**v34 addendum — no backslash in the Python.** The embedded copy is a plain Swift string literal:
+`"\n"` in the Python becomes a real newline in the installed script, `"\U000E0000"` does not
+compile, and escaping them makes the two copies differ. Build code points and regex character
+classes with `chr()` (the hidden-text scan does exactly that). The pre-commit hook and the same
+test reject any backslash in the mirror's Python body. v35 keeps to it: the secret patterns use
+lookarounds and character classes, not `\b`, and check the "no word character before" edge in code
+(a leading lookbehind also made a 1 MB scan 40 times slower — a regex that starts with its literal
+lets the engine skip ahead). v37: never read the agent's terminal from the hook's own session —
+Claude Code starts every hook in a session of its own, so v35's lookup found nothing and re-ran on
+every event; the terminal is the nearest ancestor that has one
+(`HookScriptTests.testATerminalIsFoundAboveADetachedHook`). Before this guard existed, the rule was: diff
+the two Python bodies (extract each heredoc, strip the embedded copy's 8-space indent) and expect
+byte identity. Regenerate the mirror from the embedded literal
 rather than hand-editing it; hand-editing is how `quota_exceeded` had to be typed into both copies
 separately (`817f114`). Since v30, `KannuTests/HookScriptTests.swift` executes the mirror as a
 subprocess and pins the merge and lock behaviour, so a behavioural drift in the mirror fails CI even
 when the markers agree. The Claude statusline script (`writeUsageScript` ↔
 `scripts/kannu-usage-status.sh`, `KANNU_USAGE_SCRIPT_VERSION`) has the same two-copy shape; since v4
 the pre-commit hook checks its markers too and `KannuTests/UsageScriptTests.swift` executes its mirror.
+
+**v39 addendum — turn keys ride every write, and never the clock.** `turn_started_ms`,
+`turn_ended_ms`, `turn_tool_calls`, `turn_tool_ids`, `turn_transcript_offset` and
+`transcript_path` are computed after the priority merge and written by all three write paths
+(payload, the 2 s merge's preserved `ts`, the sticky-yellow rewrite of `existing`). They never
+change `state` or `ts` (entry 12). A turn starts only on a prompt event, or on a wake event when the
+file has no turn; work after a Stop without a new prompt reopens the same turn, and (v40) a prompt
+that arrives while the request is still running joins it — keying a restart on "woken after a stop"
+made every background-task wake restart the displayed run time, and keying one on "a prompt" did
+the same, because Claude Code submits a background task's result as a `UserPromptSubmit`
+(measured live: a `sleep` finishing restarted the turn). The
+computation is wrapped in `try/except` with the carried turn as fallback: an uncaught error there
+would cost the light and the allow line. Two known holes: a payload over ~1 MiB never reaches
+Python (the `KANNU_INPUT` environment variable hits ARG_MAX), so that call is uncounted; and a
+file Kannu deletes as stale takes its turn with it — never "fix" that by treating an empty file as
+the end of a turn, which would split it. Guards: the `HookScriptTests` "v39" group, run twice
+(Homebrew's Python and `/usr/bin/python3` 3.9).
 
 ---
 
@@ -71,7 +107,8 @@ tool's entire duration. A 15s window marks any tool call longer than 15 seconds 
 
 **The deeper lesson:** the real cause of that false-green was elsewhere (transcript tail
 parsing, `80ce9e1`; the demotion arm, `24b2ef2`). Shortening a timeout to fix a state bug
-trades one wrong colour for another. Fix the state machine, not the clock.
+trades one wrong colour for another. Fix the state machine, not the clock. (Entry 12 is the
+same lesson on the yellow light: its clock became the only exit, and a true yellow died on it.)
 
 **Guard — exists.** `RegressionGuardTests.testHookOnlyProviderMidToolCallStaysActiveAt*`.
 Verified to fail when the default is set back to `15_000`.
@@ -97,6 +134,21 @@ never received the first fix. See [Merge hygiene](#merge-hygiene).
 
 **Guard — exists.** `PassiveClaudeStateTests.testUnknownWithQuietFileStaysThinking`.
 **This test must survive the `feat/antigravity-integration` merge.**
+
+**2026-09-12 addendum — "live" has to be decided correctly first.** This whole entry rests on
+knowing that the process is alive. `isClaudeProcessAlive` confirmed identity by requiring the
+kernel's start time to be within five seconds of the session record's `startedAt` — but the CLI
+writes that record *after* it starts, 13 s later for a chat that resumed a 130 MB transcript. The
+live chat was then "dead": the reconciler demoted its green card to stopped, `hostPID` never
+reached it (no click-through), smart caffeinate released, and the card went invisible ten seconds
+later — "this session is not being detected", with the hook file fresh on disk the whole time. The
+check exists for pid reuse, and a reused pid always belongs to a process that started *after* the
+record was written. Rule: `AgentTrafficLightMapper.processMatchesSessionRecord` — the record's own
+`procStart` decides when it has one (±5 s), otherwise the process may start up to ten minutes
+before the record and at most five seconds after it. Never tighten that window to "the record is
+written the instant the process starts"; it is not. Guards:
+`PassiveClaudeStateTests.testALiveSessionWhoseRecordWasWrittenLateIsStillAlive` and
+`...testTheRecordsOwnProcessStartDecidesWhenItHasOne`.
 
 ---
 
@@ -154,6 +206,22 @@ self-comparison bug itself is still untestable. Closing it means lifting those r
 into a pure, testable type (as `looksLikeToolName` already was). **This is the
 highest-value missing test in the repo** — five regressions, no coverage.
 
+**2026-09-11 addendum — a sixth "Untitled chat", two new shapes.**
+1. *One conversation split across ids.* Claude Code fires a subagent's hooks (Agent tool,
+   Explore/Plan) with `agent_id` + `agent_type` beside the parent's `session_id`; since v23 the
+   hook picked `agent_id` first (added for Cursor's agentId), so every subagent wrote its own
+   `claude-<agent_id>.json` → a nameless card under the same project, and its trailing `thinking`
+   could relight a finished chat green for ~6 min. Fix: hook v38 writes `parent_id` into the
+   subagent's own file (state machine untouched) and `AgentTrafficLightMapper.foldSubagentHookSessions`
+   folds it into the parent's card — the more urgent light while the parent's turn is open, nothing
+   once it has ended, a stand-in named from the parent's transcript when the parent has no file.
+   Guards: `SubagentFoldTests`, `HookScriptTests.testAClaudeSubagentEventNamesItsParent` and siblings.
+   Never key a card on anything but the conversation the user sees.
+2. *The title slides past the tail windows.* On a very long transcript a long turn can push the
+   newest title record beyond the 1 MiB window; the name fell back to an older title or the prompt.
+   The last title a tail window found now sticks (`AgentSessionLogParserTests.testTheTitleSticksWhenALongTurnPushesItPastTheTailWindows`,
+   verified to fail when the sticky title is removed).
+
 ---
 
 ## 6. Migration coverage must equal install coverage must equal uninstall coverage
@@ -171,8 +239,15 @@ script while `checkInstalled` still reported installed.
 **Why it keeps happening:** the four path sets are written independently in four places, and
 adding a provider means remembering all four.
 
-**Guard — missing.** A test asserting the four path sets are equal per provider would be
-cheap and would have caught both occurrences.
+**Guard — exists (2026-09-11).** The four sets are one now: `AgentHookLayout` lists each
+provider's script and every settings file its entries can be in, with the file's shape and
+whether install always writes it or only merges into it when present. `install` (the Antigravity
+merge), `uninstall` (every listed file, whatever the write policy), `checkInstalled` (any listed
+file with the required entries), `stripEntries` (routed by the listed shape), and the version,
+legacy-script and event-argument migrations all read it. `AgentHookLayoutTests` pins the table
+(a script per provider, an always-written file per provider, one owner per file) and fails if a
+hook path literal reappears in `AgentHookInstaller.swift` code. A new provider is one more case in
+the layout.
 
 ---
 
@@ -211,7 +286,51 @@ remain untestable until they grow a seam.
 
 **Still true:** when you add a field to `AgentSessionStatus` that a passive session can
 populate, add it to `inheritingPassiveData` (now in `AgentTrafficLightState.swift`) AND to
-the field assertions in `ClaudeReconcilerTests` in the same commit.
+the field assertions in `ClaudeReconcilerTests` in the same commit. The field set as of
+2026-09-10: `chatName`, `projectName`, `cwd`, `hostPID`, `desktopSessionID` (Claude Desktop's own
+id for the chat, the click-through locator — carried by `carryingExtras` as `self ?? source`;
+guards: `ClaudeReconcilerTests.testDesktopSessionIDCarriesAcrossBothReconcilerArms`,
+`ClaudeDesktopSessionIndexTests.testDesktopSessionIDSurvivesReconstruction`, the retention test).
+
+**2026-09-08 addendum — additive fields.** `toolErrorCount` and `isUnattended` are `var`s with
+defaults, so the memberwise initialiser compiles happily without them and *silently drops them*
+at every one of the ~14 reconstruction sites. The rule: any `AgentSessionStatus(...)` built from
+another session ends in `.carryingExtras(from:)` (max of the two counts, OR of the flags);
+`inheritingPassiveData` calls it too. Guard: `ClaudeReconcilerTests` asserts both survive the
+demote path and `AgentSecurityFindingTests.testUnattendedFlagSurvivesReconstruction` covers the
+three helper initialisers. When you add another additive field, extend `carryingExtras`, not the
+call sites.
+
+**2026-09-11 addendum — `hiddenText`.** Hook-only sightings of hidden Unicode (hook v34). They ride
+`carryingExtras` as a set union keyed by (kind, location, first seen) — the newer copy of one sighting
+wins, the newest three are kept, empty is the identity — never a replace, or a reconstruction from a
+side that has not seen the sighting would erase it. Guards: `ClaudeReconcilerTests` (demote and
+pass-through arms carry it) and `HiddenTextIncidentTests.testReconstructionHelpersKeepTheField`.
+Since the sightings refactor the field is `sightings` (`HookSightings`, one list per hook-side check)
+and the union is `HookSighting.union` per list; a new check adds a list to `HookSightings`, never a
+new field on `AgentSessionStatus`. v35 adds `secrets` and `sensitivePaths` that way, plus one
+locator, `terminal` (the hook-reported tty, session leader and its start time), carried like
+`desktopSessionID` as `self ?? source`. Guard: `HookSightingsTests.testTerminalLocatorRidesTheSeamAsSelfOrSource`.
+
+**2026-09-09 addendum — the run verdict is not additive.** `runError` (why the run ended, nil for
+a clean finish) is a per-turn *verdict*, replaced by every stopped write. It rides the same
+`carryingExtras` seam but merges as `RunError.preferred` — `self` unless it has none, then the more
+specific reason — never as an OR or a max: under those nil is the identity, so one stale verdict
+would pin "failed" onto every later clean turn. The only things that may set it are run-terminating
+signals (hook `ended_on_error`, the transcript's `isApiErrorMessage`, Warp `Failed`, Desktop
+`result.is_error`); `toolErrorCount` is a count of recovered failures and must never become one.
+Guards: `ClaudeReconcilerTests.testRunVerdictSeamPrefersTheHookThenTheMoreSpecificReason`,
+`RunErrorTests`, and the hook-script cases that pin a recovered or trailing tool failure as clean.
+
+**2026-09-12 addendum — `turn`.** The hook's turn (v39: start, end, tool calls, Claude transcript
+offset) is hook-only and rides `carryingExtras` as `self ?? source`. Two places must NOT take it
+from the seam: the subagent fold (`self ?? source` would hand a parent with no turn its subagent's;
+the fold sets `HookTurn.folding(sub, into: parent)` explicitly on both arms and a stand-in gets
+none) and Cursor's `collapseSubagentSessions` (a rolled-up subagent candidate carries no turn, so
+the parent conversation's own wins whichever arrives first). Guards:
+`ClaudeReconcilerTests.testTheTurnCarriesAcrossEveryReconcilerArm`,
+`AgentTurnMetricsTests.testTheTurnRidesCarryingExtrasAsSelfThenSource`, the three v39
+`SubagentFoldTests`.
 
 ---
 
@@ -241,6 +360,12 @@ stays bare** — that bare invocation is the one observed to actually fetch. Bot
 verified to turn the suite red before this was committed.
 
 ---
+
+**2026-09-10 addendum.** The ADR Detection run (`uv run --project <checkout> python
+<adapter> …`) is pinned the same way: `ADRDetectionCommand` holds the arguments and the
+environment whitelist as data, `ADRDetectionCommandTests` pins both, and the embedded adapter is
+tested identical to `scripts/adr-analyze-session.py`. Permission and tool flags never pass
+through Kannu — the adapter alone decides how upstream runs its Claude session.
 
 ## 9. Notch tooltips are custom; `.help()` is dead there
 
@@ -289,7 +414,114 @@ is the only source of the verdict and is pinned by `AgentActivityPulseLatchTests
 heartbeat emit last in `rescan()` — it reads the state `applyDisplay` just wrote — and keep
 exactly one consumer of the latch.
 
+**2026-09-12 addendum — turn metrics publish without a pulse.** Since v39 a subagent's tool call
+changes its chat's `turn.toolCalls`, so the session list changes on every subagent write (four
+workflow agents write every few seconds). The list still publishes, but `rescan()` bumps
+`activityPulse` only when `pulseRelevantChange` sees a difference with the turns cleared — or the
+island would never collapse while a workflow runs. The chat's own hook writes still pulse (each
+moves `updatedAt`), exactly as before. Guard: `RegressionGuardTests.testATurnOnlyChangeIsNoRevealPulse`.
+
 ---
+
+## 11. A passive source never does its I/O on the main actor
+
+**What happened (2026-09-09).** `WarpAgentStore.sessions` opened `warp.sqlite` synchronously
+inside `rescan()`. The database lives in Warp's *group container*, and the first `open()` of another
+app's container raises the macOS "access data from other apps" prompt — `open()` blocks until the
+user answers. Every launch that morning froze the whole app (timers, hovers, the notch) for as long
+as the dialog stayed up, and killing the app to rebuild dismissed the dialog unanswered, so the next
+launch prompted again. `sample` showed 100 % of main-thread samples in `guarded_open_np`.
+
+**The rule.** Reads of anything under `~/Library/Group Containers`, `~/Library/Containers`, Desktop,
+Documents, Downloads, or any other TCC-protected path run on a worker queue, one at a time, with the
+result handed to the main actor (`refreshWarpExchangesIfNeeded` is the shape: a cached result the
+rescan maps, a refresh that schedules the next rescan only when the result changed). Same rule for
+any new passive source. CLAUDE.md's "first touches of protected resources" trap is this rule stated
+for `AppDelegate.init`; it applies to every later touch too.
+
+**Guard.** `WarpAgentStoreTests.testSessionsFromExchangesNeedNoDatabase` pins the pure mapping, so
+the split cannot quietly grow a file read again.
+
+**2026-09-10 addendum.** The same shape now reads Claude Desktop's session index
+(`ClaudeDesktopSessionIndex.Loader` on a utility worker, `refreshDesktopSessionIndexIfNeeded`):
+not for TCC — `~/Library/Application Support/Claude` is not protected — but because the records
+are 100+ KB each and rewritten on every Desktop turn. Only the reduced id map crosses back, and
+it is compared as a map so a timestamp bump alone never schedules a rescan.
+
+**2026-09-11 addendum — the main actor, not only TCC.** Every FSEvents batch dropped both lists of
+recent transcripts, so an append to a running chat or a hook's status write made the next rescan
+walk `~/.claude/projects` and `~/.cursor/projects` (hundreds to thousands of files) on the main
+actor, and every rescan re-read and parsed the first 32 KB of up to 24 transcripts per provider.
+Under bursty hook traffic Kannu averaged 18 % CPU with 80 % peaks. Rule: drop the lists only when
+`TranscriptListingInvalidation.shouldInvalidate` says a transcript may have appeared, gone or moved
+(or events were lost); appends ride the lists' two-second lifetime. Head-derived facts (snippets,
+Cursor titles) are remembered against (mtime, size), like the title and tail caches. Guards:
+`TranscriptListingInvalidationTests` (flag values pinned to CoreServices),
+`AgentSessionLogParserTests.testAssistantSnippetsFollowTheFileWhenItChanges` (verified to fail
+when the cache ignores a changed file).
+
+**2026-09-12 addendum — turn tokens.** A Claude request's tokens are read from its transcripts
+(the chat's own from the size hook v39 recorded at the turn's start, plus every subagent
+transcript), which run to 175 MB. `ClaudeTurnTokenReader` does all of it on one serial utility
+queue (`ClaudeTurnTokenFollower`); the monitor's rescan only builds the requests. The totals live in
+the follower's own `@Published` map, never on the sessions, so they re-render only the metrics
+view, not the notch, and never bump the reveal pulse (entry 10). Reads stay inside the real path
+of `~/.claude/projects` (symlinks resolved, `O_NOFOLLOW`), so no status file can point Kannu at a
+protected folder. Guards: `ClaudeTurnTokensTests` (symlinks and outside paths refused, catch-up
+never publishes a partial total, copied history outside the time window never counts).
+
+## 13. A live Claude session is never resumed
+
+**Rule:** `claude://resume?session=<id>` imports a transcript into Claude Desktop and starts a new
+`claude --resume` host for it. On a session whose process is still alive that is a second consumer
+of the same transcript. Only a chat whose process is gone may be resumed, and only once its card is
+dim. A live chat goes to its terminal, its tmux pane, or nowhere.
+
+**What happened (2026-09-11).** The opener's own header already said "never resume a live
+session", but the Claude arm resumed any `.inactive` card that had no reachable host. A live but
+idle session in tmux (whose server's parent is launchd), `screen` or ssh has a `hostPID` and no GUI
+app up its parent chain, and its dim card read as "not running" — so a click spawned a duplicate.
+
+**Guard.** The decision moved into `AgentClickThroughPolicy` (logic target);
+`AgentClickThroughPolicyTests.testInactiveLiveSessionNeverResumes` and
+`…testLiveSessionWithoutAHostNeverResumes` pin it. A live process is "live" by `hostPID` today;
+anything that later proves liveness (a hook-reported terminal) must feed the same flag.
+
+## 12. Yellow follows evidence, not the clock
+
+**Rule:** an `awaiting_input` hook state expires on the 300 s clock (`awaitingInputStaleMs`) only
+when nothing can say whether the prompt is still open. Where liveness evidence exists — a live
+Claude process whose transcript tail still shows the `tool_use` with no result, a Cursor transcript
+with a pending approval — the yellow and, for Claude, its hook file live as long as the evidence
+does. Yellow still *originates* from hooks only; evidence corroborates, never claims.
+
+**What happened (2026-09-10).** A Claude Code prompt left unanswered went dark at 5 minutes and,
+at 30, handed the card to the passive twin as a dim "inactive" chat (or green, when the pending
+`tool_use` read as a running tool). Every earlier yellow fix had made the clock stricter: the
+2026-08-06 sticky-latch fix stopped refreshing `ts` "so the 5-minute escape can still fire", and
+the parallel-group merge preserved `ts` again — after which the clock was yellow's only exit.
+Nobody asked whether a *true* yellow could outlive it.
+
+**How it works now.** `buildClaudeSessions` runs before `parseHookSessions` and hands over
+`liveTailByConversationID`; the parser computes `holdsAwaitingInput` per file, passes
+`holdAwaitingInput:` to `resolveHookState`, and exempts a corroborated Claude prompt from the stale
+deletion (`awaitingInputOutlivesStaleCap`). Hook-only providers (vscode/codex/antigravity, and since v36 copilot/gemini/qwen/opencode — a new
+hook-only provider must join this list or its yellow dies at 5 minutes) hold on
+display and keep the stale cap — it is the end of their yellow. Claude's `idle_prompt`, a dead
+process and Cursor's sticky yellow without an approval stay on the clock. Caffeinate keeps its own
+5-minute bound (`awaitingInputCaffeinateSeconds` + the `awaiting window` recheck), so a held
+yellow cannot keep the Mac awake all night.
+
+**Guards.** `RegressionGuardTests.testHeldAwaitingInputStaysYellowAtOneHour`,
+`…testUnheldAwaitingInputExpiresAfterFiveMinutes`, `…testAwaitingInputHoldFollowsEvidencePerProvider`,
+`…testOnlyACorroboratedClaudePromptOutlivesTheStaleCap`;
+`ClaudeReconcilerTests.testHeldYellowSurvivesPassiveToolInFlight`, `…testHeldYellowDemotesWhenTheProcessDies`,
+`…testAgedYellowIsNotPromotedByPassiveActivity`; `CaffeinateDecisionTests` window and recheck cases.
+**Missing:** the monitor-side ordering and the deletion exemption are not reachable from the logic
+target — manual check: the waiting session's file survives past 30 min in `~/.kannu/agent-status`.
+
+**Never** fix a false yellow by shortening `awaitingInputStaleMs` or by refreshing `ts` in the
+script. Add or remove evidence.
 
 ## Danger zones
 
@@ -298,7 +530,7 @@ Commit counts across all branches (`--follow`, so pre-rename history counts):
 | File | Commits | What edits here have historically broken |
 |---|---|---|
 | `CursorAgentStatusMonitor.swift` | 18 | The merge/reconcile seam. **Every** edit is chat-name resolution, hook-vs-transcript precedence, or session deletion/ageing. Entries 5 and 6 live here. |
-| `AgentTrafficLightState.swift` | 18 | The state ladder — staleness thresholds and verdict→colour mapping. Mostly *tuning numbers*, which is exactly how entry 2 happened. |
+| `AgentTrafficLightState.swift` | 18 | The state ladder — staleness thresholds and verdict→colour mapping. Mostly *tuning numbers*, which is exactly how entry 2 happened, and how the yellow clock became its only exit (entry 12). |
 | `AgentHookInstaller.swift` | 17 | Embedded script + event table + install/uninstall/migration. Grows monotonically; every growth episode has broken `checkInstalled` or a migration (entries 1 and 6). |
 | `CursorAgentStatusMonitor.swift` (usage spawn) | — | The `/usage` fetch invocation. Two silent breakages in one day from added flags/env (entry 8). |
 | `AgentSessionLogParser.swift` | 8 | `readTrailingLines` and the tail verdict. 4 of 8 commits touch the reader; **2 of those 4 fix the same failure mode** — the reader returning nil and silently sending callers down a wrong path (entry 4). |

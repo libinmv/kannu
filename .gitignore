@@ -142,6 +142,7 @@ referenceimages
 PrivateWorks
 
 *.py
+!scripts/*.py
 *.sh
 !scripts/*.sh
 comparison_report.json
@@ -171,3 +172,11 @@ local env
 # Coverage counters from instrumented builds. Deliberately unanchored: the one observed
 # instance was a stray default.profraw in the repo root, but nothing pins them there.
 *.profraw
+
+# Python bytecode from scripts/ (adr-analyze-session.py runs under uv)
+__pycache__/
+*.pyc
+
+# Throwaway derived-data paths used while verifying and releasing locally
+.build-verify/
+.build-release/

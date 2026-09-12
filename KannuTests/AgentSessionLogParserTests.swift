@@ -83,12 +83,48 @@ final class AgentSessionLogParserTests: XCTestCase {
         XCTAssertEqual(AgentSessionLogParser.claudeTailState(fromTailText: text).state, .working)
     }
 
+    // MARK: - Claude titles
+
+    func testCustomTitleBeatsAITitle() {
+        let text = line(#"{"type":"ai-title","aiTitle":"Fix Claude token usage and chat status detection","sessionId":"s"}"#)
+            + line(#"{"type":"custom-title","customTitle":"Claude token usage and agent chat detection","sessionId":"s"}"#)
+        XCTAssertEqual(AgentSessionLogParser.claudeTitle(fromRecordText: text),
+                       "Claude token usage and agent chat detection")
+    }
+
+    func testAITitleUsedWhenNoCustomTitle() {
+        let text = line(#"{"type":"user","message":{"role":"user","content":"hi"}}"#)
+            + line(#"{"type":"ai-title","aiTitle":"Fix healthcheck","sessionId":"s"}"#)
+        XCTAssertEqual(AgentSessionLogParser.claudeTitle(fromRecordText: text), "Fix healthcheck")
+    }
+
+    func testLatestTitleRecordWins() {
+        // Both records are rewritten every turn; the newest copy is the current name.
+        let text = line(#"{"type":"custom-title","customTitle":"first name"}"#)
+            + line(#"{"type":"ai-title","aiTitle":"model name"}"#)
+            + line(#"{"type":"custom-title","customTitle":"renamed by user"}"#)
+        XCTAssertEqual(AgentSessionLogParser.claudeTitle(fromRecordText: text), "renamed by user")
+    }
+
+    func testBlankTitleRecordsAreIgnoredAndLongOnesCapped() {
+        let long = String(repeating: "x", count: 100)
+        let text = line(#"{"type":"custom-title","customTitle":"   "}"#)
+            + line(#"{"type":"ai-title","aiTitle":"\#(long)"}"#)
+        XCTAssertEqual(AgentSessionLogParser.claudeTitle(fromRecordText: text)?.count, 72)
+    }
+
+    func testNoTitleRecordsYieldsNil() {
+        let text = line(#"{"type":"user","message":{"role":"user","content":"hi"}}"#)
+            + line(#"{"type":"last-prompt","lastPrompt":"hi"}"#)
+        XCTAssertNil(AgentSessionLogParser.claudeTitle(fromRecordText: text))
+    }
+
     // MARK: - bookkeeping and truncation
 
     func testBookkeepingAfterEndTurnIsStillTurnFinished() {
         let text = line(#"{"type":"assistant","timestamp":"2026-08-21T10:00:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"done"}],"stop_reason":"end_turn"}}"#)
-            + line(#"{"type":"ai-title","title":"Fix healthcheck"}"#)
-            + line(#"{"type":"custom-title","title":"my session"}"#)
+            + line(#"{"type":"ai-title","aiTitle":"Fix healthcheck"}"#)
+            + line(#"{"type":"custom-title","customTitle":"my session"}"#)
         XCTAssertEqual(AgentSessionLogParser.claudeTailState(fromTailText: text).state, .turnFinished)
     }
 
@@ -105,7 +141,7 @@ final class AgentSessionLogParserTests: XCTestCase {
 
     func testInterruptTimestampIsReturned() {
         let text = line(#"{"type":"user","timestamp":"2026-08-21T10:00:00.000Z","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}"#)
-            + line(#"{"type":"ai-title","title":"whatever"}"#)
+            + line(#"{"type":"ai-title","aiTitle":"whatever"}"#)
         let result = AgentSessionLogParser.claudeTailState(fromTailText: text)
         XCTAssertEqual(result.state, .turnFinished)
         let expected = ISO8601DateFormatter().date(from: "2026-08-21T10:00:00Z")
@@ -161,5 +197,113 @@ final class AgentSessionLogParserTests: XCTestCase {
 
         try data.write(to: url)
         XCTAssertEqual(AgentSessionLogParser.claudeTailState(at: url).state, .turnFinished)
+    }
+
+    // MARK: - API-error records: the run ended on the API
+
+    private let apiError529 = #"{"type":"assistant","timestamp":"2026-08-21T10:00:00.000Z","isApiErrorMessage":true,"apiErrorStatus":529,"error":"overloaded","message":{"role":"assistant","model":"<synthetic>","content":[{"type":"text","text":"API Error: 529 Overloaded"}],"stop_reason":"stop_sequence"}}"#
+
+    func testApiErrorRecordIsTurnFinishedWithTheStatus() {
+        let result = AgentSessionLogParser.claudeTailState(fromTailText: line(apiError529))
+        XCTAssertEqual(result.state, .turnFinished)
+        XCTAssertEqual(result.runError, .apiError(status: 529))
+        XCTAssertNotNil(result.recordTimestamp)
+    }
+
+    func testApiErrorWithoutStatusIsStillAnApiError() {
+        let text = line(#"{"type":"assistant","timestamp":"2026-08-21T10:00:00.000Z","isApiErrorMessage":true,"error":"Request timed out","message":{"role":"assistant","content":[{"type":"text","text":"Request timed out"}],"stop_reason":"stop_sequence"}}"#)
+        XCTAssertEqual(AgentSessionLogParser.claudeTailState(fromTailText: text).runError, .apiError(status: nil))
+    }
+
+    func testApiErrorFalseIsAnOrdinaryFinish() {
+        let text = line(#"{"type":"assistant","timestamp":"2026-08-21T10:00:00.000Z","isApiErrorMessage":false,"message":{"role":"assistant","content":[{"type":"text","text":"done"}],"stop_reason":"end_turn"}}"#)
+        let result = AgentSessionLogParser.claudeTailState(fromTailText: text)
+        XCTAssertEqual(result.state, .turnFinished)
+        XCTAssertNil(result.runError)
+    }
+
+    func testApiErrorSurvivesTrailingBookkeepingButNotANewPrompt() {
+        let bookkeeping = line(#"{"type":"last-prompt","lastPrompt":"x"}"#) + line(#"{"type":"queue-operation","operation":"dequeue"}"#)
+        XCTAssertEqual(AgentSessionLogParser.claudeTailState(fromTailText: line(apiError529) + bookkeeping).runError,
+                       .apiError(status: 529))
+        let prompt = line(#"{"type":"user","timestamp":"2026-08-21T10:01:00.000Z","message":{"role":"user","content":"try again"}}"#)
+        let result = AgentSessionLogParser.claudeTailState(fromTailText: line(apiError529) + prompt)
+        XCTAssertEqual(result.state, .working)
+        XCTAssertNil(result.runError, "a new turn clears the verdict by construction")
+    }
+
+    func testApiRetryRecordIsBookkeeping() {
+        let toolUse = line(#"{"type":"assistant","timestamp":"2026-08-21T10:00:00.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}],"stop_reason":"tool_use"}}"#)
+        let retry = line(#"{"type":"system","subtype":"api_error","level":"error","error":"overloaded","retryAttempt":2,"maxRetries":10}"#)
+        let result = AgentSessionLogParser.claudeTailState(fromTailText: toolUse + retry)
+        XCTAssertEqual(result.state, .toolInFlight)
+        XCTAssertNil(result.runError)
+    }
+
+    // MARK: - Titles on very long transcripts
+
+    private func transcript(_ lines: [String]) throws -> URL {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("kannu-title-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("\(UUID().uuidString).jsonl")
+        try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: url)
+        addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
+        return url
+    }
+
+    private func append(_ lines: [String], to url: URL) throws {
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.seekToEnd()
+        handle.write(Data((lines.joined(separator: "\n") + "\n").utf8))
+        try handle.close()
+    }
+
+    // MARK: - Head snippets are remembered, and refreshed when the file changes
+
+    func testAssistantSnippetsFollowTheFileWhenItChanges() throws {
+        let url = try transcript([#"{"type":"assistant","message":{"content":[{"type":"text","text":"Reading the config first"}]}}"#])
+        // A fresh URL per read: Foundation caches resource values on a URL object.
+        XCTAssertEqual(AgentSessionLogParser.assistantSnippets(from: URL(fileURLWithPath: url.path), provider: .claude),
+                       ["Reading the config first"])
+        XCTAssertEqual(AgentSessionLogParser.assistantSnippets(from: URL(fileURLWithPath: url.path), provider: .claude),
+                       ["Reading the config first"], "unchanged file: same answer (served from the cache)")
+
+        try append([#"{"type":"assistant","message":{"content":[{"type":"text","text":"Now running the tests"}]}}"#], to: url)
+        XCTAssertEqual(AgentSessionLogParser.assistantSnippets(from: URL(fileURLWithPath: url.path), provider: .claude),
+                       ["Reading the config first", "Now running the tests"], "a changed file is read again")
+    }
+
+    /// ~1.1 MB of ordinary records with no title in them.
+    private var padding: [String] {
+        let text = String(repeating: "x", count: 900)
+        return (0..<1_300).map { _ in #"{"type":"assistant","message":{"content":[{"type":"text","text":""# + text + #""}]}}"# }
+    }
+
+    func testTheTitleSticksWhenALongTurnPushesItPastTheTailWindows() throws {
+        let prompt = #"{"type":"user","message":{"role":"user","content":"Fix the parser please"}}"#
+        let early = (0..<80).map { _ in #"{"type":"assistant","message":{"content":[{"type":"text","text":""# + String(repeating: "y", count: 900) + #""}]}}"# }
+        let url = try transcript([prompt] + early + [#"{"type":"custom-title","customTitle":"Parser rewrite"}"#])
+        // A fresh URL per read, as each rescan has: URL objects cache file attributes until the
+        // run loop turns, which a synchronous test never does.
+        func name() -> String? { AgentSessionLogParser.displayChatName(from: URL(fileURLWithPath: url.path), provider: .claude) }
+        XCTAssertEqual(name(), "Parser rewrite")
+        try append(padding, to: url)
+        XCTAssertEqual(name(), "Parser rewrite", "the last title found, not the first prompt")
+        try append([#"{"type":"custom-title","customTitle":"Renamed chat"}"#], to: url)
+        XCTAssertEqual(name(), "Renamed chat")
+    }
+
+    func testResolvedTitlePrecedence() {
+        XCTAssertEqual(AgentSessionLogParser.resolvedClaudeTitle(tail: "T", lastKnownTail: "L", head: "H"), "T")
+        XCTAssertEqual(AgentSessionLogParser.resolvedClaudeTitle(tail: nil, lastKnownTail: "L", head: "H"), "L")
+        XCTAssertEqual(AgentSessionLogParser.resolvedClaudeTitle(tail: nil, lastKnownTail: nil, head: "H"), "H")
+        XCTAssertNil(AgentSessionLogParser.resolvedClaudeTitle(tail: nil, lastKnownTail: nil, head: nil))
+    }
+
+    func testTitleLinesAreStillFoundAmongOtherRecords() {
+        let text = [#"{"type":"assistant","message":{"content":"the word -title in prose"}}"#,
+                    #"{"type":"ai-title","aiTitle":"Model name"}"#,
+                    #"{"type":"user","message":{"content":"hello"}}"#].joined(separator: "\n")
+        XCTAssertEqual(AgentSessionLogParser.claudeTitle(fromRecordText: text), "Model name")
     }
 }

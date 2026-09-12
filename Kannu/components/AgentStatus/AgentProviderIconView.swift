@@ -1,12 +1,19 @@
 import AppKit
 import SwiftUI
 
-enum AgentProviderIconSource: Equatable {
+enum AgentProviderIconSource: Hashable {
     case cursor
     case claude
     case codex
     case vscode
     case antigravity
+    case warp
+    case claudeDesktop
+    /// Terminal agents reported by their hooks; no app bundle to show or activate.
+    case copilotCLI
+    case gemini
+    case qwen
+    case opencode
     case unknown(String)
 
     init(providerID: ProviderID) {
@@ -25,6 +32,12 @@ enum AgentProviderIconSource: Equatable {
         case "codex": self = .codex
         case "vscode": self = .vscode
         case "antigravity": self = .antigravity
+        case "warp": self = .warp
+        case "claudedesktop", "claude-desktop", "claude_desktop": self = .claudeDesktop
+        case "copilot": self = .copilotCLI
+        case "gemini": self = .gemini
+        case "qwen": self = .qwen
+        case "opencode": self = .opencode
         default: self = .unknown(rawProvider)
         }
     }
@@ -36,7 +49,28 @@ enum AgentProviderIconSource: Equatable {
         case .codex: self = .codex
         case .claude: self = .claude
         case .antigravity: self = .antigravity
+        case .gemini: self = .gemini
+        case .qwen: self = .qwen
+        case .opencode: self = .opencode
         }
+    }
+}
+
+/// App icons resolved once per source instead of on every render (each resolve checks the disk,
+/// asks NSWorkspace and redraws a thumbnail). Re-resolved after ten minutes so an app installed or
+/// updated meanwhile shows its icon.
+@MainActor
+enum AgentProviderIconCache {
+    private static var entries: [AgentProviderIconSource: (image: NSImage?, resolvedAt: Date)] = [:]
+    private static let lifetime: TimeInterval = 600
+
+    static func icon(for source: AgentProviderIconSource, now: Date = Date()) -> NSImage? {
+        if let entry = entries[source], now.timeIntervalSince(entry.resolvedAt) < lifetime {
+            return entry.image
+        }
+        let image = source.resolvedIconImage()
+        entries[source] = (image, now)
+        return image
     }
 }
 
@@ -46,7 +80,7 @@ struct AgentProviderIconView: View {
 
     var body: some View {
         Group {
-            if let icon = source.resolvedIconImage() {
+            if let icon = AgentProviderIconCache.icon(for: source) {
                 Image(nsImage: icon)
                     .resizable()
                     .scaledToFit()
@@ -79,7 +113,11 @@ extension AgentProviderIconSource {
             return ["com.microsoft.VSCode", "com.visualstudio.code.oss"]
         case .antigravity:
             return ["com.google.antigravity", "com.google.Antigravity"]
-        case .unknown:
+        case .warp:
+            return WarpAgentStore.bundleIdentifiers
+        case .claudeDesktop:
+            return [ClaudeDesktopAgentSessionStore.bundleIdentifier]
+        case .copilotCLI, .gemini, .qwen, .opencode, .unknown:
             return []
         }
     }
@@ -96,7 +134,11 @@ extension AgentProviderIconSource {
             return ["/Applications/Visual Studio Code.app", "/Applications/Code.app"]
         case .antigravity:
             return ["/Applications/Antigravity.app", "/Applications/Google Antigravity.app"]
-        case .unknown:
+        case .warp:
+            return ["/Applications/Warp.app"]
+        case .claudeDesktop:
+            return ["/Applications/Claude.app"]
+        case .copilotCLI, .gemini, .qwen, .opencode, .unknown:
             return []
         }
     }
@@ -108,6 +150,12 @@ extension AgentProviderIconSource {
         case .codex: return "terminal"
         case .vscode: return "chevron.left.forwardslash.chevron.right"
         case .antigravity: return "atom"
+        case .warp: return "terminal.fill"
+        case .claudeDesktop: return "sparkles"
+        case .copilotCLI: return "terminal"
+        case .gemini: return "sparkle"
+        case .qwen: return "q.circle.fill"
+        case .opencode: return "curlybraces.square"
         case .unknown: return "app.fill"
         }
     }
@@ -119,6 +167,12 @@ extension AgentProviderIconSource {
         case .codex: return .green
         case .vscode: return Color(red: 0.27, green: 0.51, blue: 0.85)
         case .antigravity: return Color(red: 0.26, green: 0.52, blue: 0.96)
+        case .warp: return Color(red: 0.55, green: 0.40, blue: 0.95)
+        case .claudeDesktop: return Color(red: 0.85, green: 0.47, blue: 0.36)
+        case .copilotCLI: return Color(red: 0.51, green: 0.35, blue: 0.85)
+        case .gemini: return Color(red: 0.30, green: 0.45, blue: 0.95)
+        case .qwen: return Color(red: 0.42, green: 0.33, blue: 0.93)
+        case .opencode: return .primary
         case .unknown: return .secondary
         }
     }

@@ -1302,6 +1302,15 @@ class MusicManager: ObservableObject {
         } else {
             print("Failed to find app with bundle ID: \(bundleID)")
         }
+
+        // A browser is already in front by now; land on the tab that is playing, when the
+        // browser can tell us (Safari and Chrome-family). Best-effort, off the main actor.
+        if Defaults[.openPlayingBrowserTab], BrowserTabLocator.canLocate(bundleIdentifier: bundleID) {
+            let title = songTitle, artist = artistName
+            Task { @MainActor in
+                await BrowserTabLocator.bringPlayingTabForward(bundleIdentifier: bundleID, title: title, artist: artist)
+            }
+        }
     }
 
     func forceUpdate() {

@@ -179,6 +179,7 @@ private struct SettingsSearchEntry: Identifiable {
 /// so the string can never drift from the row's own `.settingsHighlight(id:)` registration.
 enum SettingsDeepLink {
     static let smartCaffeinateHighlightID = SettingsTab.agentStatus.highlightID(for: "Smart caffeinate")
+    static let securityFindingsHighlightID = SettingsTab.agentStatus.highlightID(for: "Security findings")
 }
 
 final class SettingsHighlightCoordinator: ObservableObject {
@@ -760,9 +761,9 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .battery, title: "Charging duration", keywords: ["charging", "duration", "seconds"], highlightID: SettingsTab.battery.highlightID(for: "Charging duration")),
             SettingsSearchEntry(tab: .battery, title: "Low battery duration", keywords: ["low battery", "duration", "seconds"], highlightID: SettingsTab.battery.highlightID(for: "Low battery duration")),
             SettingsSearchEntry(tab: .battery, title: "Full battery duration", keywords: ["full battery", "duration", "seconds"], highlightID: SettingsTab.battery.highlightID(for: "Full battery duration")),
-            SettingsSearchEntry(tab: .battery, title: "Test charging HUD", keywords: ["battery", "test", "charging", "preview"], highlightID: nil),
-            SettingsSearchEntry(tab: .battery, title: "Test low battery HUD", keywords: ["battery", "test", "low", "preview"], highlightID: nil),
-            SettingsSearchEntry(tab: .battery, title: "Test full battery HUD", keywords: ["battery", "test", "full", "preview"], highlightID: nil),
+            SettingsSearchEntry(tab: .battery, title: "Test charging HUD", keywords: ["battery", "test", "charging", "preview"], highlightID: SettingsTab.battery.highlightID(for: "Test charging HUD")),
+            SettingsSearchEntry(tab: .battery, title: "Test low battery HUD", keywords: ["battery", "test", "low", "preview"], highlightID: SettingsTab.battery.highlightID(for: "Test low battery HUD")),
+            SettingsSearchEntry(tab: .battery, title: "Test full battery HUD", keywords: ["battery", "test", "full", "preview"], highlightID: SettingsTab.battery.highlightID(for: "Test full battery HUD")),
             SettingsSearchEntry(tab: .battery, title: "Low battery style", keywords: ["battery", "style", "compact", "standard"], highlightID: SettingsTab.battery.highlightID(for: "Low battery style")),
             SettingsSearchEntry(tab: .battery, title: "Low battery threshold", keywords: ["battery", "threshold", "percent"], highlightID: SettingsTab.battery.highlightID(for: "Low battery threshold")),
             SettingsSearchEntry(tab: .battery, title: "Full battery style", keywords: ["battery", "style", "compact", "standard"], highlightID: SettingsTab.battery.highlightID(for: "Full battery style")),
@@ -890,6 +891,11 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .llmUsage, title: "Claude Provider", keywords: ["llm", "claude", "provider", "toggle", "usage", "rate", "limit", "quota", "5h", "7d", "weekly", "session"], highlightID: SettingsTab.llmUsage.highlightID(for: "Claude Provider")),
             SettingsSearchEntry(tab: .llmUsage, title: "Codex Provider", keywords: ["llm", "codex", "provider", "toggle"], highlightID: SettingsTab.llmUsage.highlightID(for: "Codex Provider")),
             SettingsSearchEntry(tab: .llmUsage, title: "Cursor Provider", keywords: ["llm", "cursor", "provider", "toggle"], highlightID: SettingsTab.llmUsage.highlightID(for: "Cursor Provider")),
+            SettingsSearchEntry(tab: .llmUsage, title: "Show a gauge beside the lights near a limit", keywords: ["usage", "limit", "gauge", "alert", "95", "quota", "forecast"], highlightID: SettingsTab.llmUsage.highlightID(for: "Show a gauge beside the lights near a limit")),
+            SettingsSearchEntry(tab: .llmUsage, title: "Check Codex and Cursor limits in the background", keywords: ["usage", "background", "codex", "cursor", "quota", "limit"], highlightID: SettingsTab.llmUsage.highlightID(for: "Check Codex and Cursor limits in the background")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Remind me when an agent is still waiting", keywords: ["remind", "reminder", "waiting", "yellow", "push", "approval", "nudge"], highlightID: SettingsTab.agentStatus.highlightID(for: "Remind me when an agent is still waiting")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Open the exact terminal tab", keywords: ["terminal", "iterm", "tmux", "tab", "click", "open", "pane"], highlightID: SettingsTab.agentStatus.highlightID(for: "Open the exact terminal tab")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Push when a usage limit is almost reached", keywords: ["push", "usage", "limit", "quota", "mobile", "ntfy", "pushover", "webhook"], highlightID: SettingsTab.agentStatus.highlightID(for: "Push when a usage limit is almost reached")),
             SettingsSearchEntry(tab: .llmUsage, title: "Antigravity Provider", keywords: ["antigravity", "gemini", "provider", "usage", "sessions"], highlightID: SettingsTab.llmUsage.highlightID(for: "Antigravity Provider")),
             SettingsSearchEntry(tab: .stats, title: "Stop monitoring after closing the notch", keywords: ["stats", "auto stop"], highlightID: SettingsTab.stats.highlightID(for: "Stop monitoring after closing the notch")),
             SettingsSearchEntry(tab: .stats, title: "CPU Usage", keywords: ["cpu", "graph"], highlightID: SettingsTab.stats.highlightID(for: "CPU Usage")),
@@ -918,7 +924,29 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .agentStatus, title: "Stopped color", keywords: ["stopped", "red", "color", "traffic", "light", "palette", "agent"], highlightID: SettingsTab.agentStatus.highlightID(for: "Stopped color")),
             SettingsSearchEntry(tab: .agentStatus, title: "Show a red light when no agents are running", keywords: ["red", "light", "idle", "no agents", "stopped", "indicator", "always"], highlightID: SettingsTab.agentStatus.highlightID(for: "Show a red light when no agents are running")),
             SettingsSearchEntry(tab: .agentStatus, title: "Reset traffic light colors", keywords: ["reset", "color", "traffic", "light", "default"], highlightID: SettingsTab.agentStatus.highlightID(for: "Reset traffic light colors")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Editor Hooks", keywords: ["agent", "cursor", "vscode", "copilot", "codex", "claude", "hook", "install", "integration"], highlightID: SettingsTab.agentStatus.highlightID(for: "Cursor Hook")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Editor Hooks", keywords: ["agent", "cursor", "vscode", "copilot", "copilot cli", "codex", "claude", "antigravity", "gemini", "gemini cli", "qwen", "opencode", "plugin", "hook", "install", "integration"], highlightID: SettingsTab.agentStatus.highlightID(for: "Cursor Hook")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Connect ADR", keywords: ["adr", "uber", "security", "discovery", "sensor", "connect", "install", "uv", "pipx"], highlightID: SettingsTab.agentStatus.highlightID(for: "Connect ADR")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Security findings", keywords: ["security", "finding", "mcp", "unpinned", "plaintext", "undeclared", "acknowledge", "snooze", "shield"], highlightID: SettingsTab.agentStatus.highlightID(for: "Security findings")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Snapshot folder", keywords: ["snapshot", "folder", "directory", "adr", "discovery", "output"], highlightID: SettingsTab.agentStatus.highlightID(for: "Snapshot folder")),
+            SettingsSearchEntry(tab: .agentStatus, title: "ADR tools folder", keywords: ["adr", "tools", "folder", "path", "uv", "pipx", "sensor", "discovery", "install", "not found"], highlightID: SettingsTab.agentStatus.highlightID(for: "ADR tools folder")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Let Kannu run scans", keywords: ["scan", "adr", "discovery", "automatic", "daily", "schedule"], highlightID: SettingsTab.agentStatus.highlightID(for: "Let Kannu run scans")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Scan now", keywords: ["scan", "adr", "discovery", "run", "now"], highlightID: SettingsTab.agentStatus.highlightID(for: "Scan now")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Policy file", keywords: ["policy", "tenant", "domains", "approved", "forbidden", "adr"], highlightID: SettingsTab.agentStatus.highlightID(for: "Policy file")),
+            SettingsSearchEntry(tab: .agentStatus, title: "High-severity alerts in the notch", keywords: ["alert", "notch", "pill", "shield", "security", "high", "acknowledge", "glyph"], highlightID: SettingsTab.agentStatus.highlightID(for: "High-severity alerts in the notch")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Push high security findings", keywords: ["push", "security", "finding", "high", "mobile", "ntfy", "pushover", "webhook"], highlightID: SettingsTab.agentStatus.highlightID(for: "Push high security findings")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Push medium security findings", keywords: ["push", "security", "finding", "medium", "mobile"], highlightID: SettingsTab.agentStatus.highlightID(for: "Push medium security findings")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Look for hidden text in what agents read", keywords: ["hidden", "invisible", "unicode", "tag", "ascii smuggling", "zero-width", "bidi", "trojan source", "variation selector", "prompt injection"], highlightID: SettingsTab.agentStatus.highlightID(for: "Look for hidden text in what agents read")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Look for secrets in prompts and tool calls", keywords: ["secret", "api key", "token", "private key", "leak", "credential", "aws", "github"], highlightID: SettingsTab.agentStatus.highlightID(for: "Look for secrets in prompts and tool calls")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Watch for agents touching sensitive files", keywords: ["sensitive", "ssh", "keychain", "credentials", "env", "launch agent", "zshrc", "browser", "password", "history"], highlightID: SettingsTab.agentStatus.highlightID(for: "Watch for agents touching sensitive files")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Notice new MCP servers", keywords: ["mcp", "server", "new", "added", "config", "supply chain", "tool"], highlightID: SettingsTab.agentStatus.highlightID(for: "Notice new MCP servers")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Tell the agent when hidden text is found", keywords: ["hidden", "invisible", "unicode", "agent", "warn", "context", "note"], highlightID: SettingsTab.agentStatus.highlightID(for: "Tell the agent when hidden text is found")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Analyze chats with ADR Detection", keywords: ["adr", "detection", "analyze", "analysis", "session", "transcript", "malicious", "prompt injection"], highlightID: SettingsTab.agentStatus.highlightID(for: "Analyze chats with ADR Detection")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Detection checkout", keywords: ["adr", "detection", "checkout", "uv", "clone"], highlightID: SettingsTab.agentStatus.highlightID(for: "Detection checkout")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Reasoning model", keywords: ["adr", "detection", "model", "claude", "sonnet"], highlightID: SettingsTab.agentStatus.highlightID(for: "Reasoning model")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Use an Anthropic API key", keywords: ["adr", "detection", "anthropic", "api key", "quota"], highlightID: SettingsTab.agentStatus.highlightID(for: "Use an Anthropic API key")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Triage with OpenAI first", keywords: ["adr", "detection", "openai", "triage", "gpt"], highlightID: SettingsTab.agentStatus.highlightID(for: "Triage with OpenAI first")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Messages sent", keywords: ["adr", "detection", "messages", "cap", "transcript"], highlightID: SettingsTab.agentStatus.highlightID(for: "Messages sent")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Confirm before every analysis", keywords: ["adr", "detection", "confirm", "consent"], highlightID: SettingsTab.agentStatus.highlightID(for: "Confirm before every analysis")),
             SettingsSearchEntry(tab: .agentStatus, title: "Mobile notifications", keywords: ["mobile", "push", "ntfy", "pushover", "webhook", "iphone", "android"], highlightID: SettingsTab.agentStatus.highlightID(for: "Mobile notifications")),
             SettingsSearchEntry(tab: .agentStatus, title: "Send test notification", keywords: ["test", "mobile", "push", "notification"], highlightID: SettingsTab.agentStatus.highlightID(for: "Send test notification")),
         ]
@@ -1087,7 +1115,7 @@ struct GeneralSettings: View {
             } header: {
                 Text("UI Mode")
             } footer: {
-                Text("Minimalistic mode focuses on media controls and system HUDs, hiding all extra features for a clean, focused experience. Automatically enables simpler animations.")
+                SettingsFooter("Minimalistic mode focuses on media controls and system HUDs, hiding all extra features for a clean, focused experience. Automatically enables simpler animations.")
             }
 
             Section {
@@ -1103,24 +1131,19 @@ struct GeneralSettings: View {
                     // macOS can accept the registration but park it pending user approval; the
                     // toggle alone would just read off with no explanation and no way forward.
                     if SMAppService.mainApp.status == .requiresApproval {
-                        HStack(spacing: 6) {
-                            Text("macOS needs you to approve Kannu in Login Items.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        LabeledContent {
                             Button("Open Login Items") {
                                 SMAppService.openSystemSettingsLoginItems()
                             }
-                            .buttonStyle(.link)
-                            .font(.caption)
+                        } label: {
+                            Text("macOS needs you to approve Kannu in Login Items.")
+                                .settingsDescriptionStyle()
                         }
                     }
                 } else {
-                    Toggle(isOn: .constant(false)) {
-                        VStack(alignment: .leading, spacing: 2) {
+                    SettingsRow("Launch at login", description: "Move Kannu to your Applications folder to enable this.") {
+                        Toggle(isOn: .constant(false)) {
                             Text("Launch at login")
-                            Text("Move Kannu to your Applications folder to enable this.")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
                         }
                     }
                     .disabled(true)
@@ -1253,18 +1276,17 @@ struct GeneralSettings: View {
                 .settingsHighlight(id: highlightID("Horizontal media gestures"))
 
                 if enableHorizontalMusicGestures {
-                    Picker("Gesture skip behavior", selection: $musicGestureBehavior) {
-                        ForEach(MusicSkipBehavior.allCases) { behavior in
-                            Text(behavior.displayName)
-                                .tag(behavior)
+                    SettingsRow("Gesture skip behavior", description: musicGestureBehavior.description) {
+                        Picker("Gesture skip behavior", selection: $musicGestureBehavior) {
+                            ForEach(MusicSkipBehavior.allCases) { behavior in
+                                Text(behavior.displayName)
+                                    .tag(behavior)
+                            }
                         }
+                        .pickerStyle(.segmented)
+                        .fixedSize()
                     }
-                    .pickerStyle(.segmented)
                     .settingsHighlight(id: highlightID("Gesture skip behavior"))
-
-                    Text(musicGestureBehavior.description)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
 
                     Defaults.Toggle(key: .reverseSwipeGestures) {
                         Text("Reverse swipe gestures")
@@ -1296,10 +1318,7 @@ struct GeneralSettings: View {
                 customBadge(text: "Beta")
             }
         } footer: {
-            Text("Two-finger swipe up on notch to close, two-finger swipe down on notch to open when **Open notch on hover** option is disabled")
-                .multilineTextAlignment(.trailing)
-                .foregroundStyle(.secondary)
-                .font(.caption)
+            SettingsFooter("Two-finger swipe up on notch to close, two-finger swipe down on notch to open when **Open notch on hover** option is disabled")
         }
     }
 
@@ -1321,42 +1340,40 @@ struct GeneralSettings: View {
             // Also shown with hover-to-open off when a display hides until hovered: the same
             // value is the dwell before the hidden island slides in.
             if openNotchOnHover || !alwaysShowOnNonNotchDisplays {
-                Slider(value: $minimumHoverDuration, in: 0...2, step: 0.1) {
-                    HStack {
-                        Text("Minimum hover duration")
-                        Spacer()
+                SettingsRow("Minimum hover duration", description: "How long the pointer must rest on the notch before it opens. On displays where Kannu hides until hovered, this is also how long the pointer must rest at the top edge before the island slides in.") {
+                    HStack(spacing: 8) {
+                        Slider(value: $minimumHoverDuration, in: 0...2, step: 0.1) {
+                            Text("Minimum hover duration")
+                        }
                         Text("\(minimumHoverDuration, specifier: "%.1f")s")
+                            .monospacedDigit()
                             .foregroundStyle(.secondary)
                     }
+                    .frame(width: 190)
                 }
                 .onChange(of: minimumHoverDuration) {
                     NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
                 }
                 .settingsHighlight(id: highlightID("Minimum hover duration"))
-                Text("How long the pointer must rest on the notch before it opens. On displays where Kannu hides until hovered, this is also how long the pointer must rest at the top edge before the island slides in.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
-            Picker("External display style", selection: $externalDisplayStyle) {
-                ForEach(ExternalDisplayStyle.allCases) { style in
-                    Text(style.localizedName)
-                        .tag(style)
+            SettingsRow("External display style", description: externalDisplayStyle.description) {
+                Picker("External display style", selection: $externalDisplayStyle) {
+                    ForEach(ExternalDisplayStyle.allCases) { style in
+                        Text(style.localizedName)
+                            .tag(style)
+                    }
                 }
             }
             .onChange(of: externalDisplayStyle) {
                 NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
             }
             .settingsHighlight(id: highlightID("External display style"))
-            Text(externalDisplayStyle.description)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Defaults.Toggle(key: .alwaysShowOnNonNotchDisplays) {
-                Text("Always show on non-notch displays")
+            SettingsRow("Always show on non-notch displays", description: "By default the notch hides on external displays and appears when you hover near the top. Turn this on to keep it visible.") {
+                Defaults.Toggle(key: .alwaysShowOnNonNotchDisplays) {
+                    Text("Always show on non-notch displays")
+                }
             }
             .settingsHighlight(id: highlightID("Always show on non-notch displays"))
-            Text("By default the notch hides on external displays and appears when you hover near the top. Turn this on to keep it visible.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         } header: {
             Text("Notch behavior")
         }
@@ -1371,51 +1388,52 @@ struct GeneralSettings: View {
     /// would be a control that does nothing.
     @ViewBuilder
     private var perDisplayOverridesSection: some View {
-        let customisable = NSScreen.screens.filter { $0.safeAreaInsets.top <= 0 }
-        if !customisable.isEmpty {
+        perDisplayOverrideSections(
+            NSScreen.screens
+                .filter { $0.safeAreaInsets.top <= 0 }
+                .map { (name: $0.localizedName, isBuiltIn: isBuiltInDisplay($0)) }
+        )
+    }
+
+    /// One group per display: its two overrides and Reset. The explanation sits under the last one.
+    @ViewBuilder
+    func perDisplayOverrideSections(_ displays: [(name: String, isBuiltIn: Bool)]) -> some View {
+        ForEach(displays, id: \.name) { display in
+            let name = display.name
             Section {
-                ForEach(customisable, id: \.localizedName) { screen in
-                    let name = screen.localizedName
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text(name).font(.callout)
-                            if isBuiltInDisplay(screen) {
-                                Text("Built-in")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Button("Reset") {
-                                Defaults[.displayStyleOverrides].removeValue(forKey: name)
-                                Defaults[.alwaysShowOverrides].removeValue(forKey: name)
-                                NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
-                            }
-                            .buttonStyle(.link)
-                            .disabled(
-                                Defaults[.displayStyleOverrides][name] == nil
-                                    && Defaults[.alwaysShowOverrides][name] == nil
-                            )
-                        }
-                        Picker("Style", selection: displayStyleBinding(for: name)) {
-                            Text("Follow default").tag(ExternalDisplayStyle?.none)
-                            ForEach(ExternalDisplayStyle.allCases) { style in
-                                Text(style.localizedName).tag(ExternalDisplayStyle?.some(style))
-                            }
-                        }
-                        Picker("Always show", selection: alwaysShowBinding(for: name)) {
-                            Text("Follow default").tag(Bool?.none)
-                            Text("On").tag(Bool?.some(true))
-                            Text("Off").tag(Bool?.some(false))
-                        }
+                Picker("Style", selection: displayStyleBinding(for: name)) {
+                    Text("Follow default").tag(ExternalDisplayStyle?.none)
+                    ForEach(ExternalDisplayStyle.allCases) { style in
+                        Text(style.localizedName).tag(ExternalDisplayStyle?.some(style))
                     }
-                    .padding(.vertical, 2)
+                }
+                Picker("Always show", selection: alwaysShowBinding(for: name)) {
+                    Text("Follow default").tag(Bool?.none)
+                    Text("On").tag(Bool?.some(true))
+                    Text("Off").tag(Bool?.some(false))
+                }
+                SettingsActionRow {
+                    Button("Reset") {
+                        Defaults[.displayStyleOverrides].removeValue(forKey: name)
+                        Defaults[.alwaysShowOverrides].removeValue(forKey: name)
+                        NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
+                    }
+                    .disabled(
+                        Defaults[.displayStyleOverrides][name] == nil
+                            && Defaults[.alwaysShowOverrides][name] == nil
+                    )
                 }
             } header: {
-                Text("Per-display")
+                HStack(spacing: 6) {
+                    Text(verbatim: name)
+                    if display.isBuiltIn {
+                        customBadge(text: String(localized: "Built-in"))
+                    }
+                }
             } footer: {
-                Text("Displays without their own setting follow the defaults above. Built-in displays with a notch always use the notch shape and aren't listed.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if display.name == displays.last?.name {
+                    SettingsFooter("Displays without their own setting follow the defaults above. Built-in displays with a notch always use the notch shape and aren't listed.")
+                }
             }
         }
     }
@@ -1556,44 +1574,23 @@ struct Charge: View {
                 } header: {
                     Text("Battery HUDs")
                 } footer: {
-                    Text("These temporary HUDs recreate the charging, low-battery, and full-battery notch alerts.")
+                    SettingsFooter("These temporary HUDs recreate the charging, low-battery, and full-battery notch alerts.")
                 }
                 Section {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Charging duration")
-                            Spacer()
-                            Text("\(chargingBatteryHUDDuration)s")
-                                .foregroundStyle(.secondary)
-                        }
-                        Slider(value: chargingDurationBinding, in: 1...10, step: 1)
-                    }
+                    SettingsSliderRow("Charging duration", value: chargingDurationBinding, in: 1...10, step: 1,
+                                      valueText: Text("\(chargingBatteryHUDDuration)s"))
                     .settingsHighlight(id: highlightID("Charging duration"))
                     .disabled(!showPowerStatusNotifications || !showChargingBatteryHUD)
                     .opacity(sectionOpacity(showPowerStatusNotifications && showChargingBatteryHUD))
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Low battery duration")
-                            Spacer()
-                            Text("\(lowBatteryHUDDuration)s")
-                                .foregroundStyle(.secondary)
-                        }
-                        Slider(value: lowBatteryDurationBinding, in: 1...10, step: 1)
-                    }
+                    SettingsSliderRow("Low battery duration", value: lowBatteryDurationBinding, in: 1...10, step: 1,
+                                      valueText: Text("\(lowBatteryHUDDuration)s"))
                     .settingsHighlight(id: highlightID("Low battery duration"))
                     .disabled(!showPowerStatusNotifications || !showLowBatteryHUD)
                     .opacity(sectionOpacity(showPowerStatusNotifications && showLowBatteryHUD))
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Full battery duration")
-                            Spacer()
-                            Text("\(fullBatteryHUDDuration)s")
-                                .foregroundStyle(.secondary)
-                        }
-                        Slider(value: fullBatteryDurationBinding, in: 1...10, step: 1)
-                    }
+                    SettingsSliderRow("Full battery duration", value: fullBatteryDurationBinding, in: 1...10, step: 1,
+                                      valueText: Text("\(fullBatteryHUDDuration)s"))
                     .settingsHighlight(id: highlightID("Full battery duration"))
                     .disabled(!showPowerStatusNotifications || !showFullBatteryHUD)
                     .opacity(sectionOpacity(showPowerStatusNotifications && showFullBatteryHUD))
@@ -1601,33 +1598,27 @@ struct Charge: View {
                     Text("HUD Duration")
                 }
                 Section {
-                    Button {
-                        batteryStatusViewModel.triggerTestHUD(kind: .charging)
-                    } label: {
-                        Label("Test charging HUD", systemImage: "bolt.fill")
-                    }
+                    testHUDRow(Label("Charging HUD", systemImage: "bolt.fill"),
+                               accessibilityLabel: Text("Test charging HUD"), kind: .charging)
                     .disabled(!showPowerStatusNotifications || !showChargingBatteryHUD)
+                    .settingsHighlight(id: highlightID("Test charging HUD"))
 
-                    Button {
-                        batteryStatusViewModel.triggerTestHUD(kind: .lowBattery)
-                    } label: {
-                        Label("Test low battery HUD", systemImage: "battery.25")
-                    }
+                    testHUDRow(Label("Low battery HUD", systemImage: "battery.25"),
+                               accessibilityLabel: Text("Test low battery HUD"), kind: .lowBattery)
                     .disabled(!showPowerStatusNotifications || !showLowBatteryHUD)
+                    .settingsHighlight(id: highlightID("Test low battery HUD"))
 
-                    Button {
-                        batteryStatusViewModel.triggerTestHUD(kind: .fullBattery)
-                    } label: {
-                        Label("Test full battery HUD", systemImage: "battery.100")
-                    }
+                    testHUDRow(Label("Fully charged HUD", systemImage: "battery.100"),
+                               accessibilityLabel: Text("Test full battery HUD"), kind: .fullBattery)
                     .disabled(!showPowerStatusNotifications || !showFullBatteryHUD)
+                    .settingsHighlight(id: highlightID("Test full battery HUD"))
                 } header: {
                     Text("HUD Tests")
                 } footer: {
-                    Text("Runs the real notch animation on the current target display. If an external screen is using Dynamic Island mode, the battery HUD is sent there first.")
+                    SettingsFooter("Runs the real notch animation on the current target display. If an external screen is using Dynamic Island mode, the battery HUD is sent there first.")
                 }
                 Section {
-                    VStack(alignment: .leading, spacing: 10) {
+                    SettingsRow("Low battery style", description: "Compact matches the charging HUD. Standard uses the expanded DynamicNotch-style card.") {
                         Picker("Low battery style", selection: $lowBatteryHUDStyle) {
                             ForEach(BatteryNotificationStyle.allCases) { style in
                                 Text(style.title)
@@ -1635,22 +1626,12 @@ struct Charge: View {
                             }
                         }
                         .pickerStyle(.segmented)
-                        Text("Compact matches the charging HUD. Standard uses the expanded DynamicNotch-style card.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        .fixedSize()
                     }
                     .settingsHighlight(id: highlightID("Low battery style"))
 
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Low battery threshold")
-                            Spacer()
-                            Text("\(lowBatteryHUDThreshold)%")
-                                .foregroundStyle(.secondary)
-                        }
-                        Slider(value: lowBatteryThresholdBinding, in: 5...30, step: 1)
-                    }
+                    SettingsSliderRow("Low battery threshold", value: lowBatteryThresholdBinding, in: 5...30, step: 1,
+                                      valueText: Text("\(lowBatteryHUDThreshold)%"))
                     .settingsHighlight(id: highlightID("Low battery threshold"))
                 } header: {
                     Text("Low Battery")
@@ -1659,7 +1640,7 @@ struct Charge: View {
                 .opacity(sectionOpacity(showPowerStatusNotifications && showLowBatteryHUD))
 
                 Section {
-                    VStack(alignment: .leading, spacing: 10) {
+                    SettingsRow("Full battery style", description: "Compact keeps the alert inline. Standard uses the taller full-charge HUD with the charging animation.") {
                         Picker("Full battery style", selection: $fullBatteryHUDStyle) {
                             ForEach(BatteryNotificationStyle.allCases) { style in
                                 Text(style.title)
@@ -1667,22 +1648,12 @@ struct Charge: View {
                             }
                         }
                         .pickerStyle(.segmented)
-                        Text("Compact keeps the alert inline. Standard uses the taller full-charge HUD with the charging animation.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        .fixedSize()
                     }
                     .settingsHighlight(id: highlightID("Full battery style"))
 
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Full charge threshold")
-                            Spacer()
-                            Text("\(fullBatteryHUDThreshold)%")
-                                .foregroundStyle(.secondary)
-                        }
-                        Slider(value: fullBatteryThresholdBinding, in: 80...100, step: 1)
-                    }
+                    SettingsSliderRow("Full charge threshold", value: fullBatteryThresholdBinding, in: 80...100, step: 1,
+                                      valueText: Text("\(fullBatteryHUDThreshold)%"))
                     .settingsHighlight(id: highlightID("Full charge threshold"))
                 } header: {
                     Text("Full Battery")
@@ -1702,6 +1673,19 @@ struct Charge: View {
         }
         .navigationTitle("Battery")
     }
+
+    /// A HUD's name with a Test button on the trailing side.
+    private func testHUDRow(_ label: Label<Text, Image>, accessibilityLabel: Text,
+                            kind: BatteryTemporaryHUDKind) -> some View {
+        LabeledContent {
+            Button("Test") {
+                batteryStatusViewModel.triggerTestHUD(kind: kind)
+            }
+            .accessibilityLabel(accessibilityLabel)
+        } label: {
+            label
+        }
+    }
 }
 
 struct Downloads: View {
@@ -1720,9 +1704,8 @@ struct Downloads: View {
                 }
                 .settingsHighlight(id: highlightID("Enable download detection"))
                 VStack(alignment: .leading, spacing: 12) {
+                    // Was hard-coded white, which vanished on the light background.
                     Text("Download indicator style")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
 
                     HStack(spacing: 16) {
                         DownloadStyleButton(
@@ -1746,7 +1729,7 @@ struct Downloads: View {
             } header: {
                 Text("Download Detection")
             } footer: {
-                Text("Monitor your Downloads folder for Chromium-style downloads (.crdownload files) and show a live activity in the Dynamic Island while downloads are in progress.")
+                SettingsFooter("Monitor your Downloads folder for Chromium-style downloads (.crdownload files) and show a live activity in the Dynamic Island while downloads are in progress.")
             }
         }
         .navigationTitle("Downloads")
@@ -1930,10 +1913,6 @@ private struct HUDAndOSDSettingsView: View {
         var id: String { rawValue }
     }
 
-    private var paneBackgroundColor: Color {
-        Color(nsColor: .controlBackgroundColor)
-    }
-
     private var liquidVariantRange: ClosedRange<Double> {
         Double(LiquidGlassVariant.supportedRange.lowerBound)...Double(LiquidGlassVariant.supportedRange.upperBound)
     }
@@ -1956,162 +1935,169 @@ private struct HUDAndOSDSettingsView: View {
     }
 
     var body: some View {
-        VStack(spacing: 20) {
-            HStack(spacing: 16) {
-                HUDSelectionCard(
-                    title: String(localized: "Dynamic Island"),
-                    isSelected: selectedTab == .hud,
-                    action: {
-                        selectedTab = .hud
-                        enableSystemHUD = true
-                        enableCustomOSD = false
-                        enableVerticalHUD = false
-                        enableCircularHUD = false
+        // One Form for the whole tab. The style cards used to sit above two stacked Forms (the
+        // style's settings, then the display integrations), each scrolling on its own.
+        Form {
+            Section {
+                HStack(spacing: 10) {
+                    HUDSelectionCard(
+                        title: String(localized: "Dynamic Island"),
+                        isSelected: selectedTab == .hud,
+                        action: {
+                            selectedTab = .hud
+                            enableSystemHUD = true
+                            enableCustomOSD = false
+                            enableVerticalHUD = false
+                            enableCircularHUD = false
+                        }
+                    ) {
+                        VStack {
+                            Capsule()
+                                .fill(Color.black)
+                                .frame(width: 64, height: 20)
+                                .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                                .overlay {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: previewModel.iconName)
+                                            .font(.system(size: 9, weight: .semibold))
+                                            .foregroundStyle(.white)
+                                            .frame(width: 12)
+
+                                        GeometryReader { geo in
+                                            Capsule()
+                                                .fill(Color.white.opacity(0.2))
+                                                .overlay(alignment: .leading) {
+                                                    Capsule()
+                                                        .fill(Color.white)
+                                                        .frame(width: geo.size.width * CGFloat(previewModel.level))
+                                                        .animation(.spring(response: 0.3), value: previewModel.level)
+                                                }
+                                        }
+                                        .frame(height: 4)
+                                    }
+                                    .padding(.horizontal, 8)
+                                }
+                        }
                     }
-                ) {
-                    VStack {
-                        Capsule()
-                            .fill(Color.black)
-                            .frame(width: 64, height: 20)
-                            .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+
+                    HUDSelectionCard(
+                        title: String(localized: "Custom OSD"),
+                        isSelected: selectedTab == .osd,
+                        action: {
+                            selectedTab = .osd
+                            enableCustomOSD = true
+                            enableSystemHUD = false
+                            enableVerticalHUD = false
+                            enableCircularHUD = false
+                        }
+                    ) {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(.ultraThinMaterial)
                             .overlay {
-                                HStack(spacing: 6) {
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(.white.opacity(0.1), lineWidth: 1)
+                            }
+                            .shadow(color: .black.opacity(0.1), radius: 3, y: 1)
+                            .overlay {
+                                VStack(spacing: 6) {
                                     Image(systemName: previewModel.iconName)
-                                        .font(.system(size: 9, weight: .semibold))
-                                        .foregroundStyle(.white)
-                                        .frame(width: 12)
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(.secondary)
+                                        .symbolRenderingMode(.hierarchical)
+                                        .contentTransition(.symbolEffect(.replace))
 
                                     GeometryReader { geo in
                                         Capsule()
-                                            .fill(Color.white.opacity(0.2))
+                                            .fill(Color.secondary.opacity(0.2))
                                             .overlay(alignment: .leading) {
                                                 Capsule()
-                                                    .fill(Color.white)
+                                                    .fill(Color.primary)
                                                     .frame(width: geo.size.width * CGFloat(previewModel.level))
                                                     .animation(.spring(response: 0.3), value: previewModel.level)
                                             }
                                     }
-                                    .frame(height: 4)
+                                    .frame(width: 36, height: 4)
                                 }
-                                .padding(.horizontal, 8)
                             }
+                            .frame(width: 44, height: 44)
                     }
-                }
+                    // The "Enable Custom OSD" search entry lands on the card that enables it.
+                    .settingsHighlight(id: SettingsTab.hudAndOSD.highlightID(for: "Enable Custom OSD"))
 
-                HUDSelectionCard(
-                    title: String(localized: "Custom OSD"),
-                    isSelected: selectedTab == .osd,
-                    action: {
-                        selectedTab = .osd
-                        enableCustomOSD = true
-                        enableSystemHUD = false
-                        enableVerticalHUD = false
-                        enableCircularHUD = false
-                    }
-                ) {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(.ultraThinMaterial)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(.white.opacity(0.1), lineWidth: 1)
+                    HUDSelectionCard(
+                        title: String(localized: "Vertical Bar"),
+                        isSelected: selectedTab == .vertical,
+                        action: {
+                            selectedTab = .vertical
+                            enableVerticalHUD = true
+                            enableSystemHUD = false
+                            enableCustomOSD = false
+                            enableCircularHUD = false
                         }
-                        .shadow(color: .black.opacity(0.1), radius: 3, y: 1)
-                        .overlay {
-                            VStack(spacing: 6) {
-                                Image(systemName: previewModel.iconName)
-                                    .font(.system(size: 16))
-                                    .foregroundStyle(.secondary)
-                                    .symbolRenderingMode(.hierarchical)
-                                    .contentTransition(.symbolEffect(.replace))
-
-                                GeometryReader { geo in
-                                    Capsule()
-                                        .fill(Color.secondary.opacity(0.2))
-                                        .overlay(alignment: .leading) {
-                                            Capsule()
-                                                .fill(Color.primary)
-                                                .frame(width: geo.size.width * CGFloat(previewModel.level))
+                    ) {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(.ultraThinMaterial)
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(.white.opacity(0.1), lineWidth: 1)
+                            }
+                            .shadow(color: .black.opacity(0.1), radius: 3, y: 1)
+                            .overlay {
+                                VStack {
+                                    GeometryReader { geo in
+                                        VStack {
+                                            Spacer()
+                                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                                .fill(Color.white)
+                                                .frame(height: max(0, geo.size.height * CGFloat(previewModel.level)))
                                                 .animation(.spring(response: 0.3), value: previewModel.level)
                                         }
+                                    }
+                                    .mask(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                    .padding(.bottom, 2)
+
+                                    Image(systemName: previewModel.iconName)
+                                        .font(.system(size: 9))
+                                        .foregroundStyle(previewModel.level > 0.15 ? .black : .secondary)
+                                        .symbolRenderingMode(.hierarchical)
+                                        .contentTransition(.symbolEffect(.replace))
                                 }
-                                .frame(width: 36, height: 4)
+                                .padding(4)
                             }
+                            .frame(width: 22, height: 54)
+                    }
+
+                    HUDSelectionCard(
+                        title: String(localized: "Circular"),
+                        isSelected: selectedTab == .circular,
+                        action: {
+                            selectedTab = .circular
+                            enableCircularHUD = true
+                            enableSystemHUD = false
+                            enableCustomOSD = false
+                            enableVerticalHUD = false
+                        }
+                    ) {
+                        ZStack {
+                            Circle()
+                                .stroke(Color.secondary.opacity(0.2), lineWidth: 4)
+                            Circle()
+                                .trim(from: 0, to: CGFloat(previewModel.level))
+                                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                                .rotationEffect(.degrees(-90))
+                                .animation(.spring(response: 0.3), value: previewModel.level)
+                            Image(systemName: previewModel.iconName)
+                                .font(.system(size: 16))
+                                .foregroundStyle(.primary)
+                                .symbolRenderingMode(.hierarchical)
+                                .contentTransition(.symbolEffect(.replace))
                         }
                         .frame(width: 44, height: 44)
-                }
-
-                HUDSelectionCard(
-                    title: String(localized: "Vertical Bar"),
-                    isSelected: selectedTab == .vertical,
-                    action: {
-                        selectedTab = .vertical
-                        enableVerticalHUD = true
-                        enableSystemHUD = false
-                        enableCustomOSD = false
-                        enableCircularHUD = false
                     }
-                ) {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(.ultraThinMaterial)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(.white.opacity(0.1), lineWidth: 1)
-                        }
-                        .shadow(color: .black.opacity(0.1), radius: 3, y: 1)
-                        .overlay {
-                            VStack {
-                                GeometryReader { geo in
-                                    VStack {
-                                        Spacer()
-                                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                            .fill(Color.white)
-                                            .frame(height: max(0, geo.size.height * CGFloat(previewModel.level)))
-                                            .animation(.spring(response: 0.3), value: previewModel.level)
-                                    }
-                                }
-                                .mask(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                .padding(.bottom, 2)
-
-                                Image(systemName: previewModel.iconName)
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(previewModel.level > 0.15 ? .black : .secondary)
-                                    .symbolRenderingMode(.hierarchical)
-                                    .contentTransition(.symbolEffect(.replace))
-                            }
-                            .padding(4)
-                        }
-                        .frame(width: 22, height: 54)
                 }
-
-                HUDSelectionCard(
-                    title: String(localized: "Circular"),
-                    isSelected: selectedTab == .circular,
-                    action: {
-                        selectedTab = .circular
-                        enableCircularHUD = true
-                        enableSystemHUD = false
-                        enableCustomOSD = false
-                        enableVerticalHUD = false
-                    }
-                ) {
-                    ZStack {
-                        Circle()
-                            .stroke(Color.secondary.opacity(0.2), lineWidth: 4)
-                        Circle()
-                            .trim(from: 0, to: CGFloat(previewModel.level))
-                            .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                            .rotationEffect(.degrees(-90))
-                            .animation(.spring(response: 0.3), value: previewModel.level)
-                        Image(systemName: previewModel.iconName)
-                            .font(.system(size: 16))
-                            .foregroundStyle(.primary)
-                            .symbolRenderingMode(.hierarchical)
-                            .contentTransition(.symbolEffect(.replace))
-                    }
-                    .frame(width: 44, height: 44)
-                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
             }
-            .padding(.top, 8)
 
             switch selectedTab {
             case .hud:
@@ -2120,216 +2106,30 @@ private struct HUDAndOSDSettingsView: View {
                 if #available(macOS 15.0, *) {
                     CustomOSDSettings()
                 } else {
-                    VStack(spacing: 16) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 48))
-                            .foregroundStyle(.orange)
-
-                        Text("macOS 15 or later required")
-                            .font(.headline)
-
-                        Text("Custom OSD feature requires macOS 15 or later.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
+                    Section {
+                        VStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 32))
+                                .foregroundStyle(.orange)
+                            Text("macOS 15 or later required")
+                                .font(.headline)
+                            Text("Custom OSD feature requires macOS 15 or later.")
+                                .settingsDescriptionStyle()
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding()
                 }
             case .vertical:
-                Form {
-                    if !accessibilityPermission.isAuthorized && !enableThirdPartyDDCIntegration {
-                        Section {
-                            SettingsPermissionCallout(
-                                message: "Accessibility permission is needed to intercept system controls for the Vertical HUD.",
-                                requestAction: {
-                                    accessibilityPermission.requestAuthorizationPrompt()
-                                },
-                                openSettingsAction: {
-                                    accessibilityPermission.openSystemSettings()
-                                }
-                            )
-                        } header: {
-                            Text("Accessibility")
-                        }
-                    }
-
-                    if accessibilityPermission.isAuthorized || enableThirdPartyDDCIntegration {
-                        Section {
-                            Toggle("Volume HUD", isOn: $enableVolumeHUD)
-                            Toggle("Brightness HUD", isOn: $enableBrightnessHUD)
-                            Toggle("Keyboard Backlight HUD", isOn: $enableKeyboardBacklightHUD)
-                                .disabled(enableThirdPartyDDCIntegration)
-                                .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active. Brightness keys are handled by the external app." : "")
-                        } header: {
-                            Text("Controls")
-                        } footer: {
-                            Text("Choose which system controls should display HUD notifications.")
-                                .foregroundStyle(.secondary)
-                                .font(.caption)
-                        }
-                    }
-
-                    Section {
-                        Toggle("Show Percentage", isOn: $verticalHUDShowValue)
-                        Toggle("Use Accent Color", isOn: $verticalHUDUseAccentColor)
-                        Toggle("Interactive (Drag to Change)", isOn: $verticalHUDInteractive)
-                        Picker("Material", selection: $verticalHUDMaterial) {
-                            ForEach(availableVerticalMaterials, id: \.self) { material in
-                                Text(material.rawValue).tag(material)
-                            }
-                        }
-
-                        if verticalHUDMaterial == .liquid {
-                            if #available(macOS 26.0, *) {
-                                Picker("Glass mode", selection: $verticalHUDLiquidGlassCustomizationMode) {
-                                    ForEach(LockScreenGlassCustomizationMode.allCases) { mode in
-                                        Text(mode.rawValue).tag(mode)
-                                    }
-                                }
-                                .pickerStyle(.segmented)
-
-                                if verticalHUDLiquidGlassCustomizationMode == .customLiquid {
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        HStack {
-                                            Text("Custom liquid variant")
-                                            Spacer()
-                                            Text("v\(verticalHUDLiquidGlassVariant.rawValue)")
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        Slider(value: verticalLiquidVariantBinding, in: liquidVariantRange, step: 1)
-                                    }
-                                }
-                            } else {
-                                Text("Custom Liquid is available on macOS 26 or later.")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        Defaults.Toggle(key: .useColorCodedVolumeDisplay) {
-                            Text("Color-coded Volume")
-                        }
-                        if Defaults[.useColorCodedVolumeDisplay] {
-                            Defaults.Toggle(key: .useSmoothColorGradient) {
-                                Text("Smooth color transitions")
-                            }
-                        }
-                    } header: {
-                        Text("Behavior & Style")
-                    }
-
-                    Section {
-                        Picker("HUD Position", selection: $verticalHUDPosition) {
-                            Text("Left").tag("left")
-                            Text("Right").tag("right")
-                        }
-                        .pickerStyle(.menu)
-
-                        VStack(alignment: .leading) {
-                            Text("Screen Padding: \(Int(verticalHUDPadding))px")
-                            Slider(value: $verticalHUDPadding, in: 0...100, step: 4)
-                        }
-                    } header: {
-                        Text("Position")
-                    } footer: {
-                        Text("Choose directly on which side of the screen the vertical bar appears.")
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
-                    }
-
-                    Section {
-                        VStack(alignment: .leading) {
-                            Text("Width: \(Int(verticalHUDWidth))px")
-                            Slider(value: $verticalHUDWidth, in: 24...80, step: 2)
-                        }
-                        VStack(alignment: .leading) {
-                            Text("Height: \(Int(verticalHUDHeight))px")
-                            Slider(value: $verticalHUDHeight, in: 100...500, step: 10)
-                        }
-                        Button("Reset to Default") {
-                            verticalHUDWidth = 36
-                            verticalHUDHeight = 160
-                            verticalHUDPadding = 24
-                        }
-                    } header: {
-                        Text("Dimensions")
-                    }
-                }
-
+                verticalHUDSections
             case .circular:
-                Form {
-                    if !accessibilityPermission.isAuthorized && !enableThirdPartyDDCIntegration {
-                        Section {
-                            SettingsPermissionCallout(
-                                message: "Accessibility permission is needed to intercept system controls for the Circular HUD.",
-                                requestAction: {
-                                    accessibilityPermission.requestAuthorizationPrompt()
-                                },
-                                openSettingsAction: {
-                                    accessibilityPermission.openSystemSettings()
-                                }
-                            )
-                        } header: {
-                            Text("Accessibility")
-                        }
-                    }
-
-                    if accessibilityPermission.isAuthorized || enableThirdPartyDDCIntegration {
-                        Section {
-                            Toggle("Volume HUD", isOn: $enableVolumeHUD)
-                            Toggle("Brightness HUD", isOn: $enableBrightnessHUD)
-                            Toggle("Keyboard Backlight HUD", isOn: $enableKeyboardBacklightHUD)
-                                .disabled(enableThirdPartyDDCIntegration)
-                                .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active. Brightness keys are handled by the external app." : "")
-                        } header: {
-                            Text("Controls")
-                        } footer: {
-                            Text("Choose which system controls should display HUD notifications.")
-                                .foregroundStyle(.secondary)
-                                .font(.caption)
-                        }
-                    }
-
-                    Section {
-                        Toggle("Show Percentage", isOn: $circularHUDShowValue)
-                        Toggle("Use Accent Color", isOn: $circularHUDUseAccentColor)
-                        Defaults.Toggle(key: .useColorCodedVolumeDisplay) {
-                            Text("Color-coded Volume")
-                        }
-                        if Defaults[.useColorCodedVolumeDisplay] {
-                            Defaults.Toggle(key: .useSmoothColorGradient) {
-                                Text("Smooth color transitions")
-                            }
-                        }
-                    } header: {
-                        Text("Style")
-                    }
-
-                    Section {
-                        VStack(alignment: .leading) {
-                            Text("Size: \(Int(circularHUDSize))px")
-                            Slider(value: $circularHUDSize, in: 40...200, step: 5)
-                        }
-                        VStack(alignment: .leading) {
-                            Text("Line Width: \(Int(circularHUDStrokeWidth))px")
-                            Slider(value: $circularHUDStrokeWidth, in: 2...16, step: 1)
-                        }
-                        Button("Reset to Default") {
-                            circularHUDSize = 65
-                            circularHUDStrokeWidth = 4
-                        }
-                    } header: {
-                        Text("Dimensions")
-                    }
-                }
+                circularHUDSections
             }
 
             // Third-party display integrations (shared across all HUD variants)
             ExternalDisplayIntegrationsSection()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(paneBackgroundColor)
         .navigationTitle("Controls")
         .onAppear {
             accessibilityPermission.refreshStatus()
@@ -2337,6 +2137,202 @@ private struct HUDAndOSDSettingsView: View {
                 verticalHUDMaterial = .frosted
                 verticalHUDLiquidGlassCustomizationMode = .standard
             }
+            if #unavailable(macOS 26.0), Defaults[.osdMaterial] == .liquid {
+                Defaults[.osdMaterial] = .frosted
+                Defaults[.osdLiquidGlassCustomizationMode] = .standard
+            }
+        }
+        // These lived on the Dynamic Island and Custom OSD sub-views' own Forms, live only while that
+        // style was selected. Rows of a lazy Form cannot host them reliably, so they sit here, keyed
+        // by the selected style exactly as before.
+        .onChange(of: selectedTab) { _, _ in
+            accessibilityPermission.refreshStatus()
+        }
+        .onChange(of: accessibilityPermission.isAuthorized) { _, granted in
+            switch selectedTab {
+            case .hud:
+                if !granted {
+                    enableSystemHUD = false
+                } else {
+                    // Without this the tap was created once at launch and never retried, so
+                    // granting Accessibility only took effect after restarting Kannu.
+                    MediaKeyInterceptor.shared.start()
+                }
+            case .osd:
+                if !granted {
+                    enableCustomOSD = false
+                    CustomOSDWindowManager.shared.forceHideAll()
+                }
+            case .vertical, .circular:
+                break
+            }
+        }
+        .onChange(of: enableCustomOSD) { _, enabled in
+            if !enabled {
+                CustomOSDWindowManager.shared.forceHideAll()
+            }
+        }
+    }
+
+    /// Accessibility callout, or the three HUD switches once Kannu can intercept the keys.
+    @ViewBuilder
+    private func controlsSections(permissionMessage: String) -> some View {
+        if !accessibilityPermission.isAuthorized && !enableThirdPartyDDCIntegration {
+            Section {
+                SettingsPermissionCallout(
+                    message: permissionMessage,
+                    requestAction: {
+                        accessibilityPermission.requestAuthorizationPrompt()
+                    },
+                    openSettingsAction: {
+                        accessibilityPermission.openSystemSettings()
+                    }
+                )
+            } header: {
+                Text("Accessibility")
+            }
+        }
+
+        if accessibilityPermission.isAuthorized || enableThirdPartyDDCIntegration {
+            Section {
+                Toggle("Volume HUD", isOn: $enableVolumeHUD)
+                Toggle("Brightness HUD", isOn: $enableBrightnessHUD)
+                SettingsRow("Keyboard Backlight HUD", description: enableThirdPartyDDCIntegration
+                            ? Text("Disabled while external display integration is active. Brightness keys are handled by the external app.") : nil) {
+                    Toggle("Keyboard Backlight HUD", isOn: $enableKeyboardBacklightHUD)
+                }
+                .disabled(enableThirdPartyDDCIntegration)
+            } header: {
+                Text("Controls")
+            } footer: {
+                SettingsFooter("Choose which system controls should display HUD notifications.")
+            }
+        }
+    }
+
+    @ViewBuilder
+    fileprivate var verticalHUDSections: some View {
+        controlsSections(permissionMessage: "Accessibility permission is needed to intercept system controls for the Vertical HUD.")
+
+        Section {
+            Toggle("Show Percentage", isOn: $verticalHUDShowValue)
+            Toggle("Use Accent Color", isOn: $verticalHUDUseAccentColor)
+            Toggle("Interactive (Drag to Change)", isOn: $verticalHUDInteractive)
+            Picker("Material", selection: $verticalHUDMaterial) {
+                ForEach(availableVerticalMaterials, id: \.self) { material in
+                    Text(material.rawValue).tag(material)
+                }
+            }
+
+            if verticalHUDMaterial == .liquid {
+                if #available(macOS 26.0, *) {
+                    SettingsRow("Glass mode") {
+                        Picker("Glass mode", selection: $verticalHUDLiquidGlassCustomizationMode) {
+                            ForEach(LockScreenGlassCustomizationMode.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .fixedSize()
+                    }
+
+                    if verticalHUDLiquidGlassCustomizationMode == .customLiquid {
+                        LabeledContent("Custom liquid variant") {
+                            variantSliderControl(value: verticalLiquidVariantBinding, current: verticalHUDLiquidGlassVariant.rawValue,
+                                                 range: liquidVariantRange, title: String(localized: "Custom liquid variant"))
+                        }
+                    }
+                } else {
+                    Text("Custom Liquid is available on macOS 26 or later.")
+                        .settingsDescriptionStyle()
+                }
+            }
+            Defaults.Toggle(key: .useColorCodedVolumeDisplay) {
+                Text("Color-coded Volume")
+            }
+            if Defaults[.useColorCodedVolumeDisplay] {
+                Defaults.Toggle(key: .useSmoothColorGradient) {
+                    Text("Smooth color transitions")
+                }
+            }
+        } header: {
+            Text("Behavior & Style")
+        }
+
+        Section {
+            Picker("HUD Position", selection: $verticalHUDPosition) {
+                Text("Left").tag("left")
+                Text("Right").tag("right")
+            }
+            .pickerStyle(.menu)
+
+            dimensionSlider(Text("Screen Padding: \(Int(verticalHUDPadding))px"), value: $verticalHUDPadding, in: 0...100, step: 4)
+        } header: {
+            Text("Position")
+        } footer: {
+            SettingsFooter("Choose directly on which side of the screen the vertical bar appears.")
+        }
+
+        Section {
+            dimensionSlider(Text("Width: \(Int(verticalHUDWidth))px"), value: $verticalHUDWidth, in: 24...80, step: 2)
+            dimensionSlider(Text("Height: \(Int(verticalHUDHeight))px"), value: $verticalHUDHeight, in: 100...500, step: 10)
+            SettingsActionRow {
+                Button("Reset to Default") {
+                    verticalHUDWidth = 36
+                    verticalHUDHeight = 160
+                    verticalHUDPadding = 24
+                }
+            }
+        } header: {
+            Text("Dimensions")
+        }
+    }
+
+    @ViewBuilder
+    fileprivate var circularHUDSections: some View {
+        controlsSections(permissionMessage: "Accessibility permission is needed to intercept system controls for the Circular HUD.")
+
+        Section {
+            Toggle("Show Percentage", isOn: $circularHUDShowValue)
+            Toggle("Use Accent Color", isOn: $circularHUDUseAccentColor)
+            Defaults.Toggle(key: .useColorCodedVolumeDisplay) {
+                Text("Color-coded Volume")
+            }
+            if Defaults[.useColorCodedVolumeDisplay] {
+                Defaults.Toggle(key: .useSmoothColorGradient) {
+                    Text("Smooth color transitions")
+                }
+            }
+        } header: {
+            Text("Style")
+        }
+
+        Section {
+            dimensionSlider(Text("Size: \(Int(circularHUDSize))px"), value: $circularHUDSize, in: 40...200, step: 5)
+            dimensionSlider(Text("Line Width: \(Int(circularHUDStrokeWidth))px"), value: $circularHUDStrokeWidth, in: 2...16, step: 1)
+            SettingsActionRow {
+                Button("Reset to Default") {
+                    circularHUDSize = 65
+                    circularHUDStrokeWidth = 4
+                }
+            }
+        } header: {
+            Text("Dimensions")
+        }
+    }
+
+    /// A size or position slider: the title (which carries the value, "Width: 36px") on the leading
+    /// side, the slider trailing.
+    private func dimensionSlider<V: BinaryFloatingPoint>(_ title: Text, value: Binding<V>, in range: ClosedRange<V>,
+                                                         step: V.Stride) -> some View where V.Stride: BinaryFloatingPoint {
+        LabeledContent {
+            Slider(value: value, in: range, step: step) {
+                title
+            }
+            .labelsHidden()
+            .frame(width: 220)
+        } label: {
+            title.monospacedDigit()
         }
     }
 }
@@ -2419,138 +2415,107 @@ private struct ExternalDisplayIntegrationsSection: View {
         }
     }
 
+    /// Step size and display-app integration sections, drawn inside the Controls tab's Form.
     var body: some View {
-        Form {
-            Section {
-                Stepper(value: $volumeStepPercent, in: 1...25) {
-                    HStack {
-                        Text("Volume step")
-                        Spacer()
-                        Text("\(volumeStepPercent)%")
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                }
+        Section {
+            stepRow(Text("Volume step"), value: $volumeStepPercent)
                 .settingsHighlight(id: highlightID("Volume step"))
                 .disabled(enableExternalVolumeControlListener)
-
-                Stepper(value: $volumeFineStepPercent, in: 1...25) {
-                    HStack {
-                        Text("Volume fine step")
-                        Spacer()
-                        Text("\(volumeFineStepPercent)%")
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                }
+            stepRow(Text("Volume fine step"), value: $volumeFineStepPercent)
                 .settingsHighlight(id: highlightID("Volume fine step"))
                 .disabled(enableExternalVolumeControlListener)
-
-                if enableExternalVolumeControlListener {
-                    Text("Disabled while external display volume integration is active.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Stepper(value: $brightnessStepPercent, in: 1...25) {
-                    HStack {
-                        Text("Brightness step")
-                        Spacer()
-                        Text("\(brightnessStepPercent)%")
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                }
+            stepRow(Text("Brightness step"), value: $brightnessStepPercent)
                 .settingsHighlight(id: highlightID("Brightness step"))
                 .disabled(enableThirdPartyDDCIntegration)
-
-                Stepper(value: $brightnessFineStepPercent, in: 1...25) {
-                    HStack {
-                        Text("Brightness fine step")
-                        Spacer()
-                        Text("\(brightnessFineStepPercent)%")
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                }
+            stepRow(Text("Brightness fine step"), value: $brightnessFineStepPercent)
                 .settingsHighlight(id: highlightID("Brightness fine step"))
                 .disabled(enableThirdPartyDDCIntegration)
-
-                if enableThirdPartyDDCIntegration {
-                    Text("Disabled while external display brightness integration is active.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        } header: {
+            Text("Step size")
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                if enableExternalVolumeControlListener {
+                    SettingsFooter("Disabled while external display volume integration is active.")
                 }
-            } header: {
-                Text("Step size")
-            } footer: {
-                Text("Percent change per key press. Fine step applies when holding Shift+Option.")
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
-            }
-
-            Section {
-                Toggle("Enable third-party DDC app integration", isOn: $enableThirdPartyDDCIntegration)
-                    .settingsHighlight(id: highlightID("Third-party DDC app integration"))
-
                 if enableThirdPartyDDCIntegration {
-                    Picker("Provider", selection: $thirdPartyDDCProvider) {
-                        ForEach(ThirdPartyDDCProvider.allCases) { provider in
-                            HStack {
-                                AppIconImage(
-                                    bundleIdentifiers: provider.bundleIdentifiers,
-                                    symbolFallback: "display",
-                                    symbolColor: .secondary
-                                )
-                                Text(provider.displayName)
-                            }
-                            .tag(provider)
+                    SettingsFooter("Disabled while external display brightness integration is active.")
+                }
+                SettingsFooter("Percent change per key press. Fine step applies when holding Shift+Option.")
+            }
+        }
+
+        Section {
+            SettingsRow("Enable third-party DDC app integration", description: enableThirdPartyDDCIntegration
+                        ? nil : Text("Enable to route BetterDisplay or Lunar display adjustments through Kannu's active HUD style.")) {
+                Toggle("Enable third-party DDC app integration", isOn: $enableThirdPartyDDCIntegration)
+            }
+            .settingsHighlight(id: highlightID("Third-party DDC app integration"))
+
+            if enableThirdPartyDDCIntegration {
+                Picker("Provider", selection: $thirdPartyDDCProvider) {
+                    ForEach(ThirdPartyDDCProvider.allCases) { provider in
+                        HStack {
+                            AppIconImage(
+                                bundleIdentifiers: provider.bundleIdentifiers,
+                                symbolFallback: "display",
+                                symbolColor: .secondary
+                            )
+                            Text(provider.displayName)
                         }
+                        .tag(provider)
                     }
-                    .settingsHighlight(id: highlightID("Third-party DDC provider"))
+                }
+                .settingsHighlight(id: highlightID("Third-party DDC provider"))
 
+                SettingsRow("Enable external volume control listener", description: Text(
+                    enableExternalVolumeControlListener
+                    ? "Kannu's built-in volume key interception is disabled while external volume listening is on. Volume HUD/OSD will follow \(thirdPartyDDCProvider.displayName) payloads."
+                    : "Kannu keeps native volume key interception. External provider volume payloads are ignored while this is off."
+                )) {
                     Toggle("Enable external volume control listener", isOn: $enableExternalVolumeControlListener)
-                        .settingsHighlight(id: highlightID("Enable external volume control listener"))
+                }
+                .settingsHighlight(id: highlightID("Enable external volume control listener"))
 
-                    Text(
-                        enableExternalVolumeControlListener
-                        ? "Kannu's built-in volume key interception is disabled while external volume listening is on. Volume HUD/OSD will follow \(thirdPartyDDCProvider.displayName) payloads."
-                        : "Kannu keeps native volume key interception. External provider volume payloads are ignored while this is off."
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                    HStack {
-                        Text("Status")
-                        Spacer()
-                        Text(providerStatusText)
-                            .font(.caption)
-                            .foregroundStyle(providerStatusColor)
-                    }
-
-                    Text(providerStatusDescription)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
+                LabeledContent {
                     Button {
                         refreshDetectionStatus()
                     } label: {
                         Label("Refresh detection", systemImage: "arrow.clockwise")
-                            .font(.caption)
                     }
-                    .buttonStyle(.link)
-                } else {
-                    Text("Enable to route BetterDisplay or Lunar display adjustments through Kannu's active HUD style.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            } footer: {
-                if enableThirdPartyDDCIntegration {
-                    Text("Kannu always listens to selected-provider brightness events, and listens to provider volume events only when external volume listener is enabled.")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text("Status")
+                            Text(providerStatusText)
+                                .foregroundStyle(providerStatusColor)
+                        }
+                        // The descriptions carry Markdown links; a plain String would show the brackets.
+                        Text(LocalizedStringKey(providerStatusDescription))
+                            .settingsDescriptionStyle()
+                    }
                 }
             }
+        } footer: {
+            if enableThirdPartyDDCIntegration {
+                SettingsFooter("Kannu always listens to selected-provider brightness events, and listens to provider volume events only when external volume listener is enabled.")
+            }
+        }
+    }
+
+    /// A percent step: the title on the leading side, the value and a stepper trailing.
+    private func stepRow(_ title: Text, value: Binding<Int>) -> some View {
+        LabeledContent {
+            HStack(spacing: 6) {
+                Text("\(value.wrappedValue)%")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                Stepper(value: value, in: 1...25) {
+                    title
+                }
+                .labelsHidden()
+            }
+        } label: {
+            title
         }
     }
 }
@@ -2580,12 +2545,16 @@ private struct HUDSelectionCard<Preview: View>: View {
 
                     preview
                 }
-                .frame(width: 110, height: 80)
+                // Four cards share one Form row, so they flex instead of taking a fixed 110 pt.
+                .frame(minWidth: 72, maxWidth: 110)
+                .frame(height: 76)
 
                 VStack(spacing: 4) {
                     Text(title)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(isSelected ? .primary : .secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
 
                     if isSelected {
                         Circle()
@@ -2645,8 +2614,6 @@ private struct DevicesSettingsView: View {
                 .settingsHighlight(id: highlightID("Show AirPods listening mode changes"))
                 VStack(alignment: .leading, spacing: 12) {
                     Text("HUD icon style")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.primary)
 
                     HStack(spacing: 16) {
                         Spacer(minLength: 0)
@@ -2669,9 +2636,7 @@ private struct DevicesSettingsView: View {
             } header: {
                 Text("Bluetooth Audio Devices")
             } footer: {
-                Text("Displays a HUD notification when Bluetooth audio devices (headphones, AirPods, speakers) connect, showing device name and battery level.")
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
+                SettingsFooter("Displays a HUD notification when Bluetooth audio devices (headphones, AirPods, speakers) connect, showing device name and battery level.")
             }
 
             Section {
@@ -2684,17 +2649,11 @@ private struct DevicesSettingsView: View {
                 Text("Battery Indicator Styling")
             } footer: {
                 if progressBarStyle == .segmented {
-                    Text("Color-coded fills are unavailable in Segmented mode. Switch to Hierarchical or Gradient inside Controls › Dynamic Island to adjust advanced options.")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
+                    SettingsFooter("Color-coded fills are unavailable in Segmented mode. Switch to Hierarchical or Gradient inside Controls › Dynamic Island to adjust advanced options.")
                 } else if Defaults[.useSmoothColorGradient] {
-                    Text("Smooth transitions blend Green (0–60%), Yellow (60–85%), and Red (85–100%) through the entire fill. Adjust gradient behavior from Controls › Dynamic Island.")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
+                    SettingsFooter("Smooth transitions blend Green (0–60%), Yellow (60–85%), and Red (85–100%) through the entire fill. Adjust gradient behavior from Controls › Dynamic Island.")
                 } else {
-                    Text("Discrete transitions snap between Green (0–60%), Yellow (60–85%), and Red (85–100%).")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
+                    SettingsFooter("Discrete transitions snap between Green (0–60%), Yellow (60–85%), and Red (85–100%).")
                 }
             }
         }
@@ -2727,139 +2686,117 @@ struct HUD: View {
         progressBarStyle == .segmented
     }
 
+    /// The Dynamic Island style's sections, drawn inside the Controls tab's Form (which also holds
+    /// this style's Accessibility side effects).
     var body: some View {
-        Form {
-            if !hasAccessibilityPermission && !enableThirdPartyDDCIntegration {
-                Section {
-                    SettingsPermissionCallout(
-                        message: "Without Accessibility permission macOS handles the volume and brightness keys itself and shows its own HUD, so Kannu hides its own to avoid two HUDs stacking. Granting it lets Kannu replace them.",
-                        requestAction: { accessibilityPermission.requestAuthorizationPrompt() },
-                        openSettingsAction: { accessibilityPermission.openSystemSettings() }
-                    )
-                } header: {
-                    Text("Accessibility")
-                }
-            }
-
-
-
-            if enableSystemHUD && !Defaults[.enableCustomOSD] && (hasAccessibilityPermission || enableThirdPartyDDCIntegration) {
-                Section {
-                    Toggle("Volume HUD", isOn: $enableVolumeHUD)
-                    Toggle("Brightness HUD", isOn: $enableBrightnessHUD)
-                    Toggle("Keyboard Backlight HUD", isOn: $enableKeyboardBacklightHUD)
-                        .disabled(enableThirdPartyDDCIntegration)
-                        .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active. Brightness keys are handled by the external app." : "")
-                } header: {
-                    Text("Controls")
-                } footer: {
-                    Text("Choose which system controls should display HUD notifications.")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
-            }
-
+        if !hasAccessibilityPermission && !enableThirdPartyDDCIntegration {
             Section {
+                SettingsPermissionCallout(
+                    message: "Without Accessibility permission macOS handles the volume and brightness keys itself and shows its own HUD, so Kannu hides its own to avoid two HUDs stacking. Granting it lets Kannu replace them.",
+                    requestAction: { accessibilityPermission.requestAuthorizationPrompt() },
+                    openSettingsAction: { accessibilityPermission.openSystemSettings() }
+                )
+            } header: {
+                Text("Accessibility")
+            }
+        }
+
+
+
+        if enableSystemHUD && !Defaults[.enableCustomOSD] && (hasAccessibilityPermission || enableThirdPartyDDCIntegration) {
+            Section {
+                Toggle("Volume HUD", isOn: $enableVolumeHUD)
+                Toggle("Brightness HUD", isOn: $enableBrightnessHUD)
+                SettingsRow("Keyboard Backlight HUD", description: enableThirdPartyDDCIntegration
+                            ? Text("Disabled while external display integration is active. Brightness keys are handled by the external app.") : nil) {
+                    Toggle("Keyboard Backlight HUD", isOn: $enableKeyboardBacklightHUD)
+                }
+                .disabled(enableThirdPartyDDCIntegration)
+            } header: {
+                Text("Controls")
+            } footer: {
+                SettingsFooter("Choose which system controls should display HUD notifications.")
+            }
+        }
+
+        Section {
+            SettingsRow("Play feedback when volume is changed", description: "Plays the supplied feedback clip whenever you press the hardware volume keys.") {
                 Defaults.Toggle(key: .playVolumeChangeFeedback) {
                     Text("Play feedback when volume is changed")
                 }
-                .settingsHighlight(id: highlightID("Play feedback when volume is changed"))
-                .help("Plays the supplied feedback clip whenever you press the hardware volume keys.")
-            } header: {
-                Text("Audio feedback")
-            } footer: {
-                Text("Requires Accessibility permission so Dynamic Island can intercept the hardware volume keys.")
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
             }
-
-            Section {
-                Defaults.Toggle(key: .useColorCodedVolumeDisplay) {
-                    Text("Color-coded volume display")
-                }
-                .disabled(colorCodingDisabled)
-                .settingsHighlight(id: highlightID("Color-coded volume display"))
-
-                if !colorCodingDisabled && (Defaults[.useColorCodedBatteryDisplay] || Defaults[.useColorCodedVolumeDisplay]) {
-                    Defaults.Toggle(key: .useSmoothColorGradient) {
-                        Text("Smooth color transitions")
-                    }
-                    .settingsHighlight(id: highlightID("Smooth color transitions"))
-                }
-
-                Defaults.Toggle(key: .showProgressPercentages) {
-                    Text("Show percentages beside progress bars")
-                }
-                .settingsHighlight(id: highlightID("Show percentages beside progress bars"))
-            } header: {
-                Text("Dynamic Island Progress Bars")
-            } footer: {
-                if colorCodingDisabled {
-                    Text("Color-coded fills and smooth gradients are unavailable in Segmented mode. Switch to Hierarchical or Gradient to adjust these options.")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                } else if Defaults[.useSmoothColorGradient] {
-                    Text("Smooth transitions blend Green (0–60%), Yellow (60–85%), and Red (85–100%) through the entire fill.")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                } else {
-                    Text("Discrete transitions snap between Green (0–60%), Yellow (60–85%), and Red (85–100%).")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
-            }
-
-            Section {
-                Picker("HUD style", selection: $inlineHUD) {
-                    Text("Default")
-                        .tag(false)
-                    Text("Inline")
-                        .tag(true)
-                }
-                .settingsHighlight(id: highlightID("HUD style"))
-                .onChange(of: Defaults[.inlineHUD]) {
-                    if Defaults[.inlineHUD] {
-                        withAnimation {
-                            Defaults[.systemEventIndicatorShadow] = false
-                            Defaults[.progressBarStyle] = .hierarchical
-                        }
-                    }
-                }
-                Picker("Progressbar style", selection: $progressBarStyle) {
-                    Text("Hierarchical")
-                        .tag(ProgressBarStyle.hierarchical)
-                    Text("Gradient")
-                        .tag(ProgressBarStyle.gradient)
-                    Text("Segmented")
-                        .tag(ProgressBarStyle.segmented)
-                }
-                .settingsHighlight(id: highlightID("Progressbar style"))
-                Defaults.Toggle(key: .systemEventIndicatorShadow) {
-                    Text("Enable glowing effect")
-                }
-                .settingsHighlight(id: highlightID("Enable glowing effect"))
-                Defaults.Toggle(key: .systemEventIndicatorUseAccent) {
-                    Text("Use accent color")
-                }
-                .settingsHighlight(id: highlightID("Use accent color"))
-            } header: {
-                HStack {
-                    Text("Appearance")
-                }
-            }
+            .settingsHighlight(id: highlightID("Play feedback when volume is changed"))
+        } header: {
+            Text("Audio feedback")
+        } footer: {
+            SettingsFooter("Requires Accessibility permission so Dynamic Island can intercept the hardware volume keys.")
         }
-        .navigationTitle("Controls")
-        .onAppear {
-            accessibilityPermission.refreshStatus()
-        }
-        .onChange(of: accessibilityPermission.isAuthorized) { _, granted in
-            if !granted {
-                enableSystemHUD = false
+
+        Section {
+            Defaults.Toggle(key: .useColorCodedVolumeDisplay) {
+                Text("Color-coded volume display")
+            }
+            .disabled(colorCodingDisabled)
+            .settingsHighlight(id: highlightID("Color-coded volume display"))
+
+            if !colorCodingDisabled && (Defaults[.useColorCodedBatteryDisplay] || Defaults[.useColorCodedVolumeDisplay]) {
+                Defaults.Toggle(key: .useSmoothColorGradient) {
+                    Text("Smooth color transitions")
+                }
+                .settingsHighlight(id: highlightID("Smooth color transitions"))
+            }
+
+            Defaults.Toggle(key: .showProgressPercentages) {
+                Text("Show percentages beside progress bars")
+            }
+            .settingsHighlight(id: highlightID("Show percentages beside progress bars"))
+        } header: {
+            Text("Dynamic Island Progress Bars")
+        } footer: {
+            if colorCodingDisabled {
+                SettingsFooter("Color-coded fills and smooth gradients are unavailable in Segmented mode. Switch to Hierarchical or Gradient to adjust these options.")
+            } else if Defaults[.useSmoothColorGradient] {
+                SettingsFooter("Smooth transitions blend Green (0–60%), Yellow (60–85%), and Red (85–100%) through the entire fill.")
             } else {
-                // Without this the tap was created once at launch and never retried, so
-                // granting Accessibility only took effect after restarting Kannu.
-                MediaKeyInterceptor.shared.start()
+                SettingsFooter("Discrete transitions snap between Green (0–60%), Yellow (60–85%), and Red (85–100%).")
             }
+        }
+
+        Section {
+            Picker("HUD style", selection: $inlineHUD) {
+                Text("Default")
+                    .tag(false)
+                Text("Inline")
+                    .tag(true)
+            }
+            .settingsHighlight(id: highlightID("HUD style"))
+            .onChange(of: Defaults[.inlineHUD]) {
+                if Defaults[.inlineHUD] {
+                    withAnimation {
+                        Defaults[.systemEventIndicatorShadow] = false
+                        Defaults[.progressBarStyle] = .hierarchical
+                    }
+                }
+            }
+            Picker("Progressbar style", selection: $progressBarStyle) {
+                Text("Hierarchical")
+                    .tag(ProgressBarStyle.hierarchical)
+                Text("Gradient")
+                    .tag(ProgressBarStyle.gradient)
+                Text("Segmented")
+                    .tag(ProgressBarStyle.segmented)
+            }
+            .settingsHighlight(id: highlightID("Progressbar style"))
+            Defaults.Toggle(key: .systemEventIndicatorShadow) {
+                Text("Enable glowing effect")
+            }
+            .settingsHighlight(id: highlightID("Enable glowing effect"))
+            Defaults.Toggle(key: .systemEventIndicatorUseAccent) {
+                Text("Use accent color")
+            }
+            .settingsHighlight(id: highlightID("Use accent color"))
+        } header: {
+            Text("Appearance")
         }
     }
 }
@@ -2922,21 +2859,15 @@ struct Media: View {
                 Text("Media Source")
             } footer: {
                 if MusicManager.shared.isNowPlayingDeprecated {
-                    HStack {
-                        Text("YouTube Music requires this third-party app to be installed: ")
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
+                    VStack(alignment: .leading, spacing: 2) {
+                        SettingsFooter("YouTube Music requires this third-party app to be installed: ")
                         Link("https://github.com/th-ch/youtube-music", destination: URL(string: "https://github.com/th-ch/youtube-music")!)
-                            .font(.caption)
-                            .foregroundColor(.blue) // Ensures it's visibly a link
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(String(localized: "'Now Playing' was the only option on previous versions and works with all media apps."))
-                        Text(String(localized: "Uses macOS Now Playing when Amazon Music is the active source. Timeline scrubbing may be unavailable."))
+                        SettingsFooter(String(localized: "'Now Playing' was the only option on previous versions and works with all media apps."))
+                        SettingsFooter(String(localized: "Uses macOS Now Playing when Amazon Music is the active source. Timeline scrubbing may be unavailable."))
                     }
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
                 }
             }
 
@@ -2956,22 +2887,16 @@ struct Media: View {
                 }
                 .disabled(enableMinimalisticUI || !showStandardMediaControls)
                 .settingsHighlight(id: highlightID("Auto-hide inactive notch media player"))
-
-                if enableMinimalisticUI {
-                    Text("Disable Minimalistic UI to configure the standard notch media controls.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else if standardControlsSuppressed {
-                    Text("Standard notch media controls are hidden. Re-enable the toggle above to restore them.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else if !autoHideInactiveNotchMediaPlayer {
-                    Text("When off, the notch player stays visible with placeholder info while nothing plays.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
             } header: {
                 Text("Dynamic Island Visibility")
+            } footer: {
+                if enableMinimalisticUI {
+                    SettingsFooter("Disable Minimalistic UI to configure the standard notch media controls.")
+                } else if standardControlsSuppressed {
+                    SettingsFooter("Standard notch media controls are hidden. Re-enable the toggle above to restore them.")
+                } else if !autoHideInactiveNotchMediaPlayer {
+                    SettingsFooter("When off, the notch player stays visible with placeholder info while nothing plays.")
+                }
             }
             Section {
                 Defaults.Toggle(key: .showShuffleAndRepeat) {
@@ -2981,60 +2906,61 @@ struct Media: View {
                     }
                 }
                 if showShuffleAndRepeat {
-                    Defaults.Toggle(key: .showMediaOutputControl) {
-                        Text("Show \"Change Media Output\" control")
+                    SettingsRow("Show \"Change Media Output\" control", description: "Adds the AirPlay/route picker button back to the customizable controls palette.") {
+                        Defaults.Toggle(key: .showMediaOutputControl) {
+                            Text("Show \"Change Media Output\" control")
+                        }
                     }
                     .settingsHighlight(id: highlightID("Show Change Media Output control"))
-                    .help("Adds the AirPlay/route picker button back to the customizable controls palette.")
                     MusicSlotConfigurationView()
-                } else {
-                    Text("Turn on customizable controls to rearrange media buttons.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, 4)
                 }
             } header: {
                 Text("Media controls")
+            } footer: {
+                if !showShuffleAndRepeat {
+                    SettingsFooter("Turn on customizable controls to rearrange media buttons.")
+                }
             }
 
             Section(header: Text("Lock Screen Media")) {
-                Defaults.Toggle(key: .lockScreenMusicAlbumParallaxEnabled) {
-                    Text("Enable album art parallax")
+                SettingsRow("Enable album art parallax", description: "Applies the notch-style parallax effect to the lock screen media widget album art.") {
+                    Defaults.Toggle(key: .lockScreenMusicAlbumParallaxEnabled) {
+                        Text("Enable album art parallax")
+                    }
                 }
                 .settingsHighlight(id: highlightID("Enable album art parallax"))
-                Text("Applies the notch-style parallax effect to the lock screen media widget album art.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
             if musicControlWindowEnabled {
                 Section {
-                    Picker("Skip buttons", selection: $musicSkipBehavior) {
-                        ForEach(MusicSkipBehavior.allCases) { behavior in
-                            Text(behavior.displayName).tag(behavior)
+                    SettingsRow("Skip buttons", description: musicSkipBehavior.description) {
+                        Picker("Skip buttons", selection: $musicSkipBehavior) {
+                            ForEach(MusicSkipBehavior.allCases) { behavior in
+                                Text(behavior.displayName).tag(behavior)
+                            }
                         }
+                        .pickerStyle(.segmented)
+                        .fixedSize()
                     }
-                    .pickerStyle(.segmented)
                     .settingsHighlight(id: highlightID("Skip buttons"))
-
-                    Text(musicSkipBehavior.description)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 } header: {
                     Text("Floating window panel skip behaviour")
                 }
             }
             Section {
-                Toggle(
-                    "Enable music live activity",
-                    isOn: $coordinator.musicLiveActivityEnabled.animation()
-                )
+                SettingsRow("Enable music live activity", description: standardControlsSuppressed
+                            ? Text("Standard notch media controls are hidden while this toggle is off.") : nil) {
+                    Toggle(
+                        "Enable music live activity",
+                        isOn: $coordinator.musicLiveActivityEnabled.animation()
+                    )
+                }
                 .disabled(standardControlsSuppressed)
-                .help(standardControlsSuppressed ? "Standard notch media controls are hidden while this toggle is off." : "")
-                Defaults.Toggle(key: .musicControlWindowEnabled) {
-                    Text("Show floating media controls")
+                SettingsRow("Show floating media controls", description: "Shows play/pause and skip buttons beside the notch while music is active.") {
+                    Defaults.Toggle(key: .musicControlWindowEnabled) {
+                        Text("Show floating media controls")
+                    }
                 }
                 .disabled(!coordinator.musicLiveActivityEnabled || standardControlsSuppressed)
-                .help("Shows play/pause and skip buttons beside the notch while music is active.")
                 Toggle("Enable sneak peek", isOn: $enableSneakPeek)
                 Toggle("Show sneak peek on playback changes", isOn: $showSneakPeekOnTrackChange)
                     .disabled(!enableSneakPeek)
@@ -3042,23 +2968,30 @@ struct Media: View {
                     Text("Enable lyrics")
                 }
                 .settingsHighlight(id: highlightID("Enable lyrics"))
-                Defaults.Toggle(key: .showLiveCanvasInDynamicIsland) {
-                    Text("Show live canvas in Dynamic Island")
-                }
-                .settingsHighlight(id: highlightID("Show live canvas in Dynamic Island"))
-                .help("Shows the app's live canvas in place of album art when one is available.")
-                
-                //Parallax Effect Intensity to control how much parallax is wanted
-                Slider(value: $parallaxEffectIntensity, in: 0...12, step: 1.0) {
-                    HStack {
-                        Text("Parallax Effect Intensity")
-                        Spacer()
-                        Text("\(parallaxEffectIntensity, specifier: "%0.1f")")
-                            .foregroundStyle(.secondary)
+                SettingsRow("Show live canvas in Dynamic Island", description: "Shows the app's live canvas in place of album art when one is available.") {
+                    Defaults.Toggle(key: .showLiveCanvasInDynamicIsland) {
+                        Text("Show live canvas in Dynamic Island")
                     }
                 }
+                .settingsHighlight(id: highlightID("Show live canvas in Dynamic Island"))
+
+                // How much the album art moves with the pointer.
+                LabeledContent("Parallax Effect Intensity") {
+                    HStack(spacing: 8) {
+                        Slider(value: $parallaxEffectIntensity, in: 0...12, step: 1.0) {
+                            Text("Parallax Effect Intensity")
+                        }
+                        .labelsHidden()
+                        Text("\(parallaxEffectIntensity, specifier: "%0.1f")")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(minWidth: 32, alignment: .trailing)
+                    }
+                    .frame(width: 220)
+                }
                 .settingsHighlight(id: highlightID("Enable album art parallax effect"))
-                
+
+
                 Picker("Sneak Peek Style", selection: $sneakPeekStyles){
                     ForEach(SneakPeekStyle.allCases) { style in
                         Text(style.rawValue).tag(style)
@@ -3067,17 +3000,19 @@ struct Media: View {
                 .disabled(!enableSneakPeek)
                 .settingsHighlight(id: highlightID("Sneak Peek Style"))
 
-                HStack {
-                    Stepper(value: $waitInterval, in: 0...10, step: 1) {
-                        HStack {
+                LabeledContent("Media inactivity timeout") {
+                    HStack(spacing: 6) {
+                        Text("\(waitInterval, specifier: "%.0f") seconds")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                        Stepper(value: $waitInterval, in: 0...10, step: 1) {
                             Text("Media inactivity timeout")
-                            Spacer()
-                            Text("\(Defaults[.waitInterval], specifier: "%.0f") seconds")
-                                .foregroundStyle(.secondary)
                         }
+                        .labelsHidden()
                     }
                 }
-                
+
+
                 Defaults.Toggle(key: .showSongMetadataInClosedNotch) {
                     Text("Show song title and artist on non-notch displays")
                 }
@@ -3110,7 +3045,7 @@ struct Media: View {
             } header: {
                 Text("Music Visualizer")
             } footer: {
-                Text("Shows a real-time audio spectrum synced to your music. Requires macOS 14.2 or later.")
+                SettingsFooter("Shows a real-time audio spectrum synced to your music. Requires macOS 14.2 or later.")
             }
 
             Section {
@@ -3153,46 +3088,50 @@ struct Media: View {
                         .opacity(enableLockScreenMediaWidget ? 1 : 0.5)
                         .settingsHighlight(id: highlightID("Enable media panel blur"))
                 }
-                VStack(alignment: .leading, spacing: 4) {
+                SettingsRow("Fullscreen artwork on right-click", description: "Right-click the lock screen album art to use it as the wallpaper; right-click again to restore.") {
                     Defaults.Toggle(key: .lockScreenMusicFullscreenArtworkEnabled) {
                         Text("Fullscreen artwork on right-click")
                     }
-                    .disabled(!enableLockScreenMediaWidget)
-                    .settingsHighlight(id: highlightID("Fullscreen artwork on right-click"))
-                    Defaults.Toggle(key: .lockScreenUseArtworkLayoutOverFullscreenCanvas) {
-                        Text("Use album art layout over fullscreen canvas")
-                    }
-                    .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
-                    .settingsHighlight(id: highlightID("Use album art layout over fullscreen canvas"))
-                    Defaults.Toggle(key: .lockScreenKeepAlbumArtVisibleDuringFullscreenArtwork) {
-                        Text("Keep album art visible during fullscreen artwork")
-                    }
-                    .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
-                    .settingsHighlight(id: highlightID("Keep album art visible during fullscreen artwork"))
-                    Text("Right-click the lock screen album art to use it as the wallpaper; right-click again to restore.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .disabled(!enableLockScreenMediaWidget)
+                .settingsHighlight(id: highlightID("Fullscreen artwork on right-click"))
+                Defaults.Toggle(key: .lockScreenUseArtworkLayoutOverFullscreenCanvas) {
+                    Text("Use album art layout over fullscreen canvas")
+                }
+                .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
+                .settingsHighlight(id: highlightID("Use album art layout over fullscreen canvas"))
+                Defaults.Toggle(key: .lockScreenKeepAlbumArtVisibleDuringFullscreenArtwork) {
+                    Text("Keep album art visible during fullscreen artwork")
+                }
+                .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
+                .settingsHighlight(id: highlightID("Keep album art visible during fullscreen artwork"))
             } header: {
                 Text("Lock Screen Integration")
             } footer: {
-                Text("These controls mirror the Lock Screen tab.")
+                SettingsFooter("These controls mirror the Lock Screen tab.")
             }
             .disabled(!showStandardMediaControls)
             .opacity(showStandardMediaControls ? 1 : 0.5)
 
-            Picker(selection: $hideNotchOption, label:
-                    HStack {
-                Text("Hide DynamicIsland Options")
-                customBadge(text: "Beta")
-            }) {
-                Text("Always hide in fullscreen").tag(HideNotchOption.always)
-                Text("Hide only when NowPlaying app is in fullscreen").tag(HideNotchOption.nowPlayingOnly)
-                Text("Never hide").tag(HideNotchOption.never)
-            }
-            .onChange(of: hideNotchOption) {
-                Defaults[.enableFullscreenMediaDetection] = hideNotchOption != .never
+            // A radio group: the options are too long for a menu at this width.
+            Section {
+                Picker(selection: $hideNotchOption) {
+                    Text("Always hide in fullscreen").tag(HideNotchOption.always)
+                    Text("Hide only when NowPlaying app is in fullscreen").tag(HideNotchOption.nowPlayingOnly)
+                    Text("Never hide").tag(HideNotchOption.never)
+                } label: {
+                    Text("Hide DynamicIsland Options")
+                }
+                .pickerStyle(.radioGroup)
+                .labelsHidden()
+                .onChange(of: hideNotchOption) {
+                    Defaults[.enableFullscreenMediaDetection] = hideNotchOption != .never
+                }
+            } header: {
+                HStack {
+                    Text("Hide DynamicIsland Options")
+                    customBadge(text: "Beta")
+                }
             }
         }
         .navigationTitle("Media")
@@ -3208,22 +3147,20 @@ struct Media: View {
     }
 
     private var unavailableBlurRow: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 2) {
             Text("Enable media panel blur")
                 .foregroundStyle(.secondary)
             Text("Only applies when Material is set to Frosted Glass.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .settingsDescriptionStyle()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
     private var customLiquidBlurRow: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 2) {
             Text("Enable media panel blur")
                 .foregroundStyle(.secondary)
             Text("Custom liquid glass already renders with Apple's liquid material, so this option is managed automatically.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .settingsDescriptionStyle()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -3231,41 +3168,34 @@ struct Media: View {
 
 
 struct About: View {
-    @State private var showBuildNumber: Bool = false
+    /// "1.2.0 (2)" — the build used to hide behind a tap; it is what a bug report needs.
+    private var versionText: String {
+        let version = Bundle.main.releaseVersionNumber ?? String(localized: "unknown")
+        guard let build = Bundle.main.buildVersionNumber, !build.isEmpty else { return version }
+        return "\(version) (\(build))"
+    }
 
     var body: some View {
-        VStack {
-            Form {
-                Section {
-                    HStack {
-                        Text("Release name")
-                        Spacer()
-                        Text(ReleaseInfo.codename)
-                            .foregroundStyle(.secondary)
-                    }
-                    HStack {
-                        Text("Version")
-                        Spacer()
-                        if showBuildNumber {
-                            Text("(\(Bundle.main.buildVersionNumber ?? ""))")
-                                .foregroundStyle(.secondary)
-                        }
-                        Text(Bundle.main.releaseVersionNumber ?? "unkown")
-                            .foregroundStyle(.secondary)
-                    }
-                    .onTapGesture {
-                        withAnimation {
-                            showBuildNumber.toggle()
-                        }
-                    }
-                    if SparkleUpdaterController.shared.isEnabled {
+        Form {
+            Section {
+                LabeledContent("Release name") {
+                    Text(ReleaseInfo.codename)
+                        .textSelection(.enabled)
+                }
+                LabeledContent("Version") {
+                    Text(versionText)
+                        .monospacedDigit()
+                        .textSelection(.enabled)
+                }
+                if SparkleUpdaterController.shared.isEnabled {
+                    SettingsActionRow {
                         Button("Check for Updates…") {
                             SparkleUpdaterController.shared.checkForUpdates(nil)
                         }
                     }
-                } header: {
-                    Text("Version info")
                 }
+            } header: {
+                Text("Version info")
             }
         }
         .navigationTitle("About")
@@ -3513,35 +3443,24 @@ struct Shelf: View {
             }
 
             Section {
-                Picker("Quick Share Service", selection: $quickShareProvider) {
-                    ForEach(quickShareService.availableProviders, id: \.id) { provider in
-                        HStack {
-                            QuickShareProviderIconImage(provider: provider, size: 16)
-                            Text(provider.id)
+                SettingsRow("Quick Share Service", description: selectedProvider == nil
+                            ? nil : Text("Files dropped on the shelf will be shared via this service")) {
+                    Picker("Quick Share Service", selection: $quickShareProvider) {
+                        ForEach(quickShareService.availableProviders, id: \.id) { provider in
+                            HStack {
+                                QuickShareProviderIconImage(provider: provider, size: 16)
+                                Text(provider.id)
+                            }
+                            .tag(provider.id)
                         }
-                        .tag(provider.id)
                     }
+                    .pickerStyle(.menu)
                 }
-                .pickerStyle(.menu)
                 .settingsHighlight(id: highlightID("Quick Share Service"))
-
-                if let selectedProvider {
-                    HStack {
-                        QuickShareProviderIconImage(provider: selectedProvider, size: 16)
-                        Text("Files dropped on the shelf will be shared via this service")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 4)
-                }
             } header: {
-                HStack {
-                    Text("Quick Share")
-                }
+                Text("Quick Share")
             } footer: {
-                Text("Choose which service to use when sharing files from the shelf. Drag files onto the shelf or click the shelf button to pick files.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                SettingsFooter("Choose which service to use when sharing files from the shelf. Drag files onto the shelf or click the shelf button to pick files.")
             }
             
             if quickShareProvider == "LocalSend" {
@@ -3573,7 +3492,8 @@ private struct LocalSendSettingsSection: View {
                 }
             }
             .pickerStyle(.menu)
-            
+            .settingsHighlight(id: highlightID("Device Picker Style"))
+
             if glassMode == .customLiquid {
                 Picker("Liquid Glass Variant", selection: $liquidGlassVariant) {
                     ForEach(LiquidGlassVariant.allCases) { variant in
@@ -3585,9 +3505,7 @@ private struct LocalSendSettingsSection: View {
         } header: {
             Text("LocalSend Device Picker")
         } footer: {
-            Text("Customize the appearance of the LocalSend device selection popup that appears when you drop files.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            SettingsFooter("Customize the appearance of the LocalSend device selection popup that appears when you drop files.")
         }
     }
 }
@@ -3643,7 +3561,7 @@ struct LiveActivitiesSettings: View {
             } header: {
                 Text("Screen Recording")
             } footer: {
-                Text("Uses event-driven private API for real-time screen recording detection")
+                SettingsFooter("Uses event-driven private API for real-time screen recording detection")
             }
 
             Section {
@@ -3671,19 +3589,23 @@ struct LiveActivitiesSettings: View {
                 .disabled(!enableDoNotDisturbDetection)
                 .settingsHighlight(id: highlightID("Show Focus Indicator"))
 
-                Defaults.Toggle(key: .showDoNotDisturbLabel) {
-                    Text("Show Focus Label")
+                SettingsRow("Show Focus Label", description: focusIndicatorNonPersistent
+                            ? Text("Labels are forced to compact on/off text while brief toast mode is enabled.")
+                            : Text("Show the active Focus name inside the indicator.")) {
+                    Defaults.Toggle(key: .showDoNotDisturbLabel) {
+                        Text("Show Focus Label")
+                    }
                 }
                 .disabled(!enableDoNotDisturbDetection || focusIndicatorNonPersistent)
-                .help(focusIndicatorNonPersistent ? "Labels are forced to compact on/off text while brief toast mode is enabled." : "Show the active Focus name inside the indicator.")
                 .settingsHighlight(id: highlightID("Show Focus Label"))
 
-                Defaults.Toggle(key: .focusIndicatorNonPersistent) {
-                    Text("Show Focus as brief toast")
+                SettingsRow("Show Focus as brief toast", description: "When enabled, Focus appears briefly (on/off) and then collapses instead of staying visible.") {
+                    Defaults.Toggle(key: .focusIndicatorNonPersistent) {
+                        Text("Show Focus as brief toast")
+                    }
                 }
                 .disabled(!enableDoNotDisturbDetection)
                 .settingsHighlight(id: highlightID("Show Focus as brief toast"))
-                .help("When enabled, Focus appears briefly (on/off) and then collapses instead of staying visible.")
 
                 if doNotDisturbManager.isMonitoring {
                     HStack {
@@ -3713,7 +3635,7 @@ struct LiveActivitiesSettings: View {
             } header: {
                 Text("Do Not Disturb")
             } footer: {
-                Text("Listens for Focus session changes via distributed notifications")
+                SettingsFooter("Listens for Focus session changes via distributed notifications")
             }
 
             Section {
@@ -3739,7 +3661,7 @@ struct LiveActivitiesSettings: View {
             } header: {
                 Text("Caps Lock Indicator")
             } footer: {
-                Text("Adds a notch HUD when Caps Lock is enabled, with optional label and tint controls.")
+                SettingsFooter("Adds a notch HUD when Caps Lock is enabled, with optional label and tint controls.")
             }
 
             Section {
@@ -3790,7 +3712,7 @@ struct LiveActivitiesSettings: View {
             } header: {
                 Text("Privacy Indicators")
             } footer: {
-                Text("Shows green camera icon and yellow microphone icon when in use. Uses event-driven CoreAudio and CoreMediaIO APIs.")
+                SettingsFooter("Shows green camera icon and yellow microphone icon when in use. Uses event-driven CoreAudio and CoreMediaIO APIs.")
             }
 
             Section {
@@ -3802,7 +3724,7 @@ struct LiveActivitiesSettings: View {
             } header: {
                 Text("Media Live Activity")
             } footer: {
-                Text("Use the Media tab to configure sneak peek, lyrics, and floating media controls.")
+                SettingsFooter("Use the Media tab to configure sneak peek, lyrics, and floating media controls.")
             }
         }
         .navigationTitle("Live Activities")
@@ -3920,19 +3842,18 @@ struct Appearance: View {
             // Show display style picker only on non-notch Macs (main screen has no physical notch)
             if !mainScreenHasPhysicalNotch {
                 Section {
-                    Picker("Main screen style", selection: $externalDisplayStyle) {
-                        ForEach(ExternalDisplayStyle.allCases) { style in
-                            Text(style.localizedName)
-                                .tag(style)
+                    SettingsRow("Main screen style", description: externalDisplayStyle.description) {
+                        Picker("Main screen style", selection: $externalDisplayStyle) {
+                            ForEach(ExternalDisplayStyle.allCases) { style in
+                                Text(style.localizedName)
+                                    .tag(style)
+                            }
                         }
                     }
                     .onChange(of: externalDisplayStyle) {
                         NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
                     }
                     .settingsHighlight(id: highlightID("Main screen style"))
-                    Text(externalDisplayStyle.description)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 } header: {
                     Text("Display Style")
                 }
@@ -3941,61 +3862,56 @@ struct Appearance: View {
             notchWidthControls()
 
             Section {
-                VStack(alignment: .leading, spacing: 12) {
-                    SettingsColorPickerRow(title: "Notch fill color", selection: $notchFillColor)
-                }
-                .settingsHighlight(id: highlightID("Notch fill color"))
-                Text("Fill color is used when no custom notch skin is selected.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                SettingsColorPickerRow(title: "Notch fill color",
+                                       description: String(localized: "Fill color is used when no custom notch skin is selected."),
+                                       selection: $notchFillColor)
+                    .settingsHighlight(id: highlightID("Notch fill color"))
             } header: {
                 Text("Notch appearance")
             }
 
             Section {
                 if #available(macOS 26.0, *) {
-                    Picker("Material", selection: $lockScreenGlassStyle) {
-                        ForEach(LockScreenGlassStyle.allCases) { style in
-                            Text(style.rawValue).tag(style)
+                    SettingsRow("Material", description: lockScreenGlassStyle == .liquid
+                                ? nil : Text("Custom Liquid settings require the Liquid Glass material.")) {
+                        Picker("Material", selection: $lockScreenGlassStyle) {
+                            ForEach(LockScreenGlassStyle.allCases) { style in
+                                Text(style.rawValue).tag(style)
+                            }
                         }
                     }
                     .settingsHighlight(id: highlightID("Lock screen material"))
                 } else {
-                    Picker("Material", selection: $lockScreenGlassStyle) {
-                        ForEach(LockScreenGlassStyle.allCases) { style in
-                            Text(style.rawValue).tag(style)
+                    SettingsRow("Material", description: Text("Liquid Glass requires macOS 26 or later.")) {
+                        Picker("Material", selection: $lockScreenGlassStyle) {
+                            ForEach(LockScreenGlassStyle.allCases) { style in
+                                Text(style.rawValue).tag(style)
+                            }
                         }
                     }
                     .disabled(true)
                     .settingsHighlight(id: highlightID("Lock screen material"))
-                    Text("Liquid Glass requires macOS 26 or later.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
 
                 if lockScreenGlassStyle == .liquid {
-                    Picker("Lock screen glass mode", selection: $lockScreenGlassCustomizationMode) {
-                        ForEach(LockScreenGlassCustomizationMode.allCases) { mode in
-                            Text(mode.rawValue).tag(mode)
+                    SettingsRow("Lock screen glass mode", description: lockScreenGlassCustomizationMode == .customLiquid
+                                ? Text("Pick per-widget liquid-glass variants below. Changes mirror the Lock Screen tab.") : nil) {
+                        Picker("Lock screen glass mode", selection: $lockScreenGlassCustomizationMode) {
+                            ForEach(LockScreenGlassCustomizationMode.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
                         }
+                        .pickerStyle(.segmented)
+                        .fixedSize()
                     }
-                    .pickerStyle(.segmented)
                     .settingsHighlight(id: highlightID("Lock screen glass mode"))
 
                     if lockScreenGlassCustomizationMode == .customLiquid {
-                        Text("Pick per-widget liquid-glass variants below. Changes mirror the Lock Screen tab.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
                         VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text("Music panel variant")
-                                Spacer()
-                                Text("v\(lockScreenMusicLiquidGlassVariant.rawValue)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                            LabeledContent("Music panel variant") {
+                                variantSliderControl(value: appearanceMusicVariantBinding, current: lockScreenMusicLiquidGlassVariant.rawValue,
+                                                     range: liquidVariantRange, title: String(localized: "Music panel variant"))
                             }
-                            Slider(value: appearanceMusicVariantBinding, in: liquidVariantRange, step: 1)
 
                             LockScreenGlassVariantPreviewCell(variant: $lockScreenMusicLiquidGlassVariant)
                                 .padding(.top, 6)
@@ -4004,29 +3920,19 @@ struct Appearance: View {
                         .disabled(!enableLockScreenMediaWidget)
                         .opacity(enableLockScreenMediaWidget ? 1 : 0.4)
 
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text("Timer widget variant")
-                                Spacer()
-                                Text("v\(lockScreenTimerLiquidGlassVariant.rawValue)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Slider(value: appearanceTimerVariantBinding, in: liquidVariantRange, step: 1)
+                        LabeledContent("Timer widget variant") {
+                            variantSliderControl(value: appearanceTimerVariantBinding, current: lockScreenTimerLiquidGlassVariant.rawValue,
+                                                 range: liquidVariantRange, title: String(localized: "Timer widget variant"))
                         }
                         .settingsHighlight(id: highlightID("Timer widget variant (appearance)"))
                         .disabled(!enableLockScreenTimerWidget)
                         .opacity(enableLockScreenTimerWidget ? 1 : 0.4)
                     }
-                } else {
-                    Text("Custom Liquid settings require the Liquid Glass material.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
             } header: {
                 Text("Lock Screen Glass")
             } footer: {
-                Text("Configure lock screen materials from the Appearance tab. Custom Liquid unlocks variant sliders for both widgets whenever Liquid Glass is selected.")
+                SettingsFooter("Configure lock screen materials from the Appearance tab. Custom Liquid unlocks variant sliders for both widgets whenever Liquid Glass is selected.")
             }
 
             Section {
@@ -4035,7 +3941,7 @@ struct Appearance: View {
                 }
                 .settingsHighlight(id: highlightID("Enable colored spectrograms"))
                 Defaults.Toggle(key: .playerColorTinting) {
-                    Text("Enable colored spectograms")
+                    Text("Tint player controls with the album art color")
                 }
                 Defaults.Toggle(key: .lightingEffect) {
                     Text("Enable blur effect behind album art")
@@ -4104,47 +4010,48 @@ struct Appearance: View {
                     .onDrop(of: [UTType.fileURL], isTargeted: $isSkinDropTarget) { providers in
                         handleSkinDrop(providers)
                     }
+                }
+                .settingsHighlight(id: highlightID("Notch skin"))
 
-                    HStack(spacing: 8) {
-                        Button("Upload skin") {
-                            notchSkinManager.importError = nil
-                            isSkinImporterPresented = true
+                SettingsActionRow {
+                    Button("Remove selected") {
+                        if let id = selectedNotchSkinID,
+                           let skin = customNotchSkins.first(where: { $0.id.uuidString == id }) {
+                            notchSkinManager.removeSkin(skin)
                         }
-                        .buttonStyle(.borderedProminent)
-
-                        Button("Remove selected") {
-                            if let id = selectedNotchSkinID,
-                               let skin = customNotchSkins.first(where: { $0.id.uuidString == id }) {
-                                notchSkinManager.removeSkin(skin)
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(selectedNotchSkinID == nil)
                     }
+                    .disabled(selectedNotchSkinID == nil)
 
-                    HStack {
-                        Text("Scrim opacity")
-                        Slider(value: $notchSkinScrimOpacity, in: 0...0.6, step: 0.05)
+                    Button("Upload skin") {
+                        notchSkinManager.importError = nil
+                        isSkinImporterPresented = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+
+                LabeledContent("Scrim opacity") {
+                    HStack(spacing: 8) {
+                        Slider(value: $notchSkinScrimOpacity, in: 0...0.6, step: 0.05) {
+                            Text("Scrim opacity")
+                        }
+                        .labelsHidden()
                         Text("\(Int(notchSkinScrimOpacity * 100))%")
+                            .monospacedDigit()
                             .foregroundStyle(.secondary)
                             .frame(width: 44, alignment: .trailing)
                     }
-                    .disabled(selectedNotchSkinID == nil)
-                    .settingsHighlight(id: highlightID("Skin scrim opacity"))
-
-                    if let importError = notchSkinManager.importError {
-                        Text(importError)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("Upload a PNG, JPG, or WebP image to fill the notch background. Add a scrim if the traffic-light indicators are hard to read.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    .frame(minWidth: 180)
                 }
-                .settingsHighlight(id: highlightID("Notch skin"))
+                .disabled(selectedNotchSkinID == nil)
+                .settingsHighlight(id: highlightID("Skin scrim opacity"))
             } header: {
                 Text("Notch skin")
+            } footer: {
+                if let importError = notchSkinManager.importError {
+                    SettingsFooter(importError)
+                } else {
+                    SettingsFooter("Upload a PNG, JPG, or WebP image to fill the notch background. Add a scrim if the traffic-light indicators are hard to read.")
+                }
             }
 
             Section {
@@ -4188,38 +4095,31 @@ struct Appearance: View {
                     .onDrop(of: [UTType.fileURL], isTargeted: $isIconDropTarget) { providers in
                         handleIconDrop(providers)
                     }
-
-                    HStack(spacing: 8) {
-                        Button("Add icon") {
-                            iconImportError = nil
-                            isIconImporterPresented = true
-                        }
-                        .buttonStyle(.borderedProminent)
-
-                        Button("Remove selected") {
-                            if let id = selectedAppIconID,
-                               let icon = customAppIcons.first(where: { $0.id.uuidString == id }) {
-                                removeCustomIcon(icon)
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(selectedAppIconID == nil)
-                    }
-
-                    if let iconImportError {
-                        Text(iconImportError)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("Drop a PNG, JPEG, TIFF, or ICNS file to add it to your icon library.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
                 }
                 .settingsHighlight(id: highlightID("App icon"))
+
+                SettingsActionRow {
+                    Button("Remove selected") {
+                        if let id = selectedAppIconID,
+                           let icon = customAppIcons.first(where: { $0.id.uuidString == id }) {
+                            removeCustomIcon(icon)
+                        }
+                    }
+                    .disabled(selectedAppIconID == nil)
+
+                    Button("Add icon") {
+                        iconImportError = nil
+                        isIconImporterPresented = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
             } header: {
-                HStack {
-                    Text("App icon")
+                Text("App icon")
+            } footer: {
+                if let iconImportError {
+                    SettingsFooter(iconImportError)
+                } else {
+                    SettingsFooter("Drop a PNG, JPEG, TIFF, or ICNS file to add it to your icon library.")
                 }
             }
         }
@@ -4279,6 +4179,7 @@ struct Appearance: View {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(Color.black.opacity(0.08))
                 )
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 2)
@@ -4442,77 +4343,72 @@ struct Appearance: View {
                 }
             )
 
-            VStack(alignment: .leading, spacing: 10) {
-                Defaults.Toggle(key: .customizePhysicalNotchWidth) {
-                    Text("Customize physical notch width")
-                }
-                .onChange(of: customizePhysicalNotchWidth) {
-                    NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
-                }
-                .settingsHighlight(id: highlightID("Customize physical notch width"))
-                
-                Slider(
-                    value: closedWidthBinding,
-                    in: closedRange,
-                    step: 5
-                ) {
-                    HStack {
-                        Text("Closed notch / pill width")
-                        Spacer()
-                        Text("\(Int(closedNotchWidth)) px")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .disabled(!customizePhysicalNotchWidth)
-                .opacity(customizePhysicalNotchWidth ? 1 : 0.5)
-                .settingsHighlight(id: highlightID("Closed notch / pill width"))
-
-                Divider().padding(.vertical, 4)
-
-                Slider(
-                    value: widthBinding,
-                    in: dynamicRange,
-                    step: 10
-                ) {
-                    HStack {
-                        Text("Expanded notch width")
-                        Spacer()
-                        Text("\(Int(openNotchWidth)) px")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .disabled(enableMinimalisticUI || !customizePhysicalNotchWidth)
-                .opacity(customizePhysicalNotchWidth ? 1 : 0.5)
-                .settingsHighlight(id: highlightID("Expanded notch width"))
-
-                HStack {
-                    Text("\(tabCount) tab\(tabCount == 1 ? "" : "s") enabled · min \(Int(recommendedMin)) px")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Reset Width") {
-                        openNotchWidth = recommendedMin
-                    }
-                    .disabled(!customizePhysicalNotchWidth || abs(openNotchWidth - recommendedMin) < 0.5)
-                    .buttonStyle(.bordered)
-                }
-
-                let description = enableMinimalisticUI
-                ? String(localized: "Expanded width adjustments apply only to the standard notch layout. Disable Minimalistic UI to edit this value.")
-                : String(localized: "Recommended minimum width adjusts automatically based on the number of enabled tabs.")
-
-                Text(description)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Defaults.Toggle(key: .customizePhysicalNotchWidth) {
+                Text("Customize physical notch width")
+            }
+            .onChange(of: customizePhysicalNotchWidth) {
+                NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
             }
             .onAppear {
                 enforceMinimumNotchWidth()
+            }
+            .settingsHighlight(id: highlightID("Customize physical notch width"))
+
+            LabeledContent("Closed notch / pill width") {
+                HStack(spacing: 8) {
+                    Slider(value: closedWidthBinding, in: closedRange, step: 5) {
+                        Text("Closed notch / pill width")
+                    }
+                    .labelsHidden()
+                    Text("\(Int(closedNotchWidth)) px")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 48, alignment: .trailing)
+                }
+                .frame(minWidth: 200)
+            }
+            .disabled(!customizePhysicalNotchWidth)
+            .opacity(customizePhysicalNotchWidth ? 1 : 0.5)
+            .settingsHighlight(id: highlightID("Closed notch / pill width"))
+
+            LabeledContent("Expanded notch width") {
+                HStack(spacing: 8) {
+                    Slider(value: widthBinding, in: dynamicRange, step: 10) {
+                        Text("Expanded notch width")
+                    }
+                    .labelsHidden()
+                    Text("\(Int(openNotchWidth)) px")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 48, alignment: .trailing)
+                }
+                .frame(minWidth: 200)
+            }
+            .disabled(enableMinimalisticUI || !customizePhysicalNotchWidth)
+            .opacity(customizePhysicalNotchWidth ? 1 : 0.5)
+            .settingsHighlight(id: highlightID("Expanded notch width"))
+
+            LabeledContent {
+                Button("Reset Width") {
+                    openNotchWidth = recommendedMin
+                }
+                .disabled(!customizePhysicalNotchWidth || abs(openNotchWidth - recommendedMin) < 0.5)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Recommended width")
+                    Text("\(tabCount) tab\(tabCount == 1 ? "" : "s") enabled · min \(Int(recommendedMin)) px")
+                        .settingsDescriptionStyle()
+                }
             }
         } header: {
             HStack {
                 Text("Notch Width")
                 customBadge(text: "Beta")
             }
+        } footer: {
+            SettingsFooter(enableMinimalisticUI
+                ? String(localized: "Expanded width adjustments apply only to the standard notch layout. Disable Minimalistic UI to edit this value.")
+                : String(localized: "Recommended minimum width adjusts automatically based on the number of enabled tabs."))
         }
     }
 
@@ -4601,65 +4497,62 @@ struct LockScreenSettings: View {
             } header: {
                 Text("Live Activity & Feedback")
             } footer: {
-                Text("Controls whether Kannu mirrors lock/unlock events with its own live activity.")
+                SettingsFooter("Controls whether Kannu mirrors lock/unlock events with its own live activity.")
             }
 
             Section {
-                Button(previewManager.isPreviewVisible ? "Hide lock screen preview" : "Preview lock screen widgets") {
-                    previewManager.togglePreview()
+                SettingsActionRow {
+                    Button(previewManager.isPreviewVisible ? "Hide lock screen preview" : "Preview lock screen widgets") {
+                        previewManager.togglePreview()
+                    }
                 }
-                .buttonStyle(.borderedProminent)
                 .settingsHighlight(id: highlightID("Preview lock screen widgets"))
             } header: {
                 Text("Preview")
             } footer: {
-                Text("Opens a transparent preview window with mock data that mirrors the current lock screen widget configuration.")
+                SettingsFooter("Opens a transparent preview window with mock data that mirrors the current lock screen widget configuration.")
             }
 
             Section {
                 if #available(macOS 26.0, *) {
-                    Picker("Material", selection: $lockScreenGlassStyle) {
-                        ForEach(LockScreenGlassStyle.allCases) { style in
-                            Text(style.rawValue).tag(style)
+                    SettingsRow("Material", description: lockScreenGlassStyle == .liquid
+                                ? nil : Text("Custom Liquid settings require the Liquid Glass material.")) {
+                        Picker("Material", selection: $lockScreenGlassStyle) {
+                            ForEach(LockScreenGlassStyle.allCases) { style in
+                                Text(style.rawValue).tag(style)
+                            }
                         }
                     }
                     .settingsHighlight(id: highlightID("Material"))
                 } else {
-                    Picker("Material", selection: $lockScreenGlassStyle) {
-                        ForEach(LockScreenGlassStyle.allCases) { style in
-                            Text(style.rawValue).tag(style)
+                    SettingsRow("Material", description: Text("Liquid Glass requires macOS 26 or later.")) {
+                        Picker("Material", selection: $lockScreenGlassStyle) {
+                            ForEach(LockScreenGlassStyle.allCases) { style in
+                                Text(style.rawValue).tag(style)
+                            }
                         }
                     }
                     .disabled(true)
                     .settingsHighlight(id: highlightID("Material"))
-                    Text("Liquid Glass requires macOS 26 or later.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
 
                 if lockScreenGlassStyle == .liquid {
-                    Picker("Glass mode", selection: $lockScreenGlassCustomizationMode) {
-                        ForEach(LockScreenGlassCustomizationMode.allCases) { mode in
-                            Text(mode.rawValue).tag(mode)
+                    SettingsRow("Glass mode", description: lockScreenGlassCustomizationMode == .customLiquid
+                                ? Text("Use the sliders below to pick unique Apple liquid-glass variants for each widget.") : nil) {
+                        Picker("Glass mode", selection: $lockScreenGlassCustomizationMode) {
+                            ForEach(LockScreenGlassCustomizationMode.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
                         }
+                        .pickerStyle(.segmented)
+                        .fixedSize()
                     }
-                    .pickerStyle(.segmented)
                     .settingsHighlight(id: highlightID("Glass mode"))
-
-                    if lockScreenGlassCustomizationMode == .customLiquid {
-                        Text("Use the sliders below to pick unique Apple liquid-glass variants for each widget.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    Text("Custom Liquid settings require the Liquid Glass material.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
             } header: {
                 Text("Lock Screen Glass")
             } footer: {
-                Text("Choose the global material mode for lock screen widgets. Custom Liquid unlocks per-widget variant sliders while Standard sticks to the classic frosted/liquid options.")
+                SettingsFooter("Choose the global material mode for lock screen widgets. Custom Liquid unlocks per-widget variant sliders while Standard sticks to the classic frosted/liquid options.")
             }
 
             Section {
@@ -4710,38 +4603,32 @@ struct LockScreenSettings: View {
                         .opacity(enableLockScreenMediaWidget ? 1 : 0.5)
                         .settingsHighlight(id: highlightID("Enable media panel blur"))
                 }
-                VStack(alignment: .leading, spacing: 4) {
+                SettingsRow("Fullscreen artwork on right-click", description: "Right-click the lock screen album art to use it as the wallpaper; right-click again to restore.") {
                     Defaults.Toggle(key: .lockScreenMusicFullscreenArtworkEnabled) {
                         Text("Fullscreen artwork on right-click")
                     }
-                    .disabled(!enableLockScreenMediaWidget)
-                    .settingsHighlight(id: highlightID("Fullscreen artwork on right-click"))
-                    Defaults.Toggle(key: .lockScreenUseArtworkLayoutOverFullscreenCanvas) {
-                        Text("Use album art layout over fullscreen canvas")
-                    }
-                    .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
-                    .settingsHighlight(id: highlightID("Use album art layout over fullscreen canvas"))
-                    Defaults.Toggle(key: .lockScreenKeepAlbumArtVisibleDuringFullscreenArtwork) {
-                        Text("Keep album art visible during fullscreen artwork")
-                    }
-                    .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
-                    .settingsHighlight(id: highlightID("Keep album art visible during fullscreen artwork"))
-                    Text("Right-click the lock screen album art to use it as the wallpaper; right-click again to restore.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
-
-                if !showStandardMediaControls {
-                    Text("Enable Dynamic Island media controls to manage the lock screen panel.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                .disabled(!enableLockScreenMediaWidget)
+                .settingsHighlight(id: highlightID("Fullscreen artwork on right-click"))
+                Defaults.Toggle(key: .lockScreenUseArtworkLayoutOverFullscreenCanvas) {
+                    Text("Use album art layout over fullscreen canvas")
                 }
+                .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
+                .settingsHighlight(id: highlightID("Use album art layout over fullscreen canvas"))
+                Defaults.Toggle(key: .lockScreenKeepAlbumArtVisibleDuringFullscreenArtwork) {
+                    Text("Keep album art visible during fullscreen artwork")
+                }
+                .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
+                .settingsHighlight(id: highlightID("Keep album art visible during fullscreen artwork"))
             } header: {
                 Text("Media Panel")
             } footer: {
-                Text("Enable and style the media controls that appear above the system clock when the screen is locked.")
+                VStack(alignment: .leading, spacing: 4) {
+                    if !showStandardMediaControls {
+                        SettingsFooter("Enable Dynamic Island media controls to manage the lock screen panel.")
+                    }
+                    SettingsFooter("Enable and style the media controls that appear above the system clock when the screen is locked.")
+                }
             }
             .disabled(!showStandardMediaControls)
             .opacity(showStandardMediaControls ? 1 : 0.5)
@@ -4751,20 +4638,27 @@ struct LockScreenSettings: View {
                     Text("Show lock screen timer")
                 }
                 .settingsHighlight(id: highlightID("Show lock screen timer"))
-                Picker("Timer surface", selection: timerSurfaceBinding) {
-                    ForEach(LockScreenTimerSurfaceMode.allCases) { mode in
-                        Text(mode.rawValue).tag(mode)
+                SettingsRow("Timer surface", description: timerGlassModeIsGlass
+                            ? nil : Text("Classic mode keeps the original translucent black background.")) {
+                    Picker("Timer surface", selection: timerSurfaceBinding) {
+                        ForEach(LockScreenTimerSurfaceMode.allCases) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
                     }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
                 }
-                .pickerStyle(.segmented)
                 .disabled(!enableLockScreenTimerWidget)
                 .opacity(enableLockScreenTimerWidget ? 1 : 0.5)
                 .settingsHighlight(id: highlightID("Timer surface"))
 
                 if timerGlassModeIsGlass {
-                    Picker("Timer glass material", selection: $lockScreenTimerGlassStyle) {
-                        ForEach(LockScreenGlassStyle.allCases) { style in
-                            Text(style.rawValue).tag(style)
+                    SettingsRow("Timer glass material", description: lockScreenTimerGlassStyle == .liquid
+                                ? nil : Text("Uses the frosted blur treatment while glass mode is enabled.")) {
+                        Picker("Timer glass material", selection: $lockScreenTimerGlassStyle) {
+                            ForEach(LockScreenGlassStyle.allCases) { style in
+                                Text(style.rawValue).tag(style)
+                            }
                         }
                     }
                     .disabled(!enableLockScreenTimerWidget)
@@ -4772,12 +4666,15 @@ struct LockScreenSettings: View {
                     .settingsHighlight(id: highlightID("Timer glass material"))
 
                     if lockScreenTimerGlassStyle == .liquid {
-                        Picker("Timer liquid mode", selection: $lockScreenTimerGlassCustomizationMode) {
-                            ForEach(LockScreenGlassCustomizationMode.allCases) { mode in
-                                Text(mode.rawValue).tag(mode)
+                        SettingsRow("Timer liquid mode") {
+                            Picker("Timer liquid mode", selection: $lockScreenTimerGlassCustomizationMode) {
+                                ForEach(LockScreenGlassCustomizationMode.allCases) { mode in
+                                    Text(mode.rawValue).tag(mode)
+                                }
                             }
+                            .pickerStyle(.segmented)
+                            .fixedSize()
                         }
-                        .pickerStyle(.segmented)
                         .disabled(!enableLockScreenTimerWidget)
                         .opacity(enableLockScreenTimerWidget ? 1 : 0.5)
                         .settingsHighlight(id: highlightID("Timer liquid mode"))
@@ -4791,23 +4688,12 @@ struct LockScreenSettings: View {
                                 highlight: highlightID("Timer widget variant")
                             )
                         }
-                    } else {
-                        Text("Uses the frosted blur treatment while glass mode is enabled.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                } else {
-                    Text("Classic mode keeps the original translucent black background.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .opacity(enableLockScreenTimerWidget ? 1 : 0.5)
                 }
             } header: {
                 Text("Timer Widget")
             } footer: {
-                Text("Controls the optional timer widget that floats above the media panel, including its classic, frosted, or liquid glass surface independent of the global material setting.")
+                SettingsFooter("Controls the optional timer widget that floats above the media panel, including its classic, frosted, or liquid glass surface independent of the global material setting.")
             }
 
             Section {
@@ -4853,8 +4739,11 @@ struct LockScreenSettings: View {
                     .disabled(lockScreenWeatherWidgetStyle != .inline)
                     .settingsHighlight(id: highlightID("Show sunrise time"))
 
-                    Defaults.Toggle(key: .lockScreenWeatherShowsAQI) {
-                        Text("Show AQI widget")
+                    SettingsRow("Show AQI widget", description: lockScreenWeatherProviderSource.supportsAirQuality
+                                ? nil : Text("Air quality requires the Open Meteo provider.")) {
+                        Defaults.Toggle(key: .lockScreenWeatherShowsAQI) {
+                            Text("Show AQI widget")
+                        }
                     }
                     .disabled(!lockScreenWeatherProviderSource.supportsAirQuality)
                     .settingsHighlight(id: highlightID("Show AQI widget"))
@@ -4869,12 +4758,6 @@ struct LockScreenSettings: View {
                         .settingsHighlight(id: highlightID("Air quality scale"))
                     }
 
-                    if !lockScreenWeatherProviderSource.supportsAirQuality {
-                        Text("Air quality requires the Open Meteo provider.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
                     Defaults.Toggle(key: .lockScreenWeatherUsesGaugeTint) {
                         Text("Use colored gauges")
                     }
@@ -4883,7 +4766,7 @@ struct LockScreenSettings: View {
             } header: {
                 Text("Weather Widget")
             } footer: {
-                Text("Enable the weather capsule and configure its layout, provider, units, and optional battery/AQI indicators.")
+                SettingsFooter("Enable the weather capsule and configure its layout, provider, units, and optional battery/AQI indicators.")
             }
 
 
@@ -4920,7 +4803,7 @@ struct LockScreenSettings: View {
                 } header: {
                     Text("Battery Widget")
                 } footer: {
-                    Text("Enable the battery capsule and configure its layout.")
+                    SettingsFooter("Enable the battery capsule and configure its layout.")
                 }
             }
 
@@ -4932,20 +4815,22 @@ struct LockScreenSettings: View {
             } header: {
                 Text("Focus Widget")
             } footer: {
-                Text("Displays the current Focus state above the weather capsule whenever Focus detection is enabled.")
+                SettingsFooter("Displays the current Focus state above the weather capsule whenever Focus detection is enabled.")
             }
 
 
             LockScreenPositioningControls()
 
             Section {
-                Button("Copy Latest Crash Report") {
-                    copyLatestCrashReport()
+                SettingsActionRow {
+                    Button("Copy Latest Crash Report") {
+                        copyLatestCrashReport()
+                    }
                 }
             } header: {
                 Text("Diagnostics")
             } footer: {
-                Text("Collect the latest crash report to share with the developer when reporting lock screen or overlay issues.")
+                SettingsFooter("Collect the latest crash report to share with the developer when reporting lock screen or overlay issues.")
             }
         }
         .onAppear(perform: enforceLockScreenGlassConsistency)
@@ -4966,12 +4851,11 @@ extension LockScreenSettings {
     }
 
     private var blurSettingUnavailableRow: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 2) {
             Text("Enable media panel blur")
                 .foregroundStyle(.secondary)
             Text("Only available when Material is set to Frosted Glass.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .settingsDescriptionStyle()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -4986,14 +4870,11 @@ extension LockScreenSettings {
         preview: AnyView? = nil
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
+            LabeledContent {
+                variantSliderControl(value: value, current: currentValue, range: liquidVariantRange, title: title)
+            } label: {
                 Text(title)
-                Spacer()
-                Text("v\(currentValue)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
-            Slider(value: value, in: liquidVariantRange, step: 1)
 
             if let preview {
                 preview
@@ -5101,28 +4982,6 @@ private struct LockScreenPositioningControls: View {
                 }
             )
 
-            let musicWidthBinding = Binding<Double>(
-                get: { musicWidth },
-                set: { newValue in
-                    let clampedValue = clamp(newValue, within: musicWidthRange)
-                    if musicWidth != clampedValue {
-                        musicWidth = clampedValue
-                        propagateMusicWidthChange(animated: false)
-                    }
-                }
-            )
-
-            let timerWidthBinding = Binding<Double>(
-                get: { timerWidth },
-                set: { newValue in
-                    let clampedValue = clamp(newValue, within: timerWidthRange)
-                    if timerWidth != clampedValue {
-                        timerWidth = clampedValue
-                        propagateTimerWidthChange(animated: false)
-                    }
-                }
-            )
-
             LockScreenPositioningPreview(
                 weatherOffset: weatherBinding,
                 timerOffset: timerBinding,
@@ -5133,65 +4992,79 @@ private struct LockScreenPositioningControls: View {
             .frame(height: 260)
             .padding(.vertical, 8)
 
-            HStack(alignment: .top, spacing: 24) {
-                offsetColumn(
-                    title: String(localized: "Weather"),
-                    value: weatherOffset,
-                    resetTitle: String(localized: "Reset Weather"),
-                    resetAction: resetWeatherOffset
-                )
-
-                Divider()
-                    .frame(height: 64)
-
-                offsetColumn(
-                    title: String(localized: "Timer"),
-                    value: timerOffset,
-                    resetTitle: String(localized: "Reset Timer"),
-                    resetAction: resetTimerOffset
-                )
-
-                Divider()
-                    .frame(height: 64)
-
-                offsetColumn(
-                    title: String(localized: "Music"),
-                    value: musicOffset,
-                    resetTitle: String(localized: "Reset Music"),
-                    resetAction: resetMusicOffset
-                )
-
-                Spacer()
-            }
-
-            Divider()
-                .padding(.vertical, 8)
-
-            VStack(alignment: .leading, spacing: 16) {
-                widthSlider(
-                    title: String(localized: "Media Panel Width"),
-                    value: musicWidthBinding,
-                    range: musicWidthRange,
-                    resetTitle: String(localized: "Reset Media Width"),
-                    resetAction: resetMusicWidth,
-                    helpText: String(localized: "Shrinks the lock screen media panel while keeping the expanded view full width.")
-                )
-
-                widthSlider(
-                    title: String(localized: "Timer Widget Width"),
-                    value: timerWidthBinding,
-                    range: timerWidthRange,
-                    resetTitle: String(localized: "Reset Timer Width"),
-                    resetAction: resetTimerWidth,
-                    helpText: String(localized: "Adjusts the lock screen timer widget width without affecting button sizing.")
-                )
-            }
+            offsetRow(
+                title: String(localized: "Weather"),
+                value: weatherOffset,
+                resetTitle: String(localized: "Reset Weather"),
+                resetAction: resetWeatherOffset
+            )
+            offsetRow(
+                title: String(localized: "Timer"),
+                value: timerOffset,
+                resetTitle: String(localized: "Reset Timer"),
+                resetAction: resetTimerOffset
+            )
+            offsetRow(
+                title: String(localized: "Music"),
+                value: musicOffset,
+                resetTitle: String(localized: "Reset Music"),
+                resetAction: resetMusicOffset
+            )
         } header: {
             Text("Lock Screen Positioning")
         } footer: {
-            Text("Drag the previews to adjust vertical placement. Positive values lift the panel; negative values lower it. Use the width sliders below to narrow the media and timer widgets without exceeding their default size. Changes apply instantly while the widgets are visible.")
+            SettingsFooter("Drag the previews to adjust vertical placement. Positive values lift the panel; negative values lower it. Use the width sliders below to narrow the media and timer widgets without exceeding their default size. Changes apply instantly while the widgets are visible.")
                 .textCase(nil)
         }
+
+        Section {
+            widthRow(
+                title: String(localized: "Media Panel Width"),
+                value: musicWidthBinding,
+                range: musicWidthRange,
+                helpText: String(localized: "Shrinks the lock screen media panel while keeping the expanded view full width.")
+            )
+            widthRow(
+                title: String(localized: "Timer Widget Width"),
+                value: timerWidthBinding,
+                range: timerWidthRange,
+                helpText: String(localized: "Adjusts the lock screen timer widget width without affecting button sizing.")
+            )
+            SettingsActionRow {
+                Button(String(localized: "Reset Media Width"), action: resetMusicWidth)
+                    .disabled(musicWidth == Double(LockScreenMusicPanel.defaultCollapsedWidth))
+                Button(String(localized: "Reset Timer Width"), action: resetTimerWidth)
+                    .disabled(timerWidth == LockScreenTimerWidget.defaultWidth)
+            }
+        } header: {
+            Text("Widget Width")
+        }
+    }
+
+    private var musicWidthBinding: Binding<Double> {
+        Binding(
+            get: { musicWidth },
+            set: { newValue in
+                let clampedValue = clamp(newValue, within: musicWidthRange)
+                if musicWidth != clampedValue {
+                    musicWidth = clampedValue
+                    propagateMusicWidthChange(animated: false)
+                }
+            }
+        )
+    }
+
+    private var timerWidthBinding: Binding<Double> {
+        Binding(
+            get: { timerWidth },
+            set: { newValue in
+                let clampedValue = clamp(newValue, within: timerWidthRange)
+                if timerWidth != clampedValue {
+                    timerWidth = clampedValue
+                    propagateTimerWidthChange(animated: false)
+                }
+            }
+        )
     }
 
     private func clampOffset(_ value: Double) -> Double {
@@ -5257,56 +5130,37 @@ private struct LockScreenPositioningControls: View {
         }
     }
 
-    @ViewBuilder
-    private func offsetColumn(title: String, value: Double, resetTitle: String, resetAction: @escaping () -> Void) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("\(title) Offset")
-                .font(.subheadline.weight(.semibold))
-
-            Text("\(formattedPoints(value)) pt")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Button(resetTitle) {
-                resetAction()
+    /// One widget's vertical offset: its value and a Reset on the trailing side.
+    private func offsetRow(title: String, value: Double, resetTitle: String, resetAction: @escaping () -> Void) -> some View {
+        LabeledContent {
+            HStack(spacing: 8) {
+                Text("\(formattedPoints(value)) pt")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                Button(resetTitle, action: resetAction)
+                    .disabled(value == 0)
             }
-            .buttonStyle(.bordered)
+        } label: {
+            Text("\(title) Offset")
         }
     }
 
-    @ViewBuilder
-    private func widthSlider(
-        title: String,
-        value: Binding<Double>,
-        range: ClosedRange<Double>,
-        resetTitle: String,
-        resetAction: @escaping () -> Void,
-        helpText: String
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(title)
-                Spacer()
-                Text(formattedWidth(value.wrappedValue))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Slider(value: value, in: range)
-
-            HStack(alignment: .top) {
-                Button(resetTitle) {
-                    resetAction()
+    /// One widget's width: title and what it changes on the leading side, slider and value trailing.
+    private func widthRow(title: String, value: Binding<Double>, range: ClosedRange<Double>, helpText: String) -> some View {
+        LabeledContent {
+            HStack(spacing: 8) {
+                Slider(value: value, in: range) {
+                    Text(title)
                 }
-                .buttonStyle(.bordered)
-
-                Spacer()
-
-                Text(helpText)
-                    .font(.caption)
+                .labelsHidden()
+                Text(formattedWidth(value.wrappedValue))
+                    .monospacedDigit()
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.trailing)
+                    .frame(minWidth: 52, alignment: .trailing)
             }
+            .frame(width: 200)
+        } label: {
+            SettingsRowLabel(verbatim: title, description: helpText)
         }
     }
 
@@ -5602,121 +5456,52 @@ struct Shortcuts: View {
             } header: {
                 Text("General")
             } footer: {
-                Text("Keyboard shortcuts are off by default. Enable this toggle to activate global hotkeys for notch controls.")
-                    .multilineTextAlignment(.trailing)
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
+                SettingsFooter("Keyboard shortcuts are off by default. Enable this toggle to activate global hotkeys for notch controls.")
             }
 
             if enableShortcuts {
-                Section {
-                    KeyboardShortcuts.Recorder("Toggle Sneak Peek:", name: .toggleSneakPeek)
-                        .disabled(!enableShortcuts)
-                } header: {
-                    Text("Media")
-                } footer: {
-                    Text("Sneak Peek shows the media title and artist under the notch for a few seconds.")
-                        .multilineTextAlignment(.trailing)
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
-
-                Section {
-                    KeyboardShortcuts.Recorder("Toggle Notch Open:", name: .toggleNotchOpen)
-                        .disabled(!enableShortcuts)
-                } header: {
-                    Text("Navigation")
-                } footer: {
-                    Text("Toggle the Dynamic Island open or closed from anywhere.")
-                        .multilineTextAlignment(.trailing)
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
-
-                Section {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            KeyboardShortcuts.Recorder("Start Demo Timer:", name: .startDemoTimer)
-                                .disabled(!enableShortcuts || !enableTimerFeature)
-                            if !enableTimerFeature {
-                                Text("Timer feature is disabled")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.top, 2)
-                            }
-                        }
-                        Spacer()
-                    }
-                } header: {
-                    Text("Timer")
-                } footer: {
-                    Text("Starts a 5-minute demo timer to test the timer live activity feature. Only works when timer feature is enabled.")
-                        .multilineTextAlignment(.trailing)
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
-
-                Section {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            KeyboardShortcuts.Recorder("Clipboard History:", name: .clipboardHistoryPanel)
-                                .disabled(!enableShortcuts || !enableClipboardManager)
-                            if !enableClipboardManager {
-                                Text("Clipboard feature is disabled")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.top, 2)
-                            }
-                        }
-                        Spacer()
-                    }
-                } header: {
-                    Text("Clipboard")
-                } footer: {
-                    Text("Opens the clipboard history panel. Default is Cmd+Shift+V (similar to Windows+V on PC). Only works when clipboard feature is enabled.")
-                        .multilineTextAlignment(.trailing)
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
-
-                Section {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            KeyboardShortcuts.Recorder("Screen Assistant:", name: .screenAssistantPanel)
-                                .disabled(!enableShortcuts || !Defaults[.enableScreenAssistant])
-                            if !Defaults[.enableScreenAssistant] {
-                                Text("Screen Assistant feature is disabled")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.top, 2)
-                            }
-                        }
-                        Spacer()
-                    }
-                } header: {
-                    Text("AI Assistant")
-                } footer: {
-                    Text("Opens the AI assistant panel for file analysis and conversation. Default is Cmd+Shift+A. Only works when screen assistant feature is enabled.")
-                        .multilineTextAlignment(.trailing)
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
-            } else {
-                Section {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Keyboard shortcuts are disabled")
-                            .font(.headline)
-                            .foregroundStyle(.secondary)
-
-                        Text("Enable global keyboard shortcuts above to customize your shortcuts.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 8)
-                }
+                shortcutsSection
             }
         }
         .navigationTitle("Shortcuts")
+    }
+
+    fileprivate var shortcutsSection: some View {
+        Section {
+            shortcutRow("Toggle Sneak Peek:", name: .toggleSneakPeek,
+                        description: Text("Sneak Peek shows the media title and artist under the notch for a few seconds."))
+            shortcutRow("Toggle Notch Open:", name: .toggleNotchOpen,
+                        description: Text("Toggle the Dynamic Island open or closed from anywhere."))
+            shortcutRow("Start Demo Timer:", name: .startDemoTimer,
+                        description: enableTimerFeature
+                            ? Text("Starts a 5-minute demo timer to test the timer live activity feature. Only works when timer feature is enabled.")
+                            : Text("Timer feature is disabled"),
+                        isEnabled: enableTimerFeature)
+            // The recorder shows the real shortcut; the old text claimed a default of Cmd+Shift+V.
+            shortcutRow("Clipboard History:", name: .clipboardHistoryPanel,
+                        description: enableClipboardManager
+                            ? Text("Opens the clipboard history panel. Only works when clipboard feature is enabled.")
+                            : Text("Clipboard feature is disabled"),
+                        isEnabled: enableClipboardManager)
+            shortcutRow("Screen Assistant:", name: .screenAssistantPanel,
+                        description: Defaults[.enableScreenAssistant]
+                            ? Text("Opens the AI assistant panel for file analysis and conversation. Only works when screen assistant feature is enabled.")
+                            : Text("Screen Assistant feature is disabled"),
+                        isEnabled: Defaults[.enableScreenAssistant])
+        } header: {
+            Text("Shortcuts")
+        }
+    }
+
+    /// A shortcut: what it does on the leading side, the recorder trailing.
+    private func shortcutRow(_ title: LocalizedStringKey, name: KeyboardShortcuts.Name, description: Text,
+                             isEnabled: Bool = true) -> some View {
+        LabeledContent {
+            KeyboardShortcuts.Recorder(for: name)
+                .disabled(!isEnabled)
+        } label: {
+            SettingsRowLabel(title, description: description)
+        }
     }
 }
 
@@ -5737,6 +5522,27 @@ func comingSoonTag() -> some View {
         .padding(.horizontal, 6)
         .background(Color(nsColor: .secondarySystemFill))
         .clipShape(.capsule)
+}
+
+/// The user's shortcut for a global hotkey as macOS draws it ("⇧⌘C"), or "not set".
+@MainActor
+func shortcutDescription(for name: KeyboardShortcuts.Name) -> String {
+    KeyboardShortcuts.getShortcut(for: name)?.description ?? String(localized: "not set")
+}
+
+/// A liquid-glass variant slider with its value ("v11") beside it, sized like the other slider rows.
+func variantSliderControl(value: Binding<Double>, current: Int, range: ClosedRange<Double>, title: String) -> some View {
+    HStack(spacing: 8) {
+        Slider(value: value, in: range, step: 1) {
+            Text(title)
+        }
+        .labelsHidden()
+        Text("v\(current)")
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+            .frame(minWidth: 32, alignment: .trailing)
+    }
+    .frame(width: 220)
 }
 
 func customBadge(text: String) -> some View {
@@ -5799,6 +5605,8 @@ struct TimerSettings: View {
     @Default(.lockScreenTimerGlassCustomizationMode) private var lockScreenTimerGlassCustomizationMode
     @Default(.lockScreenTimerLiquidGlassVariant) private var lockScreenTimerLiquidGlassVariant
     @AppStorage("customTimerDuration") private var customTimerDuration: Double = 600
+    /// Observed, so the row updates after Choose File or Reset (a plain UserDefaults read did not).
+    @AppStorage("customTimerSoundPath") private var customTimerSoundPath: String?
     @State private var customHours: Int = 0
     @State private var customMinutes: Int = 10
     @State private var customSeconds: Int = 0
@@ -5840,6 +5648,10 @@ struct TimerSettings: View {
         .navigationTitle("Timer")
         .onAppear { syncCustomDuration() }
         .onChange(of: customTimerDuration) { _, newValue in syncCustomDuration(newValue) }
+        // On the Form, not the stepper rows: rows of a lazy Form may not exist when these change.
+        .onChange(of: customHours) { _, _ in updateCustomDuration() }
+        .onChange(of: customMinutes) { _, _ in updateCustomDuration() }
+        .onChange(of: customSeconds) { _, _ in updateCustomDuration() }
     }
 
     @ViewBuilder
@@ -5853,28 +5665,39 @@ struct TimerSettings: View {
             if enableTimerFeature {
                 Toggle("Enable timer live activity", isOn: $coordinator.timerLiveActivityEnabled)
                     .animation(.easeInOut, value: coordinator.timerLiveActivityEnabled)
-                Defaults.Toggle(key: .mirrorSystemTimer) {
-                    HStack(spacing: 8) {
+                LabeledContent {
+                    Defaults.Toggle(key: .mirrorSystemTimer) {
                         Text("Mirror macOS Clock timers")
-                        alphaBadge()
+                    }
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 8) {
+                            Text("Mirror macOS Clock timers")
+                            alphaBadge()
+                        }
+                        Text("Shows the system Clock timer in the notch when available. Requires Accessibility permission to read the status item.")
+                            .settingsDescriptionStyle()
                     }
                 }
-                .help("Shows the system Clock timer in the notch when available. Requires Accessibility permission to read the status item.")
                 .settingsHighlight(id: highlightID("Mirror macOS Clock timers"))
 
-                Picker("Timer controls appear as", selection: $timerDisplayMode) {
-                    ForEach(TimerDisplayMode.allCases) { mode in
-                        Text(mode.displayName).tag(mode)
+                SettingsRow("Timer controls appear as", description: timerDisplayMode.description) {
+                    Picker("Timer controls appear as", selection: $timerDisplayMode) {
+                        ForEach(TimerDisplayMode.allCases) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
                     }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
                 }
-                .pickerStyle(.segmented)
-                .help(timerDisplayMode.description)
                 .settingsHighlight(id: highlightID("Timer controls appear as"))
             }
         } header: {
             Text("Timer Feature")
         } footer: {
-            Text("Control timer availability, live activity behaviour, and whether the app mirrors timers started from the macOS Clock app.")
+            SettingsFooter("Control timer availability, live activity behaviour, and whether the app mirrors timers started from the macOS Clock app.")
         }
     }
 
@@ -5906,20 +5729,27 @@ struct TimerSettings: View {
                 Text("Show lock screen timer widget")
             }
             .settingsHighlight(id: highlightID("Show lock screen timer widget"))
-            Picker("Timer surface", selection: timerSurfaceBinding) {
-                ForEach(LockScreenTimerSurfaceMode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
+            SettingsRow("Timer surface", description: timerGlassModeIsGlass
+                        ? nil : Text("Classic mode keeps the original translucent black background.")) {
+                Picker("Timer surface", selection: timerSurfaceBinding) {
+                    ForEach(LockScreenTimerSurfaceMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .fixedSize()
             }
-            .pickerStyle(.segmented)
             .disabled(!enableLockScreenTimerWidget)
             .opacity(enableLockScreenTimerWidget ? 1 : 0.5)
             .settingsHighlight(id: highlightID("Timer surface"))
 
             if timerGlassModeIsGlass {
-                Picker("Timer glass material", selection: $lockScreenTimerGlassStyle) {
-                    ForEach(LockScreenGlassStyle.allCases) { style in
-                        Text(style.rawValue).tag(style)
+                SettingsRow("Timer glass material", description: lockScreenTimerGlassStyle == .liquid
+                            ? nil : Text("Uses the frosted blur treatment while glass mode is enabled.")) {
+                    Picker("Timer glass material", selection: $lockScreenTimerGlassStyle) {
+                        ForEach(LockScreenGlassStyle.allCases) { style in
+                            Text(style.rawValue).tag(style)
+                        }
                     }
                 }
                 .disabled(!enableLockScreenTimerWidget)
@@ -5927,79 +5757,53 @@ struct TimerSettings: View {
                 .settingsHighlight(id: highlightID("Timer glass material"))
 
                 if lockScreenTimerGlassStyle == .liquid {
-                    Picker("Timer liquid mode", selection: $lockScreenTimerGlassCustomizationMode) {
-                        ForEach(LockScreenGlassCustomizationMode.allCases) { mode in
-                            Text(mode.rawValue).tag(mode)
+                    SettingsRow("Timer liquid mode") {
+                        Picker("Timer liquid mode", selection: $lockScreenTimerGlassCustomizationMode) {
+                            ForEach(LockScreenGlassCustomizationMode.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
                         }
+                        .pickerStyle(.segmented)
+                        .fixedSize()
                     }
-                    .pickerStyle(.segmented)
                     .disabled(!enableLockScreenTimerWidget)
                     .opacity(enableLockScreenTimerWidget ? 1 : 0.5)
                     .settingsHighlight(id: highlightID("Timer liquid mode"))
 
                     if lockScreenTimerGlassCustomizationMode == .customLiquid {
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text("Timer widget variant")
-                                Spacer()
-                                Text("v\(lockScreenTimerLiquidGlassVariant.rawValue)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Slider(value: timerVariantBinding, in: liquidVariantRange, step: 1)
+                        LabeledContent("Timer widget variant") {
+                            variantSliderControl(value: timerVariantBinding, current: lockScreenTimerLiquidGlassVariant.rawValue,
+                                                 range: liquidVariantRange, title: String(localized: "Timer widget variant"))
                         }
                         .settingsHighlight(id: highlightID("Timer widget variant"))
                         .disabled(!enableLockScreenTimerWidget)
                         .opacity(enableLockScreenTimerWidget ? 1 : 0.4)
                     }
-                } else {
-                    Text("Uses the frosted blur treatment while glass mode is enabled.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-            } else {
-                Text("Classic mode keeps the original translucent black background.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .opacity(enableLockScreenTimerWidget ? 1 : 0.5)
             }
         } header: {
             Text("Lock Screen Integration")
         } footer: {
-            Text("Mirrors the toggle found under Lock Screen settings so timer-specific workflows can enable or disable the widget without switching tabs.")
+            SettingsFooter("Mirrors the toggle found under Lock Screen settings so timer-specific workflows can enable or disable the widget without switching tabs.")
         }
     }
 
     @ViewBuilder
     private var customTimerSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Default Custom Timer")
-                    .font(.headline)
-
-                TimerDurationStepperRow(title: String(localized: "Hours"), value: $customHours, range: 0...23)
-                TimerDurationStepperRow(title: String(localized: "Minutes"), value: $customMinutes, range: 0...59)
-                TimerDurationStepperRow(title: String(localized: "Seconds"), value: $customSeconds, range: 0...59)
-
-                HStack {
-                    Text("Current default:")
-                        .foregroundStyle(.secondary)
-                    Text(customDurationDisplay)
-                        .font(.system(.body, design: .monospaced))
-                        .fontWeight(.medium)
-                    Spacer()
-                }
+            LabeledContent("Default Custom Timer") {
+                Text(customDurationDisplay)
+                    .font(.system(.body, design: .monospaced))
+                    .fontWeight(.medium)
+                    .textSelection(.enabled)
             }
-            .padding(.vertical, 4)
-            .onChange(of: customHours) { _, _ in updateCustomDuration() }
-            .onChange(of: customMinutes) { _, _ in updateCustomDuration() }
-            .onChange(of: customSeconds) { _, _ in updateCustomDuration() }
+            TimerDurationStepperRow(title: String(localized: "Hours"), value: $customHours, range: 0...23)
+            TimerDurationStepperRow(title: String(localized: "Minutes"), value: $customMinutes, range: 0...59)
+            TimerDurationStepperRow(title: String(localized: "Seconds"), value: $customSeconds, range: 0...59)
         } header: {
             Text("Custom Timer")
         } footer: {
-            Text("This duration powers the \"Custom\" option inside the timer popover for quick access.")
+            SettingsFooter("This duration powers the \"Custom\" option inside the timer popover for quick access.")
         }
     }
 
@@ -6033,9 +5837,10 @@ struct TimerSettings: View {
             Toggle("Show preset list in timer tab", isOn: $showTimerPresetsInNotchTab)
                 .settingsHighlight(id: highlightID("Show preset list in timer tab"))
 
-            Toggle("Show floating pause/stop controls", isOn: $controlWindowEnabled)
-                .disabled(showsLabel)
-                .help("These controls sit beside the notch while a timer runs. They require the timer name to stay hidden for spacing.")
+            SettingsRow("Show floating pause/stop controls", description: "These controls sit beside the notch while a timer runs. They require the timer name to stay hidden for spacing.") {
+                Toggle("Show floating pause/stop controls", isOn: $controlWindowEnabled)
+            }
+            .disabled(showsLabel)
 
             Picker("Progress style", selection: $progressStyle) {
                 ForEach(TimerProgressStyle.allCases) { style in
@@ -6048,7 +5853,7 @@ struct TimerSettings: View {
         } header: {
             Text("Appearance")
         } footer: {
-            Text("Configure how the timer looks inside the closed notch. Progress can render as a ring around the icon or as horizontal bars.")
+            SettingsFooter("Configure how the timer looks inside the closed notch. Progress can render as a ring around the icon or as horizontal bars.")
         }
     }
 
@@ -6057,9 +5862,7 @@ struct TimerSettings: View {
         Section {
             if timerPresets.isEmpty {
                 Text("No presets configured. Add a preset to make it appear in the timer popover.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 4)
+                    .settingsDescriptionStyle()
             } else {
                 TimerPresetListView(
                     presets: $timerPresets,
@@ -6070,61 +5873,53 @@ struct TimerSettings: View {
                 )
             }
 
-            HStack {
-                Button(action: addPreset) {
-                    Label("Add Preset", systemImage: "plus")
-                }
-                .buttonStyle(.bordered)
-
-                Spacer()
-
+            SettingsActionRow {
                 Button(role: .destructive, action: { showingResetConfirmation = true }) {
                     Label("Restore Defaults", systemImage: "arrow.counterclockwise")
                 }
-                .buttonStyle(.bordered)
                 .confirmationDialog("Restore default timer presets?", isPresented: $showingResetConfirmation, titleVisibility: .visible) {
                     Button("Restore", role: .destructive, action: resetPresets)
+                }
+
+                Button(action: addPreset) {
+                    Label("Add Preset", systemImage: "plus")
                 }
             }
         } header: {
             Text("Timer Presets")
         } footer: {
-            Text("Presets show up inside the timer popover with the configured name, duration, and accent colour. Reorder them to change the display order.")
+            SettingsFooter("Presets show up inside the timer popover with the configured name, duration, and accent colour. Reorder them to change the display order.")
         }
     }
 
     @ViewBuilder
     private var timerSoundSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("Timer Sound")
-                        .font(.system(size: 16, weight: .medium))
-                    Spacer()
+            LabeledContent {
+                HStack(spacing: 8) {
+                    Button("Reset to Default") {
+                        customTimerSoundPath = nil
+                    }
+                    .disabled(customTimerSoundPath == nil)
                     Button("Choose File", action: selectCustomTimerSound)
-                        .buttonStyle(.bordered)
                 }
-
-                if let customTimerSoundPath = UserDefaults.standard.string(forKey: "customTimerSoundPath") {
-                    Text("Custom: \(URL(fileURLWithPath: customTimerSoundPath).lastPathComponent)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                } else {
-                    Text("Default: dynamic.m4a")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Timer Sound")
+                    Group {
+                        if let customTimerSoundPath {
+                            Text("Custom: \(URL(fileURLWithPath: customTimerSoundPath).lastPathComponent)")
+                        } else {
+                            Text("Default: dynamic.m4a")
+                        }
+                    }
+                    .settingsDescriptionStyle()
                 }
-
-                Button("Reset to Default") {
-                    UserDefaults.standard.removeObject(forKey: "customTimerSoundPath")
-                }
-                .buttonStyle(.bordered)
-                .disabled(UserDefaults.standard.string(forKey: "customTimerSoundPath") == nil)
             }
         } header: {
             Text("Timer Sound")
         } footer: {
-            Text("Select a custom sound to play when a timer ends. Supported formats include MP3, M4A, WAV, and AIFF.")
+            SettingsFooter("Select a custom sound to play when a timer ends. Supported formats include MP3, M4A, WAV, and AIFF.")
         }
     }
 
@@ -6194,7 +5989,7 @@ struct TimerSettings: View {
 
         if panel.runModal() == .OK {
             if let url = panel.url {
-                UserDefaults.standard.set(url.path, forKey: "customTimerSoundPath")
+                customTimerSoundPath = url.path
             }
         }
     }
@@ -6206,13 +6001,18 @@ private struct TimerDurationStepperRow: View {
     let range: ClosedRange<Int>
 
     var body: some View {
-        Stepper(value: $value, in: range) {
-            HStack {
-                Text(title)
-                Spacer()
+        LabeledContent {
+            HStack(spacing: 6) {
                 Text("\(value)")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                Stepper(value: $value, in: range) {
+                    Text(title)
+                }
+                .labelsHidden()
             }
+        } label: {
+            Text(title)
         }
     }
 }
@@ -6443,34 +6243,33 @@ struct StatsSettings: View {
             } header: {
                 Text("General")
             } footer: {
-                Text("When enabled, the Stats tab will display real-time system performance graphs. This feature requires system permissions and may use additional battery.")
-                    .multilineTextAlignment(.trailing)
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
+                SettingsFooter("When enabled, the Stats tab will display real-time system performance graphs. This feature requires system permissions and may use additional battery.")
             }
 
             if enableStatsFeature {
                 Section {
-                    Defaults.Toggle(key: .statsStopWhenNotchCloses) {
-                        Text("Stop monitoring after closing the notch")
+                    SettingsRow("Stop monitoring after closing the notch", description: "When enabled, stats monitoring stops a few seconds after the notch closes.") {
+                        Defaults.Toggle(key: .statsStopWhenNotchCloses) {
+                            Text("Stop monitoring after closing the notch")
+                        }
                     }
                     .settingsHighlight(id: highlightID("Stop monitoring after closing the notch"))
-                    .help("When enabled, stats monitoring stops a few seconds after the notch closes.")
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Update interval")
-                            Spacer()
-                            Text(formattedUpdateInterval)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Slider(value: $statsUpdateInterval, in: 1...60, step: 1)
+                    LabeledContent {
+                        HStack(spacing: 8) {
+                            Slider(value: $statsUpdateInterval, in: 1...60, step: 1) {
+                                Text("Update interval")
+                            }
+                            .labelsHidden()
                             .accessibilityLabel("Stats update interval")
-
-                        Text("Controls how often system metrics refresh while monitoring is active.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            Text(formattedUpdateInterval)
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                                .frame(minWidth: 72, alignment: .trailing)
+                        }
+                        .frame(width: 240)
+                    } label: {
+                        SettingsRowLabel("Update interval", description: "Controls how often system metrics refresh while monitoring is active.")
                     }
 
                     if shouldShowStatsBatteryWarning {
@@ -6486,10 +6285,7 @@ struct StatsSettings: View {
                 } header: {
                     Text("Monitoring Behavior")
                 } footer: {
-                    Text("Sampling can continue while the notch is closed when the timeout is disabled.")
-                        .multilineTextAlignment(.trailing)
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
+                    SettingsFooter("Sampling can continue while the notch is closed when the timeout is disabled.")
                 }
 
                 Section {
@@ -6527,15 +6323,9 @@ struct StatsSettings: View {
                     Text("Graph Visibility")
                 } footer: {
                     if enabledGraphsCount >= 4 {
-                        Text("With \(enabledGraphsCount) graphs enabled, the Dynamic Island will expand horizontally to accommodate all graphs in a single row.")
-                            .multilineTextAlignment(.trailing)
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
+                        SettingsFooter("With \(enabledGraphsCount) graphs enabled, the Dynamic Island will expand horizontally to accommodate all graphs in a single row.")
                     } else {
-                        Text("Each graph can be individually enabled or disabled. Network activity shows download/upload speeds, and disk I/O shows read/write speeds.")
-                            .multilineTextAlignment(.trailing)
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
+                        SettingsFooter("Each graph can be individually enabled or disabled. Network activity shows download/upload speeds, and disk I/O shows read/write speeds.")
                     }
                 }
 
@@ -6624,7 +6414,12 @@ struct StatsSettings: View {
                 }
 
                 Section {
-                    HStack {
+                    SettingsActionRow {
+                        Button("Clear Data") {
+                            statsManager.clearHistory()
+                        }
+                        .disabled(statsManager.isMonitoring)
+
                         Button(statsManager.isMonitoring ? "Stop Monitoring" : "Start Monitoring") {
                             if statsManager.isMonitoring {
                                 statsManager.stopMonitoring()
@@ -6632,16 +6427,6 @@ struct StatsSettings: View {
                                 statsManager.startMonitoring()
                             }
                         }
-                        .buttonStyle(.borderedProminent)
-                        .foregroundColor(statsManager.isMonitoring ? .red : .blue)
-
-                        Spacer()
-
-                        Button("Clear Data") {
-                            statsManager.clearHistory()
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(statsManager.isMonitoring)
                     }
                 } header: {
                     Text("Controls")
@@ -6680,7 +6465,8 @@ struct ClipboardSettings: View {
             } header: {
                 Text("Clipboard Manager")
             } footer: {
-                Text("Monitor clipboard changes and keep a history of recent copies. Use Cmd+Shift+V to quickly access clipboard history.")
+                // The shortcut is the user's (default ⇧⌘C); the old text said Cmd+Shift+V.
+                SettingsFooter("Monitor clipboard changes and keep a history of recent copies. With global keyboard shortcuts on, \(shortcutDescription(for: .clipboardHistoryPanel)) opens the history.")
             }
 
             if enableClipboardManager {
@@ -6690,50 +6476,32 @@ struct ClipboardSettings: View {
                     }
                     .settingsHighlight(id: highlightID("Show Clipboard Icon"))
 
-                    HStack {
-                        Text("Display Mode")
-                        Spacer()
-                        Picker("", selection: $clipboardDisplayMode) {
-                            ForEach(ClipboardDisplayMode.allCases, id: \.self) { mode in
-                                Text(mode.displayName).tag(mode)
-                            }
+                    Picker("Display Mode", selection: $clipboardDisplayMode) {
+                        ForEach(ClipboardDisplayMode.allCases, id: \.self) { mode in
+                            Text(mode.displayName).tag(mode)
                         }
-                        .pickerStyle(.menu)
-                        .frame(minWidth: 100)
                     }
+                    .pickerStyle(.menu)
                     .settingsHighlight(id: highlightID("Display Mode"))
 
-                    HStack {
-                        Text("History Size")
-                        Spacer()
-                        Picker("", selection: $clipboardHistorySize) {
-                            Text("3 items").tag(3)
-                            Text("5 items").tag(5)
-                            Text("7 items").tag(7)
-                            Text("10 items").tag(10)
-                        }
-                        .pickerStyle(.menu)
-                        .frame(minWidth: 100)
+                    Picker("History Size", selection: $clipboardHistorySize) {
+                        Text("3 items").tag(3)
+                        Text("5 items").tag(5)
+                        Text("7 items").tag(7)
+                        Text("10 items").tag(10)
                     }
+                    .pickerStyle(.menu)
                     .settingsHighlight(id: highlightID("History Size"))
 
-                    HStack {
-                        Text("Current Items")
-                        Spacer()
+                    LabeledContent("Current Items") {
                         Text("\(clipboardManager.clipboardHistory.count)")
-                            .foregroundColor(.secondary)
                     }
 
-                    HStack {
-                        Text("Pinned Items")
-                        Spacer()
+                    LabeledContent("Pinned Items") {
                         Text("\(clipboardManager.pinnedItems.count)")
-                            .foregroundColor(.secondary)
                     }
 
-                    HStack {
-                        Text("Monitoring Status")
-                        Spacer()
+                    LabeledContent("Monitoring Status") {
                         Text(clipboardManager.isMonitoring ? "Active" : "Stopped")
                             .foregroundColor(clipboardManager.isMonitoring ? .green : .secondary)
                     }
@@ -6742,31 +6510,33 @@ struct ClipboardSettings: View {
                 } footer: {
                     switch clipboardDisplayMode {
                     case .popover:
-                        Text("Popover mode shows clipboard as a dropdown attached to the clipboard button.")
+                        SettingsFooter("Popover mode shows clipboard as a dropdown attached to the clipboard button.")
                     case .panel:
-                        Text("Panel mode shows clipboard in a floating window near the notch.")
+                        SettingsFooter("Panel mode shows clipboard in a floating window near the notch.")
                     case .separateTab:
-                        Text("Separate Tab mode integrates Copied Items and Notes into a single view. If both are enabled, Notes appear on the right and Clipboard on the left.")
+                        SettingsFooter("Separate Tab mode integrates Copied Items and Notes into a single view. If both are enabled, Notes appear on the right and Clipboard on the left.")
                     }
                 }
 
                 Section {
-                    Button("Clear Clipboard History") {
-                        clipboardManager.clearHistory()
-                    }
-                    .foregroundColor(.red)
-                    .disabled(clipboardManager.clipboardHistory.isEmpty)
+                    SettingsActionRow {
+                        Button("Clear Pinned Items", role: .destructive) {
+                            clipboardManager.pinnedItems.removeAll()
+                            clipboardManager.savePinnedItemsToDefaults()
+                        }
+                        .foregroundColor(.red)
+                        .disabled(clipboardManager.pinnedItems.isEmpty)
 
-                    Button("Clear Pinned Items") {
-                        clipboardManager.pinnedItems.removeAll()
-                        clipboardManager.savePinnedItemsToDefaults()
+                        Button("Clear Clipboard History", role: .destructive) {
+                            clipboardManager.clearHistory()
+                        }
+                        .foregroundColor(.red)
+                        .disabled(clipboardManager.clipboardHistory.isEmpty)
                     }
-                    .foregroundColor(.red)
-                    .disabled(clipboardManager.pinnedItems.isEmpty)
                 } header: {
                     Text("Actions")
                 } footer: {
-                    Text("Clear clipboard history removes recent copies. Clear pinned items removes your favorites. Both actions are permanent.")
+                    SettingsFooter("Clear clipboard history removes recent copies. Clear pinned items removes your favorites. Both actions are permanent.")
                 }
 
                 if !clipboardManager.clipboardHistory.isEmpty {
@@ -6788,6 +6558,7 @@ struct ClipboardSettings: View {
                                 Text(item.preview)
                                     .font(.system(.body, design: .monospaced))
                                     .lineLimit(2)
+                                    .textSelection(.enabled)
                             }
                             .padding(.vertical, 2)
                         }
@@ -6846,35 +6617,37 @@ struct ScreenAssistantSettings: View {
             } header: {
                 Text("AI Assistant")
             } footer: {
-                Text("AI-powered assistant that can analyze files, images, and provide conversational help. Use Cmd+Shift+A to quickly access the assistant.")
+                SettingsFooter("AI-powered assistant that can analyze files, images, and provide conversational help. With global keyboard shortcuts on, \(shortcutDescription(for: .screenAssistantPanel)) opens the assistant.")
             }
 
             if enableScreenAssistant {
                 Section {
-                    HStack {
-                        Text("Gemini API Key")
-                        Spacer()
-                        if geminiApiKey.isEmpty {
-                            Text("Not Set")
-                                .foregroundColor(.red)
-                        } else {
-                            Text("••••••••")
-                                .foregroundColor(.green)
-                        }
-
-                        Button(showingApiKey ? "Hide" : (geminiApiKey.isEmpty ? "Set" : "Change")) {
-                            if showingApiKey {
-                                showingApiKey = false
-                                if !apiKeyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                    SecureSecretsStore.set(apiKeyText, for: .geminiAPIKey)
-                                    geminiApiKey = SecureSecretsStore.value(for: .geminiAPIKey)
-                                }
-                                apiKeyText = ""
+                    LabeledContent {
+                        HStack(spacing: 8) {
+                            if geminiApiKey.isEmpty {
+                                Text("Not Set")
+                                    .foregroundColor(.red)
                             } else {
-                                showingApiKey = true
-                                apiKeyText = geminiApiKey
+                                Text("••••••••")
+                                    .foregroundColor(.green)
+                            }
+
+                            Button(showingApiKey ? "Hide" : (geminiApiKey.isEmpty ? "Set" : "Change")) {
+                                if showingApiKey {
+                                    showingApiKey = false
+                                    if !apiKeyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                        SecureSecretsStore.set(apiKeyText, for: .geminiAPIKey)
+                                        geminiApiKey = SecureSecretsStore.value(for: .geminiAPIKey)
+                                    }
+                                    apiKeyText = ""
+                                } else {
+                                    showingApiKey = true
+                                    apiKeyText = geminiApiKey
+                                }
                             }
                         }
+                    } label: {
+                        Text("Gemini API Key")
                     }
 
                     if showingApiKey {
@@ -6883,16 +6656,14 @@ struct ScreenAssistantSettings: View {
                                 .textFieldStyle(.roundedBorder)
 
                             Text("Get your free API key from Google AI Studio")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                                .settingsDescriptionStyle()
 
                             HStack {
+                                Spacer()
+
                                 Button("Open Google AI Studio") {
                                     NSWorkspace.shared.open(URL(string: "https://aistudio.google.com/app/apikey")!)
                                 }
-                                .buttonStyle(.link)
-
-                                Spacer()
 
                                 Button("Save") {
                                     SecureSecretsStore.set(apiKeyText, for: .geminiAPIKey)
@@ -6905,29 +6676,19 @@ struct ScreenAssistantSettings: View {
                         }
                     }
 
-                    HStack {
-                        Text("Display Mode")
-                        Spacer()
-                        Picker("", selection: $screenAssistantDisplayMode) {
-                            ForEach(ScreenAssistantDisplayMode.allCases, id: \.self) { mode in
-                                Text(mode.displayName).tag(mode)
-                            }
+                    Picker("Display Mode", selection: $screenAssistantDisplayMode) {
+                        ForEach(ScreenAssistantDisplayMode.allCases, id: \.self) { mode in
+                            Text(mode.displayName).tag(mode)
                         }
-                        .pickerStyle(.menu)
-                        .frame(minWidth: 100)
                     }
+                    .pickerStyle(.menu)
                     .settingsHighlight(id: highlightID("Display Mode"))
 
-                    HStack {
-                        Text("Attached Files")
-                        Spacer()
+                    LabeledContent("Attached Files") {
                         Text("\(screenAssistantManager.attachedFiles.count)")
-                            .foregroundColor(.secondary)
                     }
 
-                    HStack {
-                        Text("Recording Status")
-                        Spacer()
+                    LabeledContent("Recording Status") {
                         Text(screenAssistantManager.isRecording ? "Recording" : "Ready")
                             .foregroundColor(screenAssistantManager.isRecording ? .red : .secondary)
                     }
@@ -6936,22 +6697,24 @@ struct ScreenAssistantSettings: View {
                 } footer: {
                     switch screenAssistantDisplayMode {
                     case .popover:
-                        Text("Popover mode shows the assistant as a dropdown attached to the AI button. Panel mode shows the assistant in a floating window near the notch.")
+                        SettingsFooter("Popover mode shows the assistant as a dropdown attached to the AI button. Panel mode shows the assistant in a floating window near the notch.")
                     case .panel:
-                        Text("Panel mode shows the assistant in a floating window near the notch. Popover mode shows the assistant as a dropdown attached to the AI button.")
+                        SettingsFooter("Panel mode shows the assistant in a floating window near the notch. Popover mode shows the assistant as a dropdown attached to the AI button.")
                     }
                 }
 
                 Section {
-                    Button("Clear All Files") {
-                        screenAssistantManager.clearAllFiles()
+                    SettingsActionRow {
+                        Button("Clear All Files", role: .destructive) {
+                            screenAssistantManager.clearAllFiles()
+                        }
+                        .foregroundColor(.red)
+                        .disabled(screenAssistantManager.attachedFiles.isEmpty)
                     }
-                    .foregroundColor(.red)
-                    .disabled(screenAssistantManager.attachedFiles.isEmpty)
                 } header: {
                     Text("Actions")
                 } footer: {
-                    Text("Clear all files removes all attached files and audio recordings. This action is permanent.")
+                    SettingsFooter("Clear all files removes all attached files and audio recordings. This action is permanent.")
                 }
 
                 if !screenAssistantManager.attachedFiles.isEmpty {
@@ -7047,6 +6810,8 @@ struct SettingsPermissionCallout: View {
             Text(message)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
 
             HStack(spacing: 8) {
                 Button(requestButtonTitle) {
@@ -7069,7 +6834,7 @@ struct SettingsPermissionCallout: View {
 }
 
 #Preview {
-    HUD()
+    Form { HUD() }
 }
 
 struct CustomOSDSettings: View {
@@ -7119,166 +6884,139 @@ struct CustomOSDSettings: View {
         )
     }
 
+    /// The Custom OSD style's sections, drawn inside the Controls tab's Form (which also holds this
+    /// style's Accessibility and hide-on-disable side effects, and the macOS 26 material fallback).
     var body: some View {
-        Form {
-            if !hasAccessibilityPermission && !enableThirdPartyDDCIntegration {
-                Section {
-                    SettingsPermissionCallout(
-                        message: "Accessibility permission is needed to intercept system controls for the Custom OSD.",
-                        requestAction: { accessibilityPermission.requestAuthorizationPrompt() },
-                        openSettingsAction: { accessibilityPermission.openSystemSettings() }
-                    )
-                } header: {
-                    Text("Accessibility")
+        if !hasAccessibilityPermission && !enableThirdPartyDDCIntegration {
+            Section {
+                SettingsPermissionCallout(
+                    message: "Accessibility permission is needed to intercept system controls for the Custom OSD.",
+                    requestAction: { accessibilityPermission.requestAuthorizationPrompt() },
+                    openSettingsAction: { accessibilityPermission.openSystemSettings() }
+                )
+            } header: {
+                Text("Accessibility")
+            }
+        }
+
+        if hasAccessibilityPermission || enableThirdPartyDDCIntegration {
+            Section {
+                Toggle("Volume OSD", isOn: $enableOSDVolume)
+                    .settingsHighlight(id: highlightID("Volume OSD"))
+                Toggle("Brightness OSD", isOn: $enableOSDBrightness)
+                    .settingsHighlight(id: highlightID("Brightness OSD"))
+                SettingsRow("Keyboard Backlight OSD", description: enableThirdPartyDDCIntegration
+                            ? Text("Disabled while external display integration is active. Brightness keys are handled by the external app.") : nil) {
+                    Toggle("Keyboard Backlight OSD", isOn: $enableOSDKeyboardBacklight)
                 }
+                .settingsHighlight(id: highlightID("Keyboard Backlight OSD"))
+                .disabled(enableThirdPartyDDCIntegration)
+            } header: {
+                Text("Controls")
+            } footer: {
+                SettingsFooter("Choose which system controls should display custom OSD windows.")
             }
 
-            if hasAccessibilityPermission || enableThirdPartyDDCIntegration {
-                Section {
-                    Toggle("Volume OSD", isOn: $enableOSDVolume)
-                        .settingsHighlight(id: highlightID("Volume OSD"))
-                    Toggle("Brightness OSD", isOn: $enableOSDBrightness)
-                        .settingsHighlight(id: highlightID("Brightness OSD"))
-                    Toggle("Keyboard Backlight OSD", isOn: $enableOSDKeyboardBacklight)
-                        .settingsHighlight(id: highlightID("Keyboard Backlight OSD"))
-                        .disabled(enableThirdPartyDDCIntegration)
-                        .help(enableThirdPartyDDCIntegration ? "Disabled while external display integration is active. Brightness keys are handled by the external app." : "")
-                } header: {
-                    Text("Controls")
-                } footer: {
-                    Text("Choose which system controls should display custom OSD windows.")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
+            Section {
+                Picker("Material", selection: $osdMaterial) {
+                    ForEach(availableOSDMaterials, id: \.self) { material in
+                        Text(material.rawValue).tag(material)
+                    }
+                }
+                .settingsHighlight(id: highlightID("Material"))
+                .onChange(of: osdMaterial) { _, _ in
+                    previewValue = previewValue == 0.65 ? 0.651 : 0.65
                 }
 
-                Section {
-                    Picker("Material", selection: $osdMaterial) {
-                        ForEach(availableOSDMaterials, id: \.self) { material in
-                            Text(material.rawValue).tag(material)
-                        }
-                    }
-                    .settingsHighlight(id: highlightID("Material"))
-                    .onChange(of: osdMaterial) { _, _ in
-                        previewValue = previewValue == 0.65 ? 0.651 : 0.65
-                    }
-
-                    if osdMaterial == .liquid {
-                        if #available(macOS 26.0, *) {
+                if osdMaterial == .liquid {
+                    if #available(macOS 26.0, *) {
+                        SettingsRow("Glass mode") {
                             Picker("Glass mode", selection: $osdLiquidGlassCustomizationMode) {
                                 ForEach(LockScreenGlassCustomizationMode.allCases) { mode in
                                     Text(mode.rawValue).tag(mode)
                                 }
                             }
                             .pickerStyle(.segmented)
+                            .fixedSize()
+                        }
 
-                            if osdLiquidGlassCustomizationMode == .customLiquid {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    HStack {
-                                        Text("Custom liquid variant")
-                                        Spacer()
-                                        Text("v\(osdLiquidGlassVariant.rawValue)")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Slider(value: osdLiquidVariantBinding, in: liquidVariantRange, step: 1)
-                                }
+                        if osdLiquidGlassCustomizationMode == .customLiquid {
+                            LabeledContent("Custom liquid variant") {
+                                variantSliderControl(value: osdLiquidVariantBinding, current: osdLiquidGlassVariant.rawValue,
+                                                     range: liquidVariantRange, title: String(localized: "Custom liquid variant"))
                             }
-                        } else {
-                            Text("Custom Liquid is available on macOS 26 or later.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                         }
+                    } else {
+                        Text("Custom Liquid is available on macOS 26 or later.")
+                            .settingsDescriptionStyle()
                     }
-
-                    Picker("Icon & Progress Color", selection: $osdIconColorStyle) {
-                        ForEach(OSDIconColorStyle.allCases, id: \.self) { style in
-                            Text(style.rawValue).tag(style)
-                        }
-                    }
-                    .settingsHighlight(id: highlightID("Icon & Progress Color"))
-                    .onChange(of: osdIconColorStyle) { _, _ in
-                        previewValue = previewValue == 0.65 ? 0.651 : 0.65
-                    }
-                } header: {
-                    Text("Appearance")
-                } footer: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Material Options:")
-                        Text("• Frosted Glass: Translucent blur effect")
-                        Text("• Liquid Glass: Modern glass effect (macOS 26+)")
-                        Text("• Solid Dark/Light/Auto: Opaque backgrounds")
-                        Text("")
-                        Text("Color options control the icon and progress bar appearance. Auto adapts to system theme.")
-                    }
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
                 }
 
-                Section {
-                    HStack {
-                        Spacer()
-                        VStack(spacing: 16) {
-                            Text("Live Preview")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                Picker("Icon & Progress Color", selection: $osdIconColorStyle) {
+                    ForEach(OSDIconColorStyle.allCases, id: \.self) { style in
+                        Text(style.rawValue).tag(style)
+                    }
+                }
+                .settingsHighlight(id: highlightID("Icon & Progress Color"))
+                .onChange(of: osdIconColorStyle) { _, _ in
+                    previewValue = previewValue == 0.65 ? 0.651 : 0.65
+                }
+            } header: {
+                Text("Appearance")
+            } footer: {
+                VStack(alignment: .leading, spacing: 2) {
+                    SettingsFooter("Material Options:")
+                    SettingsFooter("• Frosted Glass: Translucent blur effect")
+                    SettingsFooter("• Liquid Glass: Modern glass effect (macOS 26+)")
+                    SettingsFooter("• Solid Dark/Light/Auto: Opaque backgrounds")
+                    SettingsFooter("Color options control the icon and progress bar appearance. Auto adapts to system theme.")
+                        .padding(.top, 6)
+                }
+            }
 
-                            CustomOSDView(
-                                type: .constant(previewType),
-                                value: .constant(previewValue),
-                                icon: .constant("")
-                            )
-                            .frame(width: 200, height: 200)
+            Section {
+                HStack {
+                    Spacer()
+                    VStack(spacing: 16) {
+                        Text("Live Preview")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
 
-                            HStack(spacing: 8) {
-                                Button("Volume") {
-                                    previewType = .volume
-                                }
-                                .buttonStyle(.bordered)
+                        CustomOSDView(
+                            type: .constant(previewType),
+                            value: .constant(previewValue),
+                            icon: .constant("")
+                        )
+                        .frame(width: 200, height: 200)
 
-                                Button("Brightness") {
-                                    previewType = .brightness
-                                }
-                                .buttonStyle(.bordered)
+                        HStack(spacing: 8) {
+                            Button("Volume") {
+                                previewType = .volume
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button("Brightness") {
+                                previewType = .brightness
+                            }
+                            .buttonStyle(.bordered)
                                 
-                                Button("Backlight") {
-                                    previewType = .backlight
-                                }
-                                .buttonStyle(.bordered)
+                            Button("Backlight") {
+                                previewType = .backlight
                             }
-                            .controlSize(.small)
-                            
-                            Slider(value: $previewValue, in: 0...1)
-                                .frame(width: 160)
+                            .buttonStyle(.bordered)
                         }
-                        .padding(.vertical, 12)
-                        Spacer()
+                        .controlSize(.small)
+                            
+                        Slider(value: $previewValue, in: 0...1)
+                            .frame(width: 160)
                     }
-                } header: {
-                    Text("Preview")
-                } footer: {
-                    Text("Adjust settings above to see changes in real-time. The actual OSD appears at the bottom center of your screen.")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
+                    .padding(.vertical, 12)
+                    Spacer()
                 }
-            }
-        }
-        .navigationTitle("Custom OSD")
-        .onAppear {
-            accessibilityPermission.refreshStatus()
-            if #unavailable(macOS 26.0), osdMaterial == .liquid {
-                osdMaterial = .frosted
-                osdLiquidGlassCustomizationMode = .standard
-            }
-        }
-        .onChange(of: accessibilityPermission.isAuthorized) { _, granted in
-            if !granted {
-                enableCustomOSD = false
-                CustomOSDWindowManager.shared.forceHideAll()
-            }
-        }
-        .onChange(of: enableCustomOSD) { _, enabled in
-            if !enabled {
-                CustomOSDWindowManager.shared.forceHideAll()
+            } header: {
+                Text("Preview")
+            } footer: {
+                SettingsFooter("Adjust settings above to see changes in real-time. The actual OSD appears at the bottom center of your screen.")
             }
         }
     }
@@ -7322,9 +7060,7 @@ struct NotesSettingsView: View {
             } header: {
                 Text("General")
             } footer: {
-                Text("Customize how you organize and create notes. Enabling color filtering and search helps manage large lists.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                SettingsFooter("Customize how you organize and create notes. Enabling color filtering and search helps manage large lists.")
             }
 
             if enableNotes {
@@ -7335,45 +7071,43 @@ struct NotesSettingsView: View {
                     .settingsHighlight(id: highlightID("Sync with Apple Notes"))
 
                     if enableAppleNotesSync {
-                        Button {
-                            Task {
-                                let notes = Defaults[.savedNotes]
-                                if let merged = await appleNotesSync.sync(localNotes: notes) {
-                                    Defaults[.savedNotes] = merged
-                                }
-                            }
-                        } label: {
-                            HStack {
-                                Text("Sync Now")
-                                Spacer()
+                        LabeledContent {
+                            HStack(spacing: 8) {
                                 if appleNotesSync.isSyncing {
                                     ProgressView()
                                         .controlSize(.small)
                                 }
+                                Button("Sync Now") {
+                                    Task {
+                                        let notes = Defaults[.savedNotes]
+                                        if let merged = await appleNotesSync.sync(localNotes: notes) {
+                                            Defaults[.savedNotes] = merged
+                                        }
+                                    }
+                                }
+                                .disabled(appleNotesSync.isSyncing)
+                            }
+                        } label: {
+                            if let lastSync = appleNotesLastSyncDate {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Last synced")
+                                    Text(lastSync, style: .relative)
+                                        .settingsDescriptionStyle()
+                                }
+                            } else {
+                                Text("Not synced yet")
                             }
                         }
-                        .disabled(appleNotesSync.isSyncing)
                         .settingsHighlight(id: highlightID("Sync Now"))
 
-                        if let lastSync = appleNotesLastSyncDate {
-                            LabeledContent("Last synced") {
-                                Text(lastSync, style: .relative)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-
                         if let error = appleNotesSync.lastError {
-                            Text(error)
-                                .font(.caption)
-                                .foregroundStyle(.red)
+                            SettingsErrorText(error)
                         }
                     }
                 } header: {
                     Text("Apple Notes")
                 } footer: {
-                    Text("Two-way sync with the macOS Notes app. Notes created in Kannu appear in the Kannu folder in Notes, and your existing Apple Notes are imported into the notch. Grant Automation permission for Notes when prompted.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    SettingsFooter("Two-way sync with the macOS Notes app. Notes created in Kannu appear in the Kannu folder in Notes, and your existing Apple Notes are imported into the notch. Grant Automation permission for Notes when prompted.")
                 }
             }
         }
@@ -7385,16 +7119,17 @@ struct NotesSettingsView: View {
 
 private struct SettingsColorPickerRow: View {
     let title: String
+    var description: String? = nil
     @Binding var selection: Color
     var supportsOpacity: Bool = false
 
     var body: some View {
-        HStack {
-            Text(title)
-            Spacer()
+        LabeledContent {
             KannuColorPickerButton(color: selection, accessibilityLabel: title) {
                 SettingsColorPickerPopover(selection: $selection, supportsOpacity: supportsOpacity)
             }
+        } label: {
+            SettingsRowLabel(verbatim: title, description: description)
         }
     }
 }
@@ -7604,10 +7339,38 @@ private extension QuickShareProvider {
 }
 
 struct AgentStatusSettings: View {
-    @ObservedObject var monitor = CursorAgentStatusMonitor.shared
+    // Deliberately not observing CursorAgentStatusMonitor: it publishes on every rescan while
+    // agents run, and the only thing here that shows its state is the preview, which observes it
+    // on its own (AgentTrafficLightStylePreview).
     @ObservedObject private var accessibilityPermission = AccessibilityPermissionStore.shared
     @ObservedObject var hookInstaller = AgentHookInstaller.shared
     @ObservedObject private var notificationBridge = AgentStatusNotificationBridge.shared
+    @ObservedObject private var adr = ADRConnection.shared
+    @ObservedObject private var findingsStore = SecurityFindingsStore.shared
+    @Default(.adrSnapshotDirectory) var adrSnapshotDirectory
+    @Default(.adrToolDirectory) var adrToolDirectory
+    @Default(.adrHighAlertMode) var adrHighAlertMode
+    @Default(.adrPolicyFile) var adrPolicyFile
+    @Default(.adrRunScansEnabled) var adrRunScansEnabled
+    @Default(.adrDetectionEnabled) var adrDetectionEnabled
+    @Default(.detectHiddenText) var detectHiddenText
+    @Default(.adrDetectionConsentedAt) var adrDetectionConsentedAt
+    @Default(.adrDetectionCheckout) var adrDetectionCheckout
+    @Default(.adrDetectionConfirmEachRun) var adrDetectionConfirmEachRun
+    @Default(.adrDetectionTriageEnabled) var adrDetectionTriageEnabled
+    @Default(.adrDetectionTriageModel) var adrDetectionTriageModel
+    @Default(.adrDetectionReasoningModel) var adrDetectionReasoningModel
+    @Default(.adrDetectionUseAnthropicAPIKey) var adrDetectionUseAnthropicAPIKey
+    @Default(.adrDetectionContextThreatIntelligence) var adrDetectionContextThreatIntelligence
+    @Default(.adrDetectionContextSourceCode) var adrDetectionContextSourceCode
+    @Default(.adrDetectionContextPolicy) var adrDetectionContextPolicy
+    @Default(.adrDetectionTimeoutSeconds) var adrDetectionTimeoutSeconds
+    @Default(.adrDetectionMaxMessages) var adrDetectionMaxMessages
+    @State private var adrOpenAIKeyText = ""
+    @State private var adrAnthropicKeyText = ""
+    @State private var showDetectionConsent = false
+    /// Which ADR Detection keys the keychain holds; see `adrSecretRow`.
+    @State private var storedADRSecrets: Set<SecureSecretKey> = []
     @Default(.enableAgentStatusFeature) var enableAgentStatusFeature
     @Default(.agentStatusStaleMinutes) var agentStatusStaleMinutes
     @Default(.agentStoppedCollapseSeconds) var agentStoppedCollapseSeconds
@@ -7626,7 +7389,11 @@ struct AgentStatusSettings: View {
     @State private var pushoverAppToken = ""
     @State private var webhookURL = ""
     @Default(.agentStatusNotifyOnInactive) var notifyOnInactive
+    @Default(.agentWaitReminderMinutes) var agentWaitReminderMinutes
     @State private var isSendingTestNotification = false
+    /// File checks, read when the tab appears rather than on every render.
+    @State private var detectedEditors: [DetectedEditor] = []
+    @State private var presentHookTools: Set<AgentHookProvider> = Set(AgentHookProvider.allCases)
 
     private func highlightID(_ title: String) -> String {
         SettingsTab.agentStatus.highlightID(for: title)
@@ -7642,52 +7409,53 @@ struct AgentStatusSettings: View {
             } header: {
                 Text("Monitoring")
             } footer: {
-                Text("Shows a traffic light in the notch while AI agents run in your editor: green while the agent is working, yellow when it needs your input, and red when it has stopped.")
+                SettingsFooter("Shows a traffic light in the notch while AI agents run in your editor: green while the agent is working, yellow when it needs your input, and red when it has stopped.")
             }
 
             if enableAgentStatusFeature {
                 Section {
-                    detectedProvidersRow
+                    detectedProvidersGrid
                 } header: {
                     Text("Detected Editors")
                 } footer: {
-                    Text("Kannu watches these editors automatically. Install a hook below for richer status on editors marked as not detected.")
+                    SettingsFooter("Kannu watches these editors automatically. Install a hook below for richer status on editors marked as not detected.")
                 }
 
-                // Optional, not required: without it clicking a chat still activates the
-                // right app — it just can't raise the specific window for terminal- and
-                // IDE-hosted sessions. Claude Desktop chats deep-link and don't need it.
-                if !accessibilityPermission.isAuthorized {
-                    Section {
+                // Accessibility is optional, not required: without it clicking a chat still activates
+                // the right app — it just can't raise the specific window for IDE-hosted sessions.
+                // Chats Claude Desktop knows deep-link to the exact chat (its session route, see
+                // ClaudeDesktopSessionIndex); Terminal and iTerm2 tabs are picked by AppleScript.
+                Section {
+                    SettingsRow("Open the exact terminal tab", description: "Clicking a chat that runs in Terminal or iTerm2 brings its tab to the front, and switches tmux to its pane. macOS asks once for permission to control each terminal app.") {
+                        Defaults.Toggle(key: .openAgentTerminalTab) {
+                            Text("Open the exact terminal tab")
+                        }
+                    }
+                    .settingsHighlight(id: highlightID("Open the exact terminal tab"))
+                    if !accessibilityPermission.isAuthorized {
                         SettingsPermissionCallout(
                             title: "Accessibility improves click-through",
-                            message: "Clicking a recent chat brings its app forward. With Accessibility access, Kannu can also raise the exact window for sessions running in a terminal or IDE.",
+                            message: "Clicking a recent chat brings its app forward — Claude Desktop chats open on the exact chat. With Accessibility access, Kannu can also raise the exact window for sessions running in an IDE.",
                             requestAction: { accessibilityPermission.requestAuthorizationPrompt() },
                             openSettingsAction: { accessibilityPermission.openSystemSettings() }
                         )
-                    } header: {
-                        Text("Click-through")
                     }
+                } header: {
+                    Text("Click-through")
                 }
 
                 Section {
-                    Picker("Traffic light style", selection: $agentTrafficLightStyle) {
-                        ForEach(AgentTrafficLightStyle.allCases) { style in
-                            Text(style.localizedName).tag(style)
+                    SettingsRow("Traffic light style", description: agentTrafficLightStyle.description) {
+                        Picker("Traffic light style", selection: $agentTrafficLightStyle) {
+                            ForEach(AgentTrafficLightStyle.allCases) { style in
+                                Text(style.localizedName).tag(style)
+                            }
                         }
                     }
                     .settingsHighlight(id: highlightID("Traffic light style"))
-                    Text(agentTrafficLightStyle.description)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                     // Live preview using the same view the notch draws, so this can't drift.
-                    HStack(spacing: 10) {
-                        Text("Preview")
-                        Spacer()
-                        AgentTrafficLightDots(
-                            style: agentTrafficLightStyle,
-                            state: monitor.trafficLightState == .inactive ? .executing : monitor.trafficLightState
-                        )
+                    LabeledContent("Preview") {
+                        AgentTrafficLightStylePreview(style: agentTrafficLightStyle)
                     }
                     stateColorRow(
                         key: .agentActiveColor,
@@ -7707,103 +7475,87 @@ struct AgentStatusSettings: View {
                         detail: String(localized: "The agent has finished or was aborted"),
                         highlightTitle: "Stopped color"
                     )
-                    Button("Reset Colors") {
-                        Defaults[.agentActiveColor] = .green
-                        Defaults[.agentAwaitingInputColor] = .yellow
-                        Defaults[.agentStoppedColor] = .red
+                    SettingsActionRow {
+                        Button("Reset Colors") {
+                            Defaults[.agentActiveColor] = .green
+                            Defaults[.agentAwaitingInputColor] = .yellow
+                            Defaults[.agentStoppedColor] = .red
+                        }
+                        .disabled(
+                            agentActiveColor == .green
+                                && agentAwaitingInputColor == .yellow
+                                && agentStoppedColor == .red
+                        )
                     }
-                    .buttonStyle(.link)
-                    .disabled(
-                        agentActiveColor == .green
-                            && agentAwaitingInputColor == .yellow
-                            && agentStoppedColor == .red
-                    )
                     .settingsHighlight(id: highlightID("Reset traffic light colors"))
                 } header: {
                     Text("Traffic Light")
                 } footer: {
-                    Text("The yellow light is most reliable when hooks are installed.")
+                    SettingsFooter("The yellow light is most reliable when hooks are installed.")
                 }
 
                 Section {
-                    Defaults.Toggle(key: .smartCaffeinate) {
-                        Text("Smart caffeinate")
+                    SettingsRow("Smart caffeinate", description: "Keeps the Mac awake automatically while any agent is running, and lets it sleep when they stop. While this is on, the manual switch in the notch is hidden.") {
+                        Defaults.Toggle(key: .smartCaffeinate) {
+                            Text("Smart caffeinate")
+                        }
                     }
                     .settingsHighlight(id: SettingsDeepLink.smartCaffeinateHighlightID)
-                    Text("Keeps the Mac awake automatically while any agent is running, and lets it sleep when they stop. While this is on, the manual switch in the notch is hidden.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 } header: {
                     Text("Caffeinate")
                 } footer: {
-                    Text("Only system sleep is prevented, so the display may still sleep while agents keep running. Closing the lid always sleeps the Mac.")
+                    SettingsFooter("Only system sleep is prevented, so the display may still sleep while agents keep running. Closing the lid always sleeps the Mac.")
                 }
 
                 Section {
-                    Defaults.Toggle(key: .showAgentStoppedIndicator) {
-                        Text("Show a red light when no agents are running")
+                    SettingsRow("Show a red light when no agents are running", description: "When off, the light hides once agents go quiet.") {
+                        Defaults.Toggle(key: .showAgentStoppedIndicator) {
+                            Text("Show a red light when no agents are running")
+                        }
                     }
                     .settingsHighlight(id: highlightID("Show a red light when no agents are running"))
-                    Text("When off, the light hides once agents go quiet.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
 
-                    HStack {
-                        Text("Hide indicator after agent stops for")
-                        Spacer()
-                        Picker("", selection: $agentStoppedCollapseSeconds) {
-                            Text("3 seconds").tag(3)
-                            Text("5 seconds").tag(5)
-                            Text("10 seconds").tag(10)
-                            Text("15 seconds").tag(15)
-                            Text("30 seconds").tag(30)
-                            Text("1 minute").tag(60)
-                            Text("2 minutes").tag(120)
-                            Text("5 minutes").tag(300)
-                        }
-                        .pickerStyle(.menu)
-                        .frame(minWidth: 120)
+                    Picker("Hide indicator after agent stops for", selection: $agentStoppedCollapseSeconds) {
+                        Text("3 seconds").tag(3)
+                        Text("5 seconds").tag(5)
+                        Text("10 seconds").tag(10)
+                        Text("15 seconds").tag(15)
+                        Text("30 seconds").tag(30)
+                        Text("1 minute").tag(60)
+                        Text("2 minutes").tag(120)
+                        Text("5 minutes").tag(300)
                     }
+                    .pickerStyle(.menu)
                     .disabled(showAgentStoppedIndicator)
                     .opacity(showAgentStoppedIndicator ? 0.5 : 1.0)
                     .settingsHighlight(id: highlightID("Hide red light after"))
 
-                    HStack {
-                        Text("Show dim traffic light for")
-                        Spacer()
-                        Picker("", selection: $agentInactiveDisplaySeconds) {
-                            Text("Off").tag(0)
-                            Text("5 seconds").tag(5)
-                            Text("10 seconds").tag(10)
-                            Text("15 seconds").tag(15)
-                            Text("30 seconds").tag(30)
-                            Text("1 minute").tag(60)
-                            Text("2 minutes").tag(120)
-                        }
-                        .pickerStyle(.menu)
-                        .frame(minWidth: 120)
+                    Picker("Show dim traffic light for", selection: $agentInactiveDisplaySeconds) {
+                        Text("Off").tag(0)
+                        Text("5 seconds").tag(5)
+                        Text("10 seconds").tag(10)
+                        Text("15 seconds").tag(15)
+                        Text("30 seconds").tag(30)
+                        Text("1 minute").tag(60)
+                        Text("2 minutes").tag(120)
                     }
+                    .pickerStyle(.menu)
                     .disabled(showAgentStoppedIndicator)
                     .opacity(showAgentStoppedIndicator ? 0.5 : 1.0)
                     .settingsHighlight(id: highlightID("Dim traffic light duration"))
 
-                    HStack {
-                        Text("Consider agents inactive after")
-                        Spacer()
-                        Picker("", selection: $agentStatusStaleMinutes) {
-                            Text("10 minutes").tag(10)
-                            Text("15 minutes").tag(15)
-                            Text("30 minutes").tag(30)
-                            Text("60 minutes").tag(60)
-                        }
-                        .pickerStyle(.menu)
-                        .frame(minWidth: 120)
+                    Picker("Consider agents inactive after", selection: $agentStatusStaleMinutes) {
+                        Text("10 minutes").tag(10)
+                        Text("15 minutes").tag(15)
+                        Text("30 minutes").tag(30)
+                        Text("60 minutes").tag(60)
                     }
+                    .pickerStyle(.menu)
                     .settingsHighlight(id: highlightID("Consider agents inactive after"))
                 } header: {
                     Text("Indicator")
                 } footer: {
-                    Text("After an agent stops, the red light stays visible for the chosen time, then all lights dim for the inactive duration, then the traffic light disappears entirely. While the red light is kept visible when idle, the hide and dim delays have no effect.")
+                    SettingsFooter("After an agent stops, the red light stays visible for the chosen time, then all lights dim for the inactive duration, then the traffic light disappears entirely. While the red light is kept visible when idle, the hide and dim delays have no effect.")
                 }
 
                 Section {
@@ -7813,145 +7565,787 @@ struct AgentStatusSettings: View {
                     .settingsHighlight(id: highlightID("Cursor Hook"))
 
                     if let error = hookInstaller.lastError {
-                        Text(error)
-                            .font(.caption)
-                            .foregroundColor(.red)
+                        SettingsErrorText(error)
                     }
                 } header: {
                     Text("Editor Hooks")
                 } footer: {
-                    Text("Install hooks for Cursor, VS Code Copilot, Codex CLI, or Claude Code. Each hook writes agent status into ~/.kannu/agent-status for the notch traffic light and Recent chats list.")
+                    SettingsFooter("Install hooks for Cursor, VS Code and Copilot CLI, Codex CLI, Claude Code, Antigravity, Gemini CLI, Qwen Code or opencode. Each hook writes agent status into ~/.kannu/agent-status for the notch traffic light and Recent chats list. Copilot CLI uses the VS Code hook; opencode gets a small plugin.")
                 }
 
-                Section {
-                    Defaults.Toggle(key: .enableAgentStatusMobileNotifications) {
-                        Text("Enable mobile notifications")
-                    }
-                    .settingsHighlight(id: highlightID("Mobile notifications"))
+                securitySections
 
-                    if enableMobileNotifications {
-                        Picker("Provider", selection: $notificationProvider) {
-                            ForEach(AgentStatusNotificationProvider.allCases) { provider in
-                                Text(provider.displayName).tag(provider)
-                            }
-                        }
-                        .settingsHighlight(id: highlightID("Notification provider"))
-
-                        Text(notificationProvider.description)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        switch notificationProvider {
-                        case .ntfy:
-                            TextField("Topic", text: $ntfyTopic)
-                                .textFieldStyle(.roundedBorder)
-                            TextField("Server URL", text: $ntfyServerURL)
-                                .textFieldStyle(.roundedBorder)
-                        case .pushover:
-                            SecureField("User key", text: Binding(
-                                get: { pushoverUserKey },
-                                set: { newValue in
-                                    pushoverUserKey = newValue
-                                    SecureSecretsStore.set(newValue, for: .pushoverUserKey)
-                                }
-                            ))
-                                .textFieldStyle(.roundedBorder)
-                            SecureField("App token", text: Binding(
-                                get: { pushoverAppToken },
-                                set: { newValue in
-                                    pushoverAppToken = newValue
-                                    SecureSecretsStore.set(newValue, for: .pushoverAppToken)
-                                }
-                            ))
-                                .textFieldStyle(.roundedBorder)
-                        case .webhook:
-                            TextField("Webhook URL", text: Binding(
-                                get: { webhookURL },
-                                set: { newValue in
-                                    webhookURL = newValue
-                                    SecureSecretsStore.set(newValue, for: .webhookURL)
-                                }
-                            ))
-                                .textFieldStyle(.roundedBorder)
-                        }
-
-                        Defaults.Toggle(key: .agentStatusNotifyOnInactive) {
-                            Text("Notify when inactive")
-                        }
-
-                        HStack {
-                            Button(isSendingTestNotification ? "Sending…" : "Send test notification") {
-                                isSendingTestNotification = true
-                                Task {
-                                    await notificationBridge.sendTestNotification()
-                                    isSendingTestNotification = false
-                                }
-                            }
-                            .disabled(isSendingTestNotification)
-
-                            if let lastSentAt = notificationBridge.lastSentAt {
-                                Text("Last sent \(lastSentAt.formatted(date: .omitted, time: .shortened))")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .settingsHighlight(id: highlightID("Send test notification"))
-
-                        if let error = notificationBridge.lastError {
-                            Text(error)
-                                .font(.caption)
-                                .foregroundColor(.red)
-                        }
-                    }
-                } header: {
-                    Text("Mobile Notifications")
-                } footer: {
-                    Text("Optional push alerts when agent state changes. Uses ntfy (iPhone, Apple Watch, Android), Pushover (iPhone), or a custom webhook. Public ntfy topics can be read by anyone unless you self-host with authentication. Notifications are debounced by 2 seconds to avoid spam.")
-                }
+                mobileNotificationSections
             }
         }
         .onAppear {
             pushoverUserKey = SecureSecretsStore.value(for: .pushoverUserKey)
             pushoverAppToken = SecureSecretsStore.value(for: .pushoverAppToken)
             webhookURL = SecureSecretsStore.value(for: .webhookURL)
+            refreshStoredADRSecrets()
+            detectedEditors = Self.detectEditors()
+            presentHookTools = Set(AgentHookProvider.allCases.filter { AgentHookInstaller.layout.toolIsPresent($0) })
             hookInstaller.refresh()
             accessibilityPermission.refreshStatus()
         }
         .navigationTitle("Agents")
     }
 
-    private var detectedProviders: [(source: AgentProviderIconSource, name: String, detected: Bool)] {
+    // MARK: - Mobile notifications
+
+    @ViewBuilder
+    private var mobileNotificationSections: some View {
+        Section {
+            Defaults.Toggle(key: .enableAgentStatusMobileNotifications) {
+                Text("Enable mobile notifications")
+            }
+            .settingsHighlight(id: highlightID("Mobile notifications"))
+
+            if enableMobileNotifications {
+                notificationDeliveryRows
+            }
+        } header: {
+            Text("Mobile Notifications")
+        } footer: {
+            SettingsFooter("Optional push alerts when agent state changes. Uses ntfy (iPhone, Apple Watch, Android), Pushover (iPhone), or a custom webhook. Public ntfy topics can be read by anyone unless you self-host with authentication. Notifications are debounced by 2 seconds to avoid spam.")
+        }
+
+        if enableMobileNotifications {
+            notificationEventsSection
+        }
+    }
+
+    /// Where pushes go: the provider, its address or keys, and a test push.
+    @ViewBuilder
+    private var notificationDeliveryRows: some View {
+        SettingsRow("Provider", description: notificationProvider.description) {
+            Picker("Provider", selection: $notificationProvider) {
+                ForEach(AgentStatusNotificationProvider.allCases) { provider in
+                    Text(provider.displayName).tag(provider)
+                }
+            }
+        }
+        .settingsHighlight(id: highlightID("Notification provider"))
+
+        switch notificationProvider {
+        case .ntfy:
+            TextField("Topic", text: $ntfyTopic)
+                .textFieldStyle(.roundedBorder)
+            TextField("Server URL", text: $ntfyServerURL)
+                .textFieldStyle(.roundedBorder)
+        case .pushover:
+            SecureField("User key", text: Binding(
+                get: { pushoverUserKey },
+                set: { newValue in
+                    pushoverUserKey = newValue
+                    SecureSecretsStore.set(newValue, for: .pushoverUserKey)
+                }
+            ))
+                .textFieldStyle(.roundedBorder)
+            SecureField("App token", text: Binding(
+                get: { pushoverAppToken },
+                set: { newValue in
+                    pushoverAppToken = newValue
+                    SecureSecretsStore.set(newValue, for: .pushoverAppToken)
+                }
+            ))
+                .textFieldStyle(.roundedBorder)
+        case .webhook:
+            TextField("Webhook URL", text: Binding(
+                get: { webhookURL },
+                set: { newValue in
+                    webhookURL = newValue
+                    SecureSecretsStore.set(newValue, for: .webhookURL)
+                }
+            ))
+                .textFieldStyle(.roundedBorder)
+        }
+
+        LabeledContent {
+            Button(isSendingTestNotification ? "Sending…" : "Send test notification") {
+                isSendingTestNotification = true
+                Task {
+                    await notificationBridge.sendTestNotification()
+                    isSendingTestNotification = false
+                }
+            }
+            .disabled(isSendingTestNotification)
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Test notification")
+                Group {
+                    if let lastSentAt = notificationBridge.lastSentAt {
+                        Text("Last sent \(lastSentAt.formatted(date: .omitted, time: .shortened))")
+                    } else {
+                        Text("Sends one push to check the setup.")
+                    }
+                }
+                .settingsDescriptionStyle()
+            }
+        }
+        .settingsHighlight(id: highlightID("Send test notification"))
+
+        if let error = notificationBridge.lastError {
+            SettingsErrorText(error)
+        }
+    }
+
+    /// What gets pushed.
+    private var notificationEventsSection: some View {
+        Section {
+            Defaults.Toggle(key: .agentStatusNotifyOnInactive) {
+                Text("Notify when inactive")
+            }
+            SettingsRow("Remind me when an agent is still waiting", description: "One more push if an agent is still waiting for your answer after this long. Only the app's name and how long it has waited are sent.") {
+                Picker("Remind me when an agent is still waiting", selection: $agentWaitReminderMinutes) {
+                    Text("Off").tag(0)
+                    Text("After 3 minutes").tag(3)
+                    Text("After 10 minutes").tag(10)
+                    Text("After 20 minutes").tag(20)
+                }
+            }
+            .settingsHighlight(id: highlightID("Remind me when an agent is still waiting"))
+            Defaults.Toggle(key: .adrPushHighFindings) {
+                Text("Push high security findings")
+            }
+            .settingsHighlight(id: highlightID("Push high security findings"))
+            Defaults.Toggle(key: .adrPushMediumFindings) {
+                Text("Push medium security findings")
+            }
+            .settingsHighlight(id: highlightID("Push medium security findings"))
+            Defaults.Toggle(key: .pushUsageLimitAlerts) {
+                Text("Push when a usage limit is almost reached")
+            }
+            .settingsHighlight(id: highlightID("Push when a usage limit is almost reached"))
+        } header: {
+            Text("Notify about")
+        }
+    }
+
+    private struct DetectedEditor: Identifiable {
+        let source: AgentProviderIconSource
+        let name: String
+        let detected: Bool
+        var id: String { name }
+    }
+
+    private static func detectEditors() -> [DetectedEditor] {
         let fm = FileManager.default
         let home = fm.homeDirectoryForCurrentUser
         return [
-            (.cursor, "Cursor", fm.fileExists(atPath: home.appendingPathComponent("Library/Application Support/Cursor/User/globalStorage/state.vscdb").path)),
-            (.claude, "Claude Code", fm.fileExists(atPath: home.appendingPathComponent(".claude/projects").path)),
-            (.codex, "Codex", fm.fileExists(atPath: home.appendingPathComponent(".codex/sessions").path)),
+            DetectedEditor(source: .cursor, name: "Cursor", detected: fm.fileExists(atPath: home.appendingPathComponent("Library/Application Support/Cursor/User/globalStorage/state.vscdb").path)),
+            DetectedEditor(source: .claude, name: "Claude Code", detected: fm.fileExists(atPath: home.appendingPathComponent(".claude/projects").path)),
+            DetectedEditor(source: .codex, name: "Codex", detected: fm.fileExists(atPath: home.appendingPathComponent(".codex/sessions").path)),
+            DetectedEditor(source: .warp, name: "Warp", detected: WarpAgentStore.databaseURL != nil),
+            DetectedEditor(source: .claudeDesktop, name: "Claude Desktop", detected: fm.fileExists(atPath: ClaudeDesktopAgentSessionStore.defaultRoot.path)),
         ]
     }
 
-    private var detectedProvidersRow: some View {
-        HStack(spacing: 0) {
-            ForEach(detectedProviders, id: \.name) { p in
+    private var detectedProvidersGrid: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 12, alignment: .leading)], alignment: .leading, spacing: 10) {
+            ForEach(detectedEditors) { editor in
                 HStack(spacing: 6) {
-                    AgentProviderIconView(source: p.source, size: 16)
-                        .opacity(p.detected ? 1 : 0.35)
-                    Text(p.name)
+                    AgentProviderIconView(source: editor.source, size: 16)
+                        .opacity(editor.detected ? 1 : 0.35)
+                    Text(editor.name)
                         .font(.subheadline)
-                        .foregroundStyle(p.detected ? .primary : .secondary)
+                        .foregroundStyle(editor.detected ? .primary : .secondary)
+                        .lineLimit(1)
                     Circle()
-                        .fill(p.detected ? Color.green : Color.secondary.opacity(0.4))
+                        .fill(editor.detected ? Color.green : Color.secondary.opacity(0.4))
                         .frame(width: 6, height: 6)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(editor.detected ? Text("\(editor.name), detected") : Text("\(editor.name), not detected"))
             }
         }
         .padding(.vertical, 2)
     }
 
+    // MARK: - Security
+
+    /// Security in groups, most urgent first: what was found, where ADR's findings come from,
+    /// Kannu's own checks, and opt-in session analysis. ADR is a separate install (uv / pipx);
+    /// Kannu connects to it, never installs it.
+    @ViewBuilder
+    private var securitySections: some View {
+        securityFindingsSection
+        adrDiscoverySection
+        kannuChecksSection
+        sessionAnalysisSections
+    }
+
+    private var securityFindingsSection: some View {
+        Section {
+            if let error = findingsStore.snapshotError {
+                SettingsErrorText(error)
+            }
+
+            let ranking = findingsStore.ranking
+            if ranking.visible.isEmpty {
+                Text(findingsStore.lastScan == nil
+                     ? String(localized: "No findings yet.")
+                     : String(localized: "No open findings."))
+                    .settingsDescriptionStyle()
+            } else {
+                ForEach(ranking.visible) { finding in
+                    SecurityFindingRow(
+                        finding: finding,
+                        copyForAgent: { findingsStore.copyAgentPrompt(for: finding) },
+                        acknowledge: { findingsStore.acknowledge(finding.id) },
+                        snooze: { findingsStore.snooze(finding.id, for: 24 * 3600) },
+                        openChat: findingsStore.hasChat(for: finding)
+                            ? { if !findingsStore.openChat(for: finding) { NSSound.beep() } }
+                            : nil
+                    )
+                }
+            }
+            if !findingsStore.reviewQueue.isEmpty {
+                Text("Needs review: \(findingsStore.reviewQueue.count) uncatalogued AI tool(s) — see the snapshot for paths.")
+                    .settingsDescriptionStyle()
+            }
+
+            SettingsRow("High-severity alerts in the notch", description: adrHighAlertMode.description) {
+                Picker("High-severity alerts in the notch", selection: $adrHighAlertMode) {
+                    ForEach(ADRHighAlertMode.allCases) { mode in
+                        Text(mode.localizedName).tag(mode)
+                    }
+                }
+            }
+            .settingsHighlight(id: highlightID("High-severity alerts in the notch"))
+
+            if !findingsStore.acknowledgedIDs.isEmpty || !findingsStore.snoozes.isEmpty {
+                SettingsActionRow {
+                    Button("Show acknowledged and snoozed again") { findingsStore.clearAcknowledgements() }
+                }
+            }
+        } header: {
+            Text("Security findings")
+                .settingsHighlight(id: highlightID("Security findings"))
+        } footer: {
+            SettingsFooter("Kannu never changes your agent or MCP settings. Nothing leaves this Mac unless you turn on push notifications or session analysis. Details: docs/ADR.md in the Kannu repository.")
+        }
+        .onAppear {
+            if adr.discovery.state == .unchecked { adr.checkAgain() }
+            if adrDetectionEnabled, adr.detection.state == .unchecked { adr.checkDetection() }
+        }
+    }
+
+    private var adrDiscoverySection: some View {
+        Section {
+            adrToolRow(.discovery)
+                .settingsHighlight(id: highlightID("Connect ADR"))
+            if !adr.discovery.isFound && adr.discovery.state != .unchecked {
+                adrInstallGuidance(.discovery)
+            }
+            adrToolRow(.sensor)
+
+            LabeledContent {
+                HStack(spacing: 8) {
+                    SettingsValueText(adrToolDirectory.isEmpty
+                                      ? String(localized: "Standard places")
+                                      : adrToolDirectory.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                    Button("Choose…") { chooseToolDirectory() }
+                    if !adrToolDirectory.isEmpty {
+                        Button("Clear") {
+                            adrToolDirectory = ""
+                            adr.checkAgain()
+                            adr.checkDetection()
+                        }
+                    }
+                }
+            } label: {
+                SettingsRowLabel("ADR tools folder", description: "Only if the tools are somewhere else: Kannu already looks in ~/.local/bin, uv's tool folders, /opt/homebrew/bin and /usr/local/bin.")
+            }
+            .settingsHighlight(id: highlightID("ADR tools folder"))
+            if let protected = ADRToolFolder.protectedFolderName(for: adrToolDirectory, home: NSHomeDirectory()) {
+                SettingsErrorText(String(localized: "This folder is in \(protected). macOS asks for permission whenever Kannu looks for the tools there; a folder outside it avoids the prompt."))
+            }
+
+            LabeledContent {
+                HStack(spacing: 8) {
+                    SettingsValueText(SecurityFindingsStore.snapshotDirectory.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                    Button("Choose…") { chooseSnapshotDirectory() }
+                    Button("Reveal") {
+                        NSWorkspace.shared.activateFileViewerSelecting([SecurityFindingsStore.snapshotDirectory])
+                    }
+                }
+            } label: {
+                Text("Snapshot folder")
+            }
+            .settingsHighlight(id: highlightID("Snapshot folder"))
+
+            adrLastScanRow
+
+            if adr.discovery.isFound {
+                SettingsRow("Let Kannu run scans", description: "Kannu runs a scan once a day, and again whenever an AI tool's MCP servers change. With this off, it shows only the scans something else runs.") {
+                    Defaults.Toggle(key: .adrRunScansEnabled) {
+                        Text("Let Kannu run scans")
+                    }
+                }
+                .settingsHighlight(id: highlightID("Let Kannu run scans"))
+
+                LabeledContent {
+                    Button(findingsStore.isScanning ? "Scanning…" : "Scan now") {
+                        findingsStore.runScanNow(reason: "manual")
+                    }
+                    .disabled(findingsStore.isScanning)
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Scan this Mac")
+                        Group {
+                            if let at = findingsStore.lastKannuScanAt {
+                                Text("Last run by Kannu \(at.formatted(date: .abbreviated, time: .shortened))")
+                            } else {
+                                Text("Not run by Kannu yet")
+                            }
+                        }
+                        .settingsDescriptionStyle()
+                        if adrRunScansEnabled, findingsStore.automaticScansActive, !findingsStore.isScanning {
+                            Text(verbatim: nextAutomaticScanText)
+                                .settingsDescriptionStyle()
+                        }
+                    }
+                }
+                .settingsHighlight(id: highlightID("Scan now"))
+                if let error = findingsStore.lastScanError {
+                    SettingsErrorText(error)
+                }
+
+                LabeledContent {
+                    HStack(spacing: 8) {
+                        SettingsValueText(adrPolicyFile.isEmpty ? String(localized: "none") : adrPolicyFile.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                        Button("Choose…") { choosePolicyFile() }
+                        if !adrPolicyFile.isEmpty {
+                            Button("Clear") { adrPolicyFile = "" }
+                        }
+                    }
+                } label: {
+                    Text("Policy file")
+                }
+                .settingsHighlight(id: highlightID("Policy file"))
+            }
+        } header: {
+            Text("ADR Discovery")
+        } footer: {
+            SettingsFooter("Findings come from ADR, Uber's open-source agent security toolkit (Apache-2.0). You install it; Kannu only reads its results.")
+        }
+    }
+
+    private var kannuChecksSection: some View {
+        Section {
+            SettingsRow("Look for hidden text in what agents read", description: "Some characters are invisible to you but readable by the AI, and can hide instructions. Kannu checks prompts and tool results on this Mac. No AI model is used and nothing is sent anywhere.") {
+                Defaults.Toggle(key: .detectHiddenText) {
+                    Text("Look for hidden text in what agents read")
+                }
+            }
+            .settingsHighlight(id: highlightID("Look for hidden text in what agents read"))
+
+            SettingsRow("Tell the agent when hidden text is found", description: "Off by default. Adds one short, factual note to the agent's context saying hidden text was found and where — never the hidden text. Claude Code also shows you a one-line notice.") {
+                Defaults.Toggle(key: .warnAgentAboutHiddenText) {
+                    Text("Tell the agent when hidden text is found")
+                }
+            }
+            .disabled(!detectHiddenText)
+            .settingsHighlight(id: highlightID("Tell the agent when hidden text is found"))
+
+            SettingsRow("Look for secrets in prompts and tool calls", description: "Flags API keys and private keys in what you send an agent and in what an agent hands a tool. Kannu keeps only the kind of key, its first few letters, its length and a fingerprint — never the key itself.") {
+                Defaults.Toggle(key: .detectSecrets) {
+                    Text("Look for secrets in prompts and tool calls")
+                }
+            }
+            .settingsHighlight(id: highlightID("Look for secrets in prompts and tool calls"))
+
+            SettingsRow("Watch for agents touching sensitive files", description: "Flags when an agent reads keys, passwords, cloud or browser data, or changes files that run programs on their own or set what agents may do. Checked on this Mac. Nothing is sent anywhere.") {
+                Defaults.Toggle(key: .detectSensitivePaths) {
+                    Text("Watch for agents touching sensitive files")
+                }
+            }
+            .settingsHighlight(id: highlightID("Watch for agents touching sensitive files"))
+
+            SettingsRow("Notice new MCP servers", description: "Tells you when an MCP server is added to Claude Code, Claude Desktop, Cursor, VS Code, Codex, Gemini CLI, Qwen Code or opencode. The first look only learns what is already there. Project folders inside Desktop, Documents and Downloads are skipped, so macOS never asks for access.") {
+                Defaults.Toggle(key: .watchMCPServers) {
+                    Text("Notice new MCP servers")
+                }
+            }
+            .settingsHighlight(id: highlightID("Notice new MCP servers"))
+        } header: {
+            Text("Kannu's own checks")
+        } footer: {
+            SettingsFooter("Kannu also flags sessions started with permission checks turned off; that check has no setting.")
+        }
+    }
+
+    /// ADR Detection — off by default, behind a consent alert, and every run is the user's click.
+    @ViewBuilder
+    private var sessionAnalysisSections: some View {
+        Section {
+            // Consent is asked through a SwiftUI alert, not a modal inside the binding setter: a
+            // nested run loop there fought the toggle's own state update and the switch fell back.
+            SettingsRow("Analyze chats with ADR Detection", description: "Opt-in, per chat. Right-click a finished Claude Code chat in the notch and choose \"Analyze with ADR Detection\". The transcript is sent to the model providers below under your own keys — nothing is ever sent automatically.") {
+                Toggle(isOn: Binding(
+                    get: { adrDetectionEnabled },
+                    set: { newValue in
+                        guard newValue else { adrDetectionEnabled = false; return }
+                        if adrDetectionConsentedAt == nil {
+                            showDetectionConsent = true
+                            return
+                        }
+                        adrDetectionEnabled = true
+                        adr.checkDetection()
+                    }
+                )) {
+                    Text("Analyze chats with ADR Detection")
+                }
+            }
+            .settingsHighlight(id: highlightID("Analyze chats with ADR Detection"))
+            .alert("Turn on ADR Detection session analysis?", isPresented: $showDetectionConsent) {
+                Button("Turn on") {
+                    adrDetectionConsentedAt = Date()
+                    adrDetectionEnabled = true
+                    adr.checkDetection()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(detectionConsentText)
+            }
+
+            if adrDetectionEnabled {
+                detectionCheckoutRows
+            }
+        } header: {
+            Text("Session analysis")
+        }
+
+        if adrDetectionEnabled {
+            detectionSetupSections
+        }
+    }
+
+    /// Where ADR Detection lives and whether it is ready; shown once analysis is on.
+    @ViewBuilder
+    private var detectionCheckoutRows: some View {
+        LabeledContent {
+            HStack(spacing: 8) {
+                SettingsValueText(adrDetectionCheckout.isEmpty ? String(localized: "none") : adrDetectionCheckout.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                Button("Choose…") { chooseDetectionCheckout() }
+                Button("Check") { adr.checkDetection() }
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Detection checkout")
+                SettingsStatusText(adr.detection.caption, isReady: adr.detection.isReady)
+            }
+        }
+        .settingsHighlight(id: highlightID("Detection checkout"))
+
+        LabeledContent {
+            Button("Copy") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(ADRConnection.detectionCloneCommand, forType: .string)
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(ADRConnection.detectionCloneCommand)
+                    .font(.caption.monospaced())
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                Text("Needs uv and Python 3.10–3.12 (uv fetches one). ADR Detection is Uber's research tool (Apache-2.0); it runs an unattended Claude session on this Mac to reason about the chat, with file edits disallowed.")
+                    .settingsDescriptionStyle()
+            }
+        }
+    }
+
+    /// Models, keys, context and limits for ADR Detection, and the recent analyses.
+    @ViewBuilder
+    private var detectionSetupSections: some View {
+        Section {
+            TextField("Reasoning model (Claude)", text: $adrDetectionReasoningModel)
+                .settingsHighlight(id: highlightID("Reasoning model"))
+            SettingsRow("Use an Anthropic API key instead of your Claude Code login",
+                        description: adrDetectionUseAnthropicAPIKey
+                            ? String(localized: "Analyses are billed to the API key below.")
+                            : String(localized: "Analyses count against your Claude subscription's 5-hour and weekly limits.")) {
+                Toggle("Use an Anthropic API key instead of your Claude Code login", isOn: $adrDetectionUseAnthropicAPIKey)
+            }
+            .settingsHighlight(id: highlightID("Use an Anthropic API key"))
+            if adrDetectionUseAnthropicAPIKey {
+                adrSecretRow(title: "Anthropic API key", key: .claudeAPIKey, text: $adrAnthropicKeyText)
+            }
+
+            SettingsRow("Triage with OpenAI first", description: "Upstream's pipeline: a cheap gpt-4o pass decides whether the Claude reasoning agent runs at all. Off means Claude only — no OpenAI account needed.") {
+                Toggle("Triage with OpenAI first", isOn: $adrDetectionTriageEnabled)
+            }
+            .settingsHighlight(id: highlightID("Triage with OpenAI first"))
+            if adrDetectionTriageEnabled {
+                TextField("Triage model (OpenAI)", text: $adrDetectionTriageModel)
+                adrSecretRow(title: "OpenAI API key", key: .openaiAPIKey, text: $adrOpenAIKeyText)
+            }
+        } header: {
+            Text("Analysis models")
+        }
+
+        Section {
+            Toggle("Context: threat intelligence", isOn: $adrDetectionContextThreatIntelligence)
+            Toggle("Context: source code analyzer", isOn: $adrDetectionContextSourceCode)
+            Toggle("Context: policy store", isOn: $adrDetectionContextPolicy)
+            Picker("Reasoning timeout", selection: $adrDetectionTimeoutSeconds) {
+                Text("2 minutes").tag(120)
+                Text("5 minutes").tag(300)
+                Text("10 minutes").tag(600)
+            }
+            Picker("Messages sent (newest)", selection: $adrDetectionMaxMessages) {
+                Text("100").tag(100)
+                Text("200").tag(200)
+                Text("400").tag(400)
+                Text("800").tag(800)
+            }
+            .settingsHighlight(id: highlightID("Messages sent"))
+            Toggle("Confirm before every analysis", isOn: $adrDetectionConfirmEachRun)
+                .settingsHighlight(id: highlightID("Confirm before every analysis"))
+        } header: {
+            Text("Analysis context and limits")
+        } footer: {
+            SettingsFooter("The three context options are ADR's local MCP context servers; they read bundled data and this Mac only.")
+        }
+
+        if findingsStore.lastAnalysisError != nil || !findingsStore.analyses.isEmpty {
+            Section {
+                if let error = findingsStore.lastAnalysisError {
+                    SettingsErrorText(error)
+                }
+                ForEach(findingsStore.analyses.prefix(5)) { analysis in
+                    analysisRow(analysis)
+                }
+            } header: {
+                Text("Recent analyses")
+            }
+        }
+    }
+
+    private func analysisRow(_ analysis: ADRSessionAnalysis) -> some View {
+        let cost = analysis.costUSD.map { String(format: " · $%.3f", $0) } ?? ""
+        return LabeledContent {
+            HStack(spacing: 6) {
+                if analysis.isMalicious {
+                    CopyForAgentButton {
+                        if let finding = analysis.finding() { findingsStore.copyAgentPrompt(for: finding) }
+                    }
+                }
+                SettingsMoreMenu {
+                    if let path = analysis.reportPath {
+                        Button("Reveal Report in Finder") {
+                            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                        }
+                    }
+                    Button("Forget") { findingsStore.forgetAnalysis(for: analysis.conversationID) }
+                }
+            }
+            .controlSize(.small)
+        } label: {
+            SettingsRowLabel(
+                verbatim: analysis.chatName ?? analysis.conversationID,
+                description: "\(analysis.date.formatted(date: .abbreviated, time: .shortened)) · \(analysis.shortLabel)\(cost)"
+            )
+            .lineLimit(2)
+        }
+    }
+
+    /// `stored` comes from `storedADRSecrets`, read when the tab appears and updated by Save and
+    /// Remove — never a keychain read per render (the tab re-renders on every monitor publish).
+    @ViewBuilder
+    private func adrSecretRow(title: String, key: SecureSecretKey, text: Binding<String>) -> some View {
+        HStack {
+            SecureField(title, text: text)
+            Button("Save") {
+                SecureSecretsStore.set(text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines), for: key)
+                text.wrappedValue = ""
+                refreshStoredADRSecrets()
+            }
+            .disabled(text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            if storedADRSecrets.contains(key) {
+                Text("stored").font(.caption).foregroundStyle(.secondary)
+                Button("Remove") {
+                    SecureSecretsStore.removeValue(for: key)
+                    refreshStoredADRSecrets()
+                }
+            }
+        }
+    }
+
+    private func refreshStoredADRSecrets() {
+        storedADRSecrets = Set([SecureSecretKey.claudeAPIKey, .openaiAPIKey].filter { !SecureSecretsStore.value(for: $0).isEmpty })
+    }
+
+    /// The one-time consent, in plain words: what leaves the Mac, where, and when.
+    private var detectionConsentText: String {
+        String(localized: """
+        Nothing is analysed automatically. When you right-click a finished chat and choose "Analyze with ADR Detection", that one chat's transcript is sent out:
+
+        • to Anthropic, through your Claude Code login (uses your Claude quota) or an API key you store;
+        • to OpenAI, only if you turn triage on.
+
+        By default Kannu asks before every run. ADR Detection is a research tool from Uber (Apache-2.0); it runs an unattended Claude session on this Mac with file edits disallowed.
+        """)
+    }
+
+    private func chooseDetectionCheckout() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = String(localized: "Use checkout")
+        panel.message = String(localized: "Choose the ADR/Detection folder you cloned and synced with uv")
+        if panel.runModal() == .OK, let url = panel.url {
+            adrDetectionCheckout = url.path
+            adr.checkDetection()
+        }
+    }
+
+    /// An ADR tool: its name, and a status line with a dot (green when installed); Discovery also
+    /// gets "Check again".
+    private func adrToolRow(_ tool: ADRConnection.Tool) -> some View {
+        let status = tool == .discovery ? adr.discovery : adr.sensor
+        return LabeledContent {
+            HStack(spacing: 8) {
+                // Kannu never installs software: the command is copied for the user to run.
+                if tool == .sensor, status.state == .notFound {
+                    Button("Copy install command") {
+                        let pasteboard = NSPasteboard.general
+                        pasteboard.clearContents()
+                        pasteboard.setString(tool.installCommand, forType: .string)
+                    }
+                }
+                Button(adr.isChecking ? "Checking…" : "Check again") { adr.checkAgain() }
+                    .disabled(adr.isChecking)
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                if tool == .sensor {
+                    Text("ADR Sensor") + Text(verbatim: " · ") + Text("Optional").foregroundStyle(.secondary)
+                } else {
+                    Text(tool.displayName)
+                }
+                SettingsStatusText(adrStatusCaption(status, optional: tool == .sensor), isReady: status.isFound)
+                if tool == .sensor {
+                    Text("Not needed for findings, and Kannu does not use it yet. It exports agent sessions for a security team's SIEM.")
+                        .settingsDescriptionStyle()
+                }
+            }
+        }
+    }
+
+    private func chooseToolDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = String(localized: "Use folder")
+        if panel.runModal() == .OK, let url = panel.url {
+            adrToolDirectory = url.path
+            adr.checkAgain()
+            adr.checkDetection()
+        }
+    }
+
+    private func adrStatusCaption(_ status: ADRConnection.Status, optional: Bool = false) -> String {
+        switch status.state {
+        case .unchecked: return String(localized: "Not checked yet")
+        case .notFound: return optional ? String(localized: "Not installed — optional") : String(localized: "Not installed")
+        case .found(let executable, let version):
+            let shortPath = executable.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+            return version.map { "\($0) · \(shortPath)" } ?? shortPath
+        }
+    }
+
+    @ViewBuilder
+    private func adrInstallGuidance(_ tool: ADRConnection.Tool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SettingsPermissionCallout(
+                title: String(localized: "Connect ADR"),
+                message: String(localized: "Install ADR Discovery once with uv (or pipx), then press Check again. Requires Python 3.11 or newer; uv brings its own."),
+                icon: "shield.lefthalf.filled",
+                iconColor: .blue,
+                requestButtonTitle: String(localized: "Copy install command"),
+                openSettingsButtonTitle: String(localized: "Open ADR on GitHub"),
+                requestAction: {
+                    let pasteboard = NSPasteboard.general
+                    pasteboard.clearContents()
+                    pasteboard.setString(tool.installCommand, forType: .string)
+                },
+                openSettingsAction: { NSWorkspace.shared.open(ADRConnection.projectURL) }
+            )
+            Text(tool.installCommand)
+                .font(.system(.caption, design: .monospaced))
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// "Next automatic scan Sep 12, 5:54 AM · the last scan failed" — the sooner-than-daily time
+    /// is the retry, so the line says why rather than naming the mechanism.
+    private var nextAutomaticScanText: String {
+        let when: String
+        if let next = findingsStore.nextAutomaticScanAt, next > Date().addingTimeInterval(60) {
+            when = String(localized: "Next automatic scan \(next.formatted(date: .abbreviated, time: .shortened))")
+        } else {
+            when = String(localized: "Next automatic scan within a minute")
+        }
+        guard findingsStore.consecutiveScanFailures > 0 else { return when }
+        return when + " · " + String(localized: "the last scan failed")
+    }
+
+    private var adrLastScanRow: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Last snapshot")
+            if let scan = findingsStore.lastScan {
+                let coverage = scan.coverageComplete
+                    ? String(localized: "full coverage")
+                    : String(localized: "partial coverage (\(scan.coverageGaps) gaps)")
+                Text("\(scan.date.formatted(date: .abbreviated, time: .shortened)) · \(scan.assetCount) assets · \(scan.findingCount) findings · \(coverage) · catalog \(scan.catalogVersion)")
+                    .font(.subheadline)
+                    .foregroundStyle(scan.coverageComplete ? Color.secondary : Color.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            } else {
+                Text("none yet")
+                    .settingsDescriptionStyle()
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func choosePolicyFile() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.json]
+        panel.prompt = String(localized: "Use policy")
+        if panel.runModal() == .OK, let url = panel.url {
+            adrPolicyFile = url.path
+        }
+    }
+
+    private func chooseSnapshotDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = SecurityFindingsStore.snapshotDirectory
+        panel.prompt = String(localized: "Use folder")
+        if panel.runModal() == .OK, let url = panel.url {
+            adrSnapshotDirectory = url.path
+            findingsStore.directoryChanged()
+        }
+    }
+
     @ViewBuilder
     private func hookRow(for provider: AgentHookProvider) -> some View {
         let installed = hookInstaller.isInstalled(provider)
+        let present = presentHookTools.contains(provider)
         HStack(spacing: 10) {
             Circle()
                 .fill(installed ? Color.green : Color.secondary.opacity(0.5))
@@ -7959,6 +8353,11 @@ struct AgentStatusSettings: View {
             AgentProviderIconView(source: .init(hookProvider: provider), size: 18)
             Text(provider.displayName)
             Spacer()
+            if !installed && !present {
+                Text("Not found on this Mac")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Button(installed ? "Remove" : "Install") {
                 if installed {
                     hookInstaller.uninstall(provider)
@@ -7966,12 +8365,12 @@ struct AgentStatusSettings: View {
                     hookInstaller.install(provider)
                 }
             }
+            .disabled(!installed && !present)
         }
     }
 
 
-    @ViewBuilder
-    /// Legend row plus the palette picker for that state's color. The popover offers only
+    /// A state's name and meaning, with the palette picker for its color. The popover offers only
     /// the curated palette and blocks swatches already used by another state, so two states
     /// can never share a color.
     private func stateColorRow(
@@ -7980,7 +8379,6 @@ struct AgentStatusSettings: View {
         detail: String,
         highlightTitle: String
     ) -> some View {
-        let selection = Defaults[key]
         let others: [AgentTrafficLightPaletteColor: String] = {
             var taken: [AgentTrafficLightPaletteColor: String] = [:]
             let all: [(Defaults.Key<AgentTrafficLightPaletteColor>, String)] = [
@@ -7993,20 +8391,26 @@ struct AgentStatusSettings: View {
             }
             return taken
         }()
-        return HStack(spacing: 10) {
-            Circle()
-                .fill(selection.color)
-                .frame(width: 10, height: 10)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
+        return LabeledContent {
             AgentPaletteSwatchButton(key: key, takenByOthers: others)
+        } label: {
+            SettingsRowLabel(verbatim: title, description: detail)
         }
         .settingsHighlight(id: highlightID(highlightTitle))
+    }
+}
+
+/// The traffic light in Settings, in the chosen style and the monitor's current state. It observes
+/// the monitor itself so the rest of the Agents tab does not re-render on every rescan.
+private struct AgentTrafficLightStylePreview: View {
+    let style: AgentTrafficLightStyle
+    @ObservedObject private var monitor = CursorAgentStatusMonitor.shared
+
+    var body: some View {
+        AgentTrafficLightDots(
+            style: style,
+            state: monitor.trafficLightState == .inactive ? .executing : monitor.trafficLightState
+        )
     }
 }
 
@@ -8076,3 +8480,82 @@ private struct AgentPalettePopover: View {
         .padding(12)
     }
 }
+
+#if DEBUG
+extension SettingsView {
+    /// DEBUG snapshot harness: each tab exactly as the window builds it (`detailView(for:)`).
+    static func snapshotTabs(filter: Set<String>?) -> [(String, AnyView)] {
+        SettingsTab.allCases
+            .filter { filter?.contains($0.rawValue) ?? true }
+            .map { tab in (tab.rawValue, AnyView(SettingsView().detailView(for: tab))) }
+    }
+}
+
+extension SettingsView {
+    /// DEBUG snapshot harness: the shortcut recorder rows, shown only once global shortcuts are on.
+    static func snapshotShortcutRows() -> AnyView {
+        AnyView(Form { Shortcuts().shortcutsSection })
+    }
+
+    /// DEBUG snapshot harness: the Controls tab's Custom OSD, Vertical Bar and Circular sections, which
+    /// show only when that style's card is selected (the harness must not change the user's choice).
+    static func snapshotControlsStyles() -> AnyView {
+        let controls = HUDAndOSDSettingsView()
+        return AnyView(Form {
+            if #available(macOS 15.0, *) {
+                CustomOSDSettings()
+            }
+            controls.verticalHUDSections
+            controls.circularHUDSections
+        })
+    }
+}
+
+extension GeneralSettings {
+    /// DEBUG snapshot harness: the per-display overrides, which list only displays without a
+    /// notch (none on a lone MacBook), for two made-up displays.
+    static func snapshotPerDisplayRows() -> AnyView {
+        AnyView(Form {
+            GeneralSettings().perDisplayOverrideSections([
+                (name: "Studio Display (made up)", isBuiltIn: false),
+                (name: "Built-in Display (made up)", isBuiltIn: true),
+            ])
+        })
+    }
+}
+
+extension AgentStatusSettings {
+    /// DEBUG snapshot harness: the ADR Detection rows that only show once analysis is on, without
+    /// turning it on (the harness shares the user's Defaults).
+    static func snapshotDetectionRows() -> AnyView {
+        let settings = AgentStatusSettings()
+        return AnyView(Form {
+            Section { settings.detectionCheckoutRows } header: { Text("Session analysis") }
+            settings.detectionSetupSections
+        })
+    }
+
+    /// DEBUG snapshot harness: the mobile-notification rows that only show once pushes are on.
+    static func snapshotNotificationRows() -> AnyView {
+        let settings = AgentStatusSettings()
+        return AnyView(Form {
+            Section { settings.notificationDeliveryRows } header: { Text("Mobile Notifications") }
+            settings.notificationEventsSection
+        })
+    }
+
+    /// DEBUG snapshot harness: the findings rows as the Security findings section draws them.
+    static func snapshotFindingRows(_ findings: [AgentSecurityFinding]) -> AnyView {
+        AnyView(Form {
+            Section {
+                ForEach(findings) { finding in
+                    SecurityFindingRow(finding: finding, copyForAgent: {}, acknowledge: {}, snooze: {},
+                                       openChat: finding.sessionID == nil ? nil : {})
+                }
+            } header: {
+                Text("Security findings")
+            }
+        })
+    }
+}
+#endif

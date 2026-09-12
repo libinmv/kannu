@@ -389,6 +389,43 @@ enum ScreenAssistantDisplayMode: String, CaseIterable, Codable, Defaults.Seriali
     }
 }
 
+/// How an unacknowledged high-severity security finding is shown in the closed notch. Never a
+/// traffic-light colour: the light keeps meaning working / needs input / finished, and a finding
+/// gets a shield beside it.
+enum ADRHighAlertMode: String, CaseIterable, Defaults.Serializable, Identifiable {
+    case untilAcknowledged = "Until acknowledged"
+    case fiveSeconds = "For 5 seconds, then glyph"
+    case glyphOnly = "Glyph only"
+    case off = "Off"
+
+    var id: String { rawValue }
+
+    var localizedName: String {
+        switch self {
+        case .untilAcknowledged: return String(localized: "Until acknowledged")
+        case .fiveSeconds: return String(localized: "For 5 seconds, then glyph")
+        case .glyphOnly: return String(localized: "Glyph only")
+        case .off: return String(localized: "Off")
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .untilAcknowledged:
+            return String(localized: "A shield pill stays beside the traffic light until you acknowledge the finding. Click it to open the panel.")
+        case .fiveSeconds:
+            return String(localized: "The pill shows for five seconds when a finding is new, then only a small shield remains until acknowledged.")
+        case .glyphOnly:
+            return String(localized: "Only a small shield beside the traffic light; no pill.")
+        case .off:
+            return String(localized: "Nothing in the closed notch. Findings still appear in the panel and in Settings.")
+        }
+    }
+
+    var showsGlyph: Bool { self != .off }
+    var showsPill: Bool { self == .untilAcknowledged || self == .fiveSeconds }
+}
+
 enum AgentStatusNotificationProvider: String, CaseIterable, Codable, Defaults.Serializable, Identifiable {
     case ntfy
     case pushover
@@ -1136,6 +1173,13 @@ extension Defaults.Keys {
     static let enableClaudeProvider = Key<Bool>("enableClaudeProvider", default: false)
     static let enableCodexProvider = Key<Bool>("enableCodexProvider", default: false)
     static let enableCursorProvider = Key<Bool>("enableCursorProvider", default: false)
+    /// Usage forecast and alerts. The gauge beside the lights is local; a background quota check
+    /// sends requests and a push sends data out, so both are opt-in.
+    static let showUsageLimitCue = Key<Bool>("showUsageLimitCue", default: true)
+    static let checkQuotaInBackground = Key<Bool>("checkQuotaInBackground", default: false)
+    static let pushUsageLimitAlerts = Key<Bool>("pushUsageLimitAlerts", default: false)
+    static let usageForecastSamples = Key<[String: [UsageForecast.Sample]]>("usageForecastSamples", default: [:])
+    static let usageAlertPushedKeys = Key<[String]>("usageAlertPushedKeys", default: [])
     static let enableAntigravityProvider = Key<Bool>("enableAntigravityProvider", default: false)
     static let llmProviderDefaultsConfigured = Key<Bool>("llmProviderDefaultsConfigured", default: false)
     static let statsStopWhenNotchCloses = Key<Bool>("statsStopWhenNotchCloses", default: true)
@@ -1183,6 +1227,77 @@ extension Defaults.Keys {
     static let agentStoppedCollapseSeconds = Key<Int>("agentStoppedCollapseSeconds", default: 5)
     static let agentInactiveDisplaySeconds = Key<Int>("agentInactiveDisplaySeconds", default: 5)
     static let agentHooksAutoInstallAttempted = Key<Bool>("agentHooksAutoInstallAttempted", default: false)
+    /// Conversation ids of Kannu's own `/usage` probe sessions, so they never show as chats —
+    /// persisted because the probe's dead session file outlives the process that spawned it.
+    static let claudeUsageProbeConversationIDs = Key<[String]>("claudeUsageProbeConversationIDs", default: [])
+
+    // MARK: Security findings (connection to a separately installed ADR — github.com/uber/ADR)
+    /// Extra directory searched for the `adr-discovery` / `adr-sensor` executables, before the
+    /// uv, pipx and Homebrew defaults. Empty = defaults only.
+    static let adrToolDirectory = Key<String>("adrToolDirectory", default: "")
+    /// Where `adr-discovery --output-dir` snapshots are read from. Empty = `~/.kannu/adr/discovery`.
+    static let adrSnapshotDirectory = Key<String>("adrSnapshotDirectory", default: "")
+    /// Where `adr-sensor --save-sessions` files are read from. Empty = `~/.cache/adr_sensor`.
+    static let adrSensorDirectory = Key<String>("adrSensorDirectory", default: "")
+    static let adrAcknowledgedFindingIDs = Key<[String]>("adrAcknowledgedFindingIDs", default: [])
+    static let adrFindingSnoozes = Key<[SecurityFindingSnooze]>("adrFindingSnoozes", default: [])
+    static let adrLastScan = Key<ADRScanRecord?>("adrLastScan", default: nil)
+    /// Let Kannu invoke the connected `adr-discovery` itself (daily, on config changes, on
+    /// demand). Off = Kannu shows only the scans something else runs.
+    static let adrRunScansEnabled = Key<Bool>("adrRunScansEnabled", default: true)
+    static let adrLastKannuScanAt = Key<Date?>("adrLastKannuScanAt", default: nil)
+    /// Kannu-run scans that failed in a row (no snapshot written). The next one comes after 1, 2,
+    /// 4, 8, 16 hours, never later than the daily scan; a scan that writes a snapshot resets it.
+    static let adrKannuScanFailures = Key<Int>("adrKannuScanFailures", default: 0)
+    /// Optional `--policy` file for Discovery (tenant domains, approved, forbidden).
+    static let adrPolicyFile = Key<String>("adrPolicyFile", default: "")
+    /// How an unacknowledged high finding shows in the closed notch.
+    static let adrHighAlertMode = Key<ADRHighAlertMode>("adrHighAlertMode", default: .untilAcknowledged)
+    /// Push high findings through the mobile-notification provider (once per finding).
+    static let adrPushHighFindings = Key<Bool>("adrPushHighFindings", default: true)
+    static let adrPushMediumFindings = Key<Bool>("adrPushMediumFindings", default: false)
+    /// Finding ids already pushed, so a relaunch does not push the same open finding again.
+    /// Pruned to the ids still open, which lets a finding that vanishes and returns push once more.
+    static let adrPushedFindingIDs = Key<[String]>("adrPushedFindingIDs", default: [])
+
+    // Kannu's own hidden-text check (hook v34). Detection is local — no model, nothing sent — so
+    // it is on; telling the agent changes what it sees, so that is opt-in.
+    static let detectHiddenText = Key<Bool>("detectHiddenText", default: true)
+    static let warnAgentAboutHiddenText = Key<Bool>("warnAgentAboutHiddenText", default: false)
+    // Kannu's secret and sensitive-file checks (hook v35). Local, nothing sent, the agent
+    // untouched — so on, like hidden-text detection.
+    static let detectSecrets = Key<Bool>("detectSecrets", default: true)
+    static let detectSensitivePaths = Key<Bool>("detectSensitivePaths", default: true)
+    // Kannu's "new MCP server" check: local reads of agents' MCP settings, nothing sent.
+    static let watchMCPServers = Key<Bool>("watchMCPServers", default: true)
+    static let mcpServerBaseline = Key<MCPServerWatch.Baseline>("mcpServerBaseline", default: MCPServerWatch.Baseline())
+    static let mcpServerAdditions = Key<[MCPServerWatch.Addition]>("mcpServerAdditions", default: [])
+    /// Sightings from the hook's local checks, kept past their session until acknowledged.
+    static let hookSightingRecords = Key<HookSightingRecords>("hookSightingRecords", default: HookSightingRecords())
+
+    // ADR Detection — session analysis. Everything off by default; the user opts in, picks each
+    // chat, and by default confirms each run. Keys live in the Keychain (`SecureSecretsStore`).
+    static let adrDetectionEnabled = Key<Bool>("adrDetectionEnabled", default: false)
+    static let adrDetectionConsentedAt = Key<Date?>("adrDetectionConsentedAt", default: nil)
+    static let adrDetectionCheckout = Key<String>("adrDetectionCheckout", default: "")
+    static let adrDetectionConfirmEachRun = Key<Bool>("adrDetectionConfirmEachRun", default: true)
+    static let adrDetectionTriageEnabled = Key<Bool>("adrDetectionTriageEnabled", default: false)
+    static let adrDetectionTriageModel = Key<String>("adrDetectionTriageModel", default: "gpt-4o")
+    static let adrDetectionReasoningModel = Key<String>("adrDetectionReasoningModel", default: "claude-sonnet-4-6")
+    static let adrDetectionUseAnthropicAPIKey = Key<Bool>("adrDetectionUseAnthropicAPIKey", default: false)
+    static let adrDetectionContextThreatIntelligence = Key<Bool>("adrDetectionContextThreatIntelligence", default: true)
+    static let adrDetectionContextSourceCode = Key<Bool>("adrDetectionContextSourceCode", default: true)
+    static let adrDetectionContextPolicy = Key<Bool>("adrDetectionContextPolicy", default: true)
+    static let adrDetectionTimeoutSeconds = Key<Int>("adrDetectionTimeoutSeconds", default: 300)
+    static let adrDetectionMaxMessages = Key<Int>("adrDetectionMaxMessages", default: 400)
+    static let adrSessionAnalyses = Key<[ADRSessionAnalysis]>("adrSessionAnalyses", default: [])
+
+    /// Clicking the media card lands on the browser tab that is playing (Safari, Chrome family),
+    /// which needs the one-time "control <browser>" Automation permission. Off = app only.
+    static let openPlayingBrowserTab = Key<Bool>("openPlayingBrowserTab", default: true)
+    /// Clicking a chat that runs in Terminal or iTerm2 brings its exact tab forward (and switches
+    /// tmux to its pane); needs the one-time "control <terminal>" Automation permission.
+    static let openAgentTerminalTab = Key<Bool>("openAgentTerminalTab", default: true)
     static let showAgentStoppedIndicator = Key<Bool>("showAgentStoppedIndicator", default: false)
     /// Closed-notch traffic light shape. Defaults to `.classic` so existing installs keep the
     /// three-dot look they already have — only fresh installs are asked to choose in onboarding.
@@ -1207,6 +1322,8 @@ extension Defaults.Keys {
     static let agentStatusPushoverAppToken = Key<String>("agentStatusPushoverAppToken", default: "")
     static let agentStatusWebhookURL = Key<String>("agentStatusWebhookURL", default: "")
     static let agentStatusNotifyOnInactive = Key<Bool>("agentStatusNotifyOnInactive", default: false)
+    /// "Still waiting on you": one more push after this many minutes of unanswered yellow; 0 = off.
+    static let agentWaitReminderMinutes = Key<Int>("agentWaitReminderMinutes", default: 0)
 
     // MARK: Screen Assistant Feature
     static let enableScreenAssistant = Key<Bool>("enableScreenAssistant", default: false)

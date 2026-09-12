@@ -41,6 +41,33 @@
 		AA1000000000000000000033 /* ClaudeDesktopUsageHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000032 /* ClaudeDesktopUsageHistory.swift */; };
 		AA1000000000000000000035 /* ClaudeCachedUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000034 /* ClaudeCachedUsage.swift */; };
 		AA1000000000000000000037 /* ClaudeUsageFetchCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000036 /* ClaudeUsageFetchCommand.swift */; };
+		AA1000000000000000000045 /* WarpAgentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000044 /* WarpAgentStore.swift */; };
+		AA1000000000000000000049 /* AgentSecurityFinding.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000048 /* AgentSecurityFinding.swift */; };
+		AA1000000000000000000051 /* ADRDiscoveryCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000050 /* ADRDiscoveryCommand.swift */; };
+		AA1000000000000000000053 /* ClaudeDesktopSessionIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000052 /* ClaudeDesktopSessionIndex.swift */; };
+		AA1000000000000000000057 /* ADRSessionAnalysis.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000056 /* ADRSessionAnalysis.swift */; };
+		AA1000000000000000000059 /* BrowserTabMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000058 /* BrowserTabMatcher.swift */; };
+		AA1000000000000000000061 /* HiddenTextIncident.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000060 /* HiddenTextIncident.swift */; };
+		AA1000000000000000000063 /* UsageForecast.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000062 /* UsageForecast.swift */; };
+		AA1000000000000000000067 /* AgentClickThroughPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000066 /* AgentClickThroughPolicy.swift */; };
+		AA1000000000000000000069 /* AgentWaitReminder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000068 /* AgentWaitReminder.swift */; };
+		AA1000000000000000000071 /* HookSightings.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000070 /* HookSightings.swift */; };
+		AA1000000000000000000073 /* SecretSighting.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000072 /* SecretSighting.swift */; };
+		AA1000000000000000000075 /* SensitivePathSighting.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000074 /* SensitivePathSighting.swift */; };
+		AA1000000000000000000077 /* MCPServerWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000076 /* MCPServerWatch.swift */; };
+		AA1000000000000000000079 /* AgentHookLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000078 /* AgentHookLayout.swift */; };
+		AA100000000000000000007B /* OpencodePluginSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000007A /* OpencodePluginSource.swift */; };
+		AA100000000000000000007D /* SecurityFindingGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000007C /* SecurityFindingGuide.swift */; };
+		AA100000000000000000007F /* AgentTrafficLightAttention.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000007E /* AgentTrafficLightAttention.swift */; };
+		AA1000000000000000000081 /* AgentSubagentFold.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000080 /* AgentSubagentFold.swift */; };
+		AA1000000000000000000083 /* TranscriptListingInvalidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000082 /* TranscriptListingInvalidation.swift */; };
+		AA1000000000000000000065 /* TerminalTabMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000064 /* TerminalTabMatcher.swift */; };
+		AA1000000000000000000055 /* ADRDetectionCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000054 /* ADRDetectionCommand.swift */; };
+		AA1000000000000000000047 /* ADRSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000046 /* ADRSnapshot.swift */; };
+		AA1000000000000000000043 /* ClaudeDesktopAgentSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000042 /* ClaudeDesktopAgentSessionStore.swift */; };
+		AA1000000000000000000085 /* AgentTurnMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000084 /* AgentTurnMetrics.swift */; };
+		AA1000000000000000000087 /* ClaudeUsageLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000086 /* ClaudeUsageLine.swift */; };
+		AA1000000000000000000089 /* ClaudeTurnTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000088 /* ClaudeTurnTokens.swift */; };
 		F910B9C812C7AEFE2293F7D2 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4A9C58195E197C19F691DA62 /* Cocoa.framework */; };
 /* End PBXBuildFile section */
 
@@ -85,6 +112,33 @@
 		AA1000000000000000000032 /* ClaudeDesktopUsageHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeDesktopUsageHistory.swift; path = Kannu/managers/AgentStatus/ClaudeDesktopUsageHistory.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000034 /* ClaudeCachedUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeCachedUsage.swift; path = Kannu/managers/AgentStatus/ClaudeCachedUsage.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000036 /* ClaudeUsageFetchCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeUsageFetchCommand.swift; path = Kannu/managers/AgentStatus/ClaudeUsageFetchCommand.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000044 /* WarpAgentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WarpAgentStore.swift; path = Kannu/managers/AgentStatus/WarpAgentStore.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000048 /* AgentSecurityFinding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentSecurityFinding.swift; path = Kannu/managers/AgentStatus/AgentSecurityFinding.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000050 /* ADRDiscoveryCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ADRDiscoveryCommand.swift; path = Kannu/managers/AgentStatus/ADRDiscoveryCommand.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000052 /* ClaudeDesktopSessionIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeDesktopSessionIndex.swift; path = Kannu/managers/AgentStatus/ClaudeDesktopSessionIndex.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000056 /* ADRSessionAnalysis.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ADRSessionAnalysis.swift; path = Kannu/managers/AgentStatus/ADRSessionAnalysis.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000058 /* BrowserTabMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BrowserTabMatcher.swift; path = Kannu/managers/BrowserTabMatcher.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000060 /* HiddenTextIncident.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HiddenTextIncident.swift; path = Kannu/managers/AgentStatus/HiddenTextIncident.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000062 /* UsageForecast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UsageForecast.swift; path = Kannu/managers/LLMUsage/UsageForecast.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000066 /* AgentClickThroughPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentClickThroughPolicy.swift; path = Kannu/managers/AgentStatus/AgentClickThroughPolicy.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000068 /* AgentWaitReminder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentWaitReminder.swift; path = Kannu/managers/AgentStatus/AgentWaitReminder.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000070 /* HookSightings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HookSightings.swift; path = Kannu/managers/AgentStatus/HookSightings.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000072 /* SecretSighting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SecretSighting.swift; path = Kannu/managers/AgentStatus/SecretSighting.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000074 /* SensitivePathSighting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SensitivePathSighting.swift; path = Kannu/managers/AgentStatus/SensitivePathSighting.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000076 /* MCPServerWatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MCPServerWatch.swift; path = Kannu/managers/AgentStatus/MCPServerWatch.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000078 /* AgentHookLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentHookLayout.swift; path = Kannu/managers/AgentStatus/AgentHookLayout.swift; sourceTree = SOURCE_ROOT; };
+		AA100000000000000000007A /* OpencodePluginSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OpencodePluginSource.swift; path = Kannu/managers/AgentStatus/OpencodePluginSource.swift; sourceTree = SOURCE_ROOT; };
+		AA100000000000000000007C /* SecurityFindingGuide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SecurityFindingGuide.swift; path = Kannu/managers/AgentStatus/SecurityFindingGuide.swift; sourceTree = SOURCE_ROOT; };
+		AA100000000000000000007E /* AgentTrafficLightAttention.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentTrafficLightAttention.swift; path = Kannu/managers/AgentStatus/AgentTrafficLightAttention.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000080 /* AgentSubagentFold.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentSubagentFold.swift; path = Kannu/managers/AgentStatus/AgentSubagentFold.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000082 /* TranscriptListingInvalidation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TranscriptListingInvalidation.swift; path = Kannu/managers/AgentStatus/TranscriptListingInvalidation.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000064 /* TerminalTabMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TerminalTabMatcher.swift; path = Kannu/managers/AgentStatus/TerminalTabMatcher.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000054 /* ADRDetectionCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ADRDetectionCommand.swift; path = Kannu/managers/AgentStatus/ADRDetectionCommand.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000046 /* ADRSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ADRSnapshot.swift; path = Kannu/managers/AgentStatus/ADRSnapshot.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000042 /* ClaudeDesktopAgentSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeDesktopAgentSessionStore.swift; path = Kannu/managers/AgentStatus/ClaudeDesktopAgentSessionStore.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000084 /* AgentTurnMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentTurnMetrics.swift; path = Kannu/managers/AgentStatus/AgentTurnMetrics.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000086 /* ClaudeUsageLine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeUsageLine.swift; path = Kannu/managers/LLMUsage/ClaudeUsageLine.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000088 /* ClaudeTurnTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeTurnTokens.swift; path = Kannu/managers/AgentStatus/ClaudeTurnTokens.swift; sourceTree = SOURCE_ROOT; };
 		DAA671E7B1B26733F02166C5 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F4C1DD09EC134302938E84F6 /* MediaRemoteAdapter.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MediaRemoteAdapter.framework; path = Frameworks/MediaRemoteAdapter.framework; sourceTree = SOURCE_ROOT; };
 		F54406E72CD4987A00C7AFD9 /* Kannu.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Kannu.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -477,6 +531,33 @@
 				AA1000000000000000000033 /* ClaudeDesktopUsageHistory.swift in Sources */,
 				AA1000000000000000000035 /* ClaudeCachedUsage.swift in Sources */,
 				AA1000000000000000000037 /* ClaudeUsageFetchCommand.swift in Sources */,
+				AA1000000000000000000045 /* WarpAgentStore.swift in Sources */,
+				AA1000000000000000000049 /* AgentSecurityFinding.swift in Sources */,
+				AA1000000000000000000051 /* ADRDiscoveryCommand.swift in Sources */,
+				AA1000000000000000000053 /* ClaudeDesktopSessionIndex.swift in Sources */,
+				AA1000000000000000000057 /* ADRSessionAnalysis.swift in Sources */,
+				AA1000000000000000000059 /* BrowserTabMatcher.swift in Sources */,
+				AA1000000000000000000061 /* HiddenTextIncident.swift in Sources */,
+				AA1000000000000000000063 /* UsageForecast.swift in Sources */,
+				AA1000000000000000000067 /* AgentClickThroughPolicy.swift in Sources */,
+				AA1000000000000000000069 /* AgentWaitReminder.swift in Sources */,
+				AA1000000000000000000071 /* HookSightings.swift in Sources */,
+				AA1000000000000000000073 /* SecretSighting.swift in Sources */,
+				AA1000000000000000000075 /* SensitivePathSighting.swift in Sources */,
+				AA1000000000000000000077 /* MCPServerWatch.swift in Sources */,
+				AA1000000000000000000079 /* AgentHookLayout.swift in Sources */,
+				AA100000000000000000007B /* OpencodePluginSource.swift in Sources */,
+				AA100000000000000000007D /* SecurityFindingGuide.swift in Sources */,
+				AA100000000000000000007F /* AgentTrafficLightAttention.swift in Sources */,
+				AA1000000000000000000081 /* AgentSubagentFold.swift in Sources */,
+				AA1000000000000000000083 /* TranscriptListingInvalidation.swift in Sources */,
+				AA1000000000000000000065 /* TerminalTabMatcher.swift in Sources */,
+				AA1000000000000000000055 /* ADRDetectionCommand.swift in Sources */,
+				AA1000000000000000000047 /* ADRSnapshot.swift in Sources */,
+				AA1000000000000000000043 /* ClaudeDesktopAgentSessionStore.swift in Sources */,
+				AA1000000000000000000085 /* AgentTurnMetrics.swift in Sources */,
+				AA1000000000000000000087 /* ClaudeUsageLine.swift in Sources */,
+				AA1000000000000000000089 /* ClaudeTurnTokens.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -699,7 +780,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_MetalCaptureEnabled = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Kannu uses AppleScripts to control Spotify and Apple Music";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Kannu uses AppleScript to control Spotify and Apple Music, to bring the browser tab that is playing to the front when you click the media card, and to bring an agent's Terminal or iTerm2 tab to the front when you click its chat.";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Kannu needs Bluetooth access to detect when audio devices connect and display their battery status in the HUD.";
 				INFOPLIST_KEY_NSDesktopFolderUsageDescription = "Kannu needs access to save screenshots to your desktop.";
 				INFOPLIST_KEY_NSDocumentsFolderUsageDescription = "Kannu needs access to save and read shelf dragged files.";
@@ -767,7 +848,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_MetalCaptureEnabled = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Kannu uses AppleScripts to control Spotify and Apple Music";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Kannu uses AppleScript to control Spotify and Apple Music, to bring the browser tab that is playing to the front when you click the media card, and to bring an agent's Terminal or iTerm2 tab to the front when you click its chat.";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Kannu needs Bluetooth access to detect when audio devices connect and display their battery status in the HUD.";
 				INFOPLIST_KEY_NSDesktopFolderUsageDescription = "Kannu needs access to save screenshots to your desktop.";
 				INFOPLIST_KEY_NSDocumentsFolderUsageDescription = "Kannu needs access to save and read shelf dragged files.";

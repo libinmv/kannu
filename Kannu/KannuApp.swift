@@ -652,6 +652,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+        // `--kannu-snapshots <dir>`: render Settings to PNG and quit, before anything else starts.
+        if let request = DebugSnapshotRequest(arguments: CommandLine.arguments) {
+            Task { @MainActor in
+                await DebugSnapshots.run(request, viewModel: vm)
+                NSApp.terminate(nil)
+            }
+            return
+        }
+        #endif
         let userInfo: [String: Any] = [
             KannuDistributedNotifications.UserInfoKey.sourcePID: NSNumber(value: ProcessInfo.processInfo.processIdentifier)
         ]
@@ -902,16 +912,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             CursorAgentStatusMonitor.shared.start()
+            UsageAlertManager.shared.start()
             AgentStatusNotificationBridge.shared.start()
+            SecurityFindingsStore.shared.start()
         }
         Defaults.publisher(.enableAgentStatusFeature, options: []).sink { change in
             Task { @MainActor in
                 if change.newValue {
                     CursorAgentStatusMonitor.shared.start()
+                    UsageAlertManager.shared.start()
                     AgentStatusNotificationBridge.shared.start()
+                    SecurityFindingsStore.shared.start()
                 } else {
                     CursorAgentStatusMonitor.shared.stop()
+                    UsageAlertManager.shared.stop()
                     AgentStatusNotificationBridge.shared.stop()
+                    SecurityFindingsStore.shared.stop()
                 }
             }
         }.store(in: &cancellables)

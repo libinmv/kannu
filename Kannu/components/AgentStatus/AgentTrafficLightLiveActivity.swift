@@ -11,8 +11,13 @@ struct AgentTrafficLightDots: View {
     /// Whether the lit dot should breathe. Previews pass false; the live indicator decides
     /// per-state (red only inside its completion window, yellow/green for as long as they're lit).
     var isPulsing: Bool = false
+    /// The live notch indicator draws its dots with Core Animation (`TrafficLightDot`), so the
+    /// breath costs the main thread nothing; previews keep plain SwiftUI circles.
+    var live: Bool = false
     var dotSize: CGFloat = 10
     var spacing: CGFloat = 6
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @Default(.agentActiveColor) private var activeColor
     @Default(.agentAwaitingInputColor) private var awaitingColor
@@ -43,28 +48,71 @@ struct AgentTrafficLightDots: View {
 
     @ViewBuilder
     private func dot(_ color: Color, isActive: Bool) -> some View {
-        Circle()
-            .fill(color.opacity(isActive ? 1.0 : 0.2))
-            .frame(width: dotSize, height: dotSize)
-            .modifier(ConditionalPulseModifier(isEnabled: isActive && isPulsing))
+        let tint = color.opacity(isActive ? 1.0 : 0.2)
+        if live {
+            // The inner frame leaves room for the breath (1.3×); the outer keeps the layout slot.
+            TrafficLightDot(color: tint, diameter: dotSize, pulsing: isActive && isPulsing && !reduceMotion)
+                .frame(width: dotSize * TrafficLightPulseSpec.scale, height: dotSize * TrafficLightPulseSpec.scale)
+                .frame(width: dotSize, height: dotSize)
+        } else {
+            Circle()
+                .fill(tint)
+                .frame(width: dotSize, height: dotSize)
+        }
+    }
+}
+
+/// The closed-notch cue for an unacknowledged high-severity security finding. Deliberately
+/// monochrome: white on the notch, never one of the three light colours, so it cannot be read
+/// as an agent state and cannot collide with a custom palette. The *shape* carries the meaning.
+struct SecurityShieldGlyph: View {
+    var size: CGFloat = 9
+
+    var body: some View {
+        Image(systemName: "exclamationmark.shield.fill")
+            .font(.system(size: size, weight: .semibold))
+            .foregroundStyle(Color.white.opacity(0.9))
+            .accessibilityLabel(String(localized: "Unacknowledged high-severity security finding"))
+    }
+}
+
+/// A usage limit is almost reached. White like the shield — never a light colour — and it only
+/// rides along when the lights are already on screen; it never puts the island up by itself.
+struct UsageGaugeGlyph: View {
+    var size: CGFloat = 9
+
+    var body: some View {
+        Image(systemName: "gauge.with.dots.needle.100percent")
+            .font(.system(size: size, weight: .semibold))
+            .foregroundStyle(Color.white.opacity(0.9))
+            .accessibilityLabel(String(localized: "A usage limit is almost reached"))
     }
 }
 
 struct AgentTrafficLightIndicator: View {
     @ObservedObject var agentStatusMonitor = CursorAgentStatusMonitor.shared
+    @ObservedObject private var usageAlerts = UsageAlertManager.shared
+    @Default(.showUsageLimitCue) private var showUsageLimitCue
+    @ObservedObject private var findingsStore = SecurityFindingsStore.shared
     @Default(.showAgentStoppedIndicator) private var showAgentStoppedIndicator
     @Default(.agentTrafficLightStyle) private var trafficLightStyle
+    @Default(.adrHighAlertMode) private var highAlertMode
+
+    /// A pending high finding shows a shield beside the dots in every mode but Off. It rides
+    /// along wherever the dots are drawn (standalone, or inside the music pill).
+    private var showsSecurityGlyph: Bool {
+        highAlertMode.showsGlyph && findingsStore.ranking.pendingHighCount > 0
+    }
     /// Keyed by session ID — records when a session first became non-active (stopped/inactive),
     /// so a just-finished run can pulse red briefly before settling.
     @State private var completionTimestamps: [String: Date] = [:]
+    /// Bumped once when the red pulse window ends, so the body re-evaluates at that moment. (A
+    /// 1 Hz `TimelineView` used to redraw this view every second for the whole run just for that.)
+    @State private var attentionWake = Date.distantPast
 
-    /// How long a just-finished session keeps pulsing before settling into the static lit dot.
-    /// Without this, completion was a silent switch to a static red — easy to miss entirely.
-    private static let attentionWindow: TimeInterval = 4
-
-    private func isRecentlyCompleted(_ sessionID: String, at now: Date) -> Bool {
-        guard let ts = completionTimestamps[sessionID] else { return false }
-        return now.timeIntervalSince(ts) < Self.attentionWindow
+    /// When the primary session finished, if it did (the red pulse window starts there).
+    private var primaryCompletion: Date? {
+        primarySession.flatMap { completionTimestamps[$0.id] }
     }
 
     /// Spoken description of the aggregate state. `displayName` is a raw literal used for
@@ -108,17 +156,33 @@ struct AgentTrafficLightIndicator: View {
         // no per-agent row — the earlier one rendered provider logos instead of lights, and
         // pulsed those logos, which read as the notch blinking at you.
         //
-        // TimelineView ticks every second purely so the completion window above is re-evaluated.
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            AgentTrafficLightDots(
-                style: trafficLightStyle,
-                state: activeState,
-                isPulsing: shouldPulse(at: context.date)
-            )
-            // The dots carry the aggregate state in colour alone, and it is rendered as text
-            // nowhere — the panel shows per-session state, and only on hover.
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(accessibilityStateDescription)
+        // The red pulse window is re-evaluated by one wake at its end (`.task(id:)` below), not by
+        // a periodic timer.
+        let now = Date()
+        let _ = attentionWake
+        HStack(spacing: 6) {
+                AgentTrafficLightDots(
+                    style: trafficLightStyle,
+                    state: activeState,
+                    isPulsing: shouldPulse(at: now),
+                    live: true
+                )
+                // The dots carry the aggregate state in colour alone, and it is rendered as text
+                // nowhere — the panel shows per-session state, and only on hover.
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(accessibilityStateDescription)
+                if showsSecurityGlyph {
+                    SecurityShieldGlyph()
+                }
+                if showUsageLimitCue && !usageAlerts.nearLimit.isEmpty {
+                    UsageGaugeGlyph()
+                }
+        }
+        .task(id: AgentTrafficLightAttention.pulseChange(red: activeState.showsRedTrafficLight, completedAt: primaryCompletion, now: now)) {
+            guard let end = AgentTrafficLightAttention.pulseChange(red: activeState.showsRedTrafficLight,
+                                                                   completedAt: primaryCompletion, now: Date()) else { return }
+            try? await Task.sleep(for: .seconds(max(0, end.timeIntervalSinceNow) + 0.05))
+            if !Task.isCancelled { attentionWake = Date() }
         }
         // Track when sessions leave an active run so the completion pulse has a start time.
         .onChange(of: visibleSessions) { _, newSessions in
@@ -141,16 +205,22 @@ struct AgentTrafficLightIndicator: View {
     /// Red means finished, so it pulses only for `attentionWindow` after the run actually ends
     /// and then holds steady; otherwise a finished agent would blink indefinitely.
     private func shouldPulse(at now: Date) -> Bool {
-        if activeState.showsRedTrafficLight {
-            return primarySession.map { isRecentlyCompleted($0.id, at: now) } ?? false
-        }
-        return activeState.showsYellowTrafficLight || activeState.showsGreenTrafficLight
+        AgentTrafficLightAttention.pulses(
+            yellowOrGreen: activeState.showsYellowTrafficLight || activeState.showsGreenTrafficLight,
+            red: activeState.showsRedTrafficLight,
+            completedAt: primaryCompletion,
+            now: now
+        )
     }
 }
 
 struct AgentTrafficLightLiveActivity: View {
     @EnvironmentObject var vm: KannuViewModel
     @ObservedObject private var monitor = CursorAgentStatusMonitor.shared
+    @ObservedObject private var findingsStore = SecurityFindingsStore.shared
+    @ObservedObject private var doNotDisturb = DoNotDisturbManager.shared
+    @Default(.adrHighAlertMode) private var highAlertMode
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let isHovering: Bool
     let gestureProgress: CGFloat
@@ -161,6 +231,9 @@ struct AgentTrafficLightLiveActivity: View {
 
     /// Must remain zero on non-notch displays.
     var trafficLightVerticalOffset: CGFloat = 0
+
+    /// Clicking the security pill opens the panel on the agent tab, where the pinned card is.
+    var onTapSecurityPill: (() -> Void)? = nil
 
     var onHoverAgentCenter: ((Bool) -> Void)? = nil
 
@@ -200,42 +273,82 @@ struct AgentTrafficLightLiveActivity: View {
         )
     }
 
+    /// The pill is not a sneak peek: sneak peeks are timed HUDs that auto-hide. It lives here,
+    /// beside the light, and stays until the user acts (default) — or for five seconds in that
+    /// mode. Deferred to glyph-only while Focus is on, so a Do Not Disturb session is not
+    /// interrupted; it appears when Focus ends.
+    private func pillIsVisible(at now: Date, pinned: AgentSecurityFinding) -> Bool {
+        guard highAlertMode.showsPill, !doNotDisturb.isDoNotDisturbActive else { return false }
+        return AgentTrafficLightAttention.pillVisible(fiveSecondMode: highAlertMode == .fiveSeconds,
+                                                      firstSeen: pinned.firstSeen, now: now)
+    }
+
+    /// Bumped once when a five-second pill's time is up; the store's own snooze wake covers the
+    /// rest. (A 1 Hz `TimelineView` used to re-rank every second instead.)
+    @State private var pillWake = Date.distantPast
+
     var body: some View {
-        AgentTrafficLightIndicator()
-            .offset(y: trafficLightVerticalOffset)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .frame(width: contentWidth, height: notchContentHeight)
-            .frame(height: outerHeight)
-            .contentShape(Rectangle())
-            .onHover { hovering in
-                onHoverAgentCenter?(hovering)
+        let now = Date()
+        let _ = pillWake
+        let ranking = findingsStore.ranking
+        let pillEnd = ranking.pinned.flatMap {
+            AgentTrafficLightAttention.pillChange(fiveSecondMode: highAlertMode == .fiveSeconds, firstSeen: $0.firstSeen, now: now)
+        }
+        HStack(spacing: 8) {
+            AgentTrafficLightIndicator()
+            if let pinned = ranking.pinned, pillIsVisible(at: now, pinned: pinned) {
+                SecurityAlertPill(
+                    finding: pinned,
+                    extraCount: max(0, ranking.pendingHighCount - 1),
+                    maxWidth: min(contentWidth * 0.62, 190)
+                )
+                .onTapGesture { onTapSecurityPill?() }
+                .transition(reduceMotion ? .identity : .opacity)
             }
+        }
+        .task(id: pillEnd) {
+            guard let pillEnd else { return }
+            try? await Task.sleep(for: .seconds(max(0, pillEnd.timeIntervalSinceNow) + 0.05))
+            if !Task.isCancelled { pillWake = Date() }
+        }
+        .offset(y: trafficLightVerticalOffset)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(width: contentWidth, height: notchContentHeight)
+        .frame(height: outerHeight)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            onHoverAgentCenter?(hovering)
+        }
     }
 }
 
-private struct ConditionalPulseModifier: ViewModifier {
-    let isEnabled: Bool
-    @State private var isPulsing = false
+/// "⚠ Running MCP server nobody declared  +2" — the one high finding that owns the closed
+/// notch, and how many more are waiting. Monochrome on purpose (see `SecurityShieldGlyph`).
+struct SecurityAlertPill: View {
+    let finding: AgentSecurityFinding
+    let extraCount: Int
+    let maxWidth: CGFloat
 
-    func body(content: Content) -> some View {
-        content
-            // Previously 1.0 → 1.15 scale / 1.0 → 0.75 opacity — reported as too subtle to
-            // read as "breathing" at the small icon sizes used here. Widened the swing.
-            .scaleEffect(isPulsing ? 1.3 : 1.0)
-            .opacity(isPulsing ? 0.5 : 1.0)
-            // Using .animation(value:) instead of withAnimation so that flipping
-            // isPulsing back to false replaces the repeatForever animation and
-            // actually stops the pulse (withAnimation-started repeatForever
-            // animations are not cancelled by a plain state write).
-            .animation(
-                isPulsing
-                    ? .easeInOut(duration: 0.7).repeatForever(autoreverses: true)
-                    : .easeOut(duration: 0.15),
-                value: isPulsing
-            )
-            .onAppear { isPulsing = isEnabled }
-            .onChange(of: isEnabled) { _, enabled in
-                isPulsing = enabled
+    var body: some View {
+        HStack(spacing: 4) {
+            SecurityShieldGlyph(size: 9)
+            Text(finding.title)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.92))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if extraCount > 0 {
+                Text("+\(extraCount)")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.7))
             }
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(Color.white.opacity(0.14)))
+        .frame(maxWidth: maxWidth, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(String(localized: "Security finding, high: \(finding.title). Click to open."))
     }
 }

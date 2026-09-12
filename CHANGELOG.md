@@ -4,6 +4,1293 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-12 - The Detection adapter checks the paths it is handed; fixture builds on Swift 6.1
+- **Developer label:** CI and SonarCloud on the pull request
+- **Agent label:** Follow-up 32, phase 2 — two findings from the first run against the branch
+- **Changes:**
+  - Adapter v2: `scripts/adr-analyze-session.py` now refuses anything but an existing `.jsonl`
+    transcript under the home folder, and will only write its report inside `~/.kannu`. Kannu builds
+    both paths itself, but a script that reads a transcript full of secrets and writes a file should
+    not take a caller's word for it — SonarCloud rated the new code C for exactly that
+    (`pythonsecurity:S8707`, three paths). The embedded copy and the marker move to 2 with it.
+  - `DebugSnapshotFixtures.recentChats` builds its cards with explicit types, appends and plain
+    numbers: as one array literal of calls, and then still with literal arithmetic in a typed
+    context (`-(1 * 3600 + 53 * 60 + 54)` as a `TimeInterval`), Swift 6.1 on the macos-15 runner
+    gave up type-checking it ("unable to type-check this expression in reasonable time") while
+    macOS 26's compiler managed. The snapshot boards are unchanged.
+  - The adapter test writes its transcript under `~/.kannu/tests/` instead of the system temp
+    folder, which is what the new rule allows and what Kannu actually passes.
+
+### 2026-09-12 - Ship the ADR Detection adapter that was never committed
+- **Developer label:** CI on the pull request caught it
+- **Agent label:** Follow-up 32, phase 2 — the first real CI run of the Detection tests
+- **Changes:**
+  - `.gitignore` carried a blanket `*.py` with no `!scripts/*.py` beside the `*.sh` exception, so
+    `scripts/adr-analyze-session.py` — Kannu's own GPL adapter, the only thing that runs ADR
+    Detection's `ADRBaseline` over a transcript — has been missing from the repository since the
+    Detection work landed. Its `__pycache__` was the only trace, which is what made it visible.
+  - `ADRDetectionCommandTests.testEmbeddedAdapterMatchesTheMirror` and
+    `testAdapterConvertsAClaudeTranscriptLikeUpstream` failed on both CI images for exactly that
+    reason (they pass locally, where the file exists but is ignored); the mirror is tracked now and
+    the embedded copy is pinned against it again.
+
+### 2026-09-12 - Stop tracking Python bytecode
+- **Developer label:** Housekeeping before the branch goes up for review
+- **Agent label:** Follow-up 32, phase 0
+- **Changes:**
+  - `scripts/__pycache__/adr-analyze-session.cpython-313.pyc` was committed by accident with the
+    Detection adapter; it is untracked now, and `.gitignore` covers `__pycache__/` and `*.pyc`.
+  - `.gitignore` also covers the `.build-verify/` and `.build-release/` derived-data folders used
+    while verifying a build locally, so a stray `git add -A` cannot commit gigabytes.
+
+### 2026-09-12 - A chat whose session record was written late is not dead
+- **Developer label:** "this session is not being detected why"
+- **Agent label:** Found while answering it: the live chat had a fresh hook file and no card
+- **Changes:**
+  - `isClaudeProcessAlive` decided whether the process holding a session record's pid is still that
+    session by requiring the kernel's start time to match the record's `startedAt` within five
+    seconds. Claude Code writes that record after it starts — 13.1 s later here, for a chat that
+    resumed a 130 MB transcript — so the live chat counted as dead: the reconciler demoted its
+    green card to stopped, no process id reached the card (no click-through), smart caffeinate let
+    go, and ten seconds later the card was invisible, while its hook file stayed fresh on disk.
+  - New pure `AgentTrafficLightMapper.processMatchesSessionRecord`: the record's own `procStart`
+    stamp decides identity when it has one (±5 s); otherwise the process may have started up to ten
+    minutes before the record and no more than five seconds after it — a reused pid always belongs
+    to a process that started after the record was written, which is what the check is for. An
+    unparseable `procStart` falls back to that window, so a format change can never mark a chat dead.
+  - Tests: two `PassiveClaudeStateTests` cases (the 13 s record, the record's own stamp, a reused
+    pid). REGRESSIONS entry 3 addendum.
+
+### 2026-09-12 - Say the ADR scan cadence in plain words
+- **Developer label:** "Daily, sooner when the MCP servers in an AI tool's settings change, and within hours after a scan that failed. Off means Kannu only reads snapshots that something else wrote., this wording needs upgrade right ?"
+- **Agent label:** Follow-up 31 — copy only, no behaviour
+- **Changes:**
+  - "Let Kannu run scans" now reads "Kannu runs a scan once a day, and again whenever an AI tool's
+    MCP servers change. With this off, it shows only the scans something else runs." It opened as a
+    fragment where every neighbouring description opens with a subject; "within hours" was vaguer
+    than the real retry (1, 2, 4, 8, 16 hours) and said again what the live "Next automatic scan"
+    line shows exactly; and "snapshots that something else wrote" leaned on a word only the row
+    above defines.
+  - After a failed scan that line now ends "· the last scan failed" instead of "· retrying after a
+    failed scan": the cause once, and the sooner-than-daily time explains itself.
+  - The `adrRunScansEnabled` comment in `Constants.swift` uses the same words as the screen.
+  - Nothing else changed: the title, its highlight id, the search entry and `docs/ADR.md` §3 (the
+    detailed reference, pinned by `ADRDocsTests`) are untouched.
+
+### 2026-09-12 - Hook v40: a prompt that arrives mid-request joins it
+- **Developer label:** "the total run time of the agent has been about 2 hours now, but the recent chats show it as few mins"
+- **Agent label:** Follow-up 30, measured on this Mac after C1 shipped
+- **Changes:**
+  - Watching the live status file showed the turn restarting while the agent kept working: Claude
+    Code submits a background task's result as a `UserPromptSubmit` (a `sleep` finishing restarted
+    it, timed to the transcript's queue-operation record), and so does a follow-up the user types
+    while the agent runs.
+  - A prompt now starts a request only when the agent is not already working on one; a prompt that
+    arrives while the request is open joins it, keeping the start, the tool count and the offset.
+    A prompt to a stopped agent still starts a new request.
+  - Test: `testAPromptWhileTheRequestRunsJoinsIt`; three offset tests now stop the request before
+    the next prompt, as a user would. REGRESSIONS entry 1's v39 addendum records the measurement.
+
+### 2026-09-12 - The ADR Sensor row says what it is; a folder row for tools installed elsewhere
+- **Developer label:** "adr sensor not installed showing, but can we give an install button or something as good ux"
+- **Agent label:** Follow-up 30, C7 — Kannu never installs software, so the row explains itself and hands over the command
+- **Changes:**
+  - The Sensor row reads "ADR Sensor · Optional", "Not installed — optional", and says what it is:
+    not needed for findings, not used by Kannu yet, an export for a security team's SIEM. It gains
+    **Copy install command** (`uv tool install adr-sensor`, pasteboard only) and **Check again**,
+    which Discovery already had. Kannu still never installs anything.
+  - New **ADR tools folder** row for `Defaults[.adrToolDirectory]`, which the code has searched
+    since the ADR work began and nothing exposed: Choose…/Clear, each re-running the tool check and
+    the Detection check. A check asked for while one runs is queued instead of dropped. A folder
+    inside Documents, Desktop, Downloads or iCloud Drive is called out, because macOS then asks for
+    permission every time Kannu looks there.
+  - docs/ADR.md: the Sensor section says Kannu does not use it, the sections are back in order
+    (7 before 8), and the install section names the new row and the privacy-prompt trap.
+  - Tests: new `ADRDocsTests` (every watched settings file is documented, the schedule's wording,
+    the Sensor's, the finding card's, and the section numbering); the Settings inventory is now
+    199 entries / 250 registrations / 244 ids.
+
+### 2026-09-12 - ADR Discovery retries a failed scan within the hour and shows the next scan
+- **Developer label:** "also when does automatic scans run for securtity findings"
+- **Agent label:** Follow-up 30, C6 — the answer, and the three bugs found tracing it
+- **Changes:**
+  - A failed Kannu-run scan counted as a run, so the next attempt waited a full day. Now a scan
+    that wrote no snapshot is retried after 1, 2, 4, 8, 16 hours, never later than the daily scan
+    (`ADRScanTrigger.retryDelay`; the count persists in `adrKannuScanFailures`). Success means a
+    snapshot this scan wrote was read — not an exit status: exit 2 is also argparse's usage error,
+    which used to clear the error and re-read the old file.
+  - While scans keep failing, a settings change waits for the retry, so a broken install is not
+    re-run (up to three minutes each) every five minutes.
+  - `kannuScanStartedAt` was set and never cleared, so after Kannu's first scan every later
+    snapshot was labelled "run by Kannu". `ADRKannuScanWindow` tags only a file modified between
+    the scan's start and a moment after its end, and settles each scan's outcome once.
+  - Settings: "Next automatic scan …" under "Last run by Kannu" (with "retrying after a failed
+    scan"), shown while "Let Kannu run scans" is on; the toggle's description names the retries.
+    The store publishes the date only when it changes (the notch observes the store), clears it
+    in `stop()`, and follows the toggle at once.
+  - docs/ADR.md §3 lists the real schedule and all nine global settings files.
+  - Tests: four `MCPServerWatchTests` (backoff table, a change waits for the retry, next scan,
+    scan window).
+
+### 2026-09-12 - Finding cards: Acknowledge on the bottom row, selectable details, Reveal points at the file
+- **Developer label:** "why does the reveal button in adr finding just open repo, it doesnt make sense … the copy for agent button in securtity findings is good , but we need acknowledge button also maybe add it. to bottom right or do a good ux for individual finding card , also the whokle details section and all is not easily selectable text for some reason"
+- **Agent label:** Follow-up 30, C5 — the finding card
+- **Changes:**
+  - Why Reveal opened the repo: Kannu's own findings keep the chat's working directory in
+    `assetPath`, and Reveal revealed `assetPath`; a sensitive file's real path lived only in the
+    evidence text. New `AgentSecurityFinding.revealPath` (outside the id, so acknowledgements,
+    snoozes and pushed ids are unchanged): the sensitive file (absolute, not a keychain command,
+    not a path the hook may have cut short), the settings file a server was added to, ADR's
+    report, the path Discovery's evidence names (else the asset). `projectFolder` for Kannu's
+    findings about a chat. The menu offers **Reveal File in Finder** and **Reveal Project Folder**
+    separately; Kannu never stats either (Finder does the access).
+  - Why the details could not be selected across lines: every evidence line and paragraph was its
+    own `Text`, and SwiftUI selection never spans views; the header also combined its children for
+    VoiceOver. Details is now one `Text` (`SecurityFindingGuide.details(for:)`, an
+    `AttributedString` built from plain text — never Markdown — with bold headings), every line
+    through `oneLine` so ADR text cannot forge a line or hide characters. The title is selectable.
+  - Bottom action row: Details on the left; "…", **Acknowledge** and **Copy for agent** on the right.
+  - "…" also holds **Open Chat** — offered when the chat has a card with a way back, resolved at
+    click time through `AgentSessionOpener.openFromFinding`, which allows only the Claude Desktop
+    route, a terminal tab, a tmux pane or a running app (`AgentClickThroughPolicy.findingMayOpen`):
+    never a `resume` import, never a cold launch — and **Copy Details** (never Kannu-only lines,
+    the summary or ADR Detection's report path).
+  - The notch's one-card-per-conversation pick moved into the logic target
+    (`AgentTrafficLightMapper.latestSessions`), shared with Open Chat.
+  - `SecurityFindingsStore.record` rebuilds with `withFirstSeen`, so no field is dropped (entry 7's
+    lesson, for findings). The Detection agent prompt no longer carries the report path: the
+    report is named after the chat's session id.
+  - Tests: `SecurityFindingCardTests` (10); the Detection prompt test now pins the missing path.
+    docs/ADR.md describes the new row.
+
+### 2026-09-12 - Recent chats show this request's run time, tool calls and tokens beside the light
+- **Developer label:** "could we change it to the full time with format 1h 53m 54 s format and also maybe the no of tokens , and maybe no of tools calls or something in a line, basically we have space in recent chats to maybe improve the glance there" (picked: trailing column)
+- **Agent label:** Follow-up 30, C4 — the notch half: a trailing column on each card, fed by the hook's turn and the token follower
+- **Changes:**
+  - New `AgentTurnMetricsView`: a right-aligned column between the chat text and the light. Line
+    one is the run time ("1h 53m 54s", ticking once a second only while the request runs; "Ran
+    2h 3m 12s" once it ended); line two is "212 tools · 1.4M in · 45k out", falling back to tokens
+    only, then tools only, then nothing — digits are never cut. It observes the token follower
+    itself, so token updates re-render the column only. One VoiceOver label with the numbers
+    spelled out. No `.help` and no nested tooltip (entry 9).
+  - `AgentTurnDisplay` (pure): an ended turn shows how long it ran (also through the idle notice's
+    yellow); an open turn ticks from the user's prompt while running or waiting; a chat that
+    stopped without a Stop (Esc, killed) shows no time rather than a wrong one; work reported more
+    than two seconds after the end counts as the same request; without a turn (hooks before v39,
+    Cursor's passive cards, Warp, Desktop) the old in-memory start, now with hours.
+  - `AgentTurnFormat` (pure): durations, "Ran …", "1 tool"/"212 tools", compact numbers that roll
+    into the next unit (9,960 → 10k, 999,600 → 1M), spoken forms.
+  - The minimalistic panels (420/340 pt) have no room for a column: the run time follows the
+    state word on the status line, as the MM:SS timer did; tools and tokens are left out there.
+  - The status line no longer carries the MM:SS timer in the full-size panel.
+  - DEBUG: a `recentChats` snapshot board renders the tab at the 640, 420 and 340 pt panel widths
+    with fixture chats (running for hours, ended, the pre-v39 fallback, a prompt, an interrupted chat).
+  - Tests: `AgentTurnFormatTests` (9).
+
+### 2026-09-12 - Kannu adds up a Claude request's tokens from its transcripts, off the main actor
+- **Developer label:** "and also maybe the no of tokens" (picked: in and out, where in includes cached context)
+- **Agent label:** Follow-up 30, C3 — token totals per chat card, read on a utility queue and published on their own
+- **Changes:**
+  - `UsageRecord` and the line parser moved from `JSONLUsageParser` into `ClaudeUsageLine`
+    (logic target); Codex's shape (top-level usage, `request_id`) is unchanged and tested.
+  - New `ClaudeTurnTokens.swift` (logic target): `ClaudeTurnTokenRequest` (visible Claude cards
+    whose turn names a followable transcript and an offset), `ClaudeTranscriptTokenAccumulator`
+    (reads forward from the offset in chunks of at most 4 MiB; counts only top-level assistant
+    records, once per message id + request id; skips anything more than a minute older than the
+    turn, so history a resume or fork copies into the file never counts; a replaced or shrunk file
+    is read again from the start under that window; a line over 8 MiB is skipped) and
+    `ClaudeTurnTokenReader` (the chat's own transcript plus every `subagents/**/agent-*.jsonl`
+    written during the turn, workflow agents included; 16 MiB per pass; a chat's total is
+    reported only once all its files are caught up; more than 256 subagent files hide the total
+    rather than undercount; real paths only inside `~/.claude/projects`, `O_NOFOLLOW`, regular files).
+  - New `ClaudeTurnTokenFollower` (app): its own `@Published` map by conversation, one pass at a
+    time on a utility queue, at most one a second unless a turn changed, 50 ms apart while catching
+    up; a generation check drops a pass that finishes after the monitor stopped. The monitor calls
+    `follow` after each publish and `reset` in `stop()`. Nothing is logged.
+  - Tests: `ClaudeTurnTokensTests` (16). REGRESSIONS entry 11 addendum.
+
+### 2026-09-12 - Every chat card carries its request; a silent workflow keeps its status file
+- **Developer label:** "the total run time of the agent has been about 2 hours now, but the recent chats show it as few mins" (picked: this request)
+- **Agent label:** Follow-up 30, C2 — the Swift half of the turn: parse, carry, fold subagent calls, keep the file through a long silence, and no reveal pulse per subagent call
+- **Changes:**
+  - New `AgentTurnMetrics.swift` (logic target): `HookTurn` (start, end, tool calls, transcript
+    path and offset) read from the status file and re-checked — start ≥ 10¹² ms and at most a
+    minute ahead, end not before the start, calls clamped, integers only (never a Bool or a
+    fraction), and a transcript followed only when it is canonical under `~/.claude/projects/`
+    (no `.`, `..` or empty components, printable ASCII, `.jsonl`, never a subagent's).
+  - `AgentSessionStatus.turn`, carried by `carryingExtras` as `self ?? source`. The subagent fold
+    adds a subagent's tool calls to its chat's turn only when it belongs to that turn, and sets the
+    turn explicitly so a parent never adopts a subagent's; a stand-in has none; Cursor's subagent
+    roll-up keeps the parent conversation's own.
+  - A Claude chat is silent for a whole workflow or a long Bash call; at 30 minutes Kannu deleted
+    its status file and the turn with it. `hookFileOutlivesStaleCap` keeps a Claude file that still
+    reports work while its process is alive or a recent subagent file names it, and a subagent's
+    file while its chat's turn is open. The light is unchanged: an aged file is invisible on its
+    own and only live passive evidence promotes it (pinned).
+  - `pulseRelevantChange`: a change in turn metrics alone publishes the list but no reveal pulse,
+    so subagent tool calls do not keep the island revealed during a workflow.
+  - Tests: `AgentTurnMetricsTests`, three v39 `SubagentFoldTests`, two `ClaudeReconcilerTests`
+    (the turn on every arm; a kept silent chat shows what the passive side shows), two
+    `RegressionGuardTests` (stale-cap table, pulse gate). REGRESSIONS entries 7 and 10 addenda.
+
+### 2026-09-12 - Hook v39 records each request's start, end, tool calls and Claude transcript offset
+- **Developer label:** "the total run time of the agent has been about 2 hours now, but the recent chats show it as few mins maybe showing time of latest individual session , could we change it to the full time with format 1h 53m 54 s format and also maybe the no of tokens , and maybe no of tools calls" (picked: this request; tokens in and out; trailing column)
+- **Agent label:** Follow-up 30, C1 — the hook half: what Kannu needs on disk to show a request's run time, tool calls and tokens across relaunches
+- **Changes:**
+  - Why the row showed minutes: its timer is Kannu's in-memory `executionStartedAt`, which
+    restarts on a relaunch and on any gap in the state (issue #14); the status file recorded no
+    turn at all.
+  - New optional keys, written on every write path and re-checked from the untrusted file like
+    the other carried keys: `turn_started_ms`, `turn_ended_ms`, `turn_tool_calls` (completed tool
+    calls, 0–99 999), `turn_tool_ids` (≤16 ids already counted), `transcript_path` (Claude's main
+    thread only) and `turn_transcript_offset` (the transcript's size when the turn began). `state`
+    and `ts` are never touched.
+  - A turn starts on the user's prompt (`UserPromptSubmit`, `beforeSubmitPrompt`, `BeforeAgent`),
+    or on a wake event when the file has none. It ends on `Stop`/`StopFailure`/`stop`/`AfterAgent`
+    (the event, not the merged state, so a held yellow still ends it). Work after a Stop without a
+    new prompt — a background task finishing, a stop hook sending the agent back — reopens the same
+    turn, so the time counts from the user's message; a `Stop` with `stop_hook_active` moves the
+    end. `SessionStart` (startup, clear) drops an ended turn; opencode's back-to-back SessionStart
+    keeps a prompt's open turn.
+  - Tool calls: the existing post-tool events plus Gemini's `AfterTool`, once per `tool_use_id`;
+    an id-less completion delivered twice within 2 s counts once. A model call (`PostInvocation`)
+    is not a tool.
+  - Transcript offset: `lstat` only (a symlink is never followed), a path under
+    `~/.claude/projects/` ending `.jsonl`, normalised, printable ASCII, no `/subagents/`. A missing
+    file counts from 0 only for a chat that has just started; otherwise no offset, so a forked or
+    resumed history is never counted. A path first seen mid-turn waits for the next prompt.
+  - The whole turn block is exception-safe (falls back to what was on disk), so it can never cost
+    the light or the allow line.
+  - Tests: 21 `HookScriptTests` cases for the turn rules, run twice (Homebrew's Python and
+    macOS's 3.9); helpers gain a matcher argument. REGRESSIONS entry 1 addendum.
+
+### 2026-09-11 - Rescans stop re-walking the transcript folders on every file event
+- **Developer label:** "Kannu uses about 5% CPU while an agent works ... is this a bit too much, will it draw down so much battery, how can we optimize that"
+- **Agent label:** Plan item D7, triggered by the after-measurement: drop transcript lists only on create/remove/rename; cache head reads
+- **Changes:**
+  - Measured after the Settings work, with hook events arriving in bursts (several tool calls at
+    once): 18.2 % average CPU, 79 % peaks. `sample` put it on the main actor: every FSEvents batch
+    (an append to a running chat's transcript, a hook status write) dropped both transcript
+    lists, so each rescan walked `~/.claude/projects` (543 files here) and `~/.cursor/projects`
+    (1,187), and each rescan re-read and JSON-parsed the first 32 KB of up to 24 transcripts per
+    provider for chat names and snippets.
+  - New pure `TranscriptListingInvalidation` (logic target): a batch drops the lists only when an
+    item under a transcript root was created, removed or renamed, or events were lost
+    (must-scan, dropped, root changed). Appends and hook writes leave them; the lists still
+    refresh on their two-second lifetime, so a resumed old chat appears within two seconds (its
+    hooks show it sooner). The FSEvents callback now reads the event paths and flags.
+  - `AgentSessionLogParser.assistantSnippets` and `CursorTranscriptParser`'s head title and
+    snippets are remembered against (mtime, size), as titles and tails already were.
+  - Same burst pattern after the change: 3.7 % average, 13.9 % peak. Steady green with no hook
+    traffic stays about 0.3 %.
+  - Tests: `TranscriptListingInvalidationTests` (appends and hook writes keep the lists; create,
+    remove, rename and lost events drop them; sibling folders are not roots; flag values match
+    CoreServices) and a snippet-cache test that fails if a changed file is served from the cache.
+    REGRESSIONS entry 11 addendum.
+
+### 2026-09-11 - Stats, Extensions, About and Spotify in the System Settings layout; final sweep
+- **Developer label:** "the settings should be enginered like apple does settings" (scope picked: "Rework every tab")
+- **Agent label:** Last tabs, then a sweep so no footer is right-aligned and no caption sits in a row of its own
+- **Changes:**
+  - Stats: footers no longer right-aligned; "Stop monitoring after closing the notch" explains
+    itself under the title (it was a tooltip); the update interval shows its value beside the
+    slider with its explanation under the title; Clear Data and Start/Stop sit on the trailing
+    side (Start/Stop was a filled button with red or blue text on the accent fill).
+  - Extensions: the three notch-experience toggles that shared one indented row are three rows;
+    footers selectable; an app's bundle identifier can be copied.
+  - About: the version reads "1.2.0 (2)" and can be copied — the build number used to hide behind
+    a click on the row, and a missing version read "unkown"; Check for Updates… sits trailing.
+  - Spotify session (shown with Spotify as the media source): session status with Sign in on the
+    trailing side, the cookie field on its own row, Paste/Validate/Clear trailing, the manual
+    steps selectable, both explanations in the footer.
+  - Sweep: no `.multilineTextAlignment(.trailing)` or `Divider()` row remains in any Settings
+    Form (the Dividers left are inside popovers, menus, the sidebar and the slot editor).
+
+### 2026-09-11 - Timer, Notes, Clipboard, Screen Assistant, Shelf, Downloads and Shortcuts in the System Settings layout
+- **Developer label:** "the settings should be enginered like apple does settings" (scope picked: "Rework every tab")
+- **Agent label:** Same row rules on the remaining productivity tabs, plus four visible bugs fixed
+- **Changes:**
+  - Timer: the Clock-mirroring and display-mode explanations (tooltips) and the lock-screen
+    surface notes are descriptions; the custom duration is a "Default Custom Timer" row plus
+    Hours/Minutes/Seconds rows (value and stepper trailing); Restore Defaults and Add Preset sit
+    on the trailing side; the sound row is one row with Reset and Choose File trailing. The
+    stepper side effects moved to the Form so a row that is not built yet cannot miss them.
+  - Timer sound: the row read `customTimerSoundPath` straight from UserDefaults, so after Choose
+    File or Reset it kept showing the old file until something else redrew the tab; it is now
+    `@AppStorage` and updates at once (same key; the timer still reads it the same way).
+  - Downloads: "Download indicator style" was hard-coded white and invisible in light mode.
+  - Clipboard and Shortcuts said the clipboard shortcut is Cmd+Shift+V; the default is ⇧⌘C and it
+    is user-set. The Clipboard and Screen Assistant footers now show the actual shortcut; the
+    Shortcuts rows drop the stale defaults (the recorder shows the real one).
+  - Shortcuts: five one-row groups with right-aligned footers become one group of recorder rows,
+    each explained under its (translated) title; the disabled placeholder group is gone.
+  - Clipboard and Screen Assistant: labelled pickers instead of text plus an unlabelled picker;
+    value rows as `LabeledContent`; the permanent Clear actions sit on the trailing side and keep
+    their red text; clipboard previews can be selected.
+  - Notes: Sync Now is a trailing button beside "Last synced" instead of a full-width button;
+    Shelf: the Quick Share explanation sits under its picker; every footer on these tabs is
+    selectable and left-aligned.
+  - Keys, bindings, side effects and highlight ids unchanged (inventory test). DEBUG harness: a
+    `shortcutRows` board for the recorder rows (shown only once global shortcuts are on).
+
+### 2026-09-11 - Controls is one Form; Battery in the System Settings layout
+- **Developer label:** "the settings should be enginered like apple does settings" (scope picked: "Rework every tab")
+- **Agent label:** Rebuild the Controls tab as a single scrolling Form; Battery rows, sliders and test buttons
+- **Changes:**
+  - Controls stacked two Forms (the selected style's settings, then step size and display
+    integrations) under a fixed row of style cards: two regions scrolled separately, a footer was
+    clipped, and the fourth card ran off the window edge. Now one Form: the cards are the first
+    group (flexible width, all four fit), then the style's groups, then Step size and DDC.
+  - `HUD`, `CustomOSDSettings` and `ExternalDisplayIntegrationsSection` now emit sections. Their
+    side effects moved to the Controls Form because rows in a lazy Form cannot host them
+    reliably, keyed by the selected card exactly as before: Dynamic Island — Accessibility
+    revoked turns the system HUD off, granted starts the media-key tap; Custom OSD — revoked turns
+    the OSD off and hides its windows. Turning the OSD off hides its windows from any card, the
+    macOS 26 material fallbacks run when the tab appears, and switching cards refreshes the
+    Accessibility status (it used to on each sub-view's appear).
+  - Keyboard-backlight, audio-feedback and DDC explanations (tooltips or rows of their own) are
+    descriptions; steppers show "6%" beside the stepper; size sliders share `dimensionSlider`;
+    Reset to Default sits on the trailing side. The DDC status description showed its Markdown
+    links as raw brackets; it now renders them.
+  - Battery: durations and thresholds use the new shared `SettingsSliderRow` (title leading,
+    slider and value trailing); the style explanations sit under their pickers; the three test
+    buttons are "Charging HUD / Low battery HUD / Fully charged HUD" rows with Test on the
+    trailing side. Each registers a highlight id, so the three "Test … HUD" search entries,
+    which opened the tab and scrolled nowhere, now land on their row (inventory test: every
+    entry names a row; 249 registrations).
+  - DEBUG harness: a `controlStyles` board renders the Custom OSD, Vertical Bar and Circular
+    groups without changing the selected card.
+
+### 2026-09-11 - Media, Live Activities, Lock Screen and Devices in the System Settings layout
+- **Developer label:** "the settings should be enginered like apple does settings" (scope picked: "Rework every tab")
+- **Agent label:** State notes become footers or descriptions, tooltips become visible text, packed rows split, one slider pattern
+- **Changes:**
+  - Media: the Dynamic Island and customizable-controls notes are footers instead of rows; the
+    Change Media Output, floating controls and live canvas explanations that only lived in
+    tooltips are visible, selectable descriptions; the three fullscreen-artwork toggles that
+    shared one row are three rows; parallax intensity and the inactivity timeout show their
+    value beside the control; the fullscreen hide option is a radio group under its own
+    header, so "Hide only when NowPlaying app is in fullscreen" no longer truncates.
+  - Live Activities: the Focus label and brief-toast explanations (tooltips) are descriptions;
+    every footer is selectable.
+  - Lock Screen: material, glass mode, timer surface, timer glass and AQI notes sit under the
+    control they explain; Preview and Copy Latest Crash Report sit on the trailing side; the
+    fullscreen toggles are separate rows; Positioning lists the three offsets as rows (value and
+    Reset trailing, Reset disabled at zero) and moves the width sliders to their own
+    **Widget Width** group with both resets on the trailing side — the empty Divider row and the
+    right-aligned help text are gone.
+  - Devices: footers selectable; the HUD icon style title reads like other row titles.
+  - Glass-variant sliders (Appearance and Lock Screen) share `variantSliderControl`: title on the
+    leading side, slider and "v11" trailing.
+  - Keys, bindings, side effects, disabled and dimmed conditions, the Media → Lock Screen mirror
+    and highlight ids are unchanged (inventory test).
+
+### 2026-09-11 - General and Appearance in the System Settings layout; a mislabelled media toggle
+- **Developer label:** "the settings should be enginered like apple does settings" (scope picked: "Rework every tab")
+- **Agent label:** Captions under titles, composite rows split into rows, buttons trailing, footers left-aligned and selectable
+- **Changes:**
+  - General: hover duration, external display style and always-show carry their explanations under
+    the title; the slider sits at a fixed width so its explanation is not squeezed; Launch at
+    login's approval hint is a row with Open Login Items on the trailing side; the gesture footer
+    is no longer right-aligned. Per-display overrides get one group per display (header with a
+    Built-in badge, Reset on the trailing side) instead of one packed row per display.
+  - Appearance: Notch Width is three rows plus "Recommended width" with Reset on the trailing side
+    and the explanation as the footer (the Divider inside the row is gone); both width sliders
+    show their value beside the slider, so "Closed notch / pill width" no longer wraps; notch
+    fill colour and lock-screen glass captions sit under their titles; notch skin and app icon
+    split into the gallery, a trailing button row (Remove selected, then the primary Upload/Add)
+    and a footer; the app-icon thumbnail is clipped to its rounded card (square corners showed).
+  - The Media toggle for `playerColorTinting` was labelled "Enable colored spectograms", nearly
+    the same as the spectrogram toggle above it; it now reads "Tint player controls with the
+    album art color" (setting unchanged; the five translations of the old label translated the
+    wrong words and now fall back to English).
+  - `SettingsColorPickerRow` gains an optional description; the row components gain a
+    state-dependent description. DEBUG harness: a `displays` board for the per-display groups
+    (a lone MacBook lists none). Keys, bindings, side effects and highlight ids unchanged.
+
+### 2026-09-11 - Agents and Usage tabs in the System Settings layout; the Agents tab stops re-rendering on every rescan
+- **Developer label:** "the settings should be enginered like apple does settings" (scope picked: "Rework every tab")
+- **Agent label:** Descriptions under their titles, labelled pickers, trailing buttons, selectable footers; decouple the preview from the monitor
+- **Changes:**
+  - Agents: every caption that sat in a row of its own now sits under its setting's title
+    (terminal tab, traffic light style, smart caffeinate, red light, wait reminder, provider);
+    the three indicator pickers are labelled menus instead of a text plus an unlabelled picker
+    (the first no longer wraps onto two lines); the state colours read as title and meaning with
+    the swatch trailing; Reset Colors, the test notification and every footer follow the same
+    rules; Detected Editors is a grid, so "Claude Code" and "Claude Desktop" no longer wrap.
+  - Mobile notifications split into where pushes go (provider, address or keys, test push) and
+    **Notify about** (inactive, wait reminder, findings, usage limit).
+  - The Agents tab observed `CursorAgentStatusMonitor` only for the style preview, so the whole
+    tab re-rendered on every rescan while agents ran. The preview now observes the monitor on
+    its own. The editor and hook-tool file checks run when the tab appears instead of on every
+    render.
+  - Usage: footers no longer right-aligned, both alert captions under their titles.
+  - Titles, keys, bindings, side effects, disabled and dimmed conditions and highlight ids are
+    unchanged (inventory test). DEBUG harness: a `notifications` board for the rows that show only
+    once pushes are on.
+
+### 2026-09-11 - Agents › security, laid out like System Settings: compact findings first
+- **Developer label:** "fix the allignment, spacing and padding of settings items, especially these nwe findings sections, dont leave area with lot of empty spacing in rach finfings window"
+- **Agent label:** Split the one long security section into four groups and switch findings to the compact row
+- **Changes:**
+  - One section held the ADR connection, Kannu's own checks, ADR Detection and the findings,
+    with `Divider()`s that drew as empty rows and every caption in a row of its own. Now:
+    **Security findings** (the list first, then the high-severity alert picker with its
+    explanation under the title, and "Show acknowledged and snoozed again" on the trailing side;
+    the header keeps the deep-link id), **ADR Discovery** (tools with a status dot, snapshot
+    folder, last snapshot, scans, policy file), **Kannu's own checks** (five switches, each with
+    its description under the title) and **Session analysis**, which once turned on adds
+    **Analysis models**, **Analysis context and limits** and **Recent analyses**.
+  - Findings use the compact `SecurityFindingRow` (Details opens the rest in place; Acknowledge,
+    Snooze 24h and Reveal in Finder move into the "…" menu). Recent analyses get the same
+    trailing Copy for agent and "…" (Reveal Report in Finder, Forget).
+  - Every description, footer, path, status and error in these sections can be selected and
+    copied. Setting titles, keys, bindings, side effects, disabled conditions, the consent alert
+    and all highlight ids are unchanged (the inventory test pins them).
+  - The ADR key rows no longer read the keychain on every render (the tab re-renders on each
+    monitor publish): which keys are stored is read when the tab appears and after Save/Remove.
+  - The "No findings yet" message no longer points at a folder above; the scan row is titled
+    "Scan this Mac"; the old footer is split between the sections it describes.
+  - `docs/ADR.md` paths updated (ADR Discovery, Session analysis) and the finding-row
+    description rewritten. DEBUG harness: a `detection` board shows the rows that appear only
+    once analysis is on, without turning it on.
+
+### 2026-09-11 - Settings building blocks in the System Settings layout; two search entries that scrolled nowhere
+- **Developer label:** "fix the allignment, spacing and padding of settings items, especially these nwe findings sections, dont leave area with lot of empty spacing in rach finfings window / many text in normal areas are also not copypastable, the settings should be enginered like apple does settings"
+- **Agent label:** Shared Settings row components and a compact finding row, checked on a snapshot board; highlight-id inventory test
+- **Changes:**
+  - New `SettingsComponents.swift`: `SettingsRow` (title and description leading, control
+    trailing; the control keeps its own label for VoiceOver and is drawn as a switch, since a
+    Toggle nested in `LabeledContent` falls back to a checkbox), `SettingsRowLabel`,
+    `SettingsFooter`, `SettingsActionRow` (buttons on the trailing side, never hanging on the
+    left), `SettingsMoreMenu` ("…"), `SettingsValueText`, `SettingsStatusText`,
+    `SettingsErrorText` and a self-contained `CopyForAgentButton`. Descriptions, footers, values
+    and statuses can be selected and copied; control labels never are (a selectable label
+    swallows the control's click).
+  - New `SecurityFindingRow.swift`: shield, title, severity and a two-line summary, with Copy
+    for agent and a "…" menu (Acknowledge, Snooze 24h, Reveal in Finder) on the same line;
+    "Details" opens the evidence, what it means and what to do in place. Not wired into the
+    Agents tab yet (next commit).
+  - The DEBUG snapshot harness gains a `components` board (native controls beside the
+    components, enabled and disabled, finding rows collapsed and expanded; light and dark).
+  - Two search entries scrolled nowhere because no row registered their id: "Enable Custom OSD"
+    (now lands on the Custom OSD card) and "LocalSend Device Picker Style" (the picker never
+    applied the id it was handed).
+  - `SettingsPermissionCallout`'s message can be selected and copied.
+  - New `SettingsHighlightInventoryTests` reads the Settings sources and pins the pairing: every
+    search entry lands on a registered row of its own tab, every deep link is registered, and the
+    entry and registration counts are pinned so a layout rework cannot drop a registration
+    unnoticed (it caught both drifts above; verified to fail when a registration is removed).
+
+### 2026-09-11 - One card per Claude chat: subagents fold into their parent
+- **Developer label:** "did a regression happen in chat names for claude, it shows untitle chat, also 2 chats showingh, maybe duplicated"
+- **Agent label:** Hook v38 parent_id plus a tested fold of subagent hook files into the parent's card
+- **Changes:**
+  - Cause (verified live: three `claude-<17-hex>.json` files appeared while three Explore agents
+    ran): Claude Code fires a subagent's hooks with `agent_id` beside the parent's `session_id`, and
+    the hook has picked `agent_id` first since v23 (a Cursor change). Each subagent became its own
+    "Untitled chat" card, and its last `thinking` write could relight a finished chat green for up to
+    six minutes (holding caffeinate). Not caused by the recent phases.
+  - Hook script v38 (mirror and embedded copy regenerated; no backslash): for Claude and Qwen, an
+    event with `agent_id` records the parent's session id as `parent_id` in the subagent's own file.
+    The state machine is untouched; Cursor's `agentId` stays its own conversation; `agent_type`
+    alone (a `--agent` main thread) is not a subagent.
+  - New pure `AgentTrafficLightMapper.foldSubagentHookSessions` (logic target): while the parent's
+    turn is open the more urgent light wins (a subagent's permission prompt turns the chat yellow;
+    the parent's own progress cannot hide it; two prompts stay yellow until both are answered);
+    after the turn ends a leftover subagent file changes nothing; with no parent file a stand-in
+    carries the parent's id and is named from its transcript; identity, name and locators stay the
+    parent's and extras ride `carryingExtras` (sightings found by a subagent belong to the chat).
+    The monitor reads the validated `parent_id`, folds before names are resolved, and keeps folded
+    ids out of the hooks-only retention. Files from v37 have no `parent_id` and age out as before.
+  - Tests: `SubagentFoldTests` (no card of its own, yellow while open, two prompts, no relight,
+    aged parent, stand-in named by the reconciler, providers never cross, aggregate unchanged over
+    every open-turn combination, id validation) and six `HookScriptTests` for v38. REGRESSIONS
+    entry 5 addendum.
+
+### 2026-09-11 - Hook events no longer re-list Cursor's transcripts for nothing
+- **Developer label:** "how can we optimize that" (the notch's CPU while an agent works)
+- **Agent label:** Skip project-name enrichment when every session already has a project
+- **Changes:**
+  - Profiling a busy Claude session showed the main thread's rescan time dominated by
+    `enrichProjectNamesFromTranscripts`, which listed every recent Cursor transcript folder and read
+    every provider's logs on each hook event — before checking whether any session lacked a project
+    name. Hook files carry their project (from cwd), so usually none do. It now returns at once when
+    nothing needs a name and builds only the maps a nameless session needs. Same result, same
+    tests; the work simply is not done when it cannot change anything.
+
+### 2026-09-11 - Claude chat names hold on very long transcripts, and cost less to read
+- **Developer label:** "did a regression happen in chat names for claude, it shows untitled chat"
+- **Agent label:** Keep the last tail-found title, skip non-title records, skip the head when cached
+- **Changes:**
+  - Not a regression, but a weakness found while checking: titles come from tail windows of at most
+    1 MiB, and on a very long transcript (89 MB here) a long turn of big tool results can push the
+    newest title record past them; the name then fell back to an older title or the first prompt.
+    `AgentSessionLogParser` now keeps the last title a tail window found per transcript and uses it
+    before the head (`resolvedClaudeTitle(tail:lastKnownTail:head:)`, pure). A newer title record
+    still wins as soon as a window sees it.
+  - `claudeTitle(fromRecordText:)` skips lines without "-title" before JSON-parsing them — same
+    result, far less work on megabyte tails.
+  - `displayChatName` answers from the (mtime, size) title cache before reading a transcript's first
+    32 KB, so a quiet session with a known title costs a stat.
+  - Tests: the title survives 1.2 MB of records written after it (and a mutation that removes the
+    sticky title makes that test fail), a newer title replaces it, precedence, and a "-title" in
+    prose does not confuse the prefilter.
+
+### 2026-09-11 - The open panel's red blink stops at 5 s; icons resolved once
+- **Developer label:** "how can we optimize that" (the notch's CPU while an agent works)
+- **Agent label:** Bound the 10 Hz red blink, honour Reduce Motion, cache provider icons
+- **Changes:**
+  - `NotchAgentStatusView`: the red badge's blink is a 10 Hz `TimelineView` that only checked its
+    5-second window when something else redrew the panel, so it could keep ticking indefinitely.
+    It now wakes once at the window's end (`AgentTrafficLightAttention.blinkChange`) and is removed;
+    under Reduce Motion it never blinks.
+  - `AgentProviderIconView` resolved each app icon on every render (a disk check, NSWorkspace and a
+    thumbnail redraw). New `AgentProviderIconCache` keeps one per source, re-resolved after ten
+    minutes so a newly installed or updated app shows its icon. `AgentProviderIconSource` is now
+    `Hashable`.
+
+### 2026-09-11 - No periodic timers behind the traffic light
+- **Developer label:** "how can we optimize that" (the notch's CPU while an agent works)
+- **Agent label:** Replace the notch's 1 Hz timers with one-shot wakes at the exact deadline
+- **Changes:**
+  - New pure rules in `AgentTrafficLightAttention` (logic target): the red pulse lasts exactly
+    4 s after a run ends, the five-second pill 5 s, the open panel's red blink 5 s — each with a
+    "next change" date. `AgentTrafficLightIndicator` and `AgentTrafficLightLiveActivity` drop their
+    `TimelineView(.periodic(by: 1))` wrappers (which redrew them every second for the whole run and
+    re-ranked all findings each tick) and instead wake once, with `.task(id: deadline)`, at the
+    moment a cue ends. The red window now ends at exactly 4 s instead of anywhere in 4–5 s.
+  - `SecurityFindingsStore` wakes once when the next snooze ends (`snoozes` didSet arms it; only
+    expired snoozes are dropped, never by finding id) — the removed tick had been what brought a
+    snoozed finding back. Pure `SecurityFindingPriority.nextSnoozeExpiry`.
+  - Tests: red pulse ends at 4 s with one wake, green/yellow always, inactive never, five-second
+    pill only in its mode (and no wake when the mode is chosen late), blink 5 s, next snooze.
+
+### 2026-09-11 - A DEBUG-only way to see Settings without a screen
+- **Developer label:** "the settings should be enginered like apple does settings … while making any change make sure no regression happens"
+- **Agent label:** Add a debug snapshot harness that renders Settings tabs and boards to PNG
+- **Changes:**
+  - New `Kannu/helpers/DebugSnapshot.swift` (compiled only in DEBUG): launched with
+    `--kannu-snapshots <dir>` (optionally `--kannu-snapshot-tabs agentStatus,general,…`), Kannu
+    renders every Settings tab exactly as the window builds it (`SettingsView.detailView(for:)`,
+    grouped form, the real environment objects), a findings board built from fixtures (never
+    ingested — ingest would prune the shared acknowledgements) and the notch dots in every state,
+    light and dark, into PNGs plus 700 pt tiles, then quits. It returns before any monitor, hook
+    migration or window starts. Rendering: offscreen borderless window grown to the form's full
+    document height, layer tree drawn with `CALayer.render(in:)`, flipped to read top-down.
+  - `KannuApp.applicationDidFinishLaunching` checks for the flag first (DEBUG only);
+    `SettingsView.snapshotTabs(filter:)` and `AgentStatusSettings.snapshotFindingRows(_:)` are
+    DEBUG extensions in `SettingsView.swift`. Release builds are unchanged.
+  - Why: this Mac's Claude host has no screen-recording or accessibility access, so Settings
+    changes could not be seen before; every Settings commit that follows is checked against
+    before/after images. First use confirmed the Core Animation dots render the same as the
+    SwiftUI previews in every state.
+
+### 2026-09-11 - The traffic light breathes on Core Animation, not SwiftUI
+- **Developer label:** "Kannu uses about 5% CPU while an agent works… is this a bit too much, will it draw down so much battery, how can we optimize that"
+- **Agent label:** Move the lit-dot pulse to a Core Animation layer and honour Reduce Motion
+- **Changes:**
+  - The lit dot's breath was a SwiftUI `.repeatForever` scale/opacity animation
+    (`ConditionalPulseModifier`), which re-laid out the whole notch view on the main thread on
+    every display frame — up to 120 a second on this Mac's ProMotion screen — for as long as an
+    agent worked, on every display. New `TrafficLightDot` (`TrafficLightDotView`, an
+    `NSViewRepresentable` in the pattern of `AudioSpectrum`) draws the live dots with a CALayer
+    and runs the breath as a CA animation group in the render server: same look (scale 1.3,
+    opacity 0.5, 0.7 s ease-in-out, autoreverse), eases back to rest from wherever it was,
+    capped at 30 fps, removed when off-window, and never breathes under Reduce Motion.
+  - `AgentTrafficLightDots` gains `live` (the notch indicator); Settings and onboarding previews
+    keep their plain circles. The pulse constants live in `TrafficLightPulseSpec` (logic target),
+    pinned by `AgentTrafficLightAttentionTests`.
+  - Measured on this Mac (M3 Pro, one ProMotion display, `top -l` over ~40 s, green light, no hook
+    events): 53.1% CPU and 13,356 idle wakeups/s before; 0.9% and 12/s after. While hooks fire
+    every ~2 s the average is ~8% with spikes to 18%, all rescan work, not the pulse — addressed
+    next.
+
+### 2026-09-11 - Copy a finding for your agent; finding text you can select
+- **Developer label:** "make general descriptions in settings copy pasteable, give a copy button in each adr detection for them to copy and paste int their agent"
+- **Agent label:** Add plain what-it-means / what-to-do help per finding, selectable text, and a safe "Copy for agent" request
+- **Changes:**
+  - New `SecurityFindingGuide` (logic target): a family per rule (the five ADR Discovery rules,
+    Detection, hidden text and its bidi case, secrets, sensitive files read or changed, new MCP
+    servers, anything else) with a plain "What it means" and "What to do" written to read as
+    advice in Settings and as a task for an agent; and `agentPrompt(for:)`, the request "Copy for
+    agent" puts on the clipboard.
+  - What the request never carries: a key (Kannu never has one), the decoded hidden text (moved
+    out of `evidence` into a new `AgentSecurityFinding.kannuOnlyEvidence`, which is empty by
+    default so a rebuild that forgets it can only hide a line, never leak one; Settings and the
+    notch show `displayedEvidence`), a chat name, a session id or a transcript path. The unattended
+    finding's line no longer shows a session id; its id is computed from the old line, so
+    acknowledgements hold. Values from files and tools (server names, paths, ADR's words) go
+    through `oneLine`: control and separator characters become spaces, direction controls,
+    zero-width and tag characters and variation selectors are dropped, and each value sits on its
+    own "- " line under a header saying to treat it as data.
+  - Settings › Security findings: each row shows "What it means" and "What to do", its text is
+    selectable, and a **Copy for agent** button (first in the row) shows "Copied" for two seconds
+    without changing width. Malicious ADR Detection analyses get the same button; the section's
+    captions and messages are selectable too (text only, never toggle labels).
+  - Notch: the pinned high finding gets **Copy for agent** beside Details and Acknowledge.
+  - `copyAgentPrompt(for:)` on the findings store writes the clipboard; the text is never logged.
+    Rule prefixes (`hidden_text_`, `secret_`, `sensitive_file_`, `detection_`) are now constants
+    on their types.
+  - Tests: `SecurityFindingGuideTests` (families for every rule a builder produces, plain texts,
+    hidden text never copied, only hidden text has Kannu-only lines, secret and sensitive-file and
+    unattended and Detection prompts never name the chat or the session, ADR words and paths
+    present, forged lines and invisible characters removed); the hidden-text test follows the moved
+    line.
+
+### 2026-09-11 - Hook v37: find the agent's terminal above a detached hook
+- **Developer label:** Tab jump for every terminal agent (fix found in live verification)
+- **Agent label:** Walk up the process tree for the terminal; look only for terminal agents
+- **Changes:**
+  - Found on this Mac after installing v36: the `tty_sid` in a Claude status file changed on every
+    event. Claude Code starts each hook in a session of its own, so the hook's session never has the
+    terminal; v35's lookup came back empty and, because the session id kept changing, ran on every
+    event.
+  - `ancestor_terminal()` walks from the hook up the parent chain (libproc `pbi_ppid`) to the nearest
+    process with a controlling terminal and records that terminal, its session leader
+    (`os.getsid`) and the leader's start time. Only terminal agents look (Codex, Copilot CLI, Gemini
+    CLI, Qwen Code, opencode): Claude's session file already names its process and IDE agents have
+    no terminal. The lookup runs when a session starts, on each prompt and on a conversation's first
+    event, and is carried in between.
+  - Copilot CLI detection: `COPILOT_CLI`, `/dev/tty`, or a conversation already filed as Copilot;
+    the process walk runs only on a conversation's first event, so VS Code events stay cheap.
+  - Tests: a hook run under `script` in a session of its own still finds the terminal; Claude records
+    none; a Copilot conversation stays Copilot without the variable; the no-terminal case records
+    neither key.
+
+### 2026-09-11 - opencode, through a small plugin
+- **Developer label:** More agents: opencode
+- **Agent label:** Add an opencode plugin that feeds the shared status script
+- **Changes:**
+  - New `OpencodePluginSource.swift` (logic target): the plugin as a raw literal with its own
+    version marker and the status script's path baked in as a JSON-quoted string. It maps
+    `session.created` (subagents with a `parentID` skipped), `chat.message`, `tool.execute.before`
+    / `after` (arguments carried to the post-tool event so the sensitive-file check sees them),
+    `permission.asked` / `permission.updated` (the pre-2026 name) / `question.asked`, their replies,
+    `session.idle`, `session.error` and `session.deleted` onto the Claude-style events the script
+    already understands; titles come from `session.updated`. Every call is `Bun.spawn` with an argv
+    array and the details on stdin, never awaited, always wrapped; text is capped at 200 KB.
+  - Installer: provider `opencode` — script `~/.config/opencode/kannu-agent-status.sh` (outside
+    `plugins/`, which opencode loads wholesale), plugin `~/.config/opencode/plugins/kannu-agent-status.js`.
+    Installed only when the plugin carries Kannu's marker; a plugin-version migration beside the
+    script-version one; uninstall removes both (the layout's own-file rule). Not auto-installed; the
+    row says "Not found on this Mac" until opencode has run here.
+  - Tests: `OpencodePluginTests` in JavaScriptCore with a recording `Bun.spawn` (factory and hooks,
+    the full event ladder, subagents skipped, argv never carries text, spawn failures swallowed,
+    quoting) plus `node --check` as an ES module. Also run by hand under node against the real
+    status script: title, working folder, yellow on a permission prompt, a secret in the prompt and
+    an SSH key read all landed in the status file.
+  - Unverified live: opencode is not installed here; the plugin API and the `plugins/` folder name
+    follow opencode's docs and source as of 2026-09.
+
+### 2026-09-11 - Hook v36: Copilot CLI, Gemini CLI and Qwen Code
+- **Developer label:** More agents: Copilot CLI fix + support, Gemini CLI + Qwen Code
+- **Agent label:** Label Copilot CLI apart from VS Code and add Gemini CLI and Qwen Code hooks
+- **Changes:**
+  - Hook script v36 (mirror and embedded copy regenerated; no backslash):
+    - Copilot CLI already read Kannu's `~/.copilot/hooks` file and was filed as "vscode". Events
+      from that file with `COPILOT_CLI` set or a controlling terminal now become "copilot"
+      (VS Code's extension host has none; anything unclear stays vscode). Its `PermissionRequest`
+      no longer paints yellow — it fires before Copilot's own rules and auto-allow — and a
+      v35 `vscode-<id>.json` for the same session is removed.
+    - Notifications without a matcher (VS Code/Copilot CLI, Gemini CLI, Qwen Code): only
+      `ToolPermission`, `permission_prompt` and `elicitation_dialog` are yellow; idle reminders and
+      other notices write nothing. Claude's matcher-scoped groups are unaffected.
+    - Gemini CLI events: `BeforeAgent` (thinking; prompt scans; resets the error count),
+      `BeforeTool` (executing; tool-input secret scan), `AfterTool` (thinking; hidden-text and
+      sensitive-file scans, never the secret scan), `AfterAgent` (stopped).
+    - Gemini CLI, Qwen Code and Copilot CLI get `{}` on stdout, also from the no-python fallback
+      (Gemini parses stdout as JSON and falls back to stderr when it is empty).
+  - Installer: providers `gemini` (script `~/.gemini/kannu-agent-status.sh`, groups in
+    `~/.gemini/settings.json` with the handler name `kannu-agent-status` and millisecond timeouts)
+    and `qwen` (`~/.qwen/settings.json`, Claude-style groups). A settings file with comments or
+    trailing commas is refused with a plain reason instead of being rewritten. The merge and strip
+    are pure functions on `AgentHookLayout`; the event tables move there too. VS Code's own file
+    gains `Notification` and `SessionEnd`; Codex keeps its list (it validates strictly). The new
+    tools are never auto-installed at first launch; their rows say "Not found on this Mac" and
+    disable Install until the tool has run here (`~/.gemini` alone is Antigravity's too).
+  - App: icons, labels ("Copilot CLI", "Gemini CLI", "Qwen Code", "opencode"), click-through through
+    the hook's terminal, and `holdsAwaitingInput` lists the four new hook-only ids (REGRESSIONS 12).
+    The VS Code row reads "VS Code and Copilot CLI". Not done: the detected-editors grid (cut).
+  - Tests: 11 hook-script cases (VS Code without a terminal, Copilot's PermissionRequest and
+    Notification, the old vscode card replaced, Gemini's event ladder and `{}` everywhere including
+    without Python, Gemini results never secret-scanned, Qwen's PermissionRequest and idle prompt,
+    Qwen yolo, Claude's matched Notification unchanged), layout merge and strip, event tables, tool
+    presence, and the hold rule for the new ids.
+  - Unverified live: none of the three CLIs is installed here. Needs a live check when they are:
+    whether hooks inherit `COPILOT_CLI`, Copilot's PascalCase `Notification`, Gemini's event order.
+
+### 2026-09-11 - One table for where every hook lives
+- **Developer label:** Groundwork for more agents
+- **Agent label:** Refactor hook install, uninstall, detection and migrations onto a single layout table
+- **Changes:**
+  - New `AgentHookLayout.swift` (logic target): `AgentHookProvider` moves here; per provider the
+    script and every settings file (shape: flat entries, matcher groups or a file of Kannu's own;
+    written always or only when present), plus shared settings uninstall leaves alone (Codex
+    `features.hooks`).
+  - `AgentHookInstaller`: the path properties forward to the layout; `uninstall` strips every
+    listed file and removes Kannu's own ones; `checkInstalled` is one rule (script present and any
+    listed file carries the required events) with the per-provider event lists kept; `stripEntries`
+    routes by the listed shape instead of a separate set; the Antigravity merge, the script-version,
+    legacy-script and event-argument migrations iterate the layout. Behaviour unchanged.
+  - REGRESSIONS entry 6: guard now exists. `AgentHookLayoutTests` pins the table and scans the
+    installer's code (not comments, not the embedded script) for hook path literals.
+
+### 2026-09-11 - Notice new MCP servers; Discovery scans follow server changes
+- **Developer label:** Local security checks (new MCP servers)
+- **Agent label:** Watch agents' MCP settings for added servers and fix the dropped config-change scan
+- **Changes:**
+  - New `MCPServerWatch` (logic target): the settings files of Claude Code (user and per-project
+    scopes in `~/.claude.json`), Claude Desktop, Cursor, VS Code (`.json5Allowed`), Codex
+    (`[mcp_servers.<name>]` headers, sub-tables folded), Gemini CLI, Qwen Code and opencode, plus
+    project files in the folders sessions run in — never inside Desktop, Documents, Downloads, iCloud
+    or cloud storage, or other volumes, so no permission prompt. Trust on first use: the first read of
+    a file learns silently; a missing file counts as "no servers", an unreadable one keeps what was
+    known. Additions become medium findings whose summary (pushed) has the name and app only; a
+    "Runs:" line keeps lowercase package-like arguments or a URL's scheme and host, never tokens,
+    env values or URL paths. Removed servers drop their finding; added again is a new finding.
+  - Reads happen on a utility queue once a minute and only re-parse files whose date or size moved.
+  - Bug fix: a config change seen inside the five-minute debounce moved the baseline and was then
+    forgotten, so the "config changed" Discovery scan never ran. `ADRScanTrigger` keeps it pending
+    until the window passes; any scan clears it. It compares declared servers, not modification
+    times — Claude Code rewrites `~/.claude.json` constantly, which would otherwise mean a scan every
+    five minutes.
+  - Settings › Security findings: "Notice new MCP servers" (on; turning it off forgets the baseline
+    and the findings); footer lists the check. Defaults: `watchMCPServers`, `mcpServerBaseline`,
+    `mcpServerAdditions`.
+  - Tests: `MCPServerWatchTests` (every format, JSONC, CRLF TOML, secret-free "runs", protected
+    roots, first look silent, removal and re-add, missing vs unreadable, cache, inventory, the
+    trigger keeping and clearing a change).
+
+### 2026-09-11 - Hook v35: secrets, sensitive files and the agent's terminal
+- **Developer label:** Local security checks + tab jump for every terminal agent
+- **Agent label:** Add local secret and sensitive-file checks and a per-session terminal locator to the hook
+- **Changes:**
+  - Hook script v35 (mirror and embedded copy regenerated, still no backslash, Python 3.9 and 3.13,
+    no warnings under `-W error`):
+    - `secrets`: API keys and private keys in `UserPromptSubmit`/`beforeSubmitPrompt` prompts and in
+      tool input at `PreToolUse`/`preToolUse`/`beforeShellExecution`/`beforeMCPExecution` — never in
+      tool results. Eleven vendor patterns plus PEM/OpenSSH/PGP private-key blocks; placeholders
+      (`EXAMPLE`, `XXXXXXXX`, low-variety bodies, keys with no digit) skipped. Only kind, vendor
+      prefix, length and a 12-hex SHA-256 fingerprint are written; one sighting per key and place;
+      the same `tool_use_id` never counts twice; at most five per session.
+    - `sensitive_paths`: at post-tool events, paths from file tools (`file_path`, `target_file`,
+      `path`…, JSON-string inputs, Codex `apply_patch` headers) and from shell commands (`shlex`
+      with punctuation splitting; redirections, `tee`, `cp`/`mv` targets, `sed -i`, `security`,
+      `crontab`, `launchctl load`), classified into thirteen categories; startup files, autorun
+      locations and agent settings count only when changed; `.env.example` and friends skipped; a
+      failure event marks the sighting `failed` until an attempt succeeds.
+    - `tty`, `tty_sid`, `tty_start`: the session leader's controlling terminal and start time from
+      libproc through ctypes (`proc_pidinfo` + `devname`, about 2 ms, no process spawned), looked
+      up only when the session leader changes. Python's `os.ttyname` on `/dev/tty` only answers
+      `/dev/tty` on macOS, which is why it is not used.
+    - Two off markers (`.kannu-secrets-off`, `.kannu-sensitive-paths-off`); a check that is off
+      skips its scan and drops its list. Everything is carried on every write, sticky path included.
+    - Cost: 2–6 ms more per event on a 100–120 ms hook, mostly compiling the longer script.
+  - Swift: `SecretSighting` and `SensitivePathSighting` (logic target) with tolerant parsing,
+    plain titles, severities decided in Swift (secret: high when the agent used it in anything but a
+    file edit; file: medium for `.env`, shell history and `.vscode/settings.json`, else high) and ids
+    that survive later counts. `HookSightings`/`HookSightingRecords` gain both lists;
+    `TerminalLocator(hookFile:)` and `matches(liveTTY:liveStart:)` so a reused pid or tty never opens
+    a stranger's tab; `AgentSessionStatus.terminal` (locator, `self ?? source`).
+  - Click-through: Codex sessions without a pid, and terminal agents Kannu has no icon for yet, now
+    open their exact Terminal/iTerm2 tab or tmux pane from the hook's terminal.
+  - Settings › Security findings: "Look for secrets in prompts and tool calls" and "Watch for agents
+    touching sensitive files" (both on; local; search entries); footer lists all of Kannu's checks.
+  - Tests: 13 hook-script cases (secret never stored, tool results ignored, placeholders, one
+    sighting per call, post-tool only, shell parsing, failed attempts, `.env` vs example, Cursor and
+    Codex shapes, carry and sanitising, off markers, no terminal, a real pseudo-terminal through
+    `script`), `SecretSightingTests`, `SensitivePathSightingTests`, container and locator tests.
+  - Docs: `docs/ADR.md` §4 bullets; REGRESSIONS entry 1 (regex edges without backslashes) and
+    entry 7 (the two lists, the `terminal` locator).
+
+### 2026-09-11 - One container for what the hook's local checks see
+- **Developer label:** Local security checks (groundwork)
+- **Agent label:** Refactor hidden-text plumbing into a shared sightings container before adding more checks
+- **Changes:**
+  - New `HookSightings.swift` (logic target): `HookSighting` protocol (key, first/last seen, cap,
+    finding) with the set union moved from `HiddenTextIncident`; `HookSightings` (one list per check,
+    parsed from the status file, unioned across seams); generic `HookSightingRecord` with the
+    least-recently-seen eviction moved from `HiddenTextIncident.Record`; `HookSightingRecords`, the
+    persisted lists, decoding a missing or unreadable list as empty so one bad list never loses the
+    others.
+  - `AgentSessionStatus.hiddenText` becomes `sightings`; `carryingExtras` unions the container. The
+    secrets and sensitive-path checks that follow add a list, not a field (REGRESSIONS entry 7 note).
+  - Defaults key `hiddenTextIncidents` becomes `hookSightingRecords` (hook v34 never shipped; a
+    sighting saved by a dev build is re-read from its status file while that exists).
+  - Behaviour unchanged. Tests: `HookSightingsTests` (parse, per-kind union, record round trip,
+    unreadable list); hidden-text and reconciler tests moved to the new names.
+
+### 2026-09-11 - "Still waiting on you": one reminder push when an agent waits too long
+- **Developer label:** Waiting reminder + tab jump
+- **Agent label:** Push once more when a session has waited on the user past a chosen time
+- **Changes:**
+  - `AgentWaitReminder` (logic target): a wait starts when a session is first seen yellow and keeps
+    that start until it leaves yellow (so a Cursor transcript yellow whose timestamp moves is still
+    one wait); one reminder per wait; leaving yellow and coming back is a new wait; waits already
+    overdue in the first seconds after launch, or when the setting is switched on, are marked,
+    not pushed — no burst on relaunch and no instant push from changing the setting.
+  - The bridge watches the per-session list, arms a one-shot for the moment the next wait crosses
+    the threshold (the list does not republish then), and pushes "Still waiting on you — Claude Code
+    has waited 10 minutes for your answer." (the app's name and the wait only; webhook state
+    `still_waiting`).
+  - Settings › Mobile notifications: "Remind me when an agent is still waiting" — Off (default),
+    after 3, 10 or 20 minutes. 20 is the cap because hook-only yellows end at the 30-minute stale limit;
+    5 is left out because an uncorroborated yellow ends at exactly 5.
+  - Tests: `AgentWaitReminderTests` (once per wait, a new wait reminds again, moving timestamps, leaving
+    yellow cancels, no launch burst, off clears, next check, hidden sessions ignored).
+
+### 2026-09-11 - Click-through opens the exact Terminal or iTerm2 tab and tmux pane; a live chat is never resumed
+- **Developer label:** Waiting reminder + tab jump
+- **Agent label:** Pick the agent's own terminal tab (and tmux pane) on click, and stop resuming live Claude chats whose host the parent walk cannot reach
+- **Changes:**
+  - The parent walk (`AgentSessionOpener.hostChain`) now also reads the agent's controlling terminal
+    (`kp_eproc.e_tdev` + `devname_r`, no process spawned while a row renders) and notes a tmux server
+    on the way to launchd.
+  - Terminal.app (tabs have a `tty`) and iTerm2 (sessions have a `tty`): after the app activates, an
+    AppleScript selects the tab or split whose terminal is the agent's and raises its window
+    (`TerminalTabMatcher`, `TerminalTabLocator`; an Automation refusal is remembered for the launch and
+    the old window raise takes over). Other terminals stay at "bring the app forward".
+  - tmux: `list-panes` finds the pane by its tty, `select-window`/`select-pane` focus it, `list-clients`
+    finds the terminal showing that session (switching the most recent client when none does), and
+    that terminal's tab comes forward. tmux is found in the usual install folders, run without a
+    shell, with a 2 s deadline; every tty and pane id is validated before it becomes an argument.
+  - Fixed: a live Claude session in tmux, `screen` or ssh has no GUI app up its parent chain, and when
+    its card was dim the click fell through to `claude://resume` — a second host for a live transcript.
+    The decision now lives in `AgentClickThroughPolicy` (tested); REGRESSIONS entry 13.
+  - Settings › Agents › Click-through is always shown, with "Open the exact terminal tab" (on); the
+    Apple Events usage text names terminals.
+  - Tests: `TerminalTabMatcherTests` (families, injection-proof validation, scripts, tmux parsing and
+    client choice), `AgentClickThroughPolicyTests`.
+
+### 2026-09-11 - Usage forecast, a gauge near the limit, "resumes at" on rate-limited stops
+- **Developer label:** Usage forecast + alerts
+- **Agent label:** Forecast each usage window from Kannu's own readings, cue a nearly full limit beside the lights, say when a rate-limited chat can resume, and push a nearly full limit if the user opts in
+- **Changes:**
+  - `UsageForecast` (logic target): providers report only "percent now", so Kannu keeps its own
+    readings per window (throttled to one per 2 min, restarted when the window rolls over or its reset
+    moves) and fits a least-squares pace over 90 min for the 5-hour window, 24 h for weekly and billing
+    windows. Outlooks: steady, lasts until reset (with the projected percent), hits the limit at a
+    time, at the limit. The Usage tab shows a line under a bar only when it matters ("At this pace:
+    full by 3:40 PM", "about 88% at reset", "Limit reached — resets …"). Samples persist for 8 days.
+  - `UsageAlertPolicy`: near limit = a live window at 95 %+ or marked critical; one push key per window
+    instance (id + reset); "resumes at" only when the matching window really is full, because a 429 can
+    also be short-term throttling.
+  - `UsageAlertManager` gathers readings from the Claude sources the monitor already reads and the
+    Codex/Cursor results of the Usage tab. "Check Codex and Cursor limits in the background" (off by
+    default) makes the same request every 5 min, only while such an agent is working and only after a
+    foreground read succeeded this launch, so it can never raise a credential prompt out of the blue.
+  - Fresher Claude numbers: between the 10-minute full reads, the statusline file alone is re-read when
+    it changed (at most once a minute) and merged with the other two sources as last read.
+  - A white gauge beside the lights when any limit passes 95 % (on by default, local); it rides along
+    with the lights and never puts the island up by itself; it clears at the reset. A stopped chat
+    that hit a full window reads "Stopped · rate limited (429) · resumes 3:40 PM".
+  - "Push when a usage limit is almost reached" (off): one push per window cycle with the provider,
+    the window and the reset — no chat names. The bridge's provider switch is now one `send`.
+  - Tests: `UsageForecastTests` (outlooks, admission, captions, near-limit, push keys, resumes-at,
+    Claude readings) and three statusline fast-path cases.
+
+### 2026-09-11 - Hidden text in what agents read and write, checked locally in the hook
+- **Developer label:** The one inline thing worth adding cheaply, no model: the deterministic hidden-Unicode (ASCII-smuggling) check on tool results via hooks — local, instant, no data leaves. Say if you want that. add this too
+- **Agent label:** Hook v34 scans every hook payload for hidden Unicode and records sightings as Kannu-native security findings; telling the agent is opt-in
+- **Changes:**
+  - Hook script v34 (mirror and embedded copy, byte-identical): `scan_hidden_text` walks the
+    *decoded* payload (never the raw text, so escaped characters and Cursor's JSON-string
+    `tool_output` are judged by what they decode to), attributes each string to where it came from
+    (tool result, prompt, tool input, agent reply), and classifies four techniques written from their
+    public specifications — Unicode tag characters (UTS #51 flag sequences excluded), variation-
+    selector runs of 4+ (decoded, Butler 2025), right-to-left overrides on a line with no right-to-left
+    letters (Trojan Source), zero-width runs of 10+ (two-symbol runs decoded as bits, Rehberger's
+    Sneaky Bits). Nothing ported from ADR, so NOTICE is unchanged. Scanned before the directory lock;
+    ASCII payloads return in well under a millisecond, a 1 MB non-ASCII worst case in tens of ms.
+  - Status-file key `hidden_text`: up to three sightings (kind, where, tool, count, events, a
+    printable-ASCII preview, first/last seen, tool_use_id), carried on every write like `unattended`;
+    the same tool call never counts twice (Claude's parallel gated PreToolUse; PostToolUse after
+    PreToolUse) and the same hidden message merges.
+  - One `emit()` writes all stdout. Without the opt-in marker it prints today's line — except for
+    **Codex, which rejected that line on every event** (strict schemas; empty stdout is success) and
+    now gets nothing. With "Tell the agent when hidden text is found" on, a new sighting adds a
+    factual note: Claude Code `hookSpecificOutput.additionalContext` (+ a `systemMessage` for the
+    user) on PostToolUse/PostToolUseFailure/UserPromptSubmit/PreToolUse, VS Code and Codex on
+    PostToolUse, Cursor `additional_context` on postToolUse; never on Stop; never the decoded text.
+    Settings reach the script as two marker files in the status directory.
+  - Also fixed in the script: a non-object JSON payload (`[]`, `42`) and a deeply nested one crashed
+    it before its allow line.
+  - Swift: `HiddenTextIncident` (logic target) parses the entries as untrusted input and decides
+    severity (high when the text decodes to something readable), plain titles, a summary that never
+    holds the decoded text, and a finding id from what never changes for one sighting. The monitor
+    lifts it onto `AgentSessionStatus.hiddenText` (union in `carryingExtras`); `SecurityFindingsStore`
+    keeps sightings (cap 50) past their session until acknowledged and keeps the two marker files in
+    step with Settings ("Look for hidden text in what agents read", on; "Tell the agent when hidden
+    text is found", off). The webhook now sends the finding's source as `finding_source` (the base
+    body's `"source": "Kannu"` used to win the merge and drop it).
+  - Guards: `.githooks/pre-commit` now compares the two hook bodies and rejects a backslash in the
+    Python; `HookScriptTests` gains provider/stdout/raw-payload support and cases for every technique,
+    false-positive guard, location, carry, de-duplication, opt-in output per host, Codex silence and
+    malformed payloads, plus an embedded == mirror test; `HiddenTextIncidentTests` covers parsing,
+    severity, identity, wording, merging and persistence. REGRESSIONS entries 1 and 7 updated.
+  - Known limits: Claude's WebFetch hands hooks a summary, so smuggling in a raw web page may never
+    reach the hook (Bash `curl`, Read and MCP fetchers are covered); payloads over ~1 MB never reach
+    Python at all (the existing env-var hand-off hits ARG_MAX); Codex output verified against its
+    source, not a live Codex.
+
+### 2026-09-10 - The media card opens the browser tab that is playing
+- **Developer label:** can media player like chromed tabs or safari tabs also open to the exact media screen playing
+- **Agent label:** After activating the browser, select the tab whose title carries the playing track (Safari and Chrome-family), best-effort
+- **Changes:**
+  - `BrowserTabMatcher` (pure, tested): which browsers can be asked (Safari; Chrome, Brave, Edge,
+    Vivaldi, Chromium — Firefox exposes no tabs, Arc speaks another dictionary), the two AppleScripts
+    (list `window\ttab\ttitle`; make a tab current, raise its window, activate), and the match: the
+    tab whose normalised title contains the track title, else most of its words, the artist breaking
+    ties, then the frontmost window; nothing convincing → no tab. Normalisation drops YouTube's
+    "(N) " counter and site suffixes ("- YouTube", "| Spotify", …).
+  - `BrowserTabLocator` runs it off the main actor after `MusicManager.openMusicApp()` has
+    activated the browser as before, so every failure — Automation refused (-1743, remembered for
+    the launch so the click never re-prompts), no match, a script error — leaves the user in the
+    browser on whatever tab it had. macOS asks "Kannu wants to control <browser>" once per browser;
+    the Apple Events usage text says why. `Defaults[.openPlayingBrowserTab]` (default on) turns
+    the tab step off.
+
+### 2026-09-10 - Analyze a finished chat with ADR Detection — opt-in, per chat, off by default
+- **Developer label:** lets build this too … this needs to be supported but all this must be off by default and user has to manually opt in
+- **Agent label:** Phase 3 of the ADR integration: run Uber's Detection over one Claude Code transcript on explicit request, with every model/provider/context knob exposed and nothing automatic
+- **Changes:**
+  - How upstream works (verified in `ADR/Detection` at df05577): `config_detector.yaml` is the knob
+    set — `enable_triage` (off = no OpenAI at all), triage model `gpt-4o`, reasoning model
+    `claude-sonnet-4-6`, `max_turns` 60, `timeout` 300 s, three local MCP context servers (threat
+    intel reads a bundled YAML; none touch the network). The reasoning agent is a headless
+    `claude -p … --mcp-config .mcp.json --disallowedTools file_edit,create_file,str_replace_editor
+    --dangerously-skip-permissions` under the CLI's own auth (`ANTHROPIC_API_KEY` if set, else the
+    login and its quota). `ADRBaseline` builds its OpenAI client eagerly, so Claude-only mode needs
+    a placeholder key — the adapter sets one that is never sent.
+  - Kannu-owned adapter `scripts/adr-analyze-session.py` (GPL; embedded in `ADRDetectionCommand`,
+    a test pins the two identical): converts a Claude Code JSONL exactly as upstream's
+    `_convert_conversation_to_messages` does, caps to the newest N messages, calls
+    `ADRBaseline(config_data:).analyze_conversation`, prints a small verdict JSON and writes the
+    full report. `ADRDetectionCommand` holds the `uv run --project` invocation and an environment
+    **whitelist** (PATH, HOME, LANG, and only the keys the user chose) as data — REGRESSIONS entry 8.
+  - `ADRSessionAnalysis`: the verdict record (persisted, capped at 50); a malicious verdict becomes
+    a `.detection` finding — high at confidence ≥ 0.8 (ADR's own triage threshold), medium below —
+    and rides the existing shield/pill/card/push path. Clean verdicts are records, not findings.
+  - Consent, twice: turning the feature on shows an alert naming what leaves the Mac and where;
+    each run confirms again (transcript name, message cap, providers, quota note) until the user
+    unticks "Confirm before every analysis". Nothing runs without a click on a finished chat's
+    context menu. `ADRConnection.validateDetectionCheckout` checks the checkout (pyproject,
+    `guardrail/adr_agent`, `.venv`, `uv`).
+  - Settings › Security findings gains the Detection block: checkout picker + clone/sync command,
+    reasoning model, "Use an Anthropic API key" (else the login's quota), triage toggle + model +
+    OpenAI key, three context toggles, timeout, message cap, confirm-each-run, recent analyses with
+    Reveal/Forget. Keys live in the Keychain (`SecureSecretsStore`, reusing `openaiAPIKey` and
+    `claudeAPIKey`). All defaults off/none.
+  - Tests: `ADRDetectionCommandTests` (arguments, validation rejects permission/tool flags,
+    environment whitelist, embedded == mirror, the adapter's `--convert-only` conversion via
+    python3), `ADRSessionAnalysisTests` (parse, adapter errors surfaced, finding mapping, titles).
+    `docs/ADR.md` section 8. Sensor deferred.
+  - Follow-up: the consent moved from an `NSAlert` inside the toggle's binding setter (a nested
+    run loop there fought the toggle's own state update and the switch fell back) to a SwiftUI
+    `.alert`; consent and the section footer rewritten in plain sentences.
+
+### 2026-09-10 - An unanswered prompt stays yellow for as long as the session is still waiting
+- **Developer label:** the yellow shouldnt die out if not attended, like an active yellow became inactive chat in kannu since it was open for long time
+- **Agent label:** Hold `awaiting_input` on liveness evidence instead of a 5-minute clock; the clock stays only as the fallback for waits nothing can corroborate
+- **Changes:**
+  - Why it died: `resolveHookState` turned `awaiting_input` invisible after `awaitingInputStaleMs`
+    (300 s, a private constant with no test), the hook script preserves the file's `ts` while a
+    prompt is pending (by design — every earlier false-yellow fix made the clock yellow's only
+    exit), an aged yellow could never be promoted by passive evidence, and at 30 min the stale
+    deletion handed the card to the passive twin as a dim chat (or green, a pending `tool_use`
+    reading as a running tool).
+  - `resolveHookState(…, holdAwaitingInput:)` keeps yellow regardless of age when held. Pure rules:
+    `holdsAwaitingInput` (Claude: process alive and transcript tail `.toolInFlight`; Cursor:
+    `hasPendingToolApproval`; vscode/codex/antigravity: hold — nothing can corroborate or refute,
+    a newer event or the 30 min stale cap ends it; others: no) and `awaitingInputOutlivesStaleCap`
+    (Claude corroborated only). Passive paths still never claim yellow; the tail corroborates.
+  - Monitor: `buildClaudeSessions` runs before `parseHookSessions` and returns the live tail per
+    conversation; the parser computes the hold per file, passes it to the ladder, and exempts a
+    corroborated Claude prompt's file from the stale deletion (SessionEnd, a newer event, or the
+    process dying still end it). Cursor's corroboration is the previous cycle's transcript analysis.
+  - Caffeinate: yellow held the Mac awake only because it went invisible at 5 min; the bound is now
+    explicit (`awaitingInputCaffeinateSeconds`, derived from the same constant) and
+    `CaffeinateManager` arms an `awaiting window` recheck at the earliest qualifying yellow's
+    expiry, since the session list does not republish at that moment.
+  - Known: after a permission is approved, a long tool run shows yellow until `PostToolUse` (no
+    event fires at approval; nothing on disk separates "approved and running" from "still asking")
+    — yellow beats vanished. Hook-only providers closed with a pending prompt show yellow until the
+    stale cap instead of 5 min.
+  - Tests: ladder held/unheld, per-provider hold table, stale-cap exemption, reconciler (held yellow
+    survives passive tool-in-flight, dies with the process, aged yellow not promoted), caffeinate
+    window and recheck date. REGRESSIONS entry 12; entry 2 cross-reference; `docs/CAFFEINATE.md`.
+
+### 2026-09-10 - Click-through lands on the exact chat inside Claude Desktop
+- **Developer label:** also can we make the clickthrough redirect not just to app, but the actual chat they are clicking on … Claude Desktop live Code session this is the most important one, research on internet to see how it could be done
+- **Agent label:** Open a Claude Code chat hosted by Claude Desktop's Code tab through Desktop's own session route (`claude://claude.ai/epitaxy/local_…`), resolved from its on-disk session index
+- **Changes:**
+  - Research (Desktop 1.46388.4 bundle + docs/issues): Desktop's URL handler has two focus routes
+    for its own `local_` id, both creating nothing — `claude://code/continue?session=<id>` (roster
+    lookup, behind a feature gate: on this machine it logged "code entry deep link gated off" and
+    did nothing) and `claude://claude.ai/epitaxy/<id>` (direct in-app navigation, ungated —
+    verified: `setFocusedSession` for the id in Desktop's log, no new `claude` host). Kannu uses
+    the second. `claude://resume?session=<cli uuid>` — what Kannu used for stopped chats —
+    imports the transcript unless a Desktop chat with that exact id exists, and Desktop's id
+    diverges from the CLI id after a resume/clear/compaction: that is why a live-session `resume`
+    spawned a duplicate host. There is no other door (no port, no socket, no AppleScript
+    dictionary, remote debugging stripped); Accessibility needs `AXManualAccessibility` on the
+    Electron app and stays a possible later fallback.
+  - New `ClaudeDesktopSessionIndex` (Foundation only, in the logic test target): reads
+    `~/Library/Application Support/Claude/claude-code-sessions/<account>/<org>/local_*.json`
+    (records are 100+ KB, so on a utility worker with a per-file `(mtime, size)` cache), maps every
+    CLI session id — `cliSessionId` plus the lineage keys — to Desktop's `local_…` id (direct match
+    beats lineage, non-archived beats archived, newest activity wins; an archived-only match still
+    resolves because `continue` on it is a safe no-op), classifies a live session as Desktop-hosted
+    from `~/.claude/sessions/<pid>.json`'s `entrypoint`, and builds the link (rejects `last`, bare
+    UUIDs and anything outside Desktop's regex, so the path carries only id characters). No
+    process environment is read.
+  - `AgentSessionStatus.desktopSessionID` — a locator like `hostPID`, set in `buildClaudeSessions`
+    (a live session only when Desktop-hosted, so a terminal session once imported into Desktop keeps
+    opening its terminal; a dead process takes any match), carried by `carryingExtras` as
+    `self ?? source` (REGRESSIONS entry 7 field set grows).
+  - `AgentSessionOpener`: chats Desktop knows open via the session route (live and stopped), stopped
+    chats it has never seen still `resume` (import), never a live one; a Desktop-hosted session
+    the index has not resolved yet activates the app without the pointless AX title raise. After
+    the link Kannu also activates Desktop, covering a handler disabled by policy. Tooltip reads
+    "Open chat in Claude" for deep links.
+  - Tests: `ClaudeDesktopSessionIndexTests` (records, resolver precedence, id map, attach rule,
+    link, file enumeration, cache), reconciler arms, retention, reconstruction.
+
+### 2026-09-09 - A stopped card names only the error that ended the run
+- **Developer label:** so now a chat completed successfully, that shows as stopped and shows 1 tool error, that tool error gives the user a wrong impression that the task also was not successful, so only report errors that made the process stop, else that error is irrelevant for the user right
+- **Agent label:** Replace the per-turn tool-error count on the card with a run verdict set only by run-terminating signals
+- **Changes:**
+  - "Stopped · N tool errors" is gone. `tool_errors` was an unordered per-turn sum of
+    `PostToolUseFailure` events, and on this Mac a failed tool result occurred 748 times inside turns
+    the agent recovered from versus 4 times at the end of one — it measured recoveries, not outcomes.
+    The hook still counts it (diagnostic, pinned by tests) but nothing displays it.
+  - New `AgentSessionStatus.runError: RunError?` (`.apiError(status:)`, `.failed`; nil = clean),
+    rendered as "Stopped · rate limited (429)", "· API overloaded (529)", "· signed out (401)",
+    "· API error N", "· failed" — only on stopped and retained cards. Set by: hook v33's
+    `ended_on_error` (Claude `StopFailure`, an Antigravity `Stop` carrying an error; kept across a
+    later stopped write so the label cannot flicker, cleared by any non-stopped write), the Claude
+    transcript's `assistant` record with `isApiErrorMessage: true` (`system`/`api_error` retries stay
+    bookkeeping; a newer user prompt clears it by construction), Warp `Failed` (`Cancelled` stays
+    clean), and Claude Desktop's newest `result` with `is_error` (`terminal_reason` deliberately not
+    read — a cancel is not a failure). A tool failure never becomes a verdict, even when it was the
+    last event before the stop (decided with the developer).
+  - Seam rule: the verdict crosses `carryingExtras` as `RunError.preferred` — hook wins, the
+    transcript fills a hook that has none, the more specific reason wins when both describe the same
+    stop — never OR/max (REGRESSIONS entry 7 addendum explains why).
+  - Tests: hook-script cases for recovered and trailing failures (clean), `StopFailure` (verdict,
+    kept, cleared), interrupted `StopFailure`; parser cases for the API-error record with/without
+    status, `isApiErrorMessage: false`, trailing bookkeeping, a new prompt, retry records; reconciler
+    seam cases; `RunErrorTests`; Warp, Desktop and retention updates.
+
+### 2026-09-09 - Kannu-run ADR scans, and a high finding that stays in the notch until acknowledged
+- **Developer label:** also tell me how we can show that in ui, and how important is it, do we color code chats and also show something instead of traffic lights … make this persist until user action by default with control for user in settings
+- **Agent label:** Phase 1 of the ADR integration: scan runner and cadence, priority UX in the notch and panel, push, and Kannu's own bypass-permissions finding
+- **Changes:**
+  - `ADRDiscoveryCommand` holds the invocation as data (`--json --output-dir <folder>`, `--policy`
+    only when configured; never `--dry-run`, `--root`, `--diff`, `--explain`), pinned by tests in the
+    REGRESSIONS entry 8 discipline. `SecurityFindingsStore.runScanNow` runs the connected binary on a
+    utility queue with stdout discarded (the file is what matters), a 180 s cap, and exit 2 treated as
+    a valid partial snapshot. Cadence: once a day, sooner when one of the five MCP config files changes
+    on disk (mtime, checked once a minute, 5-minute debounce), and on "Scan now". "Let Kannu run
+    scans" (default on once connected) turns the runner off for people who schedule Discovery
+    themselves. A snapshot written by Kannu's own run is recorded with origin `kannu` even when the
+    directory watcher ingests it first.
+  - Security has its own vocabulary in the notch — a **monochrome shield**, never a fourth light
+    colour and never a recoloured row, so red keeps meaning "finished". An unacknowledged high finding
+    shows a shield glyph beside the dots (it follows the dots into the music pill too) and, by
+    default, a **pill that persists until acknowledged** in the standalone light, laid out beside the
+    dots rather than as a sneak peek (those auto-hide). Settings › "High-severity alerts in the
+    notch": Until acknowledged (default) · For 5 seconds, then glyph · Glyph only · Off. Deferred to
+    glyph-only while a Focus mode is active; no animation under Reduce Motion. The light branch now
+    also renders when no agent is on screen but a cue is pending. Clicking the pill opens the panel.
+  - Panel: the high finding is pinned above the primary session with Details (deep link to
+    Settings › Security findings) and Acknowledge; other open findings appear as a count beside
+    "Recent chats". Push: each new high finding once at priority 5, medium at 4 only when enabled;
+    the webhook body carries rule, severity, source, asset and summary.
+  - Kannu's own finding: hook script v32 remembers `permission_mode: bypassPermissions` (or a Codex
+    `approval_policy` of `never`) for the session as `unattended`, the monitor lifts it onto
+    `AgentSessionStatus.isUnattended` (additive — carried by `carryingExtras`, OR across the seam),
+    and the store derives a high `.kannu` finding per visible session, dropped when the session is.
+    ADR Discovery cannot see this on macOS: its process listing has no argv.
+  - Tests: `ADRDiscoveryCommandTests` (5), native-finding and flag-carry cases, a hook-script case for
+    the sticky flag, the reconciler asserts the flag rides the seam. `docs/ADR.md` gains the
+    Kannu-run and attention sections.
+
+### 2026-09-09 - Connect a separately installed ADR and show its security findings
+- **Developer label:** plan how we could integrate adr uber changes to our system to setup that feature … plan it on based on seperate connect do not install with kannu, but support easy integration
+- **Agent label:** Phase 0 of the ADR integration: detect the user's ADR install, guide the install, watch a snapshot folder, list Discovery findings with acknowledge and snooze
+- **Changes:**
+  - ADR (github.com/uber/ADR, Apache-2.0) stays a separate install the user owns. `ADRConnection`
+    looks for `adr-discovery` / `adr-sensor` in `~/.local/bin`, uv's tool directory, Homebrew and
+    `/usr/local/bin` (plus a user-set directory), reads their versions on demand, and hands Settings
+    the exact `uv tool install …` / `pipx install …` lines with a Copy button when they are missing.
+    Kannu ships no Python, runs no package manager, and never writes into the user's tool
+    directories.
+  - `ADRSnapshot` decodes Discovery's schema-1.0 JSON — assets, findings, review queue and the
+    coverage block — strictly on the schema major (a 2.x file fails with a message, a 1.x minor
+    keeps working) and leniently on everything else. The fixture is a real snapshot from this Mac,
+    sanitised. `AgentSecurityFinding` joins each finding to its asset, gives it a stable id (digest
+    of source, rule, subject and evidence, so acknowledgements survive re-scans and changed evidence
+    is new again) and a human title; `SecurityFindingPriority` orders by severity then recency and
+    picks the pinned high finding.
+  - `SecurityFindingsStore` watches the snapshot folder (`~/.kannu/adr/discovery` by default, `0700`,
+    changeable) with a dispatch source and shows the newest `snapshot-*.json`, whoever wrote it —
+    the user by hand, a launchd job, or a fleet scheduler. Partial coverage (upstream exit code 2)
+    is shown as such, never as "clean". Acknowledge and Snooze 24 h persist in Defaults and are
+    dropped for findings that vanish.
+  - Settings › Agents › **Security findings**: connection rows for Discovery and Sensor, install
+    guidance callout, snapshot folder picker with Reveal, last-snapshot summary (assets, findings,
+    coverage, catalog version), the findings list with severity glyphs and evidence, review-queue
+    count, and a way to un-acknowledge. Three searchable entries. `docs/ADR.md` walks through
+    installing, producing a snapshot, an optional launchd schedule (copyable, never installed by
+    Kannu), the policy file, and what Kannu does and does not do with findings.
+  - Nothing touches the traffic light or the notch yet; that is the next phase. No ADR code is
+    included in Kannu, so NOTICE is unchanged.
+  - Verified against this Mac: `uv tool install` of Discovery, a 17 s scan writing a 7 MB snapshot
+    (99 % of it `coverage.boundaries_hit`, 31,808 entries; assets are 27 KB), one real finding —
+    `notion` resolves its package at launch. The decode is one pass (schema major checked inside
+    `init(from:)`, 0.10 s measured even unoptimised), runs on a utility queue, and only the result
+    reaches the main actor; the snapshot is dropped after ingest. `adr-discovery` has no
+    `--version` flag, so the version comes from `uv tool list` when the tool will not say.
+  - Tests: `ADRSnapshotTests` (6) and `AgentSecurityFindingTests` (7).
+### 2026-09-09 - Read Warp's database off the main actor
+- **Developer label:** (found while verifying the next build: Kannu froze at launch)
+- **Agent label:** Move the Warp SQLite read to a worker so the "access data from other apps" prompt cannot block the app
+- **Changes:**
+  - `warp.sqlite` lives in Warp's group container; the first `open()` raises macOS's
+    `kTCCServiceSystemPolicyAppData` prompt and blocks until it is answered. `rescan()` did that open
+    on the main actor, so every launch of the Warp-source builds froze the whole app for as long as
+    the dialog was up (100 % of main-thread samples in `guarded_open_np`), and killing the app to
+    rebuild dismissed the dialog unanswered, so the next launch asked again.
+  - `WarpAgentStore.sessions` is split into the read (`loadRecentExchanges`, unchanged) and a pure
+    `sessions(exchanges:…)` mapping; the one-call form stays for tests. The monitor keeps the last
+    exchanges, refreshes them on a utility worker one at a time, and schedules a rescan when they
+    changed. Warp users still see the prompt once — Kannu keeps working while it is up, and a
+    "Don't Allow" simply leaves the Warp source empty.
+  - `docs/REGRESSIONS.md` entry 11 records the rule for every passive source; a test pins the
+    mapping as file-free.
+
+### 2026-09-08 - Cache Claude Desktop audit reads; review follow-ups
+- **Developer label:** can you look at the code rabbit comments
+- **Agent label:** Act on the CodeRabbit review of PR #23
+- **Changes:**
+  - `ClaudeDesktopAgentSessionStore` now caches each parsed `audit.jsonl` against `(mtime, size)`,
+    the same shape `AgentSessionLogParser` uses for its tail-state and title reads. Every full
+    rescan was re-reading 32 KB leading + 16 KB trailing per file, up to 24 files, synchronously on
+    the main actor — and FSEvents watches that root, so an appending session scheduled another pass
+    every 0.35 s. Nothing in `Parsed` depends on the clock (the age ladder is applied by the caller
+    from the file's mtime), so a hit is exact; a new test pins both the hit and the invalidation.
+  - `scripts/create-dmg.sh` warns when an explicit `DMG_SIGN_IDENTITY` is not a Developer ID
+    Application certificate, and the comment now records why the override is deliberately
+    unfiltered: the release workflow never sets it — it resolves its own Developer ID identity and
+    calls this script bare — so the override serves local runs, where the documented identity is the
+    self-signed "Kannu Dev" cert. Refusing anything but Developer ID would break that case.
+  - Three title fixtures in `AgentSessionLogParserTests` spelled the field `title`; Claude writes
+    `aiTitle` / `customTitle`. The tests assert tail state and pass either way, but a fixture that
+    misstates the schema misleads the next reader.
+
+### 2026-09-08 - Hide Kannu's own /usage probe; keep ended chats listed for 69 seconds
+- **Developer label:** write condition to ignore our /usage call from our chat detection of cluade; also when something is red and ended, persist it in recent chats for 69 seconds
+- **Agent label:** Recognise the usage probe by process ancestry and remember its id; retain a red-then-gone chat as a dim card for 69 s
+- **Changes:**
+  - The manual usage refresh spawns an interactive `claude` and types `/usage`; that session
+    registered like any other and showed as a phantom "Untitled chat" while it ran and a stopped
+    card afterwards. The passive Claude path now recognises a session whose process descends from
+    Kannu itself (parent-chain walk, same sysctl idiom as the click-through host lookup), skips it,
+    and records its conversation id in `Defaults[.claudeUsageProbeConversationIDs]` (capped at 32)
+    so the dead session file and the probe's own hook file are ignored afterwards too. The spawn is
+    untouched — REGRESSIONS entry 8 — and deliberately so: giving the probe its own working directory
+    would raise Claude Code's "trust this folder?" dialog, which would swallow the typed `/usage`.
+  - A chat that was visibly red and then vanished (SessionEnd deleted its file, or its collapse and
+    dim windows elapsed) now stays in Recent chats as a dim inactive card for 69 seconds
+    (`AgentTrafficLightMapper.retainEndedSessions`, pure). The copy is `.inactive`, so the traffic
+    light, caffeinate and the primary-session pick ignore it; it is dropped the moment the
+    conversation is live or red again. The retained card keeps its "· N tool errors" suffix.
+  - Tests: `RecentChatsRetentionTests` (7) and `UsageProbeExclusionTests` (3).
+
+### 2026-09-08 - Name Claude chats the way Claude does
+- **Developer label:** also chat names, why do they not match the labels in claude
+- **Agent label:** Read `custom-title` before `ai-title` when naming a Claude session
+- **Changes:**
+  - Claude Code keeps two title records per transcript, rewritten every turn: `custom-title`
+    (`customTitle`, what the desktop app and `/resume` display, user-renamable) and `ai-title`
+    (`aiTitle`, the model's own name). Kannu read only `ai-title` and otherwise fell back to the first
+    prompt, so a renamed chat showed the model's name and a chat with only a custom title showed a
+    prompt fragment — three of the four newest transcripts on this Mac had no `ai-title` at all.
+  - `AgentSessionLogParser.claudeTitle(fromRecordText:)` (new, pure) scans both records from the
+    leading and trailing bytes as before and returns the last custom title, else the last AI title;
+    `displayChatName` keeps the prompt fallback. Five tests pin the precedence.
+  - The tail read escalates through the tail-state reader's windows (16 KB → 256 KB → 1 MB) until a
+    chunk carries a title record: a turn's last records are often large tool results, and on this
+    Mac the newest title sat 7–31 KB before EOF, so the fixed 16 KB window returned an older copy or
+    nothing. The verdict is cached per file against (mtime, size), like the tail state, so quiet
+    sessions cost a stat. Verified on the four newest transcripts: all four names now equal Claude's.
+
+### 2026-09-08 - Weekly usage bar takes the freshest reading, not the highest-ranked source
+- **Developer label:** also see if there is a regression for 5 hour session bar in claude
+- **Agent label:** Merge Claude usage windows per key by newest observation; source order only breaks ties
+- **Changes:**
+  - The 5-hour bar itself had not regressed: with the real files on this Mac, HEAD's merge ladder
+    yields five_hour 11 % from the desktop history with a 13:14 reset, matching the app's own samples
+    (0 % right after wake, 11 % fifteen minutes later). What was on screen was an old debug build
+    from 2026-09-02 03:41 (`com.kannu.app.dev`, hook script v29, usage script v3, "Session" label,
+    codename Fiji) that predates every usage-card change since — replaced by a current dev build.
+  - The trace did find a real bug: `ClaudeUsageSnapshot.merged` took each window from the first
+    source in which it was live, and "live" only means the reset has not passed. The cache's
+    `seven_day` fetched six days earlier (20 %) therefore beat the desktop history's sample from
+    thirty minutes earlier (31 %) until the cache lapsed on 09-09. Each key now goes to the source
+    with the newest `observedAt`; rank (statusline, cache, desktop) only breaks ties, lapsed copies
+    still never win, and output order still follows rank so the gauges do not reshuffle. Three new
+    `ClaudeUsageSnapshotTests` cases pin it; the existing rank test already used equal timestamps.
+
+### 2026-09-08 - Warp and Claude Desktop agent mode as sources; tool errors on a red light
+- **Developer label:** also just checks its coverage for the agents and see what all we can upgrade for the ones that we cover now; add Warp; does that mean we have way to show errors happening and success-full end
+- **Agent label:** Add Warp and Claude Desktop agent mode as passive sources; count tool failures per turn so a stopped light says whether the turn went well
+- **Changes:**
+  - `WarpAgentStore` (new): passive source over `warp.sqlite` (read-only, WAL honoured — never
+    `immutable=1`, the WAL was 173 MB here). `ai_queries.output_status` maps Pending → executing only
+    while younger than the 360 s active window *and* Warp is running (stale Pending rows are
+    interrupted runs), Completed → stopped, Cancelled → aborted, Failed → stopped with one tool error.
+    Newest exchange per conversation; the prompt's first 60 characters name the chat (Warp has no
+    titles). 2 s query cache because the WAL fires FSEvents on every write. Warp has no hook API, so
+    yellow is never claimed.
+  - `ClaudeDesktopAgentSessionStore` (new): passive source over `local-agent-mode-sessions/**/audit.jsonl`
+    (interactive `local_<uuid>/`, dispatch `agent/local_ditto_<uuid>/`). `system:init` gives model and
+    cwd; the newest conversational record gives the state; `result` `is_error` and `tool_result`
+    `is_error` count tool errors per turn; a `rate_limit_event` with status `rejected` →
+    `quota_exceeded`. **No utilization percent exists in that payload (verified in CLI 2.1.263), so
+    this does not replace `/usage`.** Runtime-unverified: no agent-mode data on this Mac; fixture
+    tests only.
+  - Turn outcome: hook script v31 (embedded + mirror, byte-identical) counts `PostToolUseFailure` /
+    `postToolUseFailure` / `StopFailure` into `tool_errors` (reset on `UserPromptSubmit` /
+    `beforeSubmitPrompt`, `is_interrupt` excluded), and the Claude hook table gains
+    `PostToolUseFailure`. A red light now reads "Stopped" or "Stopped · N tool errors". Antigravity's
+    `Stop` with an `error` counts too. `AgentSessionStatus.toolErrorCount` is additive, so every
+    memberwise reconstruction goes through `carryingExtras(from:)` and the reconciler carries it
+    across the hook/passive seam (REGRESSIONS entry 7 field set grows).
+  - Both new providers get icons, click-through (activate/launch by bundle id; Claude Desktop is
+    never handed a folder), a "Detected Editors" entry, a place in the notch's empty state, and
+    FSEvents watches on their directories when present.
+  - Tests: 1 new hook-script case (payloads now serialized, not hand-written — a raw-string literal
+    ending in a quote lost that quote to its terminator and produced invalid JSON), 7 Claude Desktop,
+    10 Warp (fixture DB), plus the reconciler's inheritance assertion.
+
+### 2026-09-03 - Sign the release DMG; flag that REGRESSIONS hashes predate the history reset
+- **Developer label:** raise pr for this
+- **Agent label:** Sign the disk image before notarization; note the 2026-09-03 reset in REGRESSIONS
+- **Changes:**
+  - `create-dmg.sh` now signs the disk image with a Developer ID identity before it is handed to
+    notarization. The app inside was already signed and `notarize-dmg.sh` already staples the ticket,
+    but the DMG itself carried no signature at all, so signature-based checks (`spctl -a -t open`,
+    some enterprise tooling) reported "no usable signature" on a published build. Signing is optional
+    by design: CI has a Developer ID cert in its temporary keychain, a local `build-dmg.sh` run
+    usually does not, so the script skips with a notice instead of failing. Order matters and is
+    unchanged — sign, then notarize, then staple, which leaves the signature valid.
+  - `docs/REGRESSIONS.md` says up front that the commit hashes it cites predate the 2026-09-03
+    history reset and no longer resolve in a fresh clone. The rules and guards are unaffected; only
+    the provenance links are dead.
+
 ### 2026-09-03 - Name releases after watchers; 1.2.0 is Argus
 - **Developer label:** avoid atoll style naming and do something else we made first version fiji mistakenly
 - **Agent label:** Replace the inherited island codename with a Kannu scheme, shown in About and the release title

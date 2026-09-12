@@ -13,6 +13,17 @@ final class AgentStatusNotificationBridge: ObservableObject {
     private var debounceTask: Task<Void, Never>?
     private var lastNotifiedState: AgentTrafficLightState?
     private let debounceInterval: TimeInterval = 2.0
+    /// Findings already pushed, persisted and pruned to what is still open so a relaunch stays
+    /// quiet and a finding that returns after vanishing is pushed once more.
+    private var pushedFindingIDs: Set<String> = Set(Defaults[.adrPushedFindingIDs])
+    /// Usage windows already pushed, one key per window instance (see `UsageAlertPolicy.pushKey`).
+    private var pushedUsageKeys: Set<String> = Set(Defaults[.usageAlertPushedKeys])
+    private var waitReminder = AgentWaitReminder()
+    /// Overdue waits seen shortly after start are marked, not pushed (no burst on relaunch).
+    private var suppressOverdueUntil: Date = .distantPast
+    private var waitRecheckTask: Task<Void, Never>?
+    private var waitRecheckDate: Date?
+    private var waitRemindersEnabled = false
 
     private init() {}
 
@@ -30,6 +41,31 @@ final class AgentStatusNotificationBridge: ObservableObject {
         Defaults.publisher(.enableAgentStatusMobileNotifications, options: [])
             .sink { [weak self] _ in
                 self?.lastNotifiedState = nil
+                Task { @MainActor in self?.handleWaitReminders(CursorAgentStatusMonitor.shared.sessions) }
+            }
+            .store(in: &cancellables)
+
+        // Security findings ride on the findings store, not on the traffic light.
+        let store = SecurityFindingsStore.shared
+        store.$findings.map { _ in () }
+            .merge(with: store.$acknowledgedIDs.map { _ in () }, store.$snoozes.map { _ in () })
+            .sink { [weak self] in self?.handleFindingsChange() }
+            .store(in: &cancellables)
+
+        UsageAlertManager.shared.$nearLimit
+            .sink { [weak self] near in self?.handleUsageAlerts(near) }
+            .store(in: &cancellables)
+
+        // "Still waiting on you" needs per-session wait times, not the aggregate light.
+        waitReminder = AgentWaitReminder()
+        waitRemindersEnabled = false
+        suppressOverdueUntil = Date().addingTimeInterval(15)
+        CursorAgentStatusMonitor.shared.$sessions
+            .sink { [weak self] sessions in self?.handleWaitReminders(sessions) }
+            .store(in: &cancellables)
+        Defaults.publisher(.agentWaitReminderMinutes, options: [])
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.handleWaitReminders(CursorAgentStatusMonitor.shared.sessions) }
             }
             .store(in: &cancellables)
     }
@@ -37,8 +73,142 @@ final class AgentStatusNotificationBridge: ObservableObject {
     func stop() {
         debounceTask?.cancel()
         debounceTask = nil
+        waitRecheckTask?.cancel()
+        waitRecheckTask = nil
+        waitRecheckDate = nil
+        waitReminder = AgentWaitReminder()
         cancellables.removeAll()
         lastNotifiedState = nil
+    }
+
+    // MARK: - Still waiting on you
+
+    private func handleWaitReminders(_ sessions: [AgentSessionStatus], now: Date = Date()) {
+        let minutes = Defaults[.agentWaitReminderMinutes]
+        let threshold: TimeInterval? = Defaults[.enableAgentStatusMobileNotifications] && minutes > 0 ? TimeInterval(minutes * 60) : nil
+        // Waits already overdue when reminders switch on (launch, or the setting just turned on)
+        // are marked, not pushed: changing a setting never fires an instant push.
+        let turningOn = threshold != nil && !waitRemindersEnabled
+        waitRemindersEnabled = threshold != nil
+        let due = waitReminder.update(sessions, now: now, threshold: threshold,
+                                      suppressOverdue: turningOn || now < suppressOverdueUntil)
+        // The session list does not republish when a wait crosses the threshold: arm that moment.
+        // Re-armed only when the moment changes, not on every rescan.
+        let next = threshold.flatMap { waitReminder.nextCheck(now: now, threshold: $0) }
+        if next != waitRecheckDate {
+            waitRecheckTask?.cancel()
+            waitRecheckTask = nil
+            waitRecheckDate = next
+            if let next {
+                let delay = max(1, next.timeIntervalSince(now) + 1)
+                waitRecheckTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .seconds(delay))
+                    guard !Task.isCancelled else { return }
+                    self?.waitRecheckDate = nil
+                    self?.handleWaitReminders(CursorAgentStatusMonitor.shared.sessions)
+                }
+            }
+        }
+        guard !due.isEmpty else { return }
+        Task { [weak self] in
+            for reminder in due { await self?.deliverWaitReminder(reminder) }
+        }
+    }
+
+    /// The app's name and how long — never the chat's name.
+    private func deliverWaitReminder(_ reminder: AgentWaitReminder.Due) async {
+        let app = AgentSessionStatus.providerLabel(for: reminder.provider)
+        let payload = NotificationPayload(
+            title: String(localized: "Still waiting on you"),
+            body: String(localized: "\(app) has waited \(reminder.minutes) minutes for your answer."),
+            priority: 4,
+            tag: "still-waiting"
+        )
+        await send(payload, webhookState: "still_waiting", extra: ["provider": reminder.provider, "minutes": reminder.minutes])
+    }
+
+    // MARK: - Security findings
+
+    private func handleFindingsChange() {
+        guard Defaults[.enableAgentStatusMobileNotifications], Defaults[.adrPushHighFindings] else { return }
+        let ranking = SecurityFindingsStore.shared.ranking
+        let candidates = ranking.visible.filter {
+            $0.severity == .high || ($0.severity == .medium && Defaults[.adrPushMediumFindings])
+        }
+        pushedFindingIDs.formIntersection(Set(candidates.map(\.id)))
+        let fresh = candidates.filter { !pushedFindingIDs.contains($0.id) }
+        pushedFindingIDs.formUnion(fresh.map(\.id))
+        let persisted = pushedFindingIDs.sorted()
+        if persisted != Defaults[.adrPushedFindingIDs] { Defaults[.adrPushedFindingIDs] = persisted }
+        guard !fresh.isEmpty else { return }
+        Task { [weak self] in
+            for finding in fresh { await self?.deliverFinding(finding) }
+        }
+    }
+
+    private func deliverFinding(_ finding: AgentSecurityFinding) async {
+        let payload = NotificationPayload(
+            title: String(localized: "Security finding: \(finding.title)"),
+            body: finding.summary,
+            priority: finding.severity == .high ? 5 : 4,
+            tag: "security-finding"
+        )
+        await send(payload, webhookState: "security_finding", extra: [
+            "rule": finding.rule,
+            "severity": finding.severity == .high ? "high" : "medium",
+            // Not "source": the base body's "source": "Kannu" wins that merge and dropped it.
+            "finding_source": finding.source.rawValue,
+            "asset": finding.assetName ?? "",
+            "summary": finding.summary
+        ])
+    }
+
+    /// One delivery through whichever provider the user configured; records the outcome.
+    private func send(_ payload: NotificationPayload, webhookState: String, extra: [String: Any]) async {
+        do {
+            switch Defaults[.agentStatusNotificationProvider] {
+            case .ntfy:
+                try await sendViaNtfy(payload: payload)
+            case .pushover:
+                try await sendViaPushover(payload: payload)
+            case .webhook:
+                try await sendViaWebhook(payload: payload, stateKey: webhookState, extra: extra)
+            }
+            lastError = nil
+            lastSentAt = .now
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    // MARK: - Usage limits
+
+    /// Once per window instance, pruned to windows still near their limit so the next cycle of
+    /// the same window can push again. Provider, window and reset only — no chat names.
+    private func handleUsageAlerts(_ near: [UsageWindowReading]) {
+        pushedUsageKeys.formIntersection(Set(near.map(UsageAlertPolicy.pushKey)))
+        var fresh: [UsageWindowReading] = []
+        if Defaults[.enableAgentStatusMobileNotifications], Defaults[.pushUsageLimitAlerts] {
+            fresh = near.filter { !pushedUsageKeys.contains(UsageAlertPolicy.pushKey($0)) }
+            pushedUsageKeys.formUnion(fresh.map(UsageAlertPolicy.pushKey))
+        }
+        let persisted = pushedUsageKeys.sorted()
+        if persisted != Defaults[.usageAlertPushedKeys] { Defaults[.usageAlertPushedKeys] = persisted }
+        guard !fresh.isEmpty else { return }
+        Task { [weak self] in
+            for reading in fresh { await self?.deliverUsageAlert(reading) }
+        }
+    }
+
+    private func deliverUsageAlert(_ reading: UsageWindowReading) async {
+        let text = UsageAlertPolicy.pushText(reading, now: Date())
+        let payload = NotificationPayload(title: text.title, body: text.body, priority: 4, tag: "usage-limit")
+        await send(payload, webhookState: "usage_limit", extra: [
+            "provider": reading.provider,
+            "window": reading.key,
+            "percent": Int(reading.percent.rounded()),
+            "resets_at": reading.resetsAt.map { ISO8601DateFormatter().string(from: $0) } ?? ""
+        ])
     }
 
     func sendTestNotification() async {
@@ -71,7 +241,7 @@ final class AgentStatusNotificationBridge: ObservableObject {
             case .pushover:
                 try await sendViaPushover(payload: payload)
             case .webhook:
-                try await sendViaWebhook(payload: payload, state: state)
+                try await sendViaWebhook(payload: payload, stateKey: state.notificationKey)
             }
             lastError = nil
             lastSentAt = .now
@@ -206,7 +376,7 @@ final class AgentStatusNotificationBridge: ObservableObject {
         }
     }
 
-    private func sendViaWebhook(payload: NotificationPayload, state: AgentTrafficLightState) async throws {
+    private func sendViaWebhook(payload: NotificationPayload, stateKey: String, extra: [String: Any] = [:]) async throws {
         let webhook = SecureSecretsStore.value(for: .webhookURL).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !webhook.isEmpty, SecurityURLPolicy.isAllowedWebhookURL(webhook), let url = URL(string: webhook) else {
             throw BridgeError.missingConfiguration("Webhook URL is required")
@@ -215,13 +385,14 @@ final class AgentStatusNotificationBridge: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let body: [String: Any] = [
-            "state": state.notificationKey,
+        var body: [String: Any] = [
+            "state": stateKey,
             "title": payload.title,
             "body": payload.body,
             "timestamp": ISO8601DateFormatter().string(from: .now),
             "source": "Kannu"
         ]
+        body.merge(extra) { current, _ in current }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (_, response) = try await URLSession.shared.data(for: request)

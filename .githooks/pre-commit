@@ -30,6 +30,31 @@ EOF
     exit 1
   fi
 fi
+
+# --- Hook-script body parity and the no-backslash rule -------------------------
+# The markers above only catch a missing version bump. The bodies must be byte-identical too
+# (after the embedded copy's 8-space indent), and the Python must contain no backslash: the
+# embedded copy is a plain Swift string literal, where "\n" becomes a newline and "\U" does not
+# compile. Build code points with chr(). See docs/REGRESSIONS.md entry 1.
+if [[ -f "${installer_script}" && -f "${mirror_script}" ]]; then
+  mirror_body="$(awk "/^python3 <<'PY'\$/{f=1;next} /^PY\$/{f=0} f" "${mirror_script}")"
+  if [[ "${mirror_body}" == *\\* ]]; then
+    echo "ERROR: ${mirror_script} has a backslash in its Python body. The embedded Swift literal cannot carry one; use chr()."
+    exit 1
+  fi
+  installer_marker="$(grep -o 'KANNU_HOOK_SCRIPT_VERSION=[0-9]*' "${installer_script}" | head -1 || true)"
+  embedded_body="$(awk '/let script = """$/ && !seen {seen=1; f=1; next} f && /^        """$/ {exit} f' "${installer_script}" \
+    | sed -e 's/^        //' -e "s/\\\\(scriptVersionMarker)/${installer_marker}/")"
+  if [[ "${embedded_body}" != "$(cat "${mirror_script}")" ]]; then
+    cat <<EOF
+ERROR: the hook script body in ${installer_script} differs from ${mirror_script}.
+
+Regenerate the embedded copy from the mirror (8-space indent, marker line replaced by the
+interpolation), then re-stage both. See docs/REGRESSIONS.md entry 1.
+EOF
+    exit 1
+  fi
+fi
 # The Claude statusline script has the same two-copy shape (writeUsageScript embeds it,
 # scripts/kannu-usage-status.sh mirrors it) and drifted unnoticed until v4 because only the
 # agent-status pair was checked. Same rule, same fix.
