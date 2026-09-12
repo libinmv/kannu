@@ -80,12 +80,14 @@ final class MemoryUsageMonitor {
     private func presentRestartAlert(currentUsage: UInt64) {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "DynamicIsland memory usage is high"
+        alert.messageText = "Kannu memory usage is high"
         alert.informativeText = "The app is currently using \(formatMegabytes(currentUsage)) MB, which exceeds the safe limit of \(formatMegabytes(thresholdBytes)) MB. Restart now to free memory?"
         alert.addButton(withTitle: "Restart Now")
         alert.addButton(withTitle: "Later")
 
-        let response = alert.runModal()
+        // Nothing the user did triggers this, so it must be visible and in front; the restart
+        // decision is needed here, so it stays app-modal.
+        let response = ModalPresenter.runAppModal(alert)
         if response == .alertFirstButtonReturn {
             relaunchApplication()
         } else {

@@ -97,28 +97,38 @@ class ScreenshotSnippingTool: NSObject, ObservableObject {
     }
     
     // MARK: - ScreenshotApp-Style Implementation
+    /// Runs `screencapture` on a background queue and comes back to the main queue for the result.
+    ///
+    /// `-cs` and `-cw` are interactive: the tool waits for the user to drag a region or click a
+    /// window, with no timeout. Waiting for that on the main thread parked the whole app — notch,
+    /// HUDs, timers and this very panel stopped drawing for as long as the user hesitated over the
+    /// crosshair, which is indistinguishable from the modal-picker freeze.
     private func takeScreenshot(type: ScreenshotType) {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
         task.arguments = type.processArguments
-        
-        do {
-            print("📸 ScreenshotTool: Running screencapture \(type.processArguments.joined(separator: " ")) command")
-            try task.run()
-            task.waitUntilExit()
-            
-            // Process completed - check if successful
-            if task.terminationStatus == 0 {
-                print("✅ ScreenshotTool: screencapture completed successfully")
-                getImageFromPasteboard()
-            } else {
-                print("❌ ScreenshotTool: screencapture failed with status: \(task.terminationStatus)")
-                finishSnipping()
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            do {
+                print("📸 ScreenshotTool: Running screencapture \(type.processArguments.joined(separator: " ")) command")
+                try task.run()
+                task.waitUntilExit()
+                let status = task.terminationStatus
+
+                DispatchQueue.main.async {
+                    if status == 0 {
+                        print("✅ ScreenshotTool: screencapture completed successfully")
+                        self.getImageFromPasteboard()
+                    } else {
+                        print("❌ ScreenshotTool: screencapture failed with status: \(status)")
+                        self.finishSnipping()
+                    }
+                }
+            } catch {
+                print("❌ ScreenshotTool: Failed to run screencapture: \(error)")
+                DispatchQueue.main.async { self.finishSnipping() }
             }
-            
-        } catch {
-            print("❌ ScreenshotTool: Failed to run screencapture: \(error)")
-            finishSnipping()
         }
     }
     

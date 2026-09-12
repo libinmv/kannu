@@ -456,7 +456,7 @@ struct NotchAgentStatusView: View {
             let alert = NSAlert()
             alert.messageText = String(localized: "Cannot analyse this chat")
             alert.informativeText = failure.message
-            alert.runModal()
+            ModalPresenter.present(alert)
         case .success(let plan):
             guard detectionConfirmEachRun else { findingsStore.runAnalysis(plan); return }
             let options = SecurityFindingsStore.analysisOptions()
@@ -471,7 +471,9 @@ struct NotchAgentStatusView: View {
             alert.addButton(withTitle: String(localized: "Cancel"))
             alert.showsSuppressionButton = true
             alert.suppressionButton?.title = String(localized: "Don't ask again for each chat")
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            // The notch window sits at `.mainMenu + 3`, so an alert at the default level rendered
+            // behind it: a stopped app and no dialog. `runAppModal` activates and raises first.
+            guard ModalPresenter.runAppModal(alert) == .alertFirstButtonReturn else { return }
             if alert.suppressionButton?.state == .on { detectionConfirmEachRun = false }
             findingsStore.runAnalysis(plan)
         }

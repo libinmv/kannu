@@ -180,3 +180,4 @@ __pycache__/
 # Throwaway derived-data paths used while verifying and releasing locally
 .build-verify/
 .build-release/
+.build-tests/

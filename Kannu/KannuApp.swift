@@ -1349,7 +1349,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         alert.messageText = "Logs Exported"
                         alert.informativeText = "Logs and crash reports have been successfully exported to \(url.lastPathComponent)."
                         alert.alertStyle = .informational
-                        alert.runModal()
+                        ModalPresenter.present(alert)
                     }
                 } catch {
                     DispatchQueue.main.async {
@@ -1357,7 +1357,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         alert.messageText = "Export Failed"
                         alert.informativeText = "Failed to export logs: \(error.localizedDescription)"
                         alert.alertStyle = .critical
-                        alert.runModal()
+                        ModalPresenter.present(alert)
                     }
                 }
             }

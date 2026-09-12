@@ -312,11 +312,19 @@ final class ExtensionRPCServer {
             server: self
         )
 
-        let responseData = service.handleRequest(request)
-        sendRawData(responseData, to: connID)
+        if let responseData = service.handleRequest(request) {
+            sendRawData(responseData, to: connID)
+        }
     }
 
     // MARK: - Send Helpers
+
+    /// Writes a reply for a request whose handler had to wait for the user (the file picker).
+    /// The response still carries the original request id, so the client matches it as usual.
+    func sendDeferredResponse(_ response: Codable, to bundleIdentifier: String) {
+        guard let connID = activeConnectionByBundleIdentifier[bundleIdentifier] else { return }
+        sendResponse(response, to: connID)
+    }
 
     private func sendResponse(_ response: Codable, to connID: UUID) {
         guard let data = try? encoder.encode(response) else { return }

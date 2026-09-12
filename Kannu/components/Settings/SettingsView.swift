@@ -5397,6 +5397,7 @@ private struct LockScreenPositioningPreview: View {
     }
 }
 
+@MainActor
 private func copyLatestCrashReport() {
     let crashReportsPath = NSString(string: "~/Library/Logs/DiagnosticReports").expandingTildeInPath
     let fileManager = FileManager.default
@@ -5412,7 +5413,7 @@ private func copyLatestCrashReport() {
             alert.messageText = "No Crash Reports Found"
             alert.informativeText = "No crash reports found for Kannu"
             alert.alertStyle = .informational
-            alert.runModal()
+            ModalPresenter.present(alert)
             return
         }
 
@@ -5426,13 +5427,13 @@ private func copyLatestCrashReport() {
         alert.messageText = "Crash Report Copied"
         alert.informativeText = "Crash report '\(latestCrash)' has been copied to clipboard"
         alert.alertStyle = .informational
-        alert.runModal()
+        ModalPresenter.present(alert)
     } catch {
         let alert = NSAlert()
         alert.messageText = "Error"
         alert.informativeText = "Failed to read crash reports: \(error.localizedDescription)"
         alert.alertStyle = .warning
-        alert.runModal()
+        ModalPresenter.present(alert)
     }
 }
 
@@ -5987,7 +5988,7 @@ struct TimerSettings: View {
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
 
-        SettingsFilePicker.present(panel) { response in
+        ModalPresenter.present(panel) { response in
             guard response == .OK, let url = panel.url else { return }
             customTimerSoundPath = url.path
         }
@@ -8198,7 +8199,7 @@ struct AgentStatusSettings: View {
         panel.allowsMultipleSelection = false
         panel.prompt = String(localized: "Use checkout")
         panel.message = String(localized: "Choose the ADR/Detection folder you cloned and synced with uv")
-        SettingsFilePicker.present(panel) { response in
+        ModalPresenter.present(panel) { response in
             guard response == .OK, let url = panel.url else { return }
             adrDetectionCheckout = url.path
             adr.checkDetection()
@@ -8244,7 +8245,7 @@ struct AgentStatusSettings: View {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = String(localized: "Use folder")
-        SettingsFilePicker.present(panel) { response in
+        ModalPresenter.present(panel) { response in
             guard response == .OK, let url = panel.url else { return }
             adrToolDirectory = url.path
             adr.checkAgain()
@@ -8327,7 +8328,7 @@ struct AgentStatusSettings: View {
         panel.allowsMultipleSelection = false
         panel.allowedContentTypes = [.json]
         panel.prompt = String(localized: "Use policy")
-        SettingsFilePicker.present(panel) { response in
+        ModalPresenter.present(panel) { response in
             guard response == .OK, let url = panel.url else { return }
             adrPolicyFile = url.path
         }
@@ -8341,7 +8342,7 @@ struct AgentStatusSettings: View {
         panel.allowsMultipleSelection = false
         panel.directoryURL = SecurityFindingsStore.snapshotDirectory
         panel.prompt = String(localized: "Use folder")
-        SettingsFilePicker.present(panel) { response in
+        ModalPresenter.present(panel) { response in
             guard response == .OK, let url = panel.url else { return }
             adrSnapshotDirectory = url.path
             findingsStore.directoryChanged()

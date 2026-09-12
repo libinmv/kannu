@@ -4,6 +4,40 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-12 - Every panel and alert goes through one door
+- **Developer label:** "this wont happen again later for other users right ?"
+- **Agent label:** Follow-up 34 — an app-wide audit of every way the main thread can wedge
+- **Changes:**
+  - The five Settings pickers were fixed; an audit of the rest of the app found four more sites
+    that freeze it the same way, and one of them needs no unusual configuration at all. All of
+    them now present through the new `ModalPresenter` (`Kannu/helpers/ModalPresenter.swift`,
+    renamed and generalised from `SettingsFilePicker`), which never runs a file panel modally and
+    never anchors a sheet to a window that cannot be focused.
+  - `ScreenshotSnippingTool` ran `screencapture -cs` / `-cw` and then `waitUntilExit()` on the
+    main thread. Both are interactive with no timeout, so the notch, the HUDs, the timers and the
+    chat panel stopped drawing for as long as the user hesitated over the crosshair — the picker
+    freeze with a different cause. The process now runs on a background queue.
+  - `ExtensionRPCService.handleShowFilePicker` ran a panel modally on the main actor in response
+    to a WebSocket message, so nothing had brought Kannu forward: the panel sat behind whatever
+    app the user was in, with no click of their own to explain the stall. It presents
+    asynchronously now and writes its reply from the completion handler — `handleRequest` returns
+    nil for a deferred answer and `ExtensionRPCServer.sendDeferredResponse` sends it, still
+    carrying the request's id, which is what JSON-RPC asks for.
+  - `AddFilesButton` (ScreenAssistant) had a bare `runModal()` in its fallback and anchored its
+    sheet to `NSApp.keyWindow` — which here is only ever a borderless, non-activating chat panel.
+  - `QuickShareService.showFilePicker` took the `runModal()` branch on a fast first click, because
+    `hostView` is nil for a main-queue hop after the shelf first lays out; the other branch hung a
+    sheet on the notch panel at `.mainMenu + 3`.
+  - Eleven `NSAlert.runModal()` sites, none of which attached to a window or activated the app
+    first. In an accessory app whose only windows sit at `.mainMenu + 3`, an alert at the default
+    level renders *underneath the notch*: the app stops and there is no dialog to dismiss. They
+    are sheets when a titled window is up, and otherwise activated and raised above Kannu's own
+    windows. Affected: the notch's ADR Detection consent and failure alerts, the memory-usage
+    restart prompt (raised by a background poll, so the user had no action to connect it to), the
+    Shelf's error and image-conversion alerts, the Full Disk Access prompt reached from the
+    status-item menu, the export-logs result alerts, and the Settings crash-report alerts.
+  - Also here: the memory alert said "DynamicIsland", a name from before the fork.
+
 ### 2026-09-12 - Settings file pickers stop freezing the app
 - **Developer label:** "when clicking on policy upload it crashed the app" / "app is stuck"
 - **Agent label:** Follow-up 33 — caught live: a sample of the stuck process parked in choosePolicyFile
