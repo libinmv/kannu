@@ -73,6 +73,9 @@ class BluetoothAudioManager: ObservableObject {
     private var isPmsetRefreshInFlight = false
     private var lastPmsetRefreshDate: Date?
     private let pmsetRefreshCooldown: TimeInterval = 5
+    /// True while a forced battery scan is running on `pmsetFetchQueue`, so a burst of connect
+    /// notifications spawns one `system_profiler` rather than one per notification.
+    private var isForcedBatteryRefreshInFlight = false
     private var hudBatteryWaitTasks: [UUID: Task<Void, Never>] = [:]
     private let hudBatteryWaitInterval: TimeInterval = 0.3
     private let hudBatteryWaitTimeout: TimeInterval = 1.8
@@ -806,13 +809,52 @@ class BluetoothAudioManager: ObservableObject {
         }
     }
 
+    /// Refreshes the battery levels shown for connected devices.
+    ///
+    /// The forced variant used to run on whatever thread called it, and `updateBatteryStatuses`
+    /// collects inline: `system_profiler SPBluetoothDataType` and `pmset -g accps`, spawned and
+    /// waited on. Every caller but one is the main thread — a connect, a disconnect, or the
+    /// lock-screen weather refresh — so the app froze for as long as those took, which on a real
+    /// connect is the 2-8 s this project already measured (`HangReport.hangThreshold` was set above
+    /// it). The stall landed immediately before `showDeviceConnectedHUD`, so plugging in AirPods
+    /// killed the notch for a few seconds and *then* announced them.
+    ///
+    /// Now the cached values are applied straight away — on a repeat connect they are usually
+    /// already there, so the first frame is unchanged — and the expensive collection happens on
+    /// `pmsetFetchQueue`, with the result applied on the main actor.
+    ///
+    /// Strictly fire-and-forget: `updateBatteryStatuses` publishes through
+    /// `DispatchQueue.main.sync`, so anything that waits for it from the main thread deadlocks.
     private func refreshBatteryLevelsForConnectedDevices(forceCacheRefresh: Bool = true) {
-        if forceCacheRefresh {
-            updateBatteryStatuses(force: true)
+        guard forceCacheRefresh else {
+            applyConnectedDeviceBatteryLevels()
+            triggerLiveBatteryRefreshIfNeeded()
+            return
         }
 
         applyConnectedDeviceBatteryLevels()
         triggerLiveBatteryRefreshIfNeeded()
+
+        // AirPods announce in bursts, so a single physical connect can ask for this several times.
+        // One scan at a time; the others would only re-read what it is already fetching.
+        guard !isForcedBatteryRefreshInFlight else { return }
+        isForcedBatteryRefreshInFlight = true
+
+        pmsetFetchQueue.async { [weak self] in
+            guard let self else { return }
+            self.updateBatteryStatuses(force: true)
+            DispatchQueue.main.async {
+                self.isForcedBatteryRefreshInFlight = false
+                self.applyConnectedDeviceBatteryLevels()
+                self.triggerLiveBatteryRefreshIfNeeded()
+                // The HUD's own wait tops out at `hudBatteryWaitTimeout`, which is shorter than a
+                // cold `system_profiler`, so a HUD already on screen gets the level patched in the
+                // way `handlePmsetFallbackResults` does.
+                if let level = self.hudBatteryLevelCandidate() {
+                    self.updateActiveBluetoothHUDBattery(with: level)
+                }
+            }
+        }
     }
 
     private func applyConnectedDeviceBatteryLevels(triggerPmsetFallback: Bool = true) {
