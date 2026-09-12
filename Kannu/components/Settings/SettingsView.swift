@@ -1162,20 +1162,22 @@ struct GeneralSettings: View {
                 }
                 .settingsHighlight(id: highlightID("Where Kannu appears"))
 
-                if displayPlacement == .chooseDisplay {
-                    Picker("Display", selection: $coordinator.preferredScreen) {
-                        ForEach(screens, id: \.self) { screen in
-                            Text(screen)
-                        }
+                // Always mounted, disabled when it does not apply: a row that only exists in one
+                // mode makes its own search entry land on nothing in every other mode, and the
+                // inventory test reads source text so it cannot catch that.
+                Picker("Display", selection: $coordinator.preferredScreen) {
+                    ForEach(screens, id: \.self) { screen in
+                        Text(screen)
                     }
-                    .onChange(of: NSScreen.screens) {
-                        screens = NSScreen.screens.compactMap({ $0.localizedName })
-                    }
-                    .onChange(of: coordinator.preferredScreen) {
-                        NotificationCenter.default.post(name: Notification.Name.displayPlacementChanged, object: nil)
-                    }
-                    .settingsHighlight(id: highlightID("Display"))
                 }
+                .onChange(of: NSScreen.screens) {
+                    screens = NSScreen.screens.compactMap({ $0.localizedName })
+                }
+                .onChange(of: coordinator.preferredScreen) {
+                    NotificationCenter.default.post(name: Notification.Name.displayPlacementChanged, object: nil)
+                }
+                .disabled(displayPlacement != .chooseDisplay)
+                .settingsHighlight(id: highlightID("Display"))
                 Defaults.Toggle(key: .hideDynamicIslandFromScreenCapture) {
                     Text("Hide Kannu during screenshots & recordings")
                 }
@@ -3225,8 +3227,18 @@ struct About: View {
 
                 SettingsActionRow {
                     Button(copiedReport ? "Copied" : "Copy Latest Report") {
-                        copiedReport = CrashReporter.shared.copyNewestReportToPasteboard()
-                        if !copiedReport { reportCopyFailed = true }
+                        copiedReport = false
+                        reportCopyFailed = false
+                        let copied = CrashReporter.shared.copyNewestReportToPasteboard()
+                        copiedReport = copied
+                        reportCopyFailed = !copied
+                        guard copied else { return }
+                        // Back to the normal label, the way every other copy button in Settings
+                        // behaves; otherwise it reads "Copied" for the life of the window.
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .seconds(2))
+                            copiedReport = false
+                        }
                     }
                 }
                 .settingsHighlight(id: highlightID("Copy Latest Report"))

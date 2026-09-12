@@ -59,8 +59,16 @@ final class CrashReporter {
 
     // MARK: - Lifecycle
 
+    /// When the previous run started. Reports older than this belong to a session the user has
+    /// already lived through, and telling them "Kannu quit unexpectedly last time it ran" about one
+    /// of those is simply false.
+    private var previousLaunch: Date?
+
     func start() {
-        let endedBadly = FileManager.default.fileExists(atPath: Self.runMarker.path)
+        let marker = Self.runMarker
+        let endedBadly = FileManager.default.fileExists(atPath: marker.path)
+        previousLaunch = (try? marker.resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate
         if endedBadly {
             Logger.log("[CrashReporter] The previous run did not exit cleanly", category: .warning)
         }
@@ -140,7 +148,8 @@ final class CrashReporter {
     /// `applicationDidFinishLaunching` would stop the rest of startup.
     func offerNewestReport() {
         guard let (url, report) = Self.newestReport(),
-              Defaults[.lastOfferedCrashReport] != url.lastPathComponent
+              Defaults[.lastOfferedCrashReport] != url.lastPathComponent,
+              isRecent(url)
         else { return }
         Defaults[.lastOfferedCrashReport] = url.lastPathComponent
         present(report, at: url, informative: String(localized: """
@@ -148,6 +157,19 @@ final class CrashReporter {
             GitHub issue with the details filled in — the version, the failure and the stack, with \
             no name and nothing identifying your Mac — for you to read and submit.
             """))
+    }
+
+    /// Whether a diagnostic belongs to the session the user just had.
+    ///
+    /// Anything older than the previous launch is history they have already lived through — on a
+    /// first run with no marker, anything older than a day. Without this, updating to a build that
+    /// has this feature greets the user with a warning about something from months ago.
+    private func isRecent(_ url: URL) -> Bool {
+        guard let written = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate
+        else { return false }
+        let floor = previousLaunch ?? Date().addingTimeInterval(-86_400)
+        return written >= floor
     }
 
     /// About › "Report a problem": the same flow, on demand, whether or not anything crashed.

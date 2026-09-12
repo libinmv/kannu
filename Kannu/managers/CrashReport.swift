@@ -118,6 +118,9 @@ struct CrashReport: Equatable {
         }
 
         let scrub: (String) -> String = { DiagnosticScrub.everything(in: $0, home: home, hostName: hostName) }
+        // `.map(scrub)` at the end, exactly as the textual path does: scrubbing only `messages` and
+        // `frames` left the other eight fields depending on nobody ever putting a path in them,
+        // which is the "a field nobody thought about" asymmetry this type promises not to have.
         return CrashReport(
             kind: .crash,
             sourceName: sourceName,
@@ -128,9 +131,9 @@ struct CrashReport: Equatable {
             architecture: (body["cpuType"] as? String) ?? "unknown",
             modelCode: (body["modelCode"] as? String) ?? "unknown",
             summary: summaryParts.isEmpty ? "unknown failure" : summaryParts.joined(separator: " "),
-            messages: messages.map(scrub),
-            frames: ipsFrames(body: body).map(scrub)
-        )
+            messages: messages,
+            frames: ipsFrames(body: body)
+        ).map(scrub)
     }
 
     private static func ipsSystemVersion(header: [String: Any], os: [String: Any]) -> String {
@@ -259,7 +262,9 @@ struct CrashReport: Equatable {
         "Kannu \(kind.label) — \(summary.prefix(70)) (\(appVersion))"
     }
 
-    static let issueBodyLimit = 6000
+    /// Budgeted against the *raw* body, while what has to fit is the percent-encoded URL — every
+    /// space becomes `%20` and every newline `%0A`, so a stack inflates by about a third.
+    static let issueBodyLimit = 4200
 
     /// The whole report a user sends. Every line here comes from a field this type named, so nothing
     /// arrives by accident.
@@ -300,12 +305,28 @@ struct CrashReport: Equatable {
     }
 
     func issueURL(repository: String) -> URL? {
-        var components = URLComponents(string: "https://github.com/\(repository)/issues/new")
-        components?.queryItems = [
-            URLQueryItem(name: "title", value: issueTitle),
-            URLQueryItem(name: "body", value: issueBody),
-            URLQueryItem(name: "labels", value: kind == .crash ? "crash" : "diagnostic")
-        ]
-        return components?.url
+        let label = kind == .crash ? "crash" : "diagnostic"
+        return GitHubIssue.url(repository: repository, title: issueTitle, body: issueBody, label: label)
+            ?? GitHubIssue.url(repository: repository, title: issueTitle, body: stacklessIssueBody, label: label)
+    }
+
+    /// The body when even a trimmed stack will not fit in a URL. The diagnostic is named so the user
+    /// can attach it.
+    private var stacklessIssueBody: String {
+        """
+        **What happened:** \(alertMessage)
+
+        | | |
+        | --- | --- |
+        | Kannu | \(appVersion) (\(buildNumber)) |
+        | macOS | \(systemVersion) |
+        | Architecture | \(architecture) |
+        | Mac model | \(modelCode) |
+        | Reported | \(recordedAt) |
+        | Failure | \(summary) |
+
+        The stack was too long to carry in a link. The report is `\(sourceName)` in
+        `~/Library/Logs/DiagnosticReports` — please attach it.
+        """
     }
 }

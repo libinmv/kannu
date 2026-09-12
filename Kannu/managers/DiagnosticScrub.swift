@@ -48,12 +48,25 @@ enum DiagnosticScrub {
     /// The computer's name, which macOS puts in every diagnostic *file name*
     /// (`Kannu_2026-09-12-033808_Davids-MacBook-Pro.cpu_resource.diag`) and which is usually the
     /// owner's own name.
+    /// Matched on word boundaries. A plain substring replace mangles the fields a maintainer needs:
+    /// a Mac named "iMac" turns the model code `iMac21,1` into `this-mac21,1`.
     static func hostName(_ hostName: String, in text: String) -> String {
-        let candidates = [hostName, hostName.replacingOccurrences(of: ".local", with: "")]
+        let candidates = Set([hostName, hostName.replacingOccurrences(of: ".local", with: "")])
             .filter { $0.count >= 3 }
         var out = text
-        for candidate in Set(candidates) {
-            out = out.replacingOccurrences(of: candidate, with: "this-mac")
+        for candidate in candidates {
+            // Not `\b`: `_` counts as a word character, so `\b` finds no boundary in
+            // `Kannu_2026-09-12_Davids-MacBook-Pro.diag` — which is the file name this exists for.
+            // Alphanumeric lookaround gets both cases right: it still matches there, and it leaves
+            // `iMac21,1` alone for a Mac called "iMac".
+            guard let pattern = try? NSRegularExpression(
+                pattern: "(?<![A-Za-z0-9])\(NSRegularExpression.escapedPattern(for: candidate))(?![A-Za-z0-9])"
+            ) else { continue }
+            out = pattern.stringByReplacingMatches(
+                in: out,
+                range: NSRange(out.startIndex..., in: out),
+                withTemplate: "this-mac"
+            )
         }
         return out
     }

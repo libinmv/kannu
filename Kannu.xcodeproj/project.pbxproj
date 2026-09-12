@@ -72,6 +72,7 @@
 		AA100000000000000000008D /* CrashReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000008C /* CrashReport.swift */; };
 		AA100000000000000000008F /* DiagnosticScrub.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000008E /* DiagnosticScrub.swift */; };
 		AA1000000000000000000091 /* DisplayPlacementResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000090 /* DisplayPlacementResolver.swift */; };
+		AA1000000000000000000093 /* GitHubIssue.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000092 /* GitHubIssue.swift */; };
 		F910B9C812C7AEFE2293F7D2 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4A9C58195E197C19F691DA62 /* Cocoa.framework */; };
 /* End PBXBuildFile section */
 
@@ -147,6 +148,7 @@
 		AA100000000000000000008C /* CrashReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CrashReport.swift; path = Kannu/managers/CrashReport.swift; sourceTree = SOURCE_ROOT; };
 		AA100000000000000000008E /* DiagnosticScrub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DiagnosticScrub.swift; path = Kannu/managers/DiagnosticScrub.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000090 /* DisplayPlacementResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DisplayPlacementResolver.swift; path = Kannu/managers/Display/DisplayPlacementResolver.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000092 /* GitHubIssue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GitHubIssue.swift; path = Kannu/managers/GitHubIssue.swift; sourceTree = SOURCE_ROOT; };
 		DAA671E7B1B26733F02166C5 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F4C1DD09EC134302938E84F6 /* MediaRemoteAdapter.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MediaRemoteAdapter.framework; path = Frameworks/MediaRemoteAdapter.framework; sourceTree = SOURCE_ROOT; };
 		F54406E72CD4987A00C7AFD9 /* Kannu.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Kannu.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -570,6 +572,7 @@
 				AA100000000000000000008D /* CrashReport.swift in Sources */,
 				AA100000000000000000008F /* DiagnosticScrub.swift in Sources */,
 				AA1000000000000000000091 /* DisplayPlacementResolver.swift in Sources */,
+				AA1000000000000000000093 /* GitHubIssue.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -239,6 +239,70 @@ final class CrashReportTests: XCTestCase {
         XCTAssertTrue(report.issueBody.contains("… trimmed"))
     }
 
+    /// `URLComponents` leaves `+` literal, and GitHub decodes it as a space — so every
+    /// `symbol + 8` frame and every `+0530` timestamp arrived mangled. Decoded the way a form
+    /// reader does, because Foundation's own parser leaves `+` alone and would pass either way.
+    func testTheReportSurvivesFormDecodingOnTheOtherEnd() throws {
+        let url = try XCTUnwrap(try XCTUnwrap(parseIPS()).issueURL(repository: "libinmv/kannu"))
+        let body = try XCTUnwrap(
+            (url.query ?? "")
+                .split(separator: "&")
+                .first { $0.hasPrefix("body=") }
+                .map { String($0.dropFirst("body=".count)) }
+        )
+        let formDecoded = try XCTUnwrap(
+            body.replacingOccurrences(of: "+", with: " ").removingPercentEncoding
+        )
+        XCTAssertTrue(formDecoded.contains("__pthread_kill + 8"), "got: \(formDecoded)")
+        XCTAssertFalse(formDecoded.contains("__pthread_kill   8"), "the offset separator was eaten")
+    }
+
+    /// A CPU report has no stack at all, and was still corrupted — through the timestamp's UTC
+    /// offset, which is the one `+` every textual diagnostic carries.
+    func testEvenAStacklessReportKeepsItsTimeZone() throws {
+        let url = try XCTUnwrap(try XCTUnwrap(parseCPU()).issueURL(repository: "libinmv/kannu"))
+        let body = try XCTUnwrap(
+            (url.query ?? "").split(separator: "&").first { $0.hasPrefix("body=") }
+                .map { String($0.dropFirst("body=".count)) }
+        )
+        let formDecoded = try XCTUnwrap(
+            body.replacingOccurrences(of: "+", with: " ").removingPercentEncoding
+        )
+        XCTAssertTrue(formDecoded.contains("+0530"), "got: \(formDecoded)")
+    }
+
+    /// The raw body budget is not what has to fit; the encoded URL is.
+    func testAnEnormousStackStillProducesAnOpenableURL() throws {
+        var report = try XCTUnwrap(parseIPS())
+        report.frames = (0..<4000).map { "\($0)  Kannu  $s5Kannu24aLongMangledSymbolNameyyF + \($0)" }
+        let url = try XCTUnwrap(report.issueURL(repository: "libinmv/kannu"))
+        XCTAssertLessThanOrEqual(url.absoluteString.count, GitHubIssue.urlLengthLimit)
+        XCTAssertTrue(url.absoluteString.contains("issues/new"))
+    }
+
+    /// Every field a `.ips` contributes is scrubbed, not only the stack and the messages.
+    func testACrashReportScrubsEveryFieldItRead() throws {
+        let report = try XCTUnwrap(CrashReport.parse(
+            fileName: "Kannu_2026-09-12-210411_\(host).ips",
+            contents: ipsHeader + "\n" + ipsBody,
+            home: home,
+            hostName: host
+        ))
+        for field in [report.sourceName, report.recordedAt, report.appVersion, report.buildNumber,
+                      report.systemVersion, report.architecture, report.modelCode, report.summary] {
+            XCTAssertFalse(field.contains(host), "unscrubbed: \(field)")
+            XCTAssertFalse(field.contains("/Users/someone"), "unscrubbed: \(field)")
+        }
+    }
+
+    /// A Mac called "iMac" used to turn the model code `iMac21,1` into `this-mac21,1`, mangling the
+    /// one field a maintainer needs to know which machine shape it was.
+    func testTheHostNameScrubStopsAtWordBoundaries() {
+        XCTAssertEqual(DiagnosticScrub.hostName("iMac", in: "iMac21,1"), "iMac21,1")
+        XCTAssertEqual(DiagnosticScrub.hostName("iMac", in: "on iMac at home"), "on this-mac at home")
+        XCTAssertEqual(DiagnosticScrub.hostName("Mac", in: "MacBookPro18,3"), "MacBookPro18,3")
+    }
+
     func testTheIssueURLIsWellFormed() throws {
         let url = try XCTUnwrap(try XCTUnwrap(parseIPS()).issueURL(repository: "libinmv/kannu"))
         XCTAssertEqual(url.host, "github.com")

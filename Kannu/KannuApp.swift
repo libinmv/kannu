@@ -378,8 +378,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         viewModels.removeValue(forKey: id)
     }
 
-    private func cleanupWindows(shouldInvert: Bool = false) {
-        if shouldInvert ? !Defaults[.displayPlacement].usesOneWindowPerDisplay : Defaults[.displayPlacement].usesOneWindowPerDisplay {
+    private func cleanupWindows() {
+        if Defaults[.displayPlacement].usesOneWindowPerDisplay {
             for (screen, window) in windows {
                 // Tear down the hosted ContentView before dropping the window
                 // (`.onDisappear` is unreliable for borderless panels).
@@ -471,11 +471,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             window.alphaValue = 0
         }
         
+        // Size for the screen it is going to, not the one it came from.
+        //
+        // Only `createKannuWindow` used to apply `adjustedSizeForScreen`, and a window that moves
+        // between displays without being rebuilt — the pointer path, `selectedScreenChanged`,
+        // `notchHeightChanged` — kept the previous display's frame. A notched built-in and an
+        // external need different sizes for the same content (the external adds the shadow inset
+        // and the top offset), so the island arrived clipped or offset until something unrelated
+        // resized it.
+        let targetSize = adjustedSizeForScreen(calculateRequiredNotchSize(), screen: screen)
+
         // Use the same centering logic as updateWindowSizeIfNeeded()
         let screenFrame = screen.frame
         let centerX = screenFrame.origin.x + (screenFrame.width / 2)
-        let roundedWidth = window.frame.width.rounded()
-        let roundedHeight = window.frame.height.rounded()
+        let roundedWidth = targetSize.width.rounded()
+        let roundedHeight = targetSize.height.rounded()
         let newX = (centerX - (roundedWidth / 2)).rounded()
         let newY = (screenFrame.origin.y + screenFrame.height - roundedHeight).rounded()
 
@@ -1074,6 +1084,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             adjustWindowPosition(changeAlpha: true)
         }
+        // Without this the pointer monitor only ever appeared after a replug or a settings change,
+        // so a launch with two externals connected sat on whichever display resolved first and
+        // never followed the pointer at all.
+        syncPointerTracking()
         
         // Skip onboarding window and welcome sound under UI testing.
         if coordinator.firstLaunch && !AppRuntimeEnvironment.isUITesting {
@@ -1528,7 +1542,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// the single `window`/`vm` — so changing placement tears one down and builds the other.
     @MainActor
     private func applyPlacementChange() {
-        cleanupWindows(shouldInvert: true)
+        // Tear down *both* lifecycles, not the opposite one.
+        //
+        // This used to call `cleanupWindows(shouldInvert: true)`, which was correct only while the
+        // trigger was a boolean and the lifecycle class always flipped. Three of the four placement
+        // modes share the single-window lifecycle, so switching between them inverted to the
+        // dictionary branch — empty, a no-op — and then overwrote `self.window` without closing it.
+        // The old window stayed on screen at full alpha, still in the notch space, still hosting a
+        // view bound to the same view model, and unreachable by every later reposition. Picking a
+        // display in `chooseDisplay` added one each time.
+        tearDownAllWindows()
+
+        // Pointer tracking follows the new mode whatever happens below, including the early return.
+        defer { syncPointerTracking() }
+
         if !Defaults[.displayPlacement].usesOneWindowPerDisplay {
             // No screen at all (clamshell, every display asleep): wait for the next screen change
             // rather than force-unwrapping an empty list, which traps with no report.
@@ -1536,7 +1563,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             window = createKannuWindow(for: screen, with: vm)
         }
         adjustWindowPosition(changeAlpha: true)
-        syncPointerTracking()
+    }
+
+    /// Closes every window Kannu owns, in either lifecycle.
+    @MainActor
+    private func tearDownAllWindows() {
+        for id in windows.keys { tearDownWindow(forDisplay: id) }
+        if let window {
+            vm.onViewTeardown?()
+            vm.onViewTeardown = nil
+            NotchSpaceManager.shared.notchSpace.windows.remove(window)
+            window.close()
+            self.window = nil
+        }
     }
 
     // MARK: - Following the pointer, only when it can matter
@@ -1576,6 +1615,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func adjustWindowPosition(changeAlpha: Bool = false) {
         // A window is never put back over the lock screen: plugging a display in while locked used
         // to produce a full-alpha notch on top of it, and `onScreenUnlocked` then queued another.
+        //
+        // `windowsHiddenForLock` is cleared in exactly one place, reachable only from
+        // `com.apple.screenIsUnlocked` — a notification macOS is known to drop, which is why
+        // `LockScreenManager` backs it with a session-active observer and a poll. Before this guard
+        // existed a missed notification healed itself on the next screen change, which rebuilt and
+        // ordered the windows front. Now it would hide Kannu until relaunch, so trust the lock
+        // manager over our own flag and recover here.
+        if windowsHiddenForLock, !LockScreenManager.shared.isLocked {
+            restoreWindowsAfterLock()
+        }
         guard !windowsHiddenForLock, !LockScreenManager.shared.isLocked else { return }
 
         if Defaults[.displayPlacement].usesOneWindowPerDisplay {
