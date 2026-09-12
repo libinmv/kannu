@@ -675,6 +675,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         autoEnableLaunchAtLoginIfNeeded()
         repairLoginItemIfStale()
 
+        // Starts before the managers, so a freeze during startup is still caught. The offer for a
+        // previous freeze waits: with no window on screen that alert is app-modal, and one of those
+        // here would stop the rest of launch.
+        HangWatchdog.shared.start()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+            HangWatchdog.shared.offerNewestReport()
+        }
+
         LockScreenLiveActivityWindowManager.shared.configure(viewModel: vm)
         LockScreenManager.shared.configure(viewModel: vm)
         // Spin up the caffeinate manager at launch: a toggle left on must take effect
@@ -1349,7 +1357,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         alert.messageText = "Logs Exported"
                         alert.informativeText = "Logs and crash reports have been successfully exported to \(url.lastPathComponent)."
                         alert.alertStyle = .informational
-                        alert.runModal()
+                        ModalPresenter.present(alert)
                     }
                 } catch {
                     DispatchQueue.main.async {
@@ -1357,7 +1365,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         alert.messageText = "Export Failed"
                         alert.informativeText = "Failed to export logs: \(error.localizedDescription)"
                         alert.alertStyle = .critical
-                        alert.runModal()
+                        ModalPresenter.present(alert)
                     }
                 }
             }

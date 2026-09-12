@@ -19,25 +19,35 @@
 import Cocoa
 
 extension NSAlert {
+    /// Shelf error reporting. Presented through `ModalPresenter`, so it is a sheet when Settings is
+    /// open and an activated, raised dialog otherwise — never an alert hidden behind the notch.
+    ///
+    /// Callers reach this from drag-and-drop and sharing paths that are not all main-actor
+    /// isolated, so it hops rather than making them hop.
     static func popError(_ error: String) {
-        let alert = NSAlert()
-        alert.messageText = NSLocalizedString("Error", comment: "")
-        alert.alertStyle = .critical
-        alert.informativeText = error
-        alert.addButton(withTitle: NSLocalizedString("OK", comment: ""))
-        alert.runModal()
+        Task { @MainActor in
+            let alert = NSAlert()
+            alert.messageText = NSLocalizedString("Error", comment: "")
+            alert.alertStyle = .critical
+            alert.informativeText = error
+            alert.addButton(withTitle: NSLocalizedString("OK", comment: ""))
+            ModalPresenter.present(alert)
+        }
     }
 
     static func popRestart(_ error: String, completion: @escaping () -> Void) {
-        let alert = NSAlert()
-        alert.messageText = NSLocalizedString("Need Restart", comment: "")
-        alert.alertStyle = .critical
-        alert.informativeText = error
-        alert.addButton(withTitle: NSLocalizedString("Exit", comment: ""))
-        alert.addButton(withTitle: NSLocalizedString("Later", comment: ""))
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            completion()
+        Task { @MainActor in
+            let alert = NSAlert()
+            alert.messageText = NSLocalizedString("Need Restart", comment: "")
+            alert.alertStyle = .critical
+            alert.informativeText = error
+            alert.addButton(withTitle: NSLocalizedString("Exit", comment: ""))
+            alert.addButton(withTitle: NSLocalizedString("Later", comment: ""))
+            ModalPresenter.present(alert) { response in
+                if response == .alertFirstButtonReturn {
+                    completion()
+                }
+            }
         }
     }
 

@@ -309,14 +309,29 @@ final class ExtensionRPCServer {
 
         let service = ExtensionRPCService(
             bundleIdentifier: clientConn.bundleIdentifier ?? "unknown",
+            connID: connID,
             server: self
         )
 
-        let responseData = service.handleRequest(request)
-        sendRawData(responseData, to: connID)
+        if let responseData = service.handleRequest(request) {
+            sendRawData(responseData, to: connID)
+        }
     }
 
     // MARK: - Send Helpers
+
+    /// Writes a reply for a request whose handler had to wait for the user (the file picker).
+    /// The response still carries the original request id, so the client matches it as usual.
+    ///
+    /// Delivered only to the connection that asked. A picker can stay open long enough for its
+    /// client to drop and re-handshake, and the identity slot is keyed by bundle identifier alone —
+    /// so re-resolving it here would answer a request the new connection never sent, which a client
+    /// reusing sequential ids could match to something else entirely. A stale reply is dropped.
+    func sendDeferredResponse(_ response: Codable, to bundleIdentifier: String, originatingConnID: UUID) {
+        guard connections[originatingConnID] != nil,
+              activeConnectionByBundleIdentifier[bundleIdentifier] == originatingConnID else { return }
+        sendResponse(response, to: originatingConnID)
+    }
 
     private func sendResponse(_ response: Codable, to connID: UUID) {
         guard let data = try? encoder.encode(response) else { return }

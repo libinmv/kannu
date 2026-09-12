@@ -4,6 +4,125 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-12 - Every panel and alert goes through one door
+- **Developer label:** "this wont happen again later for other users right ?"
+- **Agent label:** Follow-up 34 — an app-wide audit of every way the main thread can wedge
+- **Changes:**
+  - The five Settings pickers were fixed; an audit of the rest of the app found four more sites
+    that freeze it the same way, and one of them needs no unusual configuration at all. All of
+    them now present through the new `ModalPresenter` (`Kannu/helpers/ModalPresenter.swift`,
+    renamed and generalised from `SettingsFilePicker`), which never runs a file panel modally and
+    never anchors a sheet to a window that cannot be focused.
+  - `ScreenshotSnippingTool` ran `screencapture -cs` / `-cw` and then `waitUntilExit()` on the
+    main thread. Both are interactive with no timeout, so the notch, the HUDs, the timers and the
+    chat panel stopped drawing for as long as the user hesitated over the crosshair — the picker
+    freeze with a different cause. The process now runs on a background queue.
+  - `ExtensionRPCService.handleShowFilePicker` ran a panel modally on the main actor in response
+    to a WebSocket message, so nothing had brought Kannu forward: the panel sat behind whatever
+    app the user was in, with no click of their own to explain the stall. It presents
+    asynchronously now and writes its reply from the completion handler — `handleRequest` returns
+    nil for a deferred answer and `ExtensionRPCServer.sendDeferredResponse` sends it, still
+    carrying the request's id, which is what JSON-RPC asks for.
+  - `AddFilesButton` (ScreenAssistant) had a bare `runModal()` in its fallback and anchored its
+    sheet to `NSApp.keyWindow` — which here is only ever a borderless, non-activating chat panel.
+  - `QuickShareService.showFilePicker` took the `runModal()` branch on a fast first click, because
+    `hostView` is nil for a main-queue hop after the shelf first lays out; the other branch hung a
+    sheet on the notch panel at `.mainMenu + 3`.
+  - Eleven `NSAlert.runModal()` sites, none of which attached to a window or activated the app
+    first. In an accessory app whose only windows sit at `.mainMenu + 3`, an alert at the default
+    level renders *underneath the notch*: the app stops and there is no dialog to dismiss. They
+    are sheets when a titled window is up, and otherwise activated and raised above Kannu's own
+    windows. Affected: the notch's ADR Detection consent and failure alerts, the memory-usage
+    restart prompt (raised by a background poll, so the user had no action to connect it to), the
+    Shelf's error and image-conversion alerts, the Full Disk Access prompt reached from the
+    status-item menu, the export-logs result alerts, and the Settings crash-report alerts.
+  - Also here: the memory alert said "DynamicIsland", a name from before the fork.
+
+### 2026-09-13 - What the review caught
+- **Developer label:** "check each one and see code rabbit comments"
+- **Agent label:** Follow-up 35 — CodeRabbit's four findings on #25, each verified before acting
+- **Changes:**
+  - **The prefilled issue lost every `+`.** `URLComponents` follows RFC 3986, where `+` is legal in a
+    query, so it leaves it alone — and GitHub, like every form-urlencoded reader, decodes `+` as a
+    space. Every `symbol + 124` stack frame arrived as `symbol   124`, and every `+0530` timestamp as
+    ` 0530`, which also damages a report that has no stack at all. The substitution is safe because
+    real spaces are already `%20`, so any `+` left in the query came from a value. The test decodes
+    the query the way a form reader does, because a round trip through `URLComponents` passes either
+    way.
+  - **The link could be too long to open.** The body budget was measured against the raw text while
+    what has to fit is the percent-encoded URL, which is about a third larger. The budget accounts
+    for that, the finished URL is checked, and a stack too big to carry falls back to a body naming
+    the log file instead of a link that 414s.
+  - **A deferred file-picker reply could reach the wrong connection.** The reply was routed by
+    re-resolving the bundle identifier after the panel closed, and a disconnect plus re-handshake
+    rebinds that slot — so a client reusing sequential request ids could match the answer to
+    something it never asked. The originating connection is captured at request time and a stale
+    reply is dropped. Not a cross-app leak: only a connection with the same identifier could ever
+    have received it, and such a client can already read the whole shelf.
+  - **Both freeze scanners could be walked past.** `panel.runModal ()` — one space before the
+    argument list — is valid Swift that calls the method, and both the hook and the test matched a
+    fragment ending in `(`. They match the bare name now, which also covers `runModalSession` and
+    `runModalForWindow`. The wider hole the review did not find: `NSWindow.beginSheet(_:)` and
+    `beginCriticalSheet` were not banned at all, though a sheet on a non-activating notch panel is
+    the same unreachable dialog. All three forms are now rejected, each proven against the hook.
+  - **The screenshot race was refuted, and fixed anyway.** It needs `cancelSnipping()` to clear
+    `isSnipping` while a capture is still running, and that method had no callers — the two buttons
+    are also disabled for the duration. It is deleted rather than elaborated. Found next door and
+    worth more: `getImageFromPasteboard()` trusted the pasteboard unconditionally, so a capture that
+    exits 0 without writing one would attach whatever image the user had copied earlier. It now
+    requires the pasteboard to have changed during the capture.
+
+### 2026-09-12 - The next freeze explains itself
+- **Developer label:** "on only when the developer mode is selected during launch, also does this consume battery heavily" / "Nothing now, offer it next launch"
+- **Agent label:** Follow-up 34 — the freeze was only diagnosable because a sample was taken while it was stuck
+- **Changes:**
+  - New `HangWatchdog`: a background thread posts a token to the main run loop every two seconds,
+    and if one goes unanswered for five it suspends the main thread just long enough to read its
+    registers and walk its frame pointers, then writes `~/Library/Logs/Kannu/hang-<date>.txt`. No
+    process is spawned and no permission is needed. Every memory read goes through
+    `mach_vm_read_overwrite`, which reports a bad address instead of faulting, and symbolisation
+    happens after the thread is resumed because `dladdr` takes the dyld lock.
+  - Nothing is shown while the app is stuck — anything drawn would have to go through the wedged
+    thread. On the next launch the user is offered the report: *Report It* opens a GitHub issue with
+    the build, the macOS version, the duration and the stack already filled in, *Show the Log*
+    reveals the file, *Ignore* does nothing. Kannu never posts anything itself, and the report
+    carries no username and no machine identifier: the home folder becomes `~` and any other
+    `/Users/<name>` becomes `/Users/redacted`.
+  - Off unless `Defaults[.hangWatchdogEnabled]`. Picking the Developer profile at onboarding turns
+    it on, and About › Diagnostics has the switch for everyone else — including anyone who
+    onboarded before this, since the profile choice was never recorded until now
+    (`applyProfileSettings` flipped feature keys and forgot who asked for them; it writes
+    `Defaults[.userProfiles]` as well now).
+  - Verified live on this Mac, not only in tests: a deliberate nine-second block produced a report
+    with a full 31-frame stack naming the blocking function through AppKit down to `dyld start`, and
+    the app survived the walk. With the switch off, nothing was written.
+  - The first live run also caught the watchdog reporting *its own* dialog as a freeze, which is
+    fixed two ways. The token is posted with `CFRunLoopPerformBlock` in the common and event-tracking
+    modes rather than on the main queue, so a context menu or a drag the user holds open answers it;
+    and `ModalPresenter.runAppModal` brackets its modal session so a dialog Kannu deliberately put
+    on screen does not count — which is only cheap because `runModal()` now lives in one place. A
+    modal loop entered anywhere else is still reported: that is the bug this whole change is about.
+  - Cost: one wake every two seconds and one run-loop block, against the 20 Hz hover poll the app
+    already runs whenever a hidden island is on screen.
+  - `docs/REGRESSIONS.md` gains entry 14 for the modal rule, with the sample that proved it and the
+    two guards that hold it.
+
+### 2026-09-12 - The sixth one cannot be written
+- **Developer label:** "this wont happen again later for other users right ?"
+- **Agent label:** Follow-up 34 — ban it, do not just fix it
+- **Changes:**
+  - `.githooks/pre-commit` rejects `runModal(` or `beginSheetModal` anywhere under `Kannu/` except
+    `Kannu/helpers/ModalPresenter.swift`, in the shape the `.help(` ban already uses: a scoped
+    grep, the `file:line:` prefix stripped before testing for a comment so the doc comments
+    explaining the rule do not trip it, and a message that names the replacement. Bash and grep,
+    milliseconds, no build.
+  - `KannuTests/ModalPresentationRulesTests.swift` runs the same rule in CI, for anything
+    committed with `--no-verify`: it walks every Swift file under `Kannu/` from `#filePath`, pins
+    the allowlist at exactly one entry, and checks that the helper itself still presents panels
+    with `begin`/`beginSheetModal` and never `runModal`. Two meta-tests guard the scanner — one
+    plants three offenders of different shapes, the other feeds it comments about the rule — so a
+    regex that stopped matching cannot make the ban pass silently.
+
 ### 2026-09-12 - Settings file pickers stop freezing the app
 - **Developer label:** "when clicking on policy upload it crashed the app" / "app is stuck"
 - **Agent label:** Follow-up 33 — caught live: a sample of the stuck process parked in choosePolicyFile

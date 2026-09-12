@@ -127,7 +127,7 @@ final class FullDiskAccessPermissionStore: ObservableObject {
         alert.addButton(withTitle: "Continue")
         alert.addButton(withTitle: "Cancel")
 
-        if alert.runModal() == .alertFirstButtonReturn {
+        if ModalPresenter.runAppModal(alert) == .alertFirstButtonReturn {
             openSystemSettings()
             revealAppBundleInFinder()
         }

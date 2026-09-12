@@ -49,14 +49,29 @@ final class ExtensionRPCService {
         "text", "icon", "progress", "graph", "gauge", "spacer", "divider", "webView"
     ]
 
-    init(bundleIdentifier: String, server: ExtensionRPCServer) {
+    /// The connection this request arrived on.
+    ///
+    /// Held rather than looked up again later: a handler that waits for the user (the file picker)
+    /// can outlive its connection, and the same bundle identifier can be rebound to a new connection
+    /// by a disconnect and re-handshake in the meantime. Resolving the identity at reply time would
+    /// hand the answer to whoever holds the slot then.
+    private let connID: UUID
+
+    init(bundleIdentifier: String, connID: UUID, server: ExtensionRPCServer) {
         self.bundleIdentifier = bundleIdentifier
+        self.connID = connID
         self.server = server
     }
 
     // MARK: - Method Routing
 
-    func handleRequest(_ request: RPCRequest) -> Data {
+    /// Encodes the reply for one request, or nil when the handler will answer later.
+    ///
+    /// `atoll.showFilePicker` has to wait for the user, and waiting for a file panel on the main
+    /// thread freezes the whole app (see `ModalPresenter`), so it presents the panel
+    /// asynchronously and sends its response from the completion handler. JSON-RPC does not
+    /// require the reply to be written on the same turn as the request, only to carry its id.
+    func handleRequest(_ request: RPCRequest) -> Data? {
         ExtensionRPCNamespace.recordIncomingMethod(request.method)
 
         guard let canonicalMethod = ExtensionRPCNamespace.canonicalHandlerMethod(from: request.method) else {
@@ -132,8 +147,12 @@ final class ExtensionRPCService {
             )
         }
 
+        if result is RPCDeferredResponse { return nil }
         return (try? encoder.encode(result)) ?? Data()
     }
+
+    /// Returned by a handler that will send its own response later.
+    private struct RPCDeferredResponse: Codable {}
 
     // MARK: - Version
 
@@ -528,25 +547,35 @@ final class ExtensionRPCService {
         panel.canChooseFiles = true
         panel.title = "Select files to share"
 
-        let response = panel.runModal()
-        guard response == .OK, !panel.urls.isEmpty else {
-            return RPCSuccessResponse(result: ["itemIDs": .array([])], id: id)
-        }
+        // This request arrives over a WebSocket, so nothing brought Kannu forward first: a modal
+        // panel here sat behind whatever app the user was in, with the main thread parked and no
+        // click of their own to explain it. The reply is sent from the completion instead.
+        // `self` is captured strongly on purpose: the server builds one service per request, and
+        // this one has to outlive the request to write the reply. It holds the server weakly, so
+        // there is no cycle, and it is released once the panel closes.
+        ModalPresenter.present(panel) { response in
+            var newItemIDs: [RPCValue] = []
+            var newItems: [ShelfItem] = []
 
-        var newItemIDs: [RPCValue] = []
-        var newItems: [ShelfItem] = []
-
-        for url in panel.urls {
-            if let bookmark = try? Bookmark(url: url) {
-                let item = ShelfItem(kind: .file(bookmark: bookmark.data))
-                newItems.append(item)
-                newItemIDs.append(.string(item.id.uuidString))
+            if response == .OK {
+                for url in panel.urls {
+                    if let bookmark = try? Bookmark(url: url) {
+                        let item = ShelfItem(kind: .file(bookmark: bookmark.data))
+                        newItems.append(item)
+                        newItemIDs.append(.string(item.id.uuidString))
+                    }
+                }
+                ShelfStateViewModel.shared.add(newItems)
             }
-        }
 
-        ShelfStateViewModel.shared.add(newItems)
-        logDiagnostics("RPC: showFilePicker added \(newItems.count) items for \(bundleIdentifier)")
-        return RPCSuccessResponse(result: ["itemIDs": .array(newItemIDs)], id: id)
+            self.logDiagnostics("RPC: showFilePicker added \(newItems.count) items for \(self.bundleIdentifier)")
+            self.server?.sendDeferredResponse(
+                RPCSuccessResponse(result: ["itemIDs": .array(newItemIDs)], id: id),
+                to: self.bundleIdentifier,
+                originatingConnID: self.connID
+            )
+        }
+        return RPCDeferredResponse()
     }
 
     private func handleShareShelfItems(params: RPCParams?, id: String) -> Codable {

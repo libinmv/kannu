@@ -1292,6 +1292,17 @@ extension Defaults.Keys {
     static let adrDetectionMaxMessages = Key<Int>("adrDetectionMaxMessages", default: 400)
     static let adrSessionAnalyses = Key<[ADRSessionAnalysis]>("adrSessionAnalyses", default: [])
 
+    /// The profiles picked during onboarding, recorded so later code can tell what kind of user
+    /// this is. Before this existed, `applyProfileSettings` flipped feature keys and forgot which
+    /// profile asked for them, so nothing could be gated on the choice afterwards.
+    static let userProfiles = Key<[String]>("userProfiles", default: [])
+    /// Watch for main-thread freezes and write a local report when one happens. On for anyone who
+    /// picks the Developer profile at onboarding, off for everyone else, and in About either way.
+    /// Costs one wake every two seconds; nothing is ever sent.
+    static let hangWatchdogEnabled = Key<Bool>("hangWatchdogEnabled", default: false)
+    /// The hang log already offered to the user, so one freeze is offered once.
+    static let lastOfferedHangReport = Key<String>("lastOfferedHangReport", default: "")
+
     /// Clicking the media card lands on the browser tab that is playing (Safari, Chrome family),
     /// which needs the one-time "control <browser>" Automation permission. Off = app only.
     static let openPlayingBrowserTab = Key<Bool>("openPlayingBrowserTab", default: true)
@@ -1601,4 +1612,8 @@ extension Defaults.Keys {
 /// choice and is not continued.
 enum ReleaseInfo {
     static let codename = "Argus"
+
+    /// `owner/repo`, used to build the prefilled issue a user can send after a freeze or a crash.
+    /// Kannu never posts anything itself — the link opens their browser with the fields filled in.
+    static let repository = "libinmv/kannu"
 }

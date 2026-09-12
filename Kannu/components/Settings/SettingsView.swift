@@ -949,6 +949,7 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .agentStatus, title: "Confirm before every analysis", keywords: ["adr", "detection", "confirm", "consent"], highlightID: SettingsTab.agentStatus.highlightID(for: "Confirm before every analysis")),
             SettingsSearchEntry(tab: .agentStatus, title: "Mobile notifications", keywords: ["mobile", "push", "ntfy", "pushover", "webhook", "iphone", "android"], highlightID: SettingsTab.agentStatus.highlightID(for: "Mobile notifications")),
             SettingsSearchEntry(tab: .agentStatus, title: "Send test notification", keywords: ["test", "mobile", "push", "notification"], highlightID: SettingsTab.agentStatus.highlightID(for: "Send test notification")),
+            SettingsSearchEntry(tab: .about, title: "Watch for freezes", keywords: ["freeze", "frozen", "hang", "stuck", "unresponsive", "beachball", "spinning", "crash", "report", "diagnostics", "developer"], highlightID: SettingsTab.about.highlightID(for: "Watch for freezes")),
         ]
     }
 
@@ -3168,6 +3169,12 @@ struct Media: View {
 
 
 struct About: View {
+    @Default(.hangWatchdogEnabled) var hangWatchdogEnabled
+
+    private func highlightID(_ title: String) -> String {
+        SettingsTab.about.highlightID(for: title)
+    }
+
     /// "1.2.0 (2)" — the build used to hide behind a tap; it is what a bug report needs.
     private var versionText: String {
         let version = Bundle.main.releaseVersionNumber ?? String(localized: "unknown")
@@ -3196,6 +3203,20 @@ struct About: View {
                 }
             } header: {
                 Text("Version info")
+            }
+
+            Section {
+                SettingsRow(
+                    "Watch for freezes",
+                    description: "If Kannu's interface stops responding for five seconds, it writes down what it was doing to ~/Library/Logs/Kannu and offers you the note next time it starts. Nothing is shown while it is stuck, and nothing is sent anywhere. On by default for the Developer profile."
+                ) {
+                    Toggle("", isOn: $hangWatchdogEnabled)
+                }
+                .settingsHighlight(id: highlightID("Watch for freezes"))
+            } header: {
+                Text("Diagnostics")
+            } footer: {
+                SettingsFooter("A freeze leaves no crash report, so without this there is nothing to look at afterwards. The check costs one wake every two seconds.")
             }
         }
         .navigationTitle("About")
@@ -5397,6 +5418,7 @@ private struct LockScreenPositioningPreview: View {
     }
 }
 
+@MainActor
 private func copyLatestCrashReport() {
     let crashReportsPath = NSString(string: "~/Library/Logs/DiagnosticReports").expandingTildeInPath
     let fileManager = FileManager.default
@@ -5412,7 +5434,7 @@ private func copyLatestCrashReport() {
             alert.messageText = "No Crash Reports Found"
             alert.informativeText = "No crash reports found for Kannu"
             alert.alertStyle = .informational
-            alert.runModal()
+            ModalPresenter.present(alert)
             return
         }
 
@@ -5426,13 +5448,13 @@ private func copyLatestCrashReport() {
         alert.messageText = "Crash Report Copied"
         alert.informativeText = "Crash report '\(latestCrash)' has been copied to clipboard"
         alert.alertStyle = .informational
-        alert.runModal()
+        ModalPresenter.present(alert)
     } catch {
         let alert = NSAlert()
         alert.messageText = "Error"
         alert.informativeText = "Failed to read crash reports: \(error.localizedDescription)"
         alert.alertStyle = .warning
-        alert.runModal()
+        ModalPresenter.present(alert)
     }
 }
 
@@ -5987,7 +6009,7 @@ struct TimerSettings: View {
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
 
-        SettingsFilePicker.present(panel) { response in
+        ModalPresenter.present(panel) { response in
             guard response == .OK, let url = panel.url else { return }
             customTimerSoundPath = url.path
         }
@@ -8198,7 +8220,7 @@ struct AgentStatusSettings: View {
         panel.allowsMultipleSelection = false
         panel.prompt = String(localized: "Use checkout")
         panel.message = String(localized: "Choose the ADR/Detection folder you cloned and synced with uv")
-        SettingsFilePicker.present(panel) { response in
+        ModalPresenter.present(panel) { response in
             guard response == .OK, let url = panel.url else { return }
             adrDetectionCheckout = url.path
             adr.checkDetection()
@@ -8244,7 +8266,7 @@ struct AgentStatusSettings: View {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = String(localized: "Use folder")
-        SettingsFilePicker.present(panel) { response in
+        ModalPresenter.present(panel) { response in
             guard response == .OK, let url = panel.url else { return }
             adrToolDirectory = url.path
             adr.checkAgain()
@@ -8327,7 +8349,7 @@ struct AgentStatusSettings: View {
         panel.allowsMultipleSelection = false
         panel.allowedContentTypes = [.json]
         panel.prompt = String(localized: "Use policy")
-        SettingsFilePicker.present(panel) { response in
+        ModalPresenter.present(panel) { response in
             guard response == .OK, let url = panel.url else { return }
             adrPolicyFile = url.path
         }
@@ -8341,7 +8363,7 @@ struct AgentStatusSettings: View {
         panel.allowsMultipleSelection = false
         panel.directoryURL = SecurityFindingsStore.snapshotDirectory
         panel.prompt = String(localized: "Use folder")
-        SettingsFilePicker.present(panel) { response in
+        ModalPresenter.present(panel) { response in
             guard response == .OK, let url = panel.url else { return }
             adrSnapshotDirectory = url.path
             findingsStore.directoryChanged()
