@@ -4,6 +4,19 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-12 - Ship the ADR Detection adapter that was never committed
+- **Developer label:** CI on the pull request caught it
+- **Agent label:** Follow-up 32, phase 2 — the first real CI run of the Detection tests
+- **Changes:**
+  - `.gitignore` carried a blanket `*.py` with no `!scripts/*.py` beside the `*.sh` exception, so
+    `scripts/adr-analyze-session.py` — Kannu's own GPL adapter, the only thing that runs ADR
+    Detection's `ADRBaseline` over a transcript — has been missing from the repository since the
+    Detection work landed. Its `__pycache__` was the only trace, which is what made it visible.
+  - `ADRDetectionCommandTests.testEmbeddedAdapterMatchesTheMirror` and
+    `testAdapterConvertsAClaudeTranscriptLikeUpstream` failed on both CI images for exactly that
+    reason (they pass locally, where the file exists but is ignored); the mirror is tracked now and
+    the embedded copy is pinned against it again.
+
 ### 2026-09-12 - Stop tracking Python bytecode
 - **Developer label:** Housekeeping before the branch goes up for review
 - **Agent label:** Follow-up 32, phase 0

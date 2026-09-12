@@ -142,6 +142,7 @@ referenceimages
 PrivateWorks
 
 *.py
+!scripts/*.py
 *.sh
 !scripts/*.sh
 comparison_report.json
