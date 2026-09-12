@@ -108,6 +108,12 @@ class ScreenshotSnippingTool: NSObject, ObservableObject {
         task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
         task.arguments = type.processArguments
 
+        // `screencapture -c` writes to the pasteboard, and its exit statuses are undocumented. If a
+        // cancelled capture ever exits 0 having written nothing, reading the pasteboard would attach
+        // whatever the user had copied earlier — someone else's screenshot, or a private image — to
+        // the chat. So require the pasteboard to have actually changed during this capture.
+        let pasteboardBefore = NSPasteboard.general.changeCount
+
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             do {
@@ -117,7 +123,7 @@ class ScreenshotSnippingTool: NSObject, ObservableObject {
                 let status = task.terminationStatus
 
                 DispatchQueue.main.async {
-                    if status == 0 {
+                    if status == 0, NSPasteboard.general.changeCount != pasteboardBefore {
                         print("✅ ScreenshotTool: screencapture completed successfully")
                         self.getImageFromPasteboard()
                     } else {
@@ -204,9 +210,9 @@ class ScreenshotSnippingTool: NSObject, ObservableObject {
         }
     }
     
-    func cancelSnipping() {
-        print("❌ ScreenshotTool: Snipping cancelled")
-        finishSnipping()
-    }
+    // `cancelSnipping()` used to live here. It had no callers, and clearing `isSnipping` while a
+    // `screencapture` child is still waiting for the user is the one way a finished capture could
+    // land in a later capture's `completion`. Deleting it closes that without new state; if a cancel
+    // affordance is ever wanted, it has to terminate the process and carry a capture token.
 }
 

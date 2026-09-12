@@ -38,6 +38,40 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     status-item menu, the export-logs result alerts, and the Settings crash-report alerts.
   - Also here: the memory alert said "DynamicIsland", a name from before the fork.
 
+### 2026-09-13 - What the review caught
+- **Developer label:** "check each one and see code rabbit comments"
+- **Agent label:** Follow-up 35 — CodeRabbit's four findings on #25, each verified before acting
+- **Changes:**
+  - **The prefilled issue lost every `+`.** `URLComponents` follows RFC 3986, where `+` is legal in a
+    query, so it leaves it alone — and GitHub, like every form-urlencoded reader, decodes `+` as a
+    space. Every `symbol + 124` stack frame arrived as `symbol   124`, and every `+0530` timestamp as
+    ` 0530`, which also damages a report that has no stack at all. The substitution is safe because
+    real spaces are already `%20`, so any `+` left in the query came from a value. The test decodes
+    the query the way a form reader does, because a round trip through `URLComponents` passes either
+    way.
+  - **The link could be too long to open.** The body budget was measured against the raw text while
+    what has to fit is the percent-encoded URL, which is about a third larger. The budget accounts
+    for that, the finished URL is checked, and a stack too big to carry falls back to a body naming
+    the log file instead of a link that 414s.
+  - **A deferred file-picker reply could reach the wrong connection.** The reply was routed by
+    re-resolving the bundle identifier after the panel closed, and a disconnect plus re-handshake
+    rebinds that slot — so a client reusing sequential request ids could match the answer to
+    something it never asked. The originating connection is captured at request time and a stale
+    reply is dropped. Not a cross-app leak: only a connection with the same identifier could ever
+    have received it, and such a client can already read the whole shelf.
+  - **Both freeze scanners could be walked past.** `panel.runModal ()` — one space before the
+    argument list — is valid Swift that calls the method, and both the hook and the test matched a
+    fragment ending in `(`. They match the bare name now, which also covers `runModalSession` and
+    `runModalForWindow`. The wider hole the review did not find: `NSWindow.beginSheet(_:)` and
+    `beginCriticalSheet` were not banned at all, though a sheet on a non-activating notch panel is
+    the same unreachable dialog. All three forms are now rejected, each proven against the hook.
+  - **The screenshot race was refuted, and fixed anyway.** It needs `cancelSnipping()` to clear
+    `isSnipping` while a capture is still running, and that method had no callers — the two buttons
+    are also disabled for the duration. It is deleted rather than elaborated. Found next door and
+    worth more: `getImageFromPasteboard()` trusted the pasteboard unconditionally, so a capture that
+    exits 0 without writing one would attach whatever image the user had copied earlier. It now
+    requires the pasteboard to have changed during the capture.
+
 ### 2026-09-12 - The next freeze explains itself
 - **Developer label:** "on only when the developer mode is selected during launch, also does this consume battery heavily" / "Nothing now, offer it next launch"
 - **Agent label:** Follow-up 34 — the freeze was only diagnosable because a sample was taken while it was stuck

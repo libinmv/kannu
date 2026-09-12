@@ -128,8 +128,11 @@ fi
 # a sheet on one of those cannot be focused or moved aside.
 # Both APIs live in ModalPresenter and nowhere else. Strip the file:line: prefix before
 # testing for a comment, or the doc comments explaining this rule trip the check.
+# No trailing "(" on runModal: `panel.runModal ()` is valid Swift that calls the method, and a
+# pattern ending in "(" walked straight past it. beginSheet(/beginCriticalSheet are NSWindow's own
+# spelling of the same mistake.
 modal_helper="Kannu/helpers/ModalPresenter.swift"
-stray_modal="$(grep -rnE '\.runModal\(|beginSheetModal' Kannu 2>/dev/null \
+stray_modal="$(grep -rnE 'runModal|beginSheetModal|beginSheet\(|beginCriticalSheet|beginModalSession' Kannu 2>/dev/null \
   | grep -v "^${modal_helper}:" \
   | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true)"
 if [[ -n "${stray_modal}" ]]; then
