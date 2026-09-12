@@ -970,9 +970,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self.cleanupWindows(shouldInvert: true)
 
             if !Defaults[.showOnAllDisplays] {
+                // No screen at all (clamshell, every display asleep): wait for the next screen
+                // change rather than force-unwrapping an empty list, which traps with no report.
+                guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
                 let viewModel = self.vm
-                let window = self.createKannuWindow(
-                    for: NSScreen.main ?? NSScreen.screens.first!, with: viewModel)
+                let window = self.createKannuWindow(for: screen, with: viewModel)
                 self.window = window
                 self.adjustWindowPosition(changeAlpha: true)
             } else {
@@ -1039,10 +1041,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         registerOptionalShortcutHandlers()
         updateFeatureShortcutAvailability()
 
-        if !Defaults[.showOnAllDisplays] {
+        if !Defaults[.showOnAllDisplays], let screen = NSScreen.main ?? NSScreen.screens.first {
             let viewModel = self.vm
-            let window = createKannuWindow(
-                for: NSScreen.main ?? NSScreen.screens.first!, with: viewModel)
+            let window = createKannuWindow(for: screen, with: viewModel)
             self.window = window
             adjustWindowPosition(changeAlpha: true)
         } else {

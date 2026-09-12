@@ -4,6 +4,19 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-12 - Three ways Kannu could die with no report
+- **Developer label:** "some users also reported random crashing"
+- **Agent label:** Follow-up 33 — the trap sites found while mapping the display code
+- **Changes:**
+  - `NSScreen.main ?? NSScreen.screens.first!` in `KannuApp` (two window-creation paths) and in
+    `ClipboardWindowManager`. `NSScreen.screens` is empty in clamshell and while every display
+    sleeps, and a force-unwrap there is a Swift trap: no catchable exception, no crash report that
+    explains itself. Kannu now waits for the next screen change instead, and the clipboard window
+    keeps the position AppKit gave it.
+  - `CustomOSDWindowManager.ensureWindow` ended its switch with
+    `fatalError("Unsupported OSD type: …")` — one unexpected sneak-peek type killed the app. It
+    returns nil and logs now; the caller skips that screen.
+
 ### 2026-09-12 - The Detection adapter checks the paths it is handed; fixture builds on Swift 6.1
 - **Developer label:** CI and SonarCloud on the pull request
 - **Agent label:** Follow-up 32, phase 2 — two findings from the first run against the branch
