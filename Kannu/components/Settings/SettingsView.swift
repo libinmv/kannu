@@ -723,9 +723,8 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .general, title: "Enable Minimalistic UI", keywords: ["minimalistic", "ui mode", "general"], highlightID: SettingsTab.general.highlightID(for: "Enable Minimalistic UI")),
             SettingsSearchEntry(tab: .general, title: "Menubar icon", keywords: ["menu bar", "status bar", "icon"], highlightID: SettingsTab.general.highlightID(for: "Menubar icon")),
             SettingsSearchEntry(tab: .general, title: "Launch at login", keywords: ["autostart", "startup"], highlightID: SettingsTab.general.highlightID(for: "Launch at login")),
-            SettingsSearchEntry(tab: .general, title: "Show on all displays", keywords: ["multi-display", "external monitor"], highlightID: SettingsTab.general.highlightID(for: "Show on all displays")),
-            SettingsSearchEntry(tab: .general, title: "Show on a specific display", keywords: ["preferred screen", "display picker"], highlightID: SettingsTab.general.highlightID(for: "Show on a specific display")),
-            SettingsSearchEntry(tab: .general, title: "Automatically switch displays", keywords: ["auto switch", "displays"], highlightID: SettingsTab.general.highlightID(for: "Automatically switch displays")),
+            SettingsSearchEntry(tab: .general, title: "Where Kannu appears", keywords: ["display", "displays", "monitor", "external", "built-in", "all displays", "multi-display", "screen", "placement", "switch", "move", "second screen"], highlightID: SettingsTab.general.highlightID(for: "Where Kannu appears")),
+            SettingsSearchEntry(tab: .general, title: "Display", keywords: ["preferred screen", "display picker", "specific display", "choose display"], highlightID: SettingsTab.general.highlightID(for: "Display")),
             SettingsSearchEntry(tab: .general, title: "Hide Kannu during screenshots & recordings", keywords: ["privacy", "screenshot", "recording"], highlightID: SettingsTab.general.highlightID(for: "Hide Kannu during screenshots & recordings")),
             SettingsSearchEntry(tab: .general, title: "Enable gestures", keywords: ["gestures", "trackpad"], highlightID: SettingsTab.general.highlightID(for: "Enable gestures")),
             SettingsSearchEntry(tab: .general, title: "Close gesture", keywords: ["pinch", "swipe"], highlightID: SettingsTab.general.highlightID(for: "Close gesture")),
@@ -1064,8 +1063,7 @@ struct GeneralSettings: View {
     @Default(.closedNotchWidth) var closedNotchWidth
     @Default(.customizePhysicalNotchWidth) var customizePhysicalNotchWidth
     @Default(.notchHeightMode) var notchHeightMode
-    @Default(.showOnAllDisplays) var showOnAllDisplays
-    @Default(.automaticallySwitchDisplay) var automaticallySwitchDisplay
+    @Default(.displayPlacement) var displayPlacement
     @Default(.enableGestures) var enableGestures
     @Default(.openNotchOnHover) var openNotchOnHover
     @Default(.alwaysShowOnNonNotchDisplays) var alwaysShowOnNonNotchDisplays
@@ -1152,31 +1150,32 @@ struct GeneralSettings: View {
                     .disabled(true)
                     .settingsHighlight(id: highlightID("Launch at login"))
                 }
-                Defaults.Toggle(key: .showOnAllDisplays) {
-                    Text("Show on all displays")
-                }
-                .onChange(of: showOnAllDisplays) {
-                    NotificationCenter.default.post(name: Notification.Name.showOnAllDisplaysChanged, object: nil)
-                }
-                .settingsHighlight(id: highlightID("Show on all displays"))
-                Picker("Show on a specific display", selection: $coordinator.preferredScreen) {
-                    ForEach(screens, id: \.self) { screen in
-                        Text(screen)
+                SettingsRow("Where Kannu appears", description: displayPlacement.description) {
+                    Picker("", selection: $displayPlacement) {
+                        ForEach(DisplayPlacement.allCases) { placement in
+                            Text(placement.localizedName).tag(placement)
+                        }
                     }
                 }
-                .onChange(of: NSScreen.screens) {
-                    screens =  NSScreen.screens.compactMap({$0.localizedName})
+                .onChange(of: displayPlacement) {
+                    NotificationCenter.default.post(name: Notification.Name.displayPlacementChanged, object: nil)
                 }
-                .disabled(showOnAllDisplays)
-                .settingsHighlight(id: highlightID("Show on a specific display"))
-                Defaults.Toggle(key: .automaticallySwitchDisplay) {
-                    Text("Automatically switch displays")
+                .settingsHighlight(id: highlightID("Where Kannu appears"))
+
+                if displayPlacement == .chooseDisplay {
+                    Picker("Display", selection: $coordinator.preferredScreen) {
+                        ForEach(screens, id: \.self) { screen in
+                            Text(screen)
+                        }
+                    }
+                    .onChange(of: NSScreen.screens) {
+                        screens = NSScreen.screens.compactMap({ $0.localizedName })
+                    }
+                    .onChange(of: coordinator.preferredScreen) {
+                        NotificationCenter.default.post(name: Notification.Name.displayPlacementChanged, object: nil)
+                    }
+                    .settingsHighlight(id: highlightID("Display"))
                 }
-                .onChange(of: automaticallySwitchDisplay) {
-                    NotificationCenter.default.post(name: Notification.Name.automaticallySwitchDisplayChanged, object: nil)
-                }
-                .disabled(showOnAllDisplays)
-                .settingsHighlight(id: highlightID("Automatically switch displays"))
                 Defaults.Toggle(key: .hideDynamicIslandFromScreenCapture) {
                     Text("Hide Kannu during screenshots & recordings")
                 }

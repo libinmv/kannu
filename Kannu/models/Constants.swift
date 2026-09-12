@@ -909,6 +909,12 @@ extension Defaults.Keys {
     /// Bundle path the login item was last registered from, so the stale-path repair can fire
     /// only when the app actually moved instead of on every launch.
     static let lastLoginItemBundlePath = Key<String>("lastLoginItemBundlePath", default: "")
+    /// Where Kannu puts itself. Replaces `showOnAllDisplays` / `automaticallySwitchDisplay` /
+    /// `preferred_screen_name`, which between them could not express "the monitor, while it is
+    /// plugged in". See `DisplayPlacementResolver`.
+    static let displayPlacement = Key<DisplayPlacement>("displayPlacement", default: .externalTakesOver)
+    static let didMigrateDisplayPlacement = Key<Bool>("didMigrateDisplayPlacement", default: false)
+    /// Legacy, read once by `migrateDisplayPlacement` and then unused.
     static let showOnAllDisplays = Key<Bool>("showOnAllDisplays", default: true)
     static let automaticallySwitchDisplay = Key<Bool>("automaticallySwitchDisplay", default: true)
     static let hideDynamicIslandFromScreenCapture = Key<Bool>("hideDynamicIslandFromScreenCapture", default: false)
@@ -1527,6 +1533,19 @@ extension Defaults.Keys {
         Defaults[.didMigrateNonNotchAlwaysShow] = true
     }
 
+    /// Everyone gets the new default, including people who had chosen otherwise.
+    ///
+    /// That is deliberate and it is in the release notes: the old default put a window on every
+    /// display and then hid the island on all but the notched one until the pointer rested at the
+    /// top edge, which is the behaviour being fixed. Carrying the old choice forward would carry the
+    /// complaint forward. A user who wants every display back says so in one picker, and
+    /// `chooseDisplay` keeps reading the same `preferred_screen_name` it always did.
+    static func migrateDisplayPlacement() {
+        guard Defaults[.didMigrateDisplayPlacement] == false else { return }
+        Defaults[.displayPlacement] = .externalTakesOver
+        Defaults[.didMigrateDisplayPlacement] = true
+    }
+
     static func migrateCapsLockTintMode() {
         guard Defaults[.didMigrateCapsLockTintMode] == false else { return }
 
@@ -1619,3 +1638,7 @@ enum ReleaseInfo {
     /// Kannu never posts anything itself — the link opens their browser with the fields filled in.
     static let repository = "libinmv/kannu"
 }
+
+/// `DisplayPlacement` lives in the logic test target, which does not link Defaults, so the storage
+/// conformance is declared here. A `String`-backed enum needs nothing more.
+extension DisplayPlacement: Defaults.Serializable {}

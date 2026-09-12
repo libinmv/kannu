@@ -38,6 +38,59 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     status-item menu, the export-logs result alerts, and the Settings crash-report alerts.
   - Also here: the memory alert said "DynamicIsland", a name from before the fork.
 
+### 2026-09-12 - One Kannu, on the display you are using
+- **Developer label:** "when connected to an external display the app didnt behave properly like i wanted… by default what we want is kannu to only come in external display if one is conncted" / "External takes over" / "Follow the pointer, only with 2+ externals" / "Everyone, on update"
+- **Agent label:** Follow-up 33 — the display half, and the races underneath it
+- **Changes:**
+  - Out of the box `showOnAllDisplays` was **true**, so every display got a window — and every
+    non-notch display then hid its island until the pointer rested at its top edge for a second. A
+    MacBook and a monitor therefore showed Kannu in the notch, nothing on the monitor, and three
+    settings that never said which display they meant.
+  - One setting now: **Where Kannu appears** — *External display takes over* (the new default),
+    *All displays*, *Built-in display only*, *A display I choose*. It replaces
+    `showOnAllDisplays`, `automaticallySwitchDisplay` and the specific-display picker, which
+    between them could not express "the monitor, while it is plugged in".
+  - The decision itself is a pure function over `ScreenFacts`
+    (`DisplayPlacementResolver`), in the logic test target with 16 cases — including the two-monitor
+    behaviour, which is the part this Mac cannot reproduce. It is keyed on `CGDirectDisplayID`, not
+    `localizedName`, so two identical monitors stay two displays.
+  - With **two or more** external displays, and only then, Kannu follows the pointer: a mouse-moved
+    monitor is installed for that case alone, coalesced to one placement pass per 250 ms, and torn
+    down the moment the condition stops holding. One external costs nothing.
+  - **The new default applies to everyone on update** (`migrateDisplayPlacement`), by decision:
+    carrying the old choice forward would carry the complaint forward. It needs a line in the
+    release notes.
+  - Races fixed underneath it, all real and all found by tracing the window lifecycle:
+    - `screenConfigurationDidChange` tore down and rebuilt every window on **every** notification
+      with no in-flight guard, and a dock waking sends several — so two rebuild cycles overlapped
+      and every hosted view's `@State` reset. One 300 ms trailing debounce, cancellation doubling as
+      the guard.
+    - `windows` and `viewModels` were keyed by **`NSScreen`**, whose identity AppKit does not promise
+      across a reconfiguration; they are keyed by `CGDirectDisplayID` now.
+    - The unplug path closed a window without removing it from `notchSpace.windows`, retaining a dead
+      window on every disconnect. Both paths go through one teardown helper.
+    - Windows could be rebuilt **over the lock screen** — `adjustWindowPosition` consulted neither
+      `windowsHiddenForLock` nor `LockScreenManager`, so plugging a display in while locked put a
+      full-alpha notch on top of it, and the unlock handler's bare `asyncAfter` queued another. It
+      honours both now, and that delayed reposition is a cancellable task.
+    - The per-display "Always show" overrides had **no observer**, so turning one off hid that
+      display's island without starting the poll that reveals it — it could not be hovered back.
+    - The hidden-edge hover poll cleared whatever handle was current when it finished, which could be
+      its *successor's*: two 20 Hz pollers, no way to stop either. It carries an identity token now.
+    - A screen that no longer resolves counted as "non-notch", putting a vanished display on the
+      hide-until-hover path and its 20 Hz poll. It counts as notched — the branch that does nothing.
+    - Three observers registered with `queue: nil` touched windows from whatever thread posted the
+      notification; they hop to the main actor.
+  - **Verified on this Mac:** the migration runs, placement resolves to the built-in display, and
+    `CGWindowListCopyWindowInfo` shows exactly one Kannu window, alpha 1.0, 690×218 at the top of it;
+    Settings renders one row where three were; idle CPU 0.1 %. **Not verified:** everything that
+    needs a second display — this Mac has one. The resolver's decisions are unit-tested, and the
+    AppKit plumbing around them is code-reviewed and built, not runtime-verified, the same standing
+    as the hover-dwell change in 1.2.0.
+  - Still open, and deliberately not done here: the per-display overrides
+    (`alwaysShowOverrides`, `displayStyleOverrides`) are still keyed by display *name*, so two
+    identically named monitors share one override. Rekeying them by id needs a migration of its own.
+
 ### 2026-09-12 - A user can finally say what the crash was
 - **Developer label:** "some users also reported random crashing, also when the app crashes can the user send a crash report to us some way" / "no need user indicators, in crash report, only things we need"
 - **Agent label:** Follow-up 33 — the reporting half, now that the three traps are fixed

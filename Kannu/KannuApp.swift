@@ -102,8 +102,19 @@ extension AppDelegate {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
-    var windows: [NSScreen: NSWindow] = [:]
-    var viewModels: [NSScreen: KannuViewModel] = [:]
+    /// Live only while the placement follows the pointer (two or more externals).
+    private var pointerMonitor: Any?
+    private var pointerRepositionTask: Task<Void, Never>?
+    /// Coalesces a burst of screen-configuration notifications into one rebuild.
+    private var screenChangeTask: Task<Void, Never>?
+    /// The delayed reposition after an unlock, cancellable so a burst queues one.
+    private var unlockRestoreTask: Task<Void, Never>?
+
+    /// Keyed by `CGDirectDisplayID`, not `NSScreen`. AppKit does not promise `NSScreen` identity
+    /// across a display reconfiguration, so an object key could strand a window on a replug and
+    /// build a second one beside it.
+    var windows: [CGDirectDisplayID: NSWindow] = [:]
+    var viewModels: [CGDirectDisplayID: KannuViewModel] = [:]
     var window: NSWindow?
     let vm: KannuViewModel = .init()
     @ObservedObject var coordinator = KannuViewCoordinator.shared
@@ -310,8 +321,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func onScreenUnlocked(_: Notification) {
         print("Screen unlocked")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            guard let self = self else { return }
+        // Cancellable: a lock/unlock burst used to queue one of these per unlock, each racing the
+        // others to rebuild windows a second after the fact.
+        unlockRestoreTask?.cancel()
+        unlockRestoreTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled, let self else { return }
+            self.unlockRestoreTask = nil
             self.restoreWindowsAfterLock()
             self.adjustWindowPosition(changeAlpha: true)
         }
@@ -321,7 +337,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard !windowsHiddenForLock else { return }
         windowsHiddenForLock = true
 
-        if Defaults[.showOnAllDisplays] {
+        if Defaults[.displayPlacement].usesOneWindowPerDisplay {
             for window in windows.values {
                 window.alphaValue = 0
                 window.orderOut(nil)
@@ -336,7 +352,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard windowsHiddenForLock else { return }
         windowsHiddenForLock = false
 
-        if Defaults[.showOnAllDisplays] {
+        if Defaults[.displayPlacement].usesOneWindowPerDisplay {
             for window in windows.values {
                 window.orderFrontRegardless()
                 window.alphaValue = 1
@@ -347,8 +363,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
+    /// Drops one display's window, the way `cleanupWindows` drops all of them.
+    ///
+    /// The unplug path used to close the window without removing it from `notchSpace.windows`, so
+    /// every disconnect retained a dead window for the life of the process.
+    @MainActor
+    private func tearDownWindow(forDisplay id: CGDirectDisplayID) {
+        guard let window = windows[id] else { return }
+        viewModels[id]?.onViewTeardown?()
+        viewModels[id]?.onViewTeardown = nil
+        NotchSpaceManager.shared.notchSpace.windows.remove(window)
+        window.close()
+        windows.removeValue(forKey: id)
+        viewModels.removeValue(forKey: id)
+    }
+
     private func cleanupWindows(shouldInvert: Bool = false) {
-        if shouldInvert ? !Defaults[.showOnAllDisplays] : Defaults[.showOnAllDisplays] {
+        if shouldInvert ? !Defaults[.displayPlacement].usesOneWindowPerDisplay : Defaults[.displayPlacement].usesOneWindowPerDisplay {
             for (screen, window) in windows {
                 // Tear down the hosted ContentView before dropping the window
                 // (`.onDisappear` is unreliable for borderless panels).
@@ -379,7 +410,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NotchSpaceManager.shared.notchSpace.windows = []
             return
         }
-        if Defaults[.showOnAllDisplays] {
+        if Defaults[.displayPlacement].usesOneWindowPerDisplay {
             NotchSpaceManager.shared.notchSpace.windows = Set(windows.values)
         } else if let window = window {
             NotchSpaceManager.shared.notchSpace.windows = [window]
@@ -620,8 +651,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        if Defaults[.showOnAllDisplays] {
-            for (screen, window) in windows {
+        if Defaults[.displayPlacement].usesOneWindowPerDisplay {
+            for (id, window) in windows {
+                guard let screen = NSScreen.screens.first(where: { DisplayPlacementRuntime.displayID(for: $0) == id })
+                else { continue }
                 let screenSize = adjustedSizeForScreen(size, screen: screen)
                 if force || window.frame.size != screenSize {
                     resizeWindow(window, on: screen, to: screenSize)
@@ -705,6 +738,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Defaults.Keys.migrateMediaControllerToNowPlaying()
         Defaults.Keys.migrateCapsLockTintMode()
         Defaults.Keys.migrateNonNotchAlwaysShow()
+        Defaults.Keys.migrateDisplayPlacement()
         Defaults.Keys.migrateThirdPartyDDCIntegration()
         Defaults.Keys.enforceRemovedFeatureDefaults()
         SecureSecretsStore.migrateFromDefaultsIfNeeded()
@@ -955,45 +989,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
+        // `queue: nil` delivers on whichever thread posted, and these touch windows, so they hop.
         NotificationCenter.default.addObserver(
             forName: Notification.Name.selectedScreenChanged, object: nil, queue: nil
         ) { [weak self] _ in
-            self?.adjustWindowPosition(changeAlpha: true)
+            Task { @MainActor in self?.adjustWindowPosition(changeAlpha: true) }
         }
 
         NotificationCenter.default.addObserver(
             forName: Notification.Name.notchHeightChanged, object: nil, queue: nil
         ) { [weak self] _ in
-            self?.adjustWindowPosition()
+            Task { @MainActor in self?.adjustWindowPosition() }
         }
 
         NotificationCenter.default.addObserver(
-            forName: Notification.Name.automaticallySwitchDisplayChanged, object: nil, queue: nil
+            forName: Notification.Name.displayPlacementChanged, object: nil, queue: nil
         ) { [weak self] _ in
-            guard let self = self, let window = self.window else { return }
-            DispatchQueue.main.async {
-                window.alphaValue =
-                    self.coordinator.selectedScreen == self.coordinator.preferredScreen ? 1 : 0
-            }
-        }
-
-        NotificationCenter.default.addObserver(
-            forName: Notification.Name.showOnAllDisplaysChanged, object: nil, queue: nil
-        ) { [weak self] _ in
-            guard let self = self else { return }
-            self.cleanupWindows(shouldInvert: true)
-
-            if !Defaults[.showOnAllDisplays] {
-                // No screen at all (clamshell, every display asleep): wait for the next screen
-                // change rather than force-unwrapping an empty list, which traps with no report.
-                guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
-                let viewModel = self.vm
-                let window = self.createKannuWindow(for: screen, with: viewModel)
-                self.window = window
-                self.adjustWindowPosition(changeAlpha: true)
-            } else {
-                self.adjustWindowPosition()
-            }
+            Task { @MainActor in self?.applyPlacementChange() }
         }
 
         DistributedNotificationCenter.default().addObserver(
@@ -1022,13 +1034,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             var viewModel = self.vm
 
-            if Defaults[.showOnAllDisplays] {
-                for screen in NSScreen.screens {
-                    if screen.frame.contains(mouseLocation) {
-                        if let screenViewModel = self.viewModels[screen] {
-                            viewModel = screenViewModel
-                            break
-                        }
+            if Defaults[.displayPlacement].usesOneWindowPerDisplay {
+                for screen in NSScreen.screens where screen.frame.contains(mouseLocation) {
+                    if let id = DisplayPlacementRuntime.displayID(for: screen),
+                       let screenViewModel = self.viewModels[id] {
+                        viewModel = screenViewModel
+                        break
                     }
                 }
             }
@@ -1055,7 +1066,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         registerOptionalShortcutHandlers()
         updateFeatureShortcutAvailability()
 
-        if !Defaults[.showOnAllDisplays], let screen = NSScreen.main ?? NSScreen.screens.first {
+        if !Defaults[.displayPlacement].usesOneWindowPerDisplay, let screen = DisplayPlacementRuntime.activeScreen() {
             let viewModel = self.vm
             let window = createKannuWindow(for: screen, with: viewModel)
             self.window = window
@@ -1495,62 +1506,117 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         previousScreens = currentScreens
         
-        if screensChanged {
-            DispatchQueue.main.async { [weak self] in
-                self?.cleanupWindows()
-                self?.adjustWindowPosition()
-            }
+        guard screensChanged else { return }
+
+        // Plugging in a dock emits several of these in a row. Rebuilding on each one ran two
+        // teardown/rebuild cycles at once and reset every hosted view's state; cancelling the
+        // pending task is both the debounce and the in-flight guard.
+        screenChangeTask?.cancel()
+        screenChangeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled, let self else { return }
+            self.screenChangeTask = nil
+            self.cleanupWindows()
+            self.adjustWindowPosition()
+            self.syncPointerTracking()
         }
     }
     
-    @objc func adjustWindowPosition(changeAlpha: Bool = false) {
-        if Defaults[.showOnAllDisplays] {
-            let currentScreens = Set(NSScreen.screens)
-            
-            for screen in windows.keys where !currentScreens.contains(screen) {
-                if let window = windows[screen] {
-                    viewModels[screen]?.onViewTeardown?()
-                    viewModels[screen]?.onViewTeardown = nil
-                    window.close()
-                    windows.removeValue(forKey: screen)
-                    viewModels.removeValue(forKey: screen)
-                }
+    /// Switches Kannu between "one window per display" and "one window on a resolved display".
+    ///
+    /// The two modes have separate window lifecycles — the `windows`/`viewModels` dictionaries and
+    /// the single `window`/`vm` — so changing placement tears one down and builds the other.
+    @MainActor
+    private func applyPlacementChange() {
+        cleanupWindows(shouldInvert: true)
+        if !Defaults[.displayPlacement].usesOneWindowPerDisplay {
+            // No screen at all (clamshell, every display asleep): wait for the next screen change
+            // rather than force-unwrapping an empty list, which traps with no report.
+            guard let screen = DisplayPlacementRuntime.activeScreen() else { return }
+            window = createKannuWindow(for: screen, with: vm)
+        }
+        adjustWindowPosition(changeAlpha: true)
+        syncPointerTracking()
+    }
+
+    // MARK: - Following the pointer, only when it can matter
+
+    /// Installs a mouse-moved monitor only while the placement actually depends on the pointer —
+    /// `externalTakesOver` with two or more externals — and tears it down the moment it does not.
+    /// With one external, or any other mode, there are no wakeups at all.
+    @MainActor
+    func syncPointerTracking() {
+        if DisplayPlacementRuntime.needsPointerTracking() {
+            guard pointerMonitor == nil else { return }
+            pointerMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] _ in
+                Task { @MainActor in self?.schedulePointerReposition() }
             }
-            
-            for screen in currentScreens {
-                if windows[screen] == nil {
+        } else if let monitor = pointerMonitor {
+            NSEvent.removeMonitor(monitor)
+            pointerMonitor = nil
+        }
+    }
+
+    /// Coalesced: a mouse-moved stream is continuous, so at most one placement pass runs every
+    /// 250 ms, the same discipline the hidden-edge hover poll already uses.
+    @MainActor
+    private func schedulePointerReposition() {
+        guard pointerRepositionTask == nil else { return }
+        pointerRepositionTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            self?.pointerRepositionTask = nil
+            guard let self, !Task.isCancelled, DisplayPlacementRuntime.needsPointerTracking() else { return }
+            let current = self.window?.screen.flatMap(DisplayPlacementRuntime.displayID(for:))
+            guard let target = DisplayPlacementRuntime.activeDisplayIDs().first, target != current else { return }
+            self.adjustWindowPosition(changeAlpha: true)
+        }
+    }
+
+    @MainActor
+    @objc func adjustWindowPosition(changeAlpha: Bool = false) {
+        // A window is never put back over the lock screen: plugging a display in while locked used
+        // to produce a full-alpha notch on top of it, and `onScreenUnlocked` then queued another.
+        guard !windowsHiddenForLock, !LockScreenManager.shared.isLocked else { return }
+
+        if Defaults[.displayPlacement].usesOneWindowPerDisplay {
+            let screensByID = Dictionary(
+                NSScreen.screens.compactMap { screen in
+                    DisplayPlacementRuntime.displayID(for: screen).map { ($0, screen) }
+                },
+                uniquingKeysWith: { first, _ in first }
+            )
+
+            for id in windows.keys where screensByID[id] == nil {
+                tearDownWindow(forDisplay: id)
+            }
+
+            for (id, screen) in screensByID {
+                if windows[id] == nil {
                     let viewModel = KannuViewModel(screen: screen.localizedName)
-                    let window = createKannuWindow(for: screen, with: viewModel)
-                    
-                    windows[screen] = window
-                    viewModels[screen] = viewModel
+                    windows[id] = createKannuWindow(for: screen, with: viewModel)
+                    viewModels[id] = viewModel
                 }
-                
-                if let window = windows[screen], let viewModel = viewModels[screen] {
+
+                if let window = windows[id], let viewModel = viewModels[id] {
                     positionWindow(window, on: screen, changeAlpha: changeAlpha)
-                    
+
                     if viewModel.notchState == .closed {
                         viewModel.close()
                     }
                 }
             }
         } else {
-            let selectedScreen: NSScreen
-
-            if let preferredScreen = NSScreen.screens.first(where: {
-                $0.localizedName == coordinator.preferredScreen
-            }) {
-                coordinator.selectedScreen = coordinator.preferredScreen
-                selectedScreen = preferredScreen
-            } else if Defaults[.automaticallySwitchDisplay], let mainScreen = NSScreen.main {
-                coordinator.selectedScreen = mainScreen.localizedName
-                selectedScreen = mainScreen
-            } else {
-                if let window = window {
-                    window.alphaValue = 0
-                }
+            // One window, on the screen the placement mode resolves to: the external display while
+            // one is plugged in, the built-in when none is, the pointer's display with two or more
+            // externals, or the display the user named. `DisplayPlacementResolver` decides; this
+            // only finds the `NSScreen` that carries the id it returned.
+            guard let selectedScreen = DisplayPlacementRuntime.activeScreen() else {
+                // No screens at all: clamshell, or every display asleep. The next
+                // screen-parameters notification places the window.
+                window?.alphaValue = 0
                 return
             }
+            coordinator.selectedScreen = selectedScreen.localizedName
             
             vm.screen = selectedScreen.localizedName
             vm.notchSize = getClosedNotchSize(screen: selectedScreen.localizedName)
@@ -1616,8 +1682,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 extension Notification.Name {
     static let selectedScreenChanged = Notification.Name("SelectedScreenChanged")
     static let notchHeightChanged = Notification.Name("NotchHeightChanged")
-    static let showOnAllDisplaysChanged = Notification.Name("showOnAllDisplaysChanged")
-    static let automaticallySwitchDisplayChanged = Notification.Name("automaticallySwitchDisplayChanged")
+    static let displayPlacementChanged = Notification.Name("displayPlacementChanged")
 }
 
 extension CGRect: @retroactive Hashable {

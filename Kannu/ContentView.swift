@@ -96,7 +96,7 @@ struct ContentView: View {
     @Default(.showChargingBatteryHUD) var showChargingBatteryHUD
     @Default(.showLowBatteryHUD) var showLowBatteryHUD
     @Default(.showFullBatteryHUD) var showFullBatteryHUD
-    @Default(.showOnAllDisplays) var showOnAllDisplays
+    @Default(.displayPlacement) var displayPlacement
     @Default(.lowBatteryHUDStyle) var lowBatteryHUDStyle
     @Default(.fullBatteryHUDStyle) var fullBatteryHUDStyle
     @Default(.notchSkinScrimOpacity) private var notchSkinScrimOpacity
@@ -211,6 +211,9 @@ struct ContentView: View {
     @State private var hoverClickMonitor: Any?
     @State private var hoverClickLocalMonitor: Any?
     @State private var hiddenEdgeHoverPollingTask: Task<Void, Never>?
+    /// Identifies the poll that owns the handle above, so a finishing task never clears its
+    /// successor's.
+    @State private var hiddenEdgeHoverPollingToken: UUID?
     @State private var isHoveringClosedMusicWaveformControl: Bool = false
     @State private var agentHoverTask: Task<Void, Never>?
 
@@ -412,9 +415,13 @@ struct ContentView: View {
     }
 
     /// Whether the current screen lacks a physical notch.
+    ///
+    /// A screen that cannot be resolved is one that has gone away, and calling that "non-notch" put
+    /// a vanished display on the hide-until-hover path — including its 20 Hz poll. It counts as
+    /// notched instead, which is the branch that does nothing.
     private var isNonNotchScreen: Bool {
         guard let screen = NSScreen.screens.first(where: { $0.localizedName == currentScreenName }) else {
-            return true
+            return false
         }
         return screen.safeAreaInsets.top <= 0
     }
@@ -464,7 +471,7 @@ struct ContentView: View {
     /// Whether the global sneak peek is visible on this specific screen.
     private var isSneakPeekVisibleOnCurrentScreen: Bool {
         guard coordinator.sneakPeek.show else { return false }
-        guard Defaults[.showOnAllDisplays] else { return true }
+        guard Defaults[.displayPlacement].usesOneWindowPerDisplay else { return true }
         guard let targetScreenName = coordinator.sneakPeek.targetScreenName else { return true }
         return currentScreenName == targetScreenName
     }
@@ -642,7 +649,7 @@ struct ContentView: View {
         guard coordinator.expandingView.show, coordinator.expandingView.type == .battery else { return false }
         guard showPowerStatusNotifications else { return false }
         guard batteryModel.activeTemporaryHUDKind != nil else { return false }
-        if showOnAllDisplays { return true }
+        if displayPlacement.usesOneWindowPerDisplay { return true }
         guard let targetScreenName = batteryModel.activeTemporaryHUDTargetScreenName else { return true }
         return currentScreenName == targetScreenName
     }
@@ -980,6 +987,17 @@ struct ContentView: View {
                 syncHiddenEdgeHoverPolling()
             }
             .onChange(of: externalDisplayStyle) { _, _ in
+                clearRevealState()
+                syncHiddenEdgeHoverPolling()
+            }
+            // The per-display overrides decide the same thing as the two globals above, and had no
+            // observer: switching one display's "Always show" off hid its island without starting
+            // the poll that reveals it, so it could not be hovered back.
+            .onChange(of: alwaysShowOverrides) { _, _ in
+                clearRevealState()
+                syncHiddenEdgeHoverPolling()
+            }
+            .onChange(of: displayStyleOverrides) { _, _ in
                 clearRevealState()
                 syncHiddenEdgeHoverPolling()
             }
@@ -2381,6 +2399,11 @@ struct ContentView: View {
         guard hiddenEdgeHoverPollingTask == nil else { return }
 
         guard shouldUseHiddenEdgeHoverPolling else { return }
+        // An identity token, because the task clears the handle when it finishes: without this a
+        // cancelled poll could nil its *successor's* handle on the way out, and the app would then
+        // be running two 20 Hz pollers with no way to stop either.
+        let token = UUID()
+        hiddenEdgeHoverPollingToken = token
         hiddenEdgeHoverPollingTask = Task { @MainActor in
             var dwell = HoverDwell()
             while !Task.isCancelled, self.shouldUseHiddenEdgeHoverPolling {
@@ -2408,7 +2431,10 @@ struct ContentView: View {
                 try? await Task.sleep(for: .milliseconds(50))
             }
 
-            self.hiddenEdgeHoverPollingTask = nil
+            if self.hiddenEdgeHoverPollingToken == token {
+                self.hiddenEdgeHoverPollingTask = nil
+                self.hiddenEdgeHoverPollingToken = nil
+            }
         }
     }
 
@@ -2427,6 +2453,7 @@ struct ContentView: View {
     private func stopHiddenEdgeHoverPolling() {
         hiddenEdgeHoverPollingTask?.cancel()
         hiddenEdgeHoverPollingTask = nil
+        hiddenEdgeHoverPollingToken = nil
     }
 
     private func startHoverClickMonitor() {
