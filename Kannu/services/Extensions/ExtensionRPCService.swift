@@ -49,8 +49,17 @@ final class ExtensionRPCService {
         "text", "icon", "progress", "graph", "gauge", "spacer", "divider", "webView"
     ]
 
-    init(bundleIdentifier: String, server: ExtensionRPCServer) {
+    /// The connection this request arrived on.
+    ///
+    /// Held rather than looked up again later: a handler that waits for the user (the file picker)
+    /// can outlive its connection, and the same bundle identifier can be rebound to a new connection
+    /// by a disconnect and re-handshake in the meantime. Resolving the identity at reply time would
+    /// hand the answer to whoever holds the slot then.
+    private let connID: UUID
+
+    init(bundleIdentifier: String, connID: UUID, server: ExtensionRPCServer) {
         self.bundleIdentifier = bundleIdentifier
+        self.connID = connID
         self.server = server
     }
 
@@ -562,7 +571,8 @@ final class ExtensionRPCService {
             self.logDiagnostics("RPC: showFilePicker added \(newItems.count) items for \(self.bundleIdentifier)")
             self.server?.sendDeferredResponse(
                 RPCSuccessResponse(result: ["itemIDs": .array(newItemIDs)], id: id),
-                to: self.bundleIdentifier
+                to: self.bundleIdentifier,
+                originatingConnID: self.connID
             )
         }
         return RPCDeferredResponse()

@@ -151,6 +151,27 @@ final class HangReportTests: XCTestCase {
         XCTAssertFalse(body.lowercased().contains("/users/"))
     }
 
+    /// The bug this test exists for: `URLComponents` leaves `+` alone (RFC 3986 allows it in a
+    /// query), and GitHub — like every form-urlencoded reader — decodes `+` as a space. Without the
+    /// substitution every `symbol + 124` frame arrives as `symbol   124`.
+    ///
+    /// Decoded the way a form reader does, not the way `URLComponents` does: Foundation's own parser
+    /// leaves `+` intact, so a round trip through it would pass while the real thing was broken.
+    func testTheStackSurvivesFormDecodingOnTheOtherEnd() throws {
+        let url = try XCTUnwrap(report().issueURL(repository: "libinmv/kannu"))
+        let body = try XCTUnwrap(
+            (url.query ?? "")
+                .split(separator: "&")
+                .first { $0.hasPrefix("body=") }
+                .map { String($0.dropFirst("body=".count)) }
+        )
+        let formDecoded = try XCTUnwrap(
+            body.replacingOccurrences(of: "+", with: " ").removingPercentEncoding
+        )
+        XCTAssertTrue(formDecoded.contains("-[NSApplication run] + 464"), "got: \(formDecoded)")
+        XCTAssertFalse(formDecoded.contains("run]   464"), "the offset separator was eaten")
+    }
+
     /// GitHub refuses a very long URL, so a deep stack is trimmed rather than dropped — and the
     /// frames nearest the wedge, which are the ones worth reading, are the ones kept.
     func testALongStackIsTrimmedFromTheBottom() {
@@ -160,6 +181,16 @@ final class HangReportTests: XCTestCase {
         XCTAssertTrue(body.contains("0  Kannu"), "The innermost frames must survive the trim.")
         XCTAssertTrue(body.contains("… trimmed"))
         XCTAssertFalse(body.contains("399  Kannu"))
+    }
+
+    /// The raw-length budget is not what has to fit — the percent-encoded URL is. A stack big enough
+    /// to blow past that falls back to a body that names the log file instead of failing to open.
+    func testAnEnormousStackStillProducesAnOpenableURL() throws {
+        var huge = report()
+        huge.frames = (0..<4000).map { "\($0)  Kannu  $s5Kannu28aRatherLongMangledSymbolNameyyF + \($0)" }
+        let url = try XCTUnwrap(huge.issueURL(repository: "libinmv/kannu"))
+        XCTAssertLessThanOrEqual(url.absoluteString.count, HangReport.issueURLLimit)
+        XCTAssertTrue(url.absoluteString.contains("issues/new"))
     }
 
     func testAStacklessReportSaysSoRatherThanLookingEmpty() {

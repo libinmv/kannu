@@ -171,7 +171,14 @@ struct HangReport: Equatable {
 
     /// GitHub rejects a URL much over 8 KB, so the stack is trimmed from the bottom — the frames
     /// nearest the wedge are at the top and are the ones worth keeping.
-    static let issueBodyLimit = 6000
+    ///
+    /// Budgeted against the *raw* body, while what has to fit is the percent-encoded one: every
+    /// space becomes `%20` and every newline `%0A`, so a stack inflates by roughly a third. The
+    /// figure allows for that; `issueURL` checks the finished URL as well rather than trusting it.
+    static let issueBodyLimit = 4200
+
+    /// Comfortably inside what GitHub accepts, and inside what Safari and Chrome will open.
+    static let issueURLLimit = 7500
 
     var issueBody: String {
         var body = """
@@ -209,12 +216,45 @@ struct HangReport: Equatable {
     /// Kannu never posts this itself: the link opens the browser with the fields filled in, the
     /// user reads it, and the user presses Submit.
     func issueURL(repository: String) -> URL? {
+        Self.issueURL(repository: repository, title: issueTitle, body: issueBody, label: "hang")
+            ?? Self.issueURL(repository: repository, title: issueTitle, body: stacklessIssueBody, label: "hang")
+    }
+
+    /// The body when even a trimmed stack will not fit in a URL. The log file is named, so the user
+    /// can still attach it.
+    private var stacklessIssueBody: String {
+        """
+        **What happened:** Kannu's interface stopped responding for \(Self.spokenDuration(duration)).
+
+        | | |
+        | --- | --- |
+        | Kannu | \(appVersion) (\(buildNumber)) |
+        | macOS | \(systemVersion) |
+        | Architecture | \(architecture) |
+        | Frozen for | \(String(format: "%.1f", duration))s |
+
+        The stack was too long to carry in a link. It is in `~/Library/Logs/Kannu/` — please attach
+        the newest `hang-*.txt`.
+        """
+    }
+
+    /// Builds the prefilled-issue link, or nil when the result would be too long to open.
+    ///
+    /// `URLComponents` follows RFC 3986, where `+` is a legal query character, so it leaves it
+    /// alone. GitHub — like every form-urlencoded reader — decodes `+` as a space, which would turn
+    /// every `symbol + 124` frame into `symbol   124` and every `+0530` timestamp into ` 0530`. The
+    /// substitution is safe because the setter has already encoded real spaces as `%20`, so any `+`
+    /// left in the query came from a value.
+    static func issueURL(repository: String, title: String, body: String, label: String) -> URL? {
         var components = URLComponents(string: "https://github.com/\(repository)/issues/new")
         components?.queryItems = [
-            URLQueryItem(name: "title", value: issueTitle),
-            URLQueryItem(name: "body", value: issueBody),
-            URLQueryItem(name: "labels", value: "hang")
+            URLQueryItem(name: "title", value: title),
+            URLQueryItem(name: "body", value: body),
+            URLQueryItem(name: "labels", value: label)
         ]
-        return components?.url
+        let encoded = components?.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        components?.percentEncodedQuery = encoded
+        guard let url = components?.url, url.absoluteString.count <= issueURLLimit else { return nil }
+        return url
     }
 }

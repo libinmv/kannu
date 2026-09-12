@@ -40,8 +40,20 @@ final class ModalPresentationRulesTests: XCTestCase {
     /// The one file allowed to touch AppKit's modal APIs.
     private static let allowedPaths: Set<String> = ["Kannu/helpers/ModalPresenter.swift"]
 
-    /// Line fragments that mean "a modal session is being started here".
-    private static let bannedFragments = [".runModal(", "beginSheetModal"]
+    /// Line fragments that mean "a modal session is being started here", or that a sheet is being
+    /// hung off a window this app cannot guarantee is reachable.
+    ///
+    /// No trailing `(`: `panel.runModal ()` — a space before the argument list — is valid Swift that
+    /// calls the method, and a fragment ending in `(` walks straight past it. Bare `runModal` also
+    /// covers `runModalSession` and `runModalForWindow` for free. `beginSheet(`/`beginCriticalSheet`
+    /// are `NSWindow`'s own spelling of the same mistake and were not covered at all.
+    private static let bannedFragments = [
+        "runModal",
+        "beginSheetModal",
+        "beginSheet(",
+        "beginCriticalSheet",
+        "beginModalSession"
+    ]
 
     private static let repoRoot: URL = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()   // KannuTests/
@@ -104,6 +116,24 @@ final class ModalPresentationRulesTests: XCTestCase {
             alert.beginSheetModal(for: window) { _ in }
             _ = savePanel.runModal()
         }
+        """
+        XCTAssertEqual(Self.offenders(in: planted, path: "X.swift").count, 3)
+    }
+
+    /// `panel.runModal ()` compiles and calls the method, and the original fragment ended in `(`, so
+    /// a single space walked past both this scanner and the pre-commit hook.
+    func testWhitespaceBeforeTheArgumentListDoesNotEvadeTheScanner() {
+        XCTAssertEqual(Self.offenders(in: "let r = panel.runModal ()", path: "X.swift").count, 1)
+        XCTAssertEqual(Self.offenders(in: "let r = panel\n    .runModal()", path: "X.swift").count, 1)
+    }
+
+    /// The same harm through `NSWindow`'s own API, which the first version of this rule missed
+    /// entirely: a sheet on a borderless non-activating panel cannot be focused or moved aside.
+    func testTheSheetFamilyIsBannedToo() {
+        let planted = """
+        window.beginSheet(panel) { _ in }
+        window.beginCriticalSheet(alert.window) { _ in }
+        let session = NSApp.beginModalSession(for: panel)
         """
         XCTAssertEqual(Self.offenders(in: planted, path: "X.swift").count, 3)
     }
