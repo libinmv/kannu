@@ -4,6 +4,15 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-12 - Stop tracking Python bytecode
+- **Developer label:** Housekeeping before the branch goes up for review
+- **Agent label:** Follow-up 32, phase 0
+- **Changes:**
+  - `scripts/__pycache__/adr-analyze-session.cpython-313.pyc` was committed by accident with the
+    Detection adapter; it is untracked now, and `.gitignore` covers `__pycache__/` and `*.pyc`.
+  - `.gitignore` also covers the `.build-verify/` and `.build-release/` derived-data folders used
+    while verifying a build locally, so a stray `git add -A` cannot commit gigabytes.
+
 ### 2026-09-12 - A chat whose session record was written late is not dead
 - **Developer label:** "this session is not being detected why"
 - **Agent label:** Found while answering it: the live chat had a fresh hook file and no card
