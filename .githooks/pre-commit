@@ -119,6 +119,39 @@ EOF
     exit 1
   fi
 fi
+# --- Modal presentation invariant ---------------------------------------------
+# A file panel's runModal() stops the main run loop, and this app keeps publishing on the
+# main queue while it is stopped, so SwiftUI re-enters layout underneath the modal session.
+# A user clicked the ADR policy picker and the app froze: the main thread was parked in
+# -[NSSavePanel runModal] with the panel out of reach. beginSheetModal is the other half —
+# nearly every window Kannu owns is a borderless non-activating panel at .mainMenu + 3, and
+# a sheet on one of those cannot be focused or moved aside.
+# Both APIs live in ModalPresenter and nowhere else. Strip the file:line: prefix before
+# testing for a comment, or the doc comments explaining this rule trip the check.
+modal_helper="Kannu/helpers/ModalPresenter.swift"
+stray_modal="$(grep -rnE '\.runModal\(|beginSheetModal' Kannu 2>/dev/null \
+  | grep -v "^${modal_helper}:" \
+  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true)"
+if [[ -n "${stray_modal}" ]]; then
+  cat <<EOF
+ERROR: runModal()/beginSheetModal outside ${modal_helper}.
+
+${stray_modal}
+
+runModal() on a file panel freezes the app (a nested modal run loop with SwiftUI still
+publishing on the main queue), and a sheet anchored to one of Kannu's non-activating notch
+panels cannot be reached. Present through ModalPresenter instead:
+
+  ModalPresenter.present(panel) { response in ... }   // open/save panels, never modal
+  ModalPresenter.present(alert) { response in ... }   // sheet when a window is up
+  ModalPresenter.runAppModal(alert)                   // only when the answer is needed now
+
+KannuTests/ModalPresentationRulesTests.swift pins the same rule for CI.
+EOF
+  exit 1
+fi
+# ------------------------------------------------------------------------------
+
 # ------------------------------------------------------------------------------
 
 staged_files="$(git diff --cached --name-only --diff-filter=ACMR)"

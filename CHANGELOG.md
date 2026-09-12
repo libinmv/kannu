@@ -38,6 +38,22 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     status-item menu, the export-logs result alerts, and the Settings crash-report alerts.
   - Also here: the memory alert said "DynamicIsland", a name from before the fork.
 
+### 2026-09-12 - The sixth one cannot be written
+- **Developer label:** "this wont happen again later for other users right ?"
+- **Agent label:** Follow-up 34 — ban it, do not just fix it
+- **Changes:**
+  - `.githooks/pre-commit` rejects `runModal(` or `beginSheetModal` anywhere under `Kannu/` except
+    `Kannu/helpers/ModalPresenter.swift`, in the shape the `.help(` ban already uses: a scoped
+    grep, the `file:line:` prefix stripped before testing for a comment so the doc comments
+    explaining the rule do not trip it, and a message that names the replacement. Bash and grep,
+    milliseconds, no build.
+  - `KannuTests/ModalPresentationRulesTests.swift` runs the same rule in CI, for anything
+    committed with `--no-verify`: it walks every Swift file under `Kannu/` from `#filePath`, pins
+    the allowlist at exactly one entry, and checks that the helper itself still presents panels
+    with `begin`/`beginSheetModal` and never `runModal`. Two meta-tests guard the scanner — one
+    plants three offenders of different shapes, the other feeds it comments about the rule — so a
+    regex that stopped matching cannot make the ban pass silently.
+
 ### 2026-09-12 - Settings file pickers stop freezing the app
 - **Developer label:** "when clicking on policy upload it crashed the app" / "app is stuck"
 - **Agent label:** Follow-up 33 — caught live: a sample of the stuck process parked in choosePolicyFile
