@@ -69,9 +69,18 @@ struct CrashReport: Equatable {
 
     // MARK: - Reading what macOS wrote
 
-    /// True for a diagnostic about this app. Kannu's reports are named `Kannu_<date>_<host>.<kind>`.
+    /// True for a diagnostic about this app, and not about something whose name merely starts the
+    /// same way — `KannuHelper_…` is not Kannu.
+    ///
+    /// macOS uses **two** shapes for the same app, both observed on one machine: a crash is
+    /// `Kannu-2026-09-12-213652.ips` and a resource report is
+    /// `Kannu_2026-09-12-033808_<host>.cpu_resource.diag`. So the delimiter is `-` or `_`; requiring
+    /// only `Kannu_` would reject every crash report, which is the thing this reads.
     static func isDiagnostic(fileName: String, appName: String = "Kannu") -> Bool {
         guard fileName.hasPrefix(appName) else { return false }
+        guard let delimiter = fileName.dropFirst(appName.count).first,
+              delimiter == "-" || delimiter == "_"
+        else { return false }
         let interesting = [".ips", ".cpu_resource.diag", ".hang", ".spin", ".wakeups_resource.diag"]
         return interesting.contains { fileName.hasSuffix($0) }
     }

@@ -39,6 +39,10 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     "iMac" was turning the model code `iMac21,1` into `this-mac21,1` — using alphanumeric lookaround
     rather than `\b`, because `_` is a word character and the host name sits after one in every
     diagnostic's file name.
+  - A diagnostic is only Kannu's if the app name is followed by a delimiter, so `KannuHelper_*.ips`
+    is no longer read as Kannu's own. Both shapes macOS actually writes are kept: a crash is
+    `Kannu-<date>.ips` and a resource report is `Kannu_<date>_<host>.cpu_resource.diag` — requiring
+    `Kannu_`, as first suggested, would have rejected every crash report.
   - The "Display" picker is always mounted (disabled when it does not apply), so its search entry
     lands somewhere in every mode; "Copy Latest Report" resets its own state instead of reading
     "Copied" for the life of the window, or showing a stale failure beside a later success.

@@ -125,6 +125,22 @@ final class CrashReportTests: XCTestCase {
         XCTAssertFalse(CrashReport.isDiagnostic(fileName: "Kannu_2019-01-01_host.crash"))
     }
 
+    /// Both shapes macOS actually writes for one app, taken from this machine: a crash uses a
+    /// hyphen, a resource report an underscore. Requiring `Kannu_` would have rejected every crash.
+    func testBothRealFileNameShapesAreAccepted() {
+        XCTAssertTrue(CrashReport.isDiagnostic(fileName: "Kannu-2026-09-12-213652.ips"))
+        XCTAssertTrue(CrashReport.isDiagnostic(
+            fileName: "Kannu_2026-09-12-033808_Davids-MacBook-Pro.cpu_resource.diag"
+        ))
+    }
+
+    /// A different app whose name merely starts the same way is not this app.
+    func testAnAppWhoseNameMerelyStartsTheSameWayIsRejected() {
+        XCTAssertFalse(CrashReport.isDiagnostic(fileName: "KannuHelper_2026-09-12_host.ips"))
+        XCTAssertFalse(CrashReport.isDiagnostic(fileName: "KannuExtension-2026-09-12-000000.ips"))
+        XCTAssertFalse(CrashReport.isDiagnostic(fileName: "Kannu2-2026-09-12-000000.ips"))
+    }
+
     // MARK: - A crash
 
     func testACrashCarriesTheFailureAndTheCrashingThread() throws {
