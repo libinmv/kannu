@@ -1817,7 +1817,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
                 continue
             }
 
-            let processAlive = isClaudeProcessAlive(pid: pid, startedAtMs: startedAtMs)
+            let processAlive = isClaudeProcessAlive(pid: pid, startedAtMs: startedAtMs,
+                                                    recordProcStartMs: claudeRecordProcStartMs(json))
             if processAlive, isDescendantOfThisProcess(pid: pid) {
                 probeIDs = AgentTrafficLightMapper.rememberingProbeConversationID(sessionId, in: probeIDs)
                 Defaults[.claudeUsageProbeConversationIDs] = probeIDs
@@ -2079,7 +2080,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
 
     // Returns true only if the process is alive AND its start time matches startedAtMs
     // within 5 seconds, preventing PID-reuse false positives.
-    private func isClaudeProcessAlive(pid: Int, startedAtMs: Int64) -> Bool {
+    private func isClaudeProcessAlive(pid: Int, startedAtMs: Int64, recordProcStartMs: Int64? = nil) -> Bool {
         guard kill(pid_t(pid), 0) == 0 else { return false }
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, Int32(pid)]
         var info = kinfo_proc()
@@ -2087,7 +2088,27 @@ final class CursorAgentStatusMonitor: ObservableObject {
         guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return true }
         let procStartMs = Int64(info.kp_proc.p_starttime.tv_sec) * 1000
             + Int64(info.kp_proc.p_starttime.tv_usec) / 1000
-        return abs(procStartMs - startedAtMs) < 5_000
+        return AgentTrafficLightMapper.processMatchesSessionRecord(
+            processStartMs: procStartMs, recordStartedAtMs: startedAtMs, recordProcStartMs: recordProcStartMs
+        )
+    }
+
+    /// The session record's own view of when its process started (`"procStart": "Sat Sep 12
+    /// 07:12:39 2026"`, UTC). Used only to confirm identity — anything unparseable falls back to
+    /// the window around `startedAt`, so a format or timezone change can never mark a chat dead.
+    private static let claudeProcStartFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "EEE MMM d HH:mm:ss yyyy"
+        return formatter
+    }()
+
+    private func claudeRecordProcStartMs(_ json: [String: Any]) -> Int64? {
+        guard let text = json["procStart"] as? String else { return nil }
+        let squeezed = text.split(separator: " ", omittingEmptySubsequences: true).joined(separator: " ")
+        guard let date = Self.claudeProcStartFormatter.date(from: squeezed) else { return nil }
+        return Int64(date.timeIntervalSince1970 * 1000)
     }
 }
 

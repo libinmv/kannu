@@ -543,6 +543,23 @@ enum AgentTrafficLightMapper {
         provider.lowercased() == "claude" && processAlive && tail == .toolInFlight
     }
 
+    /// Does the process holding a session record's pid still belong to that session? The record is
+    /// written a moment *after* the CLI starts — 13 s on this Mac for a session that resumed a
+    /// 130 MB transcript — so requiring the kernel's start time to match `startedAt` within five
+    /// seconds marked a live chat dead: the reconciler then demoted its green card to stopped, the
+    /// card lost its process id (no click-through), and it went invisible ten seconds later.
+    ///
+    /// What the check is actually for is pid reuse, and a reused pid always belongs to a process
+    /// that started *after* the record was written. So: the record's own `procStart` decides when
+    /// the CLI writes one (exact, ±5 s); otherwise the process may start any time up to ten
+    /// minutes before the record and no later than five seconds after it.
+    static func processMatchesSessionRecord(processStartMs: Int64, recordStartedAtMs: Int64,
+                                            recordProcStartMs: Int64? = nil) -> Bool {
+        if let recordProcStartMs { return abs(processStartMs - recordProcStartMs) < 5_000 }
+        return processStartMs <= recordStartedAtMs + 5_000
+            && recordStartedAtMs - processStartMs <= 600_000
+    }
+
     /// Disk rule for a silent Claude hook file past the stale cap (yellow has its own rule above).
     /// A chat is silent for a whole workflow or a long Bash call — its last event was the PreToolUse
     /// that started it — and deleting the file there lost the request's turn. It is kept while it

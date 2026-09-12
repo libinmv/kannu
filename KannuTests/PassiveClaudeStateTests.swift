@@ -95,4 +95,39 @@ final class PassiveClaudeStateTests: XCTestCase {
         XCTAssertEqual(result.rawState, "thinking")
         XCTAssertTrue(result.visible)
     }
+
+    // MARK: - Is that process still this session? (2026-09-12)
+
+    /// The CLI writes its session record a moment after the process starts — 13 s on this Mac for a
+    /// chat that resumed a 130 MB transcript. Requiring the kernel's start time to be within five
+    /// seconds of `startedAt` marked that live chat dead: its green card was demoted to stopped,
+    /// lost its process id, and went invisible. A reused pid is the thing to catch, and that always
+    /// starts *after* the record was written.
+    func testALiveSessionWhoseRecordWasWrittenLateIsStillAlive() {
+        typealias M = AgentTrafficLightMapper
+        let record: Int64 = 1_789_197_172_129
+        XCTAssertTrue(M.processMatchesSessionRecord(processStartMs: record - 13_100, recordStartedAtMs: record),
+                      "13 s between the process starting and the record being written")
+        XCTAssertTrue(M.processMatchesSessionRecord(processStartMs: record - 1_000, recordStartedAtMs: record))
+        XCTAssertTrue(M.processMatchesSessionRecord(processStartMs: record + 4_000, recordStartedAtMs: record),
+                      "clock slack around the record's own timestamp")
+        XCTAssertFalse(M.processMatchesSessionRecord(processStartMs: record + 60_000, recordStartedAtMs: record),
+                       "a process that started after the record is a reused pid")
+        XCTAssertFalse(M.processMatchesSessionRecord(processStartMs: record - 3_600_000, recordStartedAtMs: record),
+                       "an hour before the record is not this session")
+    }
+
+    func testTheRecordsOwnProcessStartDecidesWhenItHasOne() {
+        typealias M = AgentTrafficLightMapper
+        let record: Int64 = 1_789_197_172_129
+        let procStart = record - 13_100
+        XCTAssertTrue(M.processMatchesSessionRecord(processStartMs: procStart, recordStartedAtMs: record,
+                                                    recordProcStartMs: procStart))
+        XCTAssertTrue(M.processMatchesSessionRecord(processStartMs: procStart + 900, recordStartedAtMs: record,
+                                                    recordProcStartMs: procStart), "second resolution")
+        XCTAssertFalse(M.processMatchesSessionRecord(processStartMs: procStart + 30_000, recordStartedAtMs: record,
+                                                     recordProcStartMs: procStart),
+                       "same pid, different process")
+    }
+
 }

@@ -135,6 +135,21 @@ never received the first fix. See [Merge hygiene](#merge-hygiene).
 **Guard — exists.** `PassiveClaudeStateTests.testUnknownWithQuietFileStaysThinking`.
 **This test must survive the `feat/antigravity-integration` merge.**
 
+**2026-09-12 addendum — "live" has to be decided correctly first.** This whole entry rests on
+knowing that the process is alive. `isClaudeProcessAlive` confirmed identity by requiring the
+kernel's start time to be within five seconds of the session record's `startedAt` — but the CLI
+writes that record *after* it starts, 13 s later for a chat that resumed a 130 MB transcript. The
+live chat was then "dead": the reconciler demoted its green card to stopped, `hostPID` never
+reached it (no click-through), smart caffeinate released, and the card went invisible ten seconds
+later — "this session is not being detected", with the hook file fresh on disk the whole time. The
+check exists for pid reuse, and a reused pid always belongs to a process that started *after* the
+record was written. Rule: `AgentTrafficLightMapper.processMatchesSessionRecord` — the record's own
+`procStart` decides when it has one (±5 s), otherwise the process may start up to ten minutes
+before the record and at most five seconds after it. Never tighten that window to "the record is
+written the instant the process starts"; it is not. Guards:
+`PassiveClaudeStateTests.testALiveSessionWhoseRecordWasWrittenLateIsStillAlive` and
+`...testTheRecordsOwnProcessStartDecidesWhenItHasOne`.
+
 ---
 
 ## 4. A truncated tail must widen the window, never report `.unknown`

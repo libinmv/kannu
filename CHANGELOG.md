@@ -4,6 +4,24 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-12 - A chat whose session record was written late is not dead
+- **Developer label:** "this session is not being detected why"
+- **Agent label:** Found while answering it: the live chat had a fresh hook file and no card
+- **Changes:**
+  - `isClaudeProcessAlive` decided whether the process holding a session record's pid is still that
+    session by requiring the kernel's start time to match the record's `startedAt` within five
+    seconds. Claude Code writes that record after it starts — 13.1 s later here, for a chat that
+    resumed a 130 MB transcript — so the live chat counted as dead: the reconciler demoted its
+    green card to stopped, no process id reached the card (no click-through), smart caffeinate let
+    go, and ten seconds later the card was invisible, while its hook file stayed fresh on disk.
+  - New pure `AgentTrafficLightMapper.processMatchesSessionRecord`: the record's own `procStart`
+    stamp decides identity when it has one (±5 s); otherwise the process may have started up to ten
+    minutes before the record and no more than five seconds after it — a reused pid always belongs
+    to a process that started after the record was written, which is what the check is for. An
+    unparseable `procStart` falls back to that window, so a format change can never mark a chat dead.
+  - Tests: two `PassiveClaudeStateTests` cases (the 13 s record, the record's own stamp, a reused
+    pid). REGRESSIONS entry 3 addendum.
+
 ### 2026-09-12 - Say the ADR scan cadence in plain words
 - **Developer label:** "Daily, sooner when the MCP servers in an AI tool's settings change, and within hours after a scan that failed. Off means Kannu only reads snapshots that something else wrote., this wording needs upgrade right ?"
 - **Agent label:** Follow-up 31 — copy only, no behaviour
