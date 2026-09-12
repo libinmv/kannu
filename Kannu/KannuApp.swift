@@ -275,6 +275,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Clears the marker, so a run that ends here is not read as a crash next time.
+        CrashReporter.shared.noteCleanExit()
         let userInfo: [String: Any] = [
             KannuDistributedNotifications.UserInfoKey.sourcePID: NSNumber(value: ProcessInfo.processInfo.processIdentifier)
         ]
@@ -679,8 +681,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // previous freeze waits: with no window on screen that alert is app-modal, and one of those
         // here would stop the rest of launch.
         HangWatchdog.shared.start()
+        CrashReporter.shared.start()
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
-            HangWatchdog.shared.offerNewestReport()
+            // A freeze is offered before a crash: the hang log is Kannu's own, so it is the more
+            // specific of the two, and only one alert should ever greet a launch.
+            if HangWatchdog.shared.offerNewestReport() { return }
+            CrashReporter.shared.offerNewestReport()
         }
 
         LockScreenLiveActivityWindowManager.shared.configure(viewModel: vm)
@@ -1329,17 +1335,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     let logData = pipe.fileHandleForReading.readDataToEndOfFile()
                     try logData.write(to: logsFile)
                     
-                    let diagDir = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Logs/DiagnosticReports")
-                    let allFiles = (try? FileManager.default.contentsOfDirectory(at: diagDir, includingPropertiesForKeys: nil)) ?? []
-                    for file in allFiles where file.lastPathComponent.contains("Kannu") {
-                        try? FileManager.default.copyItem(at: file, to: tempDir.appendingPathComponent(file.lastPathComponent))
+                    // Both directory reads used to be `try?`, so a folder Kannu cannot read produced
+                    // a zip with no crash reports in it and said nothing. Now the export records
+                    // what it could not read, and the user can see why the archive looks thin.
+                    var skipped: [String] = []
+                    var copied = 0
+                    let diagnosticDirectories = [
+                        URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Logs/DiagnosticReports"),
+                        URL(fileURLWithPath: "/Library/Logs/DiagnosticReports"),
+                        URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Logs/Kannu")
+                    ]
+                    for directory in diagnosticDirectories {
+                        do {
+                            let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+                            for file in files where file.lastPathComponent.contains("Kannu")
+                                || file.lastPathComponent.hasPrefix("hang-")
+                                || file.lastPathComponent.hasPrefix("exception-") {
+                                try? FileManager.default.copyItem(at: file, to: tempDir.appendingPathComponent(file.lastPathComponent))
+                                copied += 1
+                            }
+                        } catch {
+                            skipped.append("\(directory.lastPathComponent): \(error.localizedDescription)")
+                        }
                     }
-                    
-                    let sysDiagDir = URL(fileURLWithPath: "/Library/Logs/DiagnosticReports")
-                    let sysFiles = (try? FileManager.default.contentsOfDirectory(at: sysDiagDir, includingPropertiesForKeys: nil)) ?? []
-                    for file in sysFiles where file.lastPathComponent.contains("Kannu") {
-                        try? FileManager.default.copyItem(at: file, to: tempDir.appendingPathComponent(file.lastPathComponent))
+                    if !skipped.isEmpty {
+                        let note = (["Kannu could not read these folders:"] + skipped).joined(separator: "\n") + "\n"
+                        try? Data(note.utf8).write(to: tempDir.appendingPathComponent("not_collected.txt"))
                     }
+                    Logger.log("[ExportLogs] Collected \(copied) diagnostics, skipped \(skipped.count) folders", category: .lifecycle)
                     
                     let zipProcess = Process()
                     zipProcess.executableURL = URL(fileURLWithPath: "/usr/bin/zip")

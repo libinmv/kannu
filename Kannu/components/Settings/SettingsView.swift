@@ -950,6 +950,8 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .agentStatus, title: "Mobile notifications", keywords: ["mobile", "push", "ntfy", "pushover", "webhook", "iphone", "android"], highlightID: SettingsTab.agentStatus.highlightID(for: "Mobile notifications")),
             SettingsSearchEntry(tab: .agentStatus, title: "Send test notification", keywords: ["test", "mobile", "push", "notification"], highlightID: SettingsTab.agentStatus.highlightID(for: "Send test notification")),
             SettingsSearchEntry(tab: .about, title: "Watch for freezes", keywords: ["freeze", "frozen", "hang", "stuck", "unresponsive", "beachball", "spinning", "crash", "report", "diagnostics", "developer"], highlightID: SettingsTab.about.highlightID(for: "Watch for freezes")),
+            SettingsSearchEntry(tab: .about, title: "Report a Problem", keywords: ["report", "problem", "bug", "crash", "issue", "github", "feedback", "diagnostics"], highlightID: SettingsTab.about.highlightID(for: "Report a Problem")),
+            SettingsSearchEntry(tab: .about, title: "Copy Latest Report", keywords: ["copy", "crash", "report", "diagnostics", "clipboard", "paste", "log"], highlightID: SettingsTab.about.highlightID(for: "Copy Latest Report")),
         ]
     }
 
@@ -3170,6 +3172,8 @@ struct Media: View {
 
 struct About: View {
     @Default(.hangWatchdogEnabled) var hangWatchdogEnabled
+    @State private var copiedReport = false
+    @State private var reportCopyFailed = false
 
     private func highlightID(_ title: String) -> String {
         SettingsTab.about.highlightID(for: title)
@@ -3213,10 +3217,28 @@ struct About: View {
                     Toggle("", isOn: $hangWatchdogEnabled)
                 }
                 .settingsHighlight(id: highlightID("Watch for freezes"))
+                SettingsActionRow {
+                    Button("Report a Problem…") {
+                        CrashReporter.shared.reportAProblem()
+                    }
+                }
+                .settingsHighlight(id: highlightID("Report a Problem"))
+
+                SettingsActionRow {
+                    Button(copiedReport ? "Copied" : "Copy Latest Report") {
+                        copiedReport = CrashReporter.shared.copyNewestReportToPasteboard()
+                        if !copiedReport { reportCopyFailed = true }
+                    }
+                }
+                .settingsHighlight(id: highlightID("Copy Latest Report"))
+
+                if reportCopyFailed {
+                    SettingsErrorText("macOS has written no report about Kannu on this Mac.")
+                }
             } header: {
                 Text("Diagnostics")
             } footer: {
-                SettingsFooter("A freeze leaves no crash report, so without this there is nothing to look at afterwards. The check costs one wake every two seconds.")
+                SettingsFooter("A freeze leaves no crash report, so without this there is nothing to look at afterwards. The check costs one wake every two seconds. Reporting opens a GitHub issue with the details filled in — no name, nothing identifying your Mac — for you to read and submit; Kannu sends nothing itself.")
             }
         }
         .navigationTitle("About")
@@ -4841,18 +4863,6 @@ struct LockScreenSettings: View {
 
 
             LockScreenPositioningControls()
-
-            Section {
-                SettingsActionRow {
-                    Button("Copy Latest Crash Report") {
-                        copyLatestCrashReport()
-                    }
-                }
-            } header: {
-                Text("Diagnostics")
-            } footer: {
-                SettingsFooter("Collect the latest crash report to share with the developer when reporting lock screen or overlay issues.")
-            }
         }
         .onAppear(perform: enforceLockScreenGlassConsistency)
         .onChange(of: lockScreenGlassStyle) { _, _ in enforceLockScreenGlassConsistency() }
@@ -5415,46 +5425,6 @@ private struct LockScreenPositioningPreview: View {
         let clampedCenter = min(max(proposedCenter, minCenterY), maxCenterY)
         let derivedOffset = Double(baseCenterY - clampedCenter)
         return min(max(derivedOffset, offsetRange.lowerBound), offsetRange.upperBound)
-    }
-}
-
-@MainActor
-private func copyLatestCrashReport() {
-    let crashReportsPath = NSString(string: "~/Library/Logs/DiagnosticReports").expandingTildeInPath
-    let fileManager = FileManager.default
-
-    do {
-        let files = try fileManager.contentsOfDirectory(atPath: crashReportsPath)
-        let crashFiles = files.filter {
-            ($0.contains("DynamicIsland") || $0.contains("Kannu")) && $0.hasSuffix(".crash")
-        }
-
-        guard let latestCrash = crashFiles.sorted(by: >).first else {
-            let alert = NSAlert()
-            alert.messageText = "No Crash Reports Found"
-            alert.informativeText = "No crash reports found for Kannu"
-            alert.alertStyle = .informational
-            ModalPresenter.present(alert)
-            return
-        }
-
-        let crashPath = (crashReportsPath as NSString).appendingPathComponent(latestCrash)
-        let crashContent = try String(contentsOfFile: crashPath, encoding: .utf8)
-
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(crashContent, forType: .string)
-
-        let alert = NSAlert()
-        alert.messageText = "Crash Report Copied"
-        alert.informativeText = "Crash report '\(latestCrash)' has been copied to clipboard"
-        alert.alertStyle = .informational
-        ModalPresenter.present(alert)
-    } catch {
-        let alert = NSAlert()
-        alert.messageText = "Error"
-        alert.informativeText = "Failed to read crash reports: \(error.localizedDescription)"
-        alert.alertStyle = .warning
-        ModalPresenter.present(alert)
     }
 }
 

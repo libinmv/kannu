@@ -1302,6 +1302,8 @@ extension Defaults.Keys {
     static let hangWatchdogEnabled = Key<Bool>("hangWatchdogEnabled", default: false)
     /// The hang log already offered to the user, so one freeze is offered once.
     static let lastOfferedHangReport = Key<String>("lastOfferedHangReport", default: "")
+    /// The crash report already offered, for the same reason.
+    static let lastOfferedCrashReport = Key<String>("lastOfferedCrashReport", default: "")
 
     /// Clicking the media card lands on the browser tab that is playing (Safari, Chrome family),
     /// which needs the one-time "control <browser>" Automation permission. Off = app only.

@@ -57,24 +57,9 @@ struct HangReport: Equatable {
 
     // MARK: - Scrubbing
 
-    /// Removes anything that identifies the machine or the person.
-    ///
-    /// Frames carry module paths, and in a dev build those sit under the developer's home folder,
-    /// so the home path becomes `~` and any other `/Users/<name>/` becomes `/Users/<redacted>/`.
-    /// Nothing else in a report is user data: there are no arguments, no file contents, no chat
-    /// names, and no session ids.
+    /// Removes anything that identifies the machine or the person. See `DiagnosticScrub`.
     static func scrub(_ text: String, home: String) -> String {
-        var out = text
-        let trimmedHome = home.hasSuffix("/") ? String(home.dropLast()) : home
-        if !trimmedHome.isEmpty, trimmedHome != "/" {
-            out = out.replacingOccurrences(of: trimmedHome, with: "~")
-        }
-        guard let pattern = try? NSRegularExpression(pattern: "/Users/[^/\\s\"]+") else { return out }
-        return pattern.stringByReplacingMatches(
-            in: out,
-            range: NSRange(out.startIndex..., in: out),
-            withTemplate: "/Users/redacted"
-        )
+        DiagnosticScrub.paths(in: text, home: home)
     }
 
     // MARK: - The log file

@@ -38,6 +38,48 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     status-item menu, the export-logs result alerts, and the Settings crash-report alerts.
   - Also here: the memory alert said "DynamicIsland", a name from before the fork.
 
+### 2026-09-12 - A user can finally say what the crash was
+- **Developer label:** "some users also reported random crashing, also when the app crashes can the user send a crash report to us some way" / "no need user indicators, in crash report, only things we need"
+- **Agent label:** Follow-up 33 — the reporting half, now that the three traps are fixed
+- **Changes:**
+  - Kannu never knew it had crashed. It installed no handler, and the one "Copy Latest Crash Report"
+    button filtered for `.crash` — an extension macOS stopped writing in 12 — so it found nothing on
+    any modern Mac, and it sat in the Lock Screen tab with no search entry. Users could only report
+    "it crashes sometimes", which is unanswerable.
+  - New `CrashReporter` reads what macOS already writes, in `~/Library/Logs/DiagnosticReports` and
+    `/Library/Logs/DiagnosticReports`, and `CrashReport` trims it to what a maintainer needs: the
+    version and build, the macOS version, the architecture and Mac model, the exception type and
+    termination reason, whatever the crashing library said on its way out, and the crashing thread.
+    Both `.ips` crashes and the textual `.cpu_resource.diag` / `.hang` reports are read.
+  - **Built from an allowlist, not a blocklist.** A crash report is full of things that identify a
+    machine — `crashReporterKey`, `Beta Identifier`, the resource coalition, the user id, the host
+    name that macOS puts in the file name — and a blocklist publishes whatever nobody thought of. The
+    parser reads only the fields it names and the rest never reaches the output; `DiagnosticScrub` is
+    the second layer, turning the home folder into `~`, any other `/Users/<name>` into
+    `/Users/redacted`, and the computer's name into `this-mac`. That scrubbing is now shared with the
+    hang watchdog so the two cannot drift.
+  - On the next launch the user is offered the newest report once — *Report It* opens a GitHub issue
+    with everything filled in, *Show the Report* reveals the file, *Ignore* does nothing. Kannu sends
+    nothing itself, so the promise in Settings ("Nothing leaves this Mac unless you turn on push
+    notifications or session analysis") still holds. About › Diagnostics gains "Report a Problem…"
+    and a working "Copy Latest Report", both with search entries, and
+    `.github/ISSUE_TEMPLATE/crash.md` gives a hand-written report the same shape.
+  - Verified on a real crash, not a fixture: the app was sent `SIGABRT`, macOS wrote a 52 KB `.ips`,
+    and the issue Kannu builds from it carries 41 demangled frames and none of the username, the host
+    name, `crashReporterKey`, the coalition or the user id that the raw file contains. The parser was
+    also checked against this machine's five real `.cpu_resource.diag` reports.
+  - An uncaught `NSException` now writes its name and reason to `~/Library/Logs/Kannu/` — the one
+    thing macOS's own report can bury. No signal handlers: catching a Swift trap safely means
+    async-signal-safe code in a handler, and the system's report covers the same ground. No MetricKit
+    either — `MXDiagnosticPayload` arrives on macOS's own schedule, often a day later and often not at
+    all for an app that is not from the App Store, and it carries the same crash the `.ips` already has.
+  - A run that ends cleanly clears a marker, so an unclean exit is recorded in the log. It only logs:
+    a user force-quitting a frozen app leaves exactly the same trace, and what they are *offered* comes
+    from macOS's own report, which is evidence rather than inference.
+  - `exportLogs` stopped swallowing both of its directory reads with `try?`, which produced an archive
+    with no crash reports in it and said nothing. It now records what it could not read, and collects
+    Kannu's own hang and exception logs too.
+
 ### 2026-09-12 - The next freeze explains itself
 - **Developer label:** "on only when the developer mode is selected during launch, also does this consume battery heavily" / "Nothing now, offer it next launch"
 - **Agent label:** Follow-up 34 — the freeze was only diagnosable because a sample was taken while it was stuck

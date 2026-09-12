@@ -266,11 +266,12 @@ final class HangWatchdog {
     /// Shows the newest unreported freeze, once. Called after launch has settled, never during it:
     /// an alert with no window to hang from is app-modal, and one of those inside
     /// `applicationDidFinishLaunching` would stop the rest of startup.
-    func offerNewestReport() {
+    @discardableResult
+    func offerNewestReport() -> Bool {
         guard Defaults[.hangWatchdogEnabled],
               let (url, report) = Self.newestReport(),
               Defaults[.lastOfferedHangReport] != url.lastPathComponent
-        else { return }
+        else { return false }
 
         Defaults[.lastOfferedHangReport] = url.lastPathComponent
 
@@ -297,6 +298,7 @@ final class HangWatchdog {
                 break
             }
         }
+        return true
     }
 
     static func newestReport() -> (URL, HangReport)? {
