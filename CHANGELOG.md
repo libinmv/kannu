@@ -4,6 +4,22 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-12 - Say the ADR scan cadence in plain words
+- **Developer label:** "Daily, sooner when the MCP servers in an AI tool's settings change, and within hours after a scan that failed. Off means Kannu only reads snapshots that something else wrote., this wording needs upgrade right ?"
+- **Agent label:** Follow-up 31 — copy only, no behaviour
+- **Changes:**
+  - "Let Kannu run scans" now reads "Kannu runs a scan once a day, and again whenever an AI tool's
+    MCP servers change. With this off, it shows only the scans something else runs." It opened as a
+    fragment where every neighbouring description opens with a subject; "within hours" was vaguer
+    than the real retry (1, 2, 4, 8, 16 hours) and said again what the live "Next automatic scan"
+    line shows exactly; and "snapshots that something else wrote" leaned on a word only the row
+    above defines.
+  - After a failed scan that line now ends "· the last scan failed" instead of "· retrying after a
+    failed scan": the cause once, and the sooner-than-daily time explains itself.
+  - The `adrRunScansEnabled` comment in `Constants.swift` uses the same words as the screen.
+  - Nothing else changed: the title, its highlight id, the search entry and `docs/ADR.md` §3 (the
+    detailed reference, pinned by `ADRDocsTests`) are untouched.
+
 ### 2026-09-12 - Hook v40: a prompt that arrives mid-request joins it
 - **Developer label:** "the total run time of the agent has been about 2 hours now, but the recent chats show it as few mins"
 - **Agent label:** Follow-up 30, measured on this Mac after C1 shipped

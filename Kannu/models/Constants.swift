@@ -1243,7 +1243,7 @@ extension Defaults.Keys {
     static let adrFindingSnoozes = Key<[SecurityFindingSnooze]>("adrFindingSnoozes", default: [])
     static let adrLastScan = Key<ADRScanRecord?>("adrLastScan", default: nil)
     /// Let Kannu invoke the connected `adr-discovery` itself (daily, on config changes, on
-    /// demand). Off = Kannu only reads snapshots that someone else wrote.
+    /// demand). Off = Kannu shows only the scans something else runs.
     static let adrRunScansEnabled = Key<Bool>("adrRunScansEnabled", default: true)
     static let adrLastKannuScanAt = Key<Date?>("adrLastKannuScanAt", default: nil)
     /// Kannu-run scans that failed in a row (no snapshot written). The next one comes after 1, 2,

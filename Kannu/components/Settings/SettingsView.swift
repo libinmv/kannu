@@ -7878,7 +7878,7 @@ struct AgentStatusSettings: View {
             adrLastScanRow
 
             if adr.discovery.isFound {
-                SettingsRow("Let Kannu run scans", description: "Daily, sooner when the MCP servers in an AI tool's settings change, and within hours after a scan that failed. Off means Kannu only reads snapshots that something else wrote.") {
+                SettingsRow("Let Kannu run scans", description: "Kannu runs a scan once a day, and again whenever an AI tool's MCP servers change. With this off, it shows only the scans something else runs.") {
                     Defaults.Toggle(key: .adrRunScansEnabled) {
                         Text("Let Kannu run scans")
                     }
@@ -8283,7 +8283,8 @@ struct AgentStatusSettings: View {
         }
     }
 
-    /// "Next automatic scan Sep 13, 4:54 AM · retrying after a failed scan".
+    /// "Next automatic scan Sep 12, 5:54 AM · the last scan failed" — the sooner-than-daily time
+    /// is the retry, so the line says why rather than naming the mechanism.
     private var nextAutomaticScanText: String {
         let when: String
         if let next = findingsStore.nextAutomaticScanAt, next > Date().addingTimeInterval(60) {
@@ -8292,7 +8293,7 @@ struct AgentStatusSettings: View {
             when = String(localized: "Next automatic scan within a minute")
         }
         guard findingsStore.consecutiveScanFailures > 0 else { return when }
-        return when + " · " + String(localized: "retrying after a failed scan")
+        return when + " · " + String(localized: "the last scan failed")
     }
 
     private var adrLastScanRow: some View {
