@@ -523,6 +523,37 @@ target — manual check: the waiting session's file survives past 30 min in `~/.
 **Never** fix a false yellow by shortening `awaitingInputStaleMs` or by refreshing `ts` in the
 script. Add or remove evidence.
 
+## 14. Nothing stops the main thread except one helper
+
+**Rule:** `runModal()` and `beginSheetModal` appear only in `Kannu/helpers/ModalPresenter.swift`.
+A file panel is never modal — `NSSavePanel.begin(completionHandler:)` exists. An alert is a sheet
+when a titled window is on screen, and otherwise activated and raised above Kannu's own windows
+before it runs. No sheet is ever anchored to a window that cannot be focused.
+
+**What happened (2026-09-12).** A user clicked the ADR policy picker and Kannu stopped. A sample of
+the live process named it: `choosePolicyFile()` → `-[NSSavePanel runModal]` →
+`-[NSApplication runModalForWindow:]`, parked in `__CFRunLoopRun` for 1,596 of 1,599 samples at 0 %
+CPU with the panel out of reach — which the user reported as a crash, because force-quitting is what
+you do to a frozen app. The same modal loop is what produced the 2026-08-29 SIGABRT in
+`NSHostingView` (CHANGELOG, that date): `ADRConnection`, `SecurityFindingsStore` and the session
+monitor keep publishing on the main queue while the loop is stopped, so SwiftUI re-enters layout
+underneath it. Five Settings pickers were converted; an audit then found four more sites of the same
+shape and eleven alerts that render *underneath* the notch at `.mainMenu + 3`, where the app looks
+stopped and there is no dialog to dismiss.
+
+**Why one helper.** Kannu is an accessory app: nearly every window it owns is a borderless
+`.nonactivatingPanel`, so `NSApp.keyWindow` is the wrong sheet anchor and "the app is frontmost" is
+never a safe assumption. Centralising it also made the hang watchdog possible — because `runModal()`
+exists in exactly one place, that one place can tell `HangWatchdog` a stopped main thread is
+deliberate, and a modal loop entered anywhere else is still reported as the bug it is.
+
+**Guards.** `.githooks/pre-commit` rejects either API outside the helper;
+`ModalPresentationRulesTests` runs the same scan in CI with two meta-tests on its own detector, so a
+regex that stops matching fails loudly instead of passing vacuously.
+
+**Never** answer "the panel did not appear" by activating harder. If a panel or alert is not on
+screen, the question is which window it was anchored to.
+
 ## Danger zones
 
 Commit counts across all branches (`--follow`, so pre-rename history counts):
@@ -533,6 +564,7 @@ Commit counts across all branches (`--follow`, so pre-rename history counts):
 | `AgentTrafficLightState.swift` | 18 | The state ladder — staleness thresholds and verdict→colour mapping. Mostly *tuning numbers*, which is exactly how entry 2 happened, and how the yellow clock became its only exit (entry 12). |
 | `AgentHookInstaller.swift` | 17 | Embedded script + event table + install/uninstall/migration. Grows monotonically; every growth episode has broken `checkInstalled` or a migration (entries 1 and 6). |
 | `CursorAgentStatusMonitor.swift` (usage spawn) | — | The `/usage` fetch invocation. Two silent breakages in one day from added flags/env (entry 8). |
+| `ModalPresenter.swift` | 2 | The only place allowed to stop the main run loop. Every site in the app funnels through it, and the hang watchdog trusts it to declare a deliberate stall (entry 14). |
 | `AgentSessionLogParser.swift` | 8 | `readTrailingLines` and the tail verdict. 4 of 8 commits touch the reader; **2 of those 4 fix the same failure mode** — the reader returning nil and silently sending callers down a wrong path (entry 4). |
 
 If you are changing a *constant* in `AgentTrafficLightState.swift`, assume it is load-bearing

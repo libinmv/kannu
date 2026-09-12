@@ -70,6 +70,8 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     modal loop entered anywhere else is still reported: that is the bug this whole change is about.
   - Cost: one wake every two seconds and one run-loop block, against the 20 Hz hover poll the app
     already runs whenever a hidden island is on screen.
+  - `docs/REGRESSIONS.md` gains entry 14 for the modal rule, with the sample that proved it and the
+    two guards that hold it.
 
 ### 2026-09-12 - The sixth one cannot be written
 - **Developer label:** "this wont happen again later for other users right ?"
