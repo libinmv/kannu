@@ -79,7 +79,9 @@ final class ADRDetectionCommandTests: XCTestCase {
     func testAdapterConvertsAClaudeTranscriptLikeUpstream() throws {
         let python = ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"].first { FileManager.default.isExecutableFile(atPath: $0) }
         try XCTSkipIf(python == nil, "python3 not available")
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("kannu-adr-adapter-\(UUID().uuidString)", isDirectory: true)
+        // Under the home folder: the adapter refuses a transcript outside it, as Kannu never passes one.
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".kannu/tests/adr-adapter-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let jsonl = dir.appendingPathComponent("t.jsonl")

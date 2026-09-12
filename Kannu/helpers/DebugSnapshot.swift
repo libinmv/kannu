@@ -269,29 +269,40 @@ enum DebugSnapshotFixtures {
     /// Recent chats with and without a v39 turn: running for hours, ended, the pre-v39 fallback, a
     /// prompt, and a chat that stopped without a Stop (no time shown).
     static func recentChats(now: Date) -> [AgentSessionStatus] {
-        func card(_ id: String, _ provider: String, _ chat: String, _ raw: String, _ state: AgentTrafficLightState,
-                  ago: TimeInterval, turn: HookTurn?, started: Date? = nil) -> AgentSessionStatus {
-            var session = AgentSessionStatus(id: "\(provider)-\(id)", provider: provider, conversationID: id, chatName: chat,
-                                             projectName: "kannu", rawState: raw, displayState: state,
-                                             updatedAt: now.addingTimeInterval(-ago), isVisible: true, executionStartedAt: started)
+        // Built with explicit types and appends: as one array literal of calls with inline
+        // arithmetic, Swift 6.1 (macos-15) gives up type-checking the expression.
+        let path = "/Users/example/.claude/projects/-Users-example-kannu/a.jsonl"
+        let liveStart: TimeInterval = -(1 * 3600 + 53 * 60 + 54)
+        let endedStart: TimeInterval = -8000
+        let endedStop: TimeInterval = -8000 + 7392
+
+        func card(_ id: String, _ provider: String, _ chat: String, _ raw: String,
+                  _ state: AgentTrafficLightState, ago: TimeInterval,
+                  turn: HookTurn?, started: Date? = nil) -> AgentSessionStatus {
+            let updatedAt: Date = now.addingTimeInterval(-ago)
+            var session = AgentSessionStatus(id: provider + "-" + id, provider: provider, conversationID: id,
+                                             chatName: chat, projectName: "kannu", rawState: raw,
+                                             displayState: state, updatedAt: updatedAt, isVisible: true,
+                                             executionStartedAt: started)
             session.turn = turn
             return session
         }
-        let path = "/Users/example/.claude/projects/-Users-example-kannu/a.jsonl"
-        return [
-            card("live", "claude", "Kannu settings rework", "executing", .executing, ago: 1,
-                 turn: HookTurn(startedAt: now.addingTimeInterval(-(1 * 3600 + 53 * 60 + 54)), toolCalls: 212,
-                                transcriptPath: path, transcriptOffset: 1000)),
-            card("ended", "claude", "Fix the login flow", "stopped", .stopped, ago: 20,
-                 turn: HookTurn(startedAt: now.addingTimeInterval(-8000), endedAt: now.addingTimeInterval(-8000 + 7392),
-                                toolCalls: 48, transcriptPath: path, transcriptOffset: 500)),
-            card("cursor", "cursor", "Refactor the parser", "executing", .executing, ago: 30, turn: nil,
-                 started: now.addingTimeInterval(-204)),
-            card("codex", "codex", "Add usage alerts", "awaiting_input", .awaitingInput, ago: 40,
-                 turn: HookTurn(startedAt: now.addingTimeInterval(-42), toolCalls: 1)),
-            card("esc", "claude", "Interrupted chat", "executing", .inactive, ago: 50,
-                 turn: HookTurn(startedAt: now.addingTimeInterval(-900), toolCalls: 9)),
-        ]
+
+        var cards: [AgentSessionStatus] = []
+        cards.append(card("live", "claude", "Kannu settings rework", "executing", .executing, ago: 1,
+                          turn: HookTurn(startedAt: now.addingTimeInterval(liveStart), toolCalls: 212,
+                                         transcriptPath: path, transcriptOffset: 1000)))
+        cards.append(card("ended", "claude", "Fix the login flow", "stopped", .stopped, ago: 20,
+                          turn: HookTurn(startedAt: now.addingTimeInterval(endedStart),
+                                         endedAt: now.addingTimeInterval(endedStop),
+                                         toolCalls: 48, transcriptPath: path, transcriptOffset: 500)))
+        cards.append(card("cursor", "cursor", "Refactor the parser", "executing", .executing, ago: 30,
+                          turn: nil, started: now.addingTimeInterval(-204)))
+        cards.append(card("codex", "codex", "Add usage alerts", "awaiting_input", .awaitingInput, ago: 40,
+                          turn: HookTurn(startedAt: now.addingTimeInterval(-42), toolCalls: 1)))
+        cards.append(card("esc", "claude", "Interrupted chat", "executing", .inactive, ago: 50,
+                          turn: HookTurn(startedAt: now.addingTimeInterval(-900), toolCalls: 9)))
+        return cards
     }
 
     static func turnTokens(for sessions: [AgentSessionStatus]) -> [String: TurnTokens] {

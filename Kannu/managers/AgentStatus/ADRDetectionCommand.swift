@@ -28,7 +28,7 @@ import Foundation
 /// to OpenAI. Off by default; Kannu runs it on explicit request only.
 enum ADRDetectionCommand {
     static let adapterFileName = "adr-analyze-session.py"
-    static let adapterVersionMarker = "KANNU_ADR_ADAPTER_VERSION=1"
+    static let adapterVersionMarker = "KANNU_ADR_ADAPTER_VERSION=2"
     /// Placeholder the adapter sets itself when triage is off; listed here so the environment
     /// builder never has to hand a real key to a run that will not use it.
     static let triageDisabledPlaceholder = "kannu-triage-disabled"
@@ -110,7 +110,7 @@ enum ADRDetectionCommand {
     /// closing delimiter.
     static let adapterSource = #"""
 #!/usr/bin/env python3
-# KANNU_ADR_ADAPTER_VERSION=1
+# KANNU_ADR_ADAPTER_VERSION=2
 #
 # Kannu (കണ്ണ്) — Copyright (C) 2024-2026 Kannu Contributors — GPL-3.0-or-later.
 #
@@ -212,7 +212,23 @@ def main():
     parser.add_argument("--convert-only", action="store_true")
     args = parser.parse_args()
 
-    messages = load_transcript(args.transcript, args.max_messages)
+    # Kannu builds these arguments itself (ADRDetectionCommand, pinned by tests), but this script
+    # reads a file full of secrets and writes a report, so it checks them rather than trusting the
+    # caller: the transcript is a .jsonl file that exists under the home folder, and the report can
+    # only be written inside ~/.kannu.
+    home = Path.home().resolve()
+    transcript = Path(args.transcript).expanduser().resolve()
+    if transcript.suffix != ".jsonl" or not transcript.is_file() or home not in transcript.parents:
+        print(json.dumps({"schema": 1, "error": "the transcript must be an existing .jsonl file under the home folder"}))
+        return 2
+    report = None
+    if args.report:
+        report = Path(args.report).expanduser().resolve()
+        if (home / ".kannu") not in report.parents:
+            print(json.dumps({"schema": 1, "error": "the report must be written under ~/.kannu"}))
+            return 2
+
+    messages = load_transcript(transcript, args.max_messages)
     if args.convert_only:
         print(json.dumps({"schema": 1, "messages": messages}))
         return 0
@@ -283,10 +299,10 @@ def main():
         "triage": args.triage,
         "messages_analyzed": len(messages),
     }
-    if args.report:
+    if report is not None:
         try:
-            Path(args.report).parent.mkdir(parents=True, exist_ok=True)
-            with open(args.report, "w", encoding="utf-8") as handle:
+            report.parent.mkdir(parents=True, exist_ok=True)
+            with open(report, "w", encoding="utf-8") as handle:
                 json.dump({"verdict": out, "raw": raw}, handle, indent=2, default=str)
         except OSError as error:
             out["report_error"] = str(error)

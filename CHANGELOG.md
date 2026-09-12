@@ -4,6 +4,22 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-12 - The Detection adapter checks the paths it is handed; fixture builds on Swift 6.1
+- **Developer label:** CI and SonarCloud on the pull request
+- **Agent label:** Follow-up 32, phase 2 — two findings from the first run against the branch
+- **Changes:**
+  - Adapter v2: `scripts/adr-analyze-session.py` now refuses anything but an existing `.jsonl`
+    transcript under the home folder, and will only write its report inside `~/.kannu`. Kannu builds
+    both paths itself, but a script that reads a transcript full of secrets and writes a file should
+    not take a caller's word for it — SonarCloud rated the new code C for exactly that
+    (`pythonsecurity:S8707`, three paths). The embedded copy and the marker move to 2 with it.
+  - `DebugSnapshotFixtures.recentChats` builds its cards with explicit types and appends: as one
+    array literal of calls with inline arithmetic, Swift 6.1 on the macos-15 runner gave up
+    type-checking it ("unable to type-check this expression in reasonable time") while macOS 26's
+    compiler managed. The snapshot boards are unchanged.
+  - The adapter test writes its transcript under `~/.kannu/tests/` instead of the system temp
+    folder, which is what the new rule allows and what Kannu actually passes.
+
 ### 2026-09-12 - Ship the ADR Detection adapter that was never committed
 - **Developer label:** CI on the pull request caught it
 - **Agent label:** Follow-up 32, phase 2 — the first real CI run of the Detection tests
