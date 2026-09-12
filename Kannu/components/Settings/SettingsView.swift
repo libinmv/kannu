@@ -723,9 +723,8 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .general, title: "Enable Minimalistic UI", keywords: ["minimalistic", "ui mode", "general"], highlightID: SettingsTab.general.highlightID(for: "Enable Minimalistic UI")),
             SettingsSearchEntry(tab: .general, title: "Menubar icon", keywords: ["menu bar", "status bar", "icon"], highlightID: SettingsTab.general.highlightID(for: "Menubar icon")),
             SettingsSearchEntry(tab: .general, title: "Launch at login", keywords: ["autostart", "startup"], highlightID: SettingsTab.general.highlightID(for: "Launch at login")),
-            SettingsSearchEntry(tab: .general, title: "Show on all displays", keywords: ["multi-display", "external monitor"], highlightID: SettingsTab.general.highlightID(for: "Show on all displays")),
-            SettingsSearchEntry(tab: .general, title: "Show on a specific display", keywords: ["preferred screen", "display picker"], highlightID: SettingsTab.general.highlightID(for: "Show on a specific display")),
-            SettingsSearchEntry(tab: .general, title: "Automatically switch displays", keywords: ["auto switch", "displays"], highlightID: SettingsTab.general.highlightID(for: "Automatically switch displays")),
+            SettingsSearchEntry(tab: .general, title: "Where Kannu appears", keywords: ["display", "displays", "monitor", "external", "built-in", "all displays", "multi-display", "screen", "placement", "switch", "move", "second screen"], highlightID: SettingsTab.general.highlightID(for: "Where Kannu appears")),
+            SettingsSearchEntry(tab: .general, title: "Display", keywords: ["preferred screen", "display picker", "specific display", "choose display"], highlightID: SettingsTab.general.highlightID(for: "Display")),
             SettingsSearchEntry(tab: .general, title: "Hide Kannu during screenshots & recordings", keywords: ["privacy", "screenshot", "recording"], highlightID: SettingsTab.general.highlightID(for: "Hide Kannu during screenshots & recordings")),
             SettingsSearchEntry(tab: .general, title: "Enable gestures", keywords: ["gestures", "trackpad"], highlightID: SettingsTab.general.highlightID(for: "Enable gestures")),
             SettingsSearchEntry(tab: .general, title: "Close gesture", keywords: ["pinch", "swipe"], highlightID: SettingsTab.general.highlightID(for: "Close gesture")),
@@ -950,6 +949,8 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .agentStatus, title: "Mobile notifications", keywords: ["mobile", "push", "ntfy", "pushover", "webhook", "iphone", "android"], highlightID: SettingsTab.agentStatus.highlightID(for: "Mobile notifications")),
             SettingsSearchEntry(tab: .agentStatus, title: "Send test notification", keywords: ["test", "mobile", "push", "notification"], highlightID: SettingsTab.agentStatus.highlightID(for: "Send test notification")),
             SettingsSearchEntry(tab: .about, title: "Watch for freezes", keywords: ["freeze", "frozen", "hang", "stuck", "unresponsive", "beachball", "spinning", "crash", "report", "diagnostics", "developer"], highlightID: SettingsTab.about.highlightID(for: "Watch for freezes")),
+            SettingsSearchEntry(tab: .about, title: "Report a Problem", keywords: ["report", "problem", "bug", "crash", "issue", "github", "feedback", "diagnostics"], highlightID: SettingsTab.about.highlightID(for: "Report a Problem")),
+            SettingsSearchEntry(tab: .about, title: "Copy Latest Report", keywords: ["copy", "crash", "report", "diagnostics", "clipboard", "paste", "log"], highlightID: SettingsTab.about.highlightID(for: "Copy Latest Report")),
         ]
     }
 
@@ -1062,8 +1063,7 @@ struct GeneralSettings: View {
     @Default(.closedNotchWidth) var closedNotchWidth
     @Default(.customizePhysicalNotchWidth) var customizePhysicalNotchWidth
     @Default(.notchHeightMode) var notchHeightMode
-    @Default(.showOnAllDisplays) var showOnAllDisplays
-    @Default(.automaticallySwitchDisplay) var automaticallySwitchDisplay
+    @Default(.displayPlacement) var displayPlacement
     @Default(.enableGestures) var enableGestures
     @Default(.openNotchOnHover) var openNotchOnHover
     @Default(.alwaysShowOnNonNotchDisplays) var alwaysShowOnNonNotchDisplays
@@ -1150,31 +1150,34 @@ struct GeneralSettings: View {
                     .disabled(true)
                     .settingsHighlight(id: highlightID("Launch at login"))
                 }
-                Defaults.Toggle(key: .showOnAllDisplays) {
-                    Text("Show on all displays")
+                SettingsRow("Where Kannu appears", description: displayPlacement.description) {
+                    Picker("", selection: $displayPlacement) {
+                        ForEach(DisplayPlacement.allCases) { placement in
+                            Text(placement.localizedName).tag(placement)
+                        }
+                    }
                 }
-                .onChange(of: showOnAllDisplays) {
-                    NotificationCenter.default.post(name: Notification.Name.showOnAllDisplaysChanged, object: nil)
+                .onChange(of: displayPlacement) {
+                    NotificationCenter.default.post(name: Notification.Name.displayPlacementChanged, object: nil)
                 }
-                .settingsHighlight(id: highlightID("Show on all displays"))
-                Picker("Show on a specific display", selection: $coordinator.preferredScreen) {
+                .settingsHighlight(id: highlightID("Where Kannu appears"))
+
+                // Always mounted, disabled when it does not apply: a row that only exists in one
+                // mode makes its own search entry land on nothing in every other mode, and the
+                // inventory test reads source text so it cannot catch that.
+                Picker("Display", selection: $coordinator.preferredScreen) {
                     ForEach(screens, id: \.self) { screen in
                         Text(screen)
                     }
                 }
                 .onChange(of: NSScreen.screens) {
-                    screens =  NSScreen.screens.compactMap({$0.localizedName})
+                    screens = NSScreen.screens.compactMap({ $0.localizedName })
                 }
-                .disabled(showOnAllDisplays)
-                .settingsHighlight(id: highlightID("Show on a specific display"))
-                Defaults.Toggle(key: .automaticallySwitchDisplay) {
-                    Text("Automatically switch displays")
+                .onChange(of: coordinator.preferredScreen) {
+                    NotificationCenter.default.post(name: Notification.Name.displayPlacementChanged, object: nil)
                 }
-                .onChange(of: automaticallySwitchDisplay) {
-                    NotificationCenter.default.post(name: Notification.Name.automaticallySwitchDisplayChanged, object: nil)
-                }
-                .disabled(showOnAllDisplays)
-                .settingsHighlight(id: highlightID("Automatically switch displays"))
+                .disabled(displayPlacement != .chooseDisplay)
+                .settingsHighlight(id: highlightID("Display"))
                 Defaults.Toggle(key: .hideDynamicIslandFromScreenCapture) {
                     Text("Hide Kannu during screenshots & recordings")
                 }
@@ -3170,6 +3173,8 @@ struct Media: View {
 
 struct About: View {
     @Default(.hangWatchdogEnabled) var hangWatchdogEnabled
+    @State private var copiedReport = false
+    @State private var reportCopyFailed = false
 
     private func highlightID(_ title: String) -> String {
         SettingsTab.about.highlightID(for: title)
@@ -3213,10 +3218,38 @@ struct About: View {
                     Toggle("", isOn: $hangWatchdogEnabled)
                 }
                 .settingsHighlight(id: highlightID("Watch for freezes"))
+                SettingsActionRow {
+                    Button("Report a Problem…") {
+                        CrashReporter.shared.reportAProblem()
+                    }
+                }
+                .settingsHighlight(id: highlightID("Report a Problem"))
+
+                SettingsActionRow {
+                    Button(copiedReport ? "Copied" : "Copy Latest Report") {
+                        copiedReport = false
+                        reportCopyFailed = false
+                        let copied = CrashReporter.shared.copyNewestReportToPasteboard()
+                        copiedReport = copied
+                        reportCopyFailed = !copied
+                        guard copied else { return }
+                        // Back to the normal label, the way every other copy button in Settings
+                        // behaves; otherwise it reads "Copied" for the life of the window.
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .seconds(2))
+                            copiedReport = false
+                        }
+                    }
+                }
+                .settingsHighlight(id: highlightID("Copy Latest Report"))
+
+                if reportCopyFailed {
+                    SettingsErrorText("macOS has written no report about Kannu on this Mac.")
+                }
             } header: {
                 Text("Diagnostics")
             } footer: {
-                SettingsFooter("A freeze leaves no crash report, so without this there is nothing to look at afterwards. The check costs one wake every two seconds.")
+                SettingsFooter("A freeze leaves no crash report, so without this there is nothing to look at afterwards. The check costs one wake every two seconds. Reporting opens a GitHub issue with the details filled in — no name, nothing identifying your Mac — for you to read and submit; Kannu sends nothing itself.")
             }
         }
         .navigationTitle("About")
@@ -4841,18 +4874,6 @@ struct LockScreenSettings: View {
 
 
             LockScreenPositioningControls()
-
-            Section {
-                SettingsActionRow {
-                    Button("Copy Latest Crash Report") {
-                        copyLatestCrashReport()
-                    }
-                }
-            } header: {
-                Text("Diagnostics")
-            } footer: {
-                SettingsFooter("Collect the latest crash report to share with the developer when reporting lock screen or overlay issues.")
-            }
         }
         .onAppear(perform: enforceLockScreenGlassConsistency)
         .onChange(of: lockScreenGlassStyle) { _, _ in enforceLockScreenGlassConsistency() }
@@ -5415,46 +5436,6 @@ private struct LockScreenPositioningPreview: View {
         let clampedCenter = min(max(proposedCenter, minCenterY), maxCenterY)
         let derivedOffset = Double(baseCenterY - clampedCenter)
         return min(max(derivedOffset, offsetRange.lowerBound), offsetRange.upperBound)
-    }
-}
-
-@MainActor
-private func copyLatestCrashReport() {
-    let crashReportsPath = NSString(string: "~/Library/Logs/DiagnosticReports").expandingTildeInPath
-    let fileManager = FileManager.default
-
-    do {
-        let files = try fileManager.contentsOfDirectory(atPath: crashReportsPath)
-        let crashFiles = files.filter {
-            ($0.contains("DynamicIsland") || $0.contains("Kannu")) && $0.hasSuffix(".crash")
-        }
-
-        guard let latestCrash = crashFiles.sorted(by: >).first else {
-            let alert = NSAlert()
-            alert.messageText = "No Crash Reports Found"
-            alert.informativeText = "No crash reports found for Kannu"
-            alert.alertStyle = .informational
-            ModalPresenter.present(alert)
-            return
-        }
-
-        let crashPath = (crashReportsPath as NSString).appendingPathComponent(latestCrash)
-        let crashContent = try String(contentsOfFile: crashPath, encoding: .utf8)
-
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(crashContent, forType: .string)
-
-        let alert = NSAlert()
-        alert.messageText = "Crash Report Copied"
-        alert.informativeText = "Crash report '\(latestCrash)' has been copied to clipboard"
-        alert.alertStyle = .informational
-        ModalPresenter.present(alert)
-    } catch {
-        let alert = NSAlert()
-        alert.messageText = "Error"
-        alert.informativeText = "Failed to read crash reports: \(error.localizedDescription)"
-        alert.alertStyle = .warning
-        ModalPresenter.present(alert)
     }
 }
 

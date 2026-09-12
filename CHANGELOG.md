@@ -4,39 +4,48 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
-### 2026-09-12 - Every panel and alert goes through one door
-- **Developer label:** "this wont happen again later for other users right ?"
-- **Agent label:** Follow-up 34 — an app-wide audit of every way the main thread can wedge
+### 2026-09-13 - What the review of the unreviewed PR caught
+- **Developer label:** "check each one and see code rabbit comments … then merge pr's in best order"
+- **Agent label:** Follow-up 35 — #26 had never been built by CI or reviewed; this is that review
 - **Changes:**
-  - The five Settings pickers were fixed; an audit of the rest of the app found four more sites
-    that freeze it the same way, and one of them needs no unusual configuration at all. All of
-    them now present through the new `ModalPresenter` (`Kannu/helpers/ModalPresenter.swift`,
-    renamed and generalised from `SettingsFilePicker`), which never runs a file panel modally and
-    never anchors a sheet to a window that cannot be focused.
-  - `ScreenshotSnippingTool` ran `screencapture -cs` / `-cw` and then `waitUntilExit()` on the
-    main thread. Both are interactive with no timeout, so the notch, the HUDs, the timers and the
-    chat panel stopped drawing for as long as the user hesitated over the crosshair — the picker
-    freeze with a different cause. The process now runs on a background queue.
-  - `ExtensionRPCService.handleShowFilePicker` ran a panel modally on the main actor in response
-    to a WebSocket message, so nothing had brought Kannu forward: the panel sat behind whatever
-    app the user was in, with no click of their own to explain the stall. It presents
-    asynchronously now and writes its reply from the completion handler — `handleRequest` returns
-    nil for a deferred answer and `ExtensionRPCServer.sendDeferredResponse` sends it, still
-    carrying the request's id, which is what JSON-RPC asks for.
-  - `AddFilesButton` (ScreenAssistant) had a bare `runModal()` in its fallback and anchored its
-    sheet to `NSApp.keyWindow` — which here is only ever a borderless, non-activating chat panel.
-  - `QuickShareService.showFilePicker` took the `runModal()` branch on a fast first click, because
-    `hostView` is nil for a main-queue hop after the shelf first lays out; the other branch hung a
-    sheet on the notch panel at `.mainMenu + 3`.
-  - Eleven `NSAlert.runModal()` sites, none of which attached to a window or activated the app
-    first. In an accessory app whose only windows sit at `.mainMenu + 3`, an alert at the default
-    level renders *underneath the notch*: the app stops and there is no dialog to dismiss. They
-    are sheets when a titled window is up, and otherwise activated and raised above Kannu's own
-    windows. Affected: the notch's ADR Detection consent and failure alerts, the memory-usage
-    restart prompt (raised by a background poll, so the user had no action to connect it to), the
-    Shelf's error and image-conversion alerts, the Full Disk Access prompt reached from the
-    status-item menu, the export-logs result alerts, and the Settings crash-report alerts.
-  - Also here: the memory alert said "DynamicIsland", a name from before the fork.
+  - **Every placement change leaked a visible window.** `applyPlacementChange` tore down the
+    *opposite* lifecycle: the inverted cleanup was correct only while the trigger was a boolean and
+    the class always flipped, but three of the four modes share the single-window lifecycle, so
+    switching between them hit the empty dictionary branch and then overwrote `self.window` without
+    closing it. Proven rather than argued: cycling three modes left **four** stacked notches at full
+    alpha, each still in the notch space and unreachable by every later reposition; with the fix,
+    one. Picking a display in "A display I choose" added one per pick.
+  - **A missed unlock notification could hide Kannu until relaunch.** `windowsHiddenForLock` has one
+    clearing site, reachable only from `com.apple.screenIsUnlocked` — which macOS drops often enough
+    that `LockScreenManager` backs it with a poll and a session-active observer. Before the new lock
+    guard, the next screen change rebuilt the windows and healed it; the guard removed that path.
+    `adjustWindowPosition` now trusts the lock manager over its own flag and restores.
+  - **The pointer monitor was never installed at launch**, so launching with two externals connected
+    sat on whichever display resolved first and never followed the pointer — the whole point of that
+    case. It is also installed on the early-return path now.
+  - **A window kept the previous display's size when it moved.** Only window *creation* applied
+    `adjustedSizeForScreen`, so a move that did not rebuild — the pointer path,
+    `selectedScreenChanged`, `notchHeightChanged` — arrived clipped or offset, since a notched
+    built-in and an external need different frames for the same content.
+  - **The crash offer could say something false.** It offered the newest matching diagnostic of any
+    age, so updating to this build could greet a user with "Kannu quit unexpectedly last time it ran"
+    about a report from months ago. It now only offers what was written since the previous launch —
+    the run marker's own timestamp — or, on a first run, the last day.
+  - `CrashReport` got the same `+` encoding fix as `HangReport`, now that both share one
+    `GitHubIssue` builder; without it a `.cpu_resource.diag` was corrupted through its timestamp's
+    `+0530` alone, despite having no stack at all.
+  - `parseIPS` scrubbed only the stack and the messages while the textual path scrubbed everything;
+    it routes through the same `map` now. Host-name scrubbing gained a boundary — a Mac called
+    "iMac" was turning the model code `iMac21,1` into `this-mac21,1` — using alphanumeric lookaround
+    rather than `\b`, because `_` is a word character and the host name sits after one in every
+    diagnostic's file name.
+  - A diagnostic is only Kannu's if the app name is followed by a delimiter, so `KannuHelper_*.ips`
+    is no longer read as Kannu's own. Both shapes macOS actually writes are kept: a crash is
+    `Kannu-<date>.ips` and a resource report is `Kannu_<date>_<host>.cpu_resource.diag` — requiring
+    `Kannu_`, as first suggested, would have rejected every crash report.
+  - The "Display" picker is always mounted (disabled when it does not apply), so its search entry
+    lands somewhere in every mode; "Copy Latest Report" resets its own state instead of reading
+    "Copied" for the life of the window, or showing a stale failure beside a later success.
 
 ### 2026-09-13 - What the review caught
 - **Developer label:** "check each one and see code rabbit comments"
@@ -71,6 +80,134 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     worth more: `getImageFromPasteboard()` trusted the pasteboard unconditionally, so a capture that
     exits 0 without writing one would attach whatever image the user had copied earlier. It now
     requires the pasteboard to have changed during the capture.
+### 2026-09-12 - Every panel and alert goes through one door
+- **Developer label:** "this wont happen again later for other users right ?"
+- **Agent label:** Follow-up 34 — an app-wide audit of every way the main thread can wedge
+- **Changes:**
+  - The five Settings pickers were fixed; an audit of the rest of the app found four more sites
+    that freeze it the same way, and one of them needs no unusual configuration at all. All of
+    them now present through the new `ModalPresenter` (`Kannu/helpers/ModalPresenter.swift`,
+    renamed and generalised from `SettingsFilePicker`), which never runs a file panel modally and
+    never anchors a sheet to a window that cannot be focused.
+  - `ScreenshotSnippingTool` ran `screencapture -cs` / `-cw` and then `waitUntilExit()` on the
+    main thread. Both are interactive with no timeout, so the notch, the HUDs, the timers and the
+    chat panel stopped drawing for as long as the user hesitated over the crosshair — the picker
+    freeze with a different cause. The process now runs on a background queue.
+  - `ExtensionRPCService.handleShowFilePicker` ran a panel modally on the main actor in response
+    to a WebSocket message, so nothing had brought Kannu forward: the panel sat behind whatever
+    app the user was in, with no click of their own to explain the stall. It presents
+    asynchronously now and writes its reply from the completion handler — `handleRequest` returns
+    nil for a deferred answer and `ExtensionRPCServer.sendDeferredResponse` sends it, still
+    carrying the request's id, which is what JSON-RPC asks for.
+  - `AddFilesButton` (ScreenAssistant) had a bare `runModal()` in its fallback and anchored its
+    sheet to `NSApp.keyWindow` — which here is only ever a borderless, non-activating chat panel.
+  - `QuickShareService.showFilePicker` took the `runModal()` branch on a fast first click, because
+    `hostView` is nil for a main-queue hop after the shelf first lays out; the other branch hung a
+    sheet on the notch panel at `.mainMenu + 3`.
+  - Eleven `NSAlert.runModal()` sites, none of which attached to a window or activated the app
+    first. In an accessory app whose only windows sit at `.mainMenu + 3`, an alert at the default
+    level renders *underneath the notch*: the app stops and there is no dialog to dismiss. They
+    are sheets when a titled window is up, and otherwise activated and raised above Kannu's own
+    windows. Affected: the notch's ADR Detection consent and failure alerts, the memory-usage
+    restart prompt (raised by a background poll, so the user had no action to connect it to), the
+    Shelf's error and image-conversion alerts, the Full Disk Access prompt reached from the
+    status-item menu, the export-logs result alerts, and the Settings crash-report alerts.
+  - Also here: the memory alert said "DynamicIsland", a name from before the fork.
+
+### 2026-09-12 - One Kannu, on the display you are using
+- **Developer label:** "when connected to an external display the app didnt behave properly like i wanted… by default what we want is kannu to only come in external display if one is conncted" / "External takes over" / "Follow the pointer, only with 2+ externals" / "Everyone, on update"
+- **Agent label:** Follow-up 33 — the display half, and the races underneath it
+- **Changes:**
+  - Out of the box `showOnAllDisplays` was **true**, so every display got a window — and every
+    non-notch display then hid its island until the pointer rested at its top edge for a second. A
+    MacBook and a monitor therefore showed Kannu in the notch, nothing on the monitor, and three
+    settings that never said which display they meant.
+  - One setting now: **Where Kannu appears** — *External display takes over* (the new default),
+    *All displays*, *Built-in display only*, *A display I choose*. It replaces
+    `showOnAllDisplays`, `automaticallySwitchDisplay` and the specific-display picker, which
+    between them could not express "the monitor, while it is plugged in".
+  - The decision itself is a pure function over `ScreenFacts`
+    (`DisplayPlacementResolver`), in the logic test target with 16 cases — including the two-monitor
+    behaviour, which is the part this Mac cannot reproduce. It is keyed on `CGDirectDisplayID`, not
+    `localizedName`, so two identical monitors stay two displays.
+  - With **two or more** external displays, and only then, Kannu follows the pointer: a mouse-moved
+    monitor is installed for that case alone, coalesced to one placement pass per 250 ms, and torn
+    down the moment the condition stops holding. One external costs nothing.
+  - **The new default applies to everyone on update** (`migrateDisplayPlacement`), by decision:
+    carrying the old choice forward would carry the complaint forward. It needs a line in the
+    release notes.
+  - Races fixed underneath it, all real and all found by tracing the window lifecycle:
+    - `screenConfigurationDidChange` tore down and rebuilt every window on **every** notification
+      with no in-flight guard, and a dock waking sends several — so two rebuild cycles overlapped
+      and every hosted view's `@State` reset. One 300 ms trailing debounce, cancellation doubling as
+      the guard.
+    - `windows` and `viewModels` were keyed by **`NSScreen`**, whose identity AppKit does not promise
+      across a reconfiguration; they are keyed by `CGDirectDisplayID` now.
+    - The unplug path closed a window without removing it from `notchSpace.windows`, retaining a dead
+      window on every disconnect. Both paths go through one teardown helper.
+    - Windows could be rebuilt **over the lock screen** — `adjustWindowPosition` consulted neither
+      `windowsHiddenForLock` nor `LockScreenManager`, so plugging a display in while locked put a
+      full-alpha notch on top of it, and the unlock handler's bare `asyncAfter` queued another. It
+      honours both now, and that delayed reposition is a cancellable task.
+    - The per-display "Always show" overrides had **no observer**, so turning one off hid that
+      display's island without starting the poll that reveals it — it could not be hovered back.
+    - The hidden-edge hover poll cleared whatever handle was current when it finished, which could be
+      its *successor's*: two 20 Hz pollers, no way to stop either. It carries an identity token now.
+    - A screen that no longer resolves counted as "non-notch", putting a vanished display on the
+      hide-until-hover path and its 20 Hz poll. It counts as notched — the branch that does nothing.
+    - Three observers registered with `queue: nil` touched windows from whatever thread posted the
+      notification; they hop to the main actor.
+  - **Verified on this Mac:** the migration runs, placement resolves to the built-in display, and
+    `CGWindowListCopyWindowInfo` shows exactly one Kannu window, alpha 1.0, 690×218 at the top of it;
+    Settings renders one row where three were; idle CPU 0.1 %. **Not verified:** everything that
+    needs a second display — this Mac has one. The resolver's decisions are unit-tested, and the
+    AppKit plumbing around them is code-reviewed and built, not runtime-verified, the same standing
+    as the hover-dwell change in 1.2.0.
+  - Still open, and deliberately not done here: the per-display overrides
+    (`alwaysShowOverrides`, `displayStyleOverrides`) are still keyed by display *name*, so two
+    identically named monitors share one override. Rekeying them by id needs a migration of its own.
+
+### 2026-09-12 - A user can finally say what the crash was
+- **Developer label:** "some users also reported random crashing, also when the app crashes can the user send a crash report to us some way" / "no need user indicators, in crash report, only things we need"
+- **Agent label:** Follow-up 33 — the reporting half, now that the three traps are fixed
+- **Changes:**
+  - Kannu never knew it had crashed. It installed no handler, and the one "Copy Latest Crash Report"
+    button filtered for `.crash` — an extension macOS stopped writing in 12 — so it found nothing on
+    any modern Mac, and it sat in the Lock Screen tab with no search entry. Users could only report
+    "it crashes sometimes", which is unanswerable.
+  - New `CrashReporter` reads what macOS already writes, in `~/Library/Logs/DiagnosticReports` and
+    `/Library/Logs/DiagnosticReports`, and `CrashReport` trims it to what a maintainer needs: the
+    version and build, the macOS version, the architecture and Mac model, the exception type and
+    termination reason, whatever the crashing library said on its way out, and the crashing thread.
+    Both `.ips` crashes and the textual `.cpu_resource.diag` / `.hang` reports are read.
+  - **Built from an allowlist, not a blocklist.** A crash report is full of things that identify a
+    machine — `crashReporterKey`, `Beta Identifier`, the resource coalition, the user id, the host
+    name that macOS puts in the file name — and a blocklist publishes whatever nobody thought of. The
+    parser reads only the fields it names and the rest never reaches the output; `DiagnosticScrub` is
+    the second layer, turning the home folder into `~`, any other `/Users/<name>` into
+    `/Users/redacted`, and the computer's name into `this-mac`. That scrubbing is now shared with the
+    hang watchdog so the two cannot drift.
+  - On the next launch the user is offered the newest report once — *Report It* opens a GitHub issue
+    with everything filled in, *Show the Report* reveals the file, *Ignore* does nothing. Kannu sends
+    nothing itself, so the promise in Settings ("Nothing leaves this Mac unless you turn on push
+    notifications or session analysis") still holds. About › Diagnostics gains "Report a Problem…"
+    and a working "Copy Latest Report", both with search entries, and
+    `.github/ISSUE_TEMPLATE/crash.md` gives a hand-written report the same shape.
+  - Verified on a real crash, not a fixture: the app was sent `SIGABRT`, macOS wrote a 52 KB `.ips`,
+    and the issue Kannu builds from it carries 41 demangled frames and none of the username, the host
+    name, `crashReporterKey`, the coalition or the user id that the raw file contains. The parser was
+    also checked against this machine's five real `.cpu_resource.diag` reports.
+  - An uncaught `NSException` now writes its name and reason to `~/Library/Logs/Kannu/` — the one
+    thing macOS's own report can bury. No signal handlers: catching a Swift trap safely means
+    async-signal-safe code in a handler, and the system's report covers the same ground. No MetricKit
+    either — `MXDiagnosticPayload` arrives on macOS's own schedule, often a day later and often not at
+    all for an app that is not from the App Store, and it carries the same crash the `.ips` already has.
+  - A run that ends cleanly clears a marker, so an unclean exit is recorded in the log. It only logs:
+    a user force-quitting a frozen app leaves exactly the same trace, and what they are *offered* comes
+    from macOS's own report, which is evidence rather than inference.
+  - `exportLogs` stopped swallowing both of its directory reads with `try?`, which produced an archive
+    with no crash reports in it and said nothing. It now records what it could not read, and collects
+    Kannu's own hang and exception logs too.
 
 ### 2026-09-12 - The next freeze explains itself
 - **Developer label:** "on only when the developer mode is selected during launch, also does this consume battery heavily" / "Nothing now, offer it next launch"

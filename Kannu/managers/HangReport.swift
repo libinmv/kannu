@@ -57,24 +57,9 @@ struct HangReport: Equatable {
 
     // MARK: - Scrubbing
 
-    /// Removes anything that identifies the machine or the person.
-    ///
-    /// Frames carry module paths, and in a dev build those sit under the developer's home folder,
-    /// so the home path becomes `~` and any other `/Users/<name>/` becomes `/Users/<redacted>/`.
-    /// Nothing else in a report is user data: there are no arguments, no file contents, no chat
-    /// names, and no session ids.
+    /// Removes anything that identifies the machine or the person. See `DiagnosticScrub`.
     static func scrub(_ text: String, home: String) -> String {
-        var out = text
-        let trimmedHome = home.hasSuffix("/") ? String(home.dropLast()) : home
-        if !trimmedHome.isEmpty, trimmedHome != "/" {
-            out = out.replacingOccurrences(of: trimmedHome, with: "~")
-        }
-        guard let pattern = try? NSRegularExpression(pattern: "/Users/[^/\\s\"]+") else { return out }
-        return pattern.stringByReplacingMatches(
-            in: out,
-            range: NSRange(out.startIndex..., in: out),
-            withTemplate: "/Users/redacted"
-        )
+        DiagnosticScrub.paths(in: text, home: home)
     }
 
     // MARK: - The log file
@@ -193,7 +178,7 @@ struct HangReport: Equatable {
     static let issueBodyLimit = 4200
 
     /// Comfortably inside what GitHub accepts, and inside what Safari and Chrome will open.
-    static let issueURLLimit = 7500
+    static var issueURLLimit: Int { GitHubIssue.urlLengthLimit }
 
     var issueBody: String {
         var body = """
@@ -253,23 +238,7 @@ struct HangReport: Equatable {
         """
     }
 
-    /// Builds the prefilled-issue link, or nil when the result would be too long to open.
-    ///
-    /// `URLComponents` follows RFC 3986, where `+` is a legal query character, so it leaves it
-    /// alone. GitHub — like every form-urlencoded reader — decodes `+` as a space, which would turn
-    /// every `symbol + 124` frame into `symbol   124` and every `+0530` timestamp into ` 0530`. The
-    /// substitution is safe because the setter has already encoded real spaces as `%20`, so any `+`
-    /// left in the query came from a value.
     static func issueURL(repository: String, title: String, body: String, label: String) -> URL? {
-        var components = URLComponents(string: "https://github.com/\(repository)/issues/new")
-        components?.queryItems = [
-            URLQueryItem(name: "title", value: title),
-            URLQueryItem(name: "body", value: body),
-            URLQueryItem(name: "labels", value: label)
-        ]
-        let encoded = components?.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
-        components?.percentEncodedQuery = encoded
-        guard let url = components?.url, url.absoluteString.count <= issueURLLimit else { return nil }
-        return url
+        GitHubIssue.url(repository: repository, title: title, body: body, label: label)
     }
 }

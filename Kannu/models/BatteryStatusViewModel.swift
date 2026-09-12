@@ -223,7 +223,7 @@ class BatteryStatusViewModel: ObservableObject {
     }
 
     private func resolvedTemporaryHUDTargetScreenName() -> String? {
-        if Defaults[.showOnAllDisplays] {
+        if Defaults[.displayPlacement].usesOneWindowPerDisplay {
             return nil
         }
 
