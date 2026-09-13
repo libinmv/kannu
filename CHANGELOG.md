@@ -4,6 +4,56 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-13 - Three hot paths that were doing work nobody asked for
+- **Developer label:** "fix the ones that can be done make sure no regressions happen"
+- **Agent label:** Follow-up 38 — and two of the three obvious fixes would have been bugs
+- **Changes:**
+  - **A held volume key forked `killall -STOP OSDUIHelper` ten to twenty times a second.** Two calls
+    fire per key event — the interceptor delegate, and the CoreAudio write it causes — and each one
+    unconditionally spawned a subprocess to re-stop a process the first one had already stopped.
+  - **The obvious fix is a bug, so it is explicitly not the fix.** The key handler receives an
+    `isRepeat` flag it ignores, and gating on it would break suppression: macOS jetsam-exits
+    OSDUIHelper when it idles and launchd respawns it with a *fresh PID mid-burst*, which is the
+    entire reason the 150 ms watcher exists. Skip the repeats and a native HUD renders on top of
+    Kannu's until the watcher catches up. The decision is made from state instead — one `sysctl`, one
+    `proc_pidinfo` — through a single `OSDSuppressionDecision.shouldSuspend` that the watcher now
+    calls too, so the two schedules cannot disagree about what "already stopped" means. Seven tests
+    pin it, including that a vanished `proc_pidinfo` lookup counts as *needing* a stop, because it
+    means the process exited between the two syscalls. A comment at the delegate warns off `isRepeat`.
+  - That also removes a latent bug: the old code read the helper's PID *after* signalling it, so it
+    could record a PID that respawned in between and had therefore never been stopped.
+  - **`ioreg -r -l -w 0` selects nothing.** With no `-c`/`-n`/`-k` match criterion it emits **0 bytes
+    and exits 0** — measured — so the IORegistry fallback for AirPods listening mode has always
+    returned nil, and the mode actually comes from the dynamic-selector path and the log-stream
+    observer. It was still costing a `fork`/`exec` on the **main thread** per Bluetooth notification,
+    because the `Task.detached` around it wrapped the whole thing in one `MainActor.run`. Only the
+    IOBluetooth reads and the selector probe need main now; the subprocess does not. The
+    selectors-before-`ioreg` order is unchanged.
+  - **And the dead arm was an armed trap.** It called `waitUntilExit` *before* draining the pipe,
+    which deadlocks as soon as the child writes past the pipe buffer. Adding a `-c` to that command —
+    the natural way to make the arm actually work — takes the output to **912 KB** on this Mac,
+    turning a harmless no-op into a permanent main-thread hang on every AirPods notification, with
+    `HangWatchdog` filing a report for each. It reads before waiting now, matching
+    `collectPmsetAccessoryBatteryEntries` a few hundred lines above it. The arguments are deliberately
+    left alone in this change.
+  - **The `name: nil, object: nil` distributed-notification observer stays wildcard.** Every
+    notification posted anywhere on the system wakes Kannu through it, and that is load-bearing: the
+    notifications that carry a listening-mode change are undocumented and vary by release, so the
+    payload arm is the discovery mechanism and a fixed name list would silently kill detection on a
+    future macOS. What is gone is the work per notification — it used to join *and* lowercase the
+    entire `userInfo` into one string before deciding it was uninteresting. Now the cheap name arm
+    runs first, a notification with no payload (which is nearly all of them) is answered with no
+    allocation at all, and the payload scan short-circuits per entry instead of materialising a copy.
+  - Two of the three name fragments it matched, `airpodspro.settingschanged` and
+    `audioaccessory.prefschanged`, are already registered as explicit observers with their own
+    handler, so those arms only ever produced a second refresh for a notification already handled.
+    Dropped; `controlcenter.airpods` stays, and is broader than the explicit observer on purpose.
+  - **Cannot be verified on this Mac, and the commits say so.** `osdHelperDrawsSystemHUD` returns
+    false on macOS 26 and this machine is 26.6.2, so the whole OSD suppression path is already a
+    no-op here — it is live on macOS 14 and 15 only. The `ioreg` arm is inert for a different reason,
+    stated above. Both are covered by tests and by measurement of the commands themselves rather than
+    by running the feature.
+
 ### 2026-09-13 - Connecting AirPods no longer freezes the app
 - **Developer label:** "Also BluetoothAudioManager's system_profiler on the main actor, EXPLAIN"
 - **Agent label:** Follow-up 36 — and this **reverses** a decision, deliberately
