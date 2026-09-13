@@ -232,10 +232,27 @@ class SystemOSDManager {
         let active = suppressionState.withLock { $0.active }
         guard active else { return }
         osdSuppressionQueue.async {
+            // A held volume key reaches this ten to twenty times a second — the interceptor
+            // delegate fires, and the CoreAudio write it causes fires again — and it used to fork
+            // `killall -STOP` every single time to re-stop a process already stopped by the first
+            // one. `OSDSuppressionDecision` answers that in two syscalls, and deliberately does not
+            // gate on the event's `isRepeat` flag: launchd respawns the helper with a fresh PID
+            // mid-burst, which is the whole reason the 150 ms watcher exists.
+            //
+            // Reading the PID *before* the stop also fixes a latent bug in the old order, which
+            // recorded whatever PID existed afterwards — possibly one that respawned in between,
+            // and was therefore never actually stopped.
+            let pid = osduiHelperPID()
+            let stopped = pid.flatMap { isPIDStopped($0) }
+            let lastPID = suppressionState.withLock { $0.lastSuspendedPID }
+            guard OSDSuppressionDecision.shouldSuspend(
+                currentPID: pid,
+                isStopped: stopped,
+                lastSuspendedPID: lastPID
+            ), let pid else { return }
+
             suspendOSDUIHelper()
-            if let pid = osduiHelperPID() {
-                suppressionState.withLock { $0.lastSuspendedPID = pid }
-            }
+            suppressionState.withLock { $0.lastSuspendedPID = pid }
         }
     }
     
@@ -326,12 +343,16 @@ class SystemOSDManager {
                 }
 
                 let currentPID = osduiHelperPID()
+                let stopped = currentPID.flatMap { isPIDStopped($0) }
                 let lastPID = suppressionState.withLock { $0.lastSuspendedPID }
 
-                // Re-STOP on a new PID, and also when the same PID was resumed
-                // behind our back (e.g. an external SIGCONT) — PID comparison
-                // alone would miss that for the rest of the session.
-                if let pid = currentPID, pid != lastPID || isPIDStopped(pid) == false {
+                // Same decision as `suppressNativeOSDNow`, through the same function, so the two
+                // schedules cannot disagree about what "already stopped" means.
+                if OSDSuppressionDecision.shouldSuspend(
+                    currentPID: currentPID,
+                    isStopped: stopped,
+                    lastSuspendedPID: lastPID
+                ), let pid = currentPID {
                     suspendOSDUIHelper()
                     suppressionState.withLock { $0.lastSuspendedPID = pid }
                 }

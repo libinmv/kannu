@@ -40,6 +40,205 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     entry in this file does the opposite — the heading titles the change, the label quotes the request —
     so the template now says so explicitly instead of describing a convention the file does not follow.
 
+### 2026-09-13 - A dimmed card is not a finished request
+- **Developer label:** "Issue #14 (execution time resets when thinking mode happens)"
+- **Agent label:** Follow-up 38 — the headline was already fixed; this is what was left
+- **Changes:**
+  - **Checked at HEAD before changing anything, and thinking no longer moves the clock.** Issue #14's
+    headline symptom is fixed for Claude Code and for every hooked provider: thinking is derived from
+    `PostToolUse`/`afterAgentThought`/`AfterTool`/`PostInvocation`, all of which only bump
+    `turn_tool_calls` and leave the turn keys untouched; a prompt opens a turn only when none is open
+    (`f47a796`, so a background task finishing *joins* the request instead of resetting it); and the
+    display rule prefers `turn.startedAt` whenever a turn exists (`c5ee85b`, `069a8ff`). Pinned by
+    `HookScriptTests`.
+  - **What still reset is the fallback, and not because of thinking.** `applyExecutionRunState` — which
+    serves everything with no turn, so passive sources and pre-v39 hook files — treated "the previous
+    cycle was not an active run" as "this is a new request" and stamped `now`. So **any** non-active dip
+    restarted the clock, including the `activeStaleMs` demotion that fires during a long quiet phase
+    where the raw state never stopped being `executing`. A twenty-minute turn showed a few seconds:
+    the reported symptom, reached by a different route than the one that was fixed.
+  - The rule now separates a demotion from an end. `displayState` is what the staleness ladder
+    concluded; `rawState` is what the source reported. Dipped display with an active raw state keeps its
+    clock and resumes it; a raw state that is no longer active clears it, so a genuinely new request
+    after a real stop still restarts.
+  - **The extraction is most of the work, and the reason to do it properly.** The rule lived inside a
+    `private` method on a `@MainActor` monitor with **no test anywhere** — which is why this kept being
+    reported and kept being hard to pin down, and why fixing it in place would have been unverifiable.
+    It is now `AgentExecutionClock.resolve` in the logic target, following the
+    `AgentTrafficLightMapper.reconcileClaudeSessions` pattern, with the monitor keeping only the
+    plumbing. Nine tests pin both halves: a demoted-then-resumed run keeps its original start, **and** a
+    stop-then-new-request does not.
+  - **One case is deliberately not fixed.** A passive source whose parser reports a genuine `stopped`
+    mid-session — Claude Desktop flips raw state per record, including on any `result` record — still
+    restarts, because by the time the clock sees it the source has said the request ended. Telling
+    "ended" from "emitted a result record" belongs in that parser; moving the guess here would risk
+    merging two genuinely separate runs, which is a worse bug than splitting one.
+  - `docs/REGRESSIONS.md` gains entry 15, and the Danger zones rows for
+    `CursorAgentStatusMonitor.swift` and `AgentTrafficLightState.swift` point at it — with the lesson
+    entries 2 and 12 already taught: never fix a reset by widening a staleness window, because the clock
+    is not the state machine.
+
+### 2026-09-13 - The usage aggregator stops reading transcripts it cannot use
+- **Developer label:** "fix the ones that can be done make sure no regressions happen"
+- **Agent label:** Follow-up 38 — measured, including the part of the prediction that did not hold
+- **Changes:**
+  - `JSONLUsageParser` read and JSON-parsed **every** transcript a provider had ever written in order
+    to compute totals that are a week old at most: the date filter ran *after* parsing each line, and
+    the file enumeration had no cutoff at all. Measured here: **228 files, 648 MB**, largest single file
+    **167 MB**, re-read every few minutes while the Usage card is open. It occupies a cooperative-pool
+    worker, not the main thread.
+  - A file's modification time is never earlier than its newest record, so a file untouched for longer
+    than the widest reported window cannot contribute to any of them. The cutoff is now derived from
+    those windows in one `UsageWindows`, which both providers use — **derived**, not chosen, because a
+    cutoff narrower than a window truncates that window's total with no error and no symptom beyond a
+    number that is quietly too small. `UsageWindowsTests` asserts the ordering against the week, the
+    session and `ClaudeSessionBlocks.blockLength`, so adding a wider window later fails the build
+    instead of the totals. The cutoff is a day wider than the week for DST, corrected clocks and files
+    written by another machine.
+  - **`logsUnavailable` deliberately stays keyed on the *unfiltered* listing.** Otherwise somebody who
+    simply has not run Claude for eight days is told their logs are unavailable and offered a fix for a
+    problem they do not have, instead of an honest zero.
+  - **Be honest about the saving: it is about a tenth.** 161 of 228 files and 578 of 648 MB fall inside
+    the cutoff on this machine, so the filter skips 67 files and 70 MB. The real prize is a cache of
+    *parsed* records keyed on `(mtime, size)` — a larger change with its own review, deliberately not
+    in this pass.
+  - **Verified the property that matters: the totals do not move.** Replaying the real 228-file corpus
+    both ways gives byte-identical figures — 2,430,758,455 in, 6,209,170 out, 6,789 records — filtered
+    and unfiltered. A faster aggregate that quietly reports a different number would be worse than a
+    slow one.
+  - Also fixed, found while reading it: the dedup claim ran *before* the week guard, so a record outside
+    the window could claim its key and then be dropped, making a later duplicate of the same request
+    inside the window count as already-seen and be skipped — an undercount. Resumed and forked
+    transcripts do repeat earlier records verbatim, so the shape is reachable. **The plan predicted
+    totals would rise and they did not:** replayed both orderings over the real corpus, the figures are
+    identical, so nothing on this machine actually triggers it. Fixed as a latent correctness bug, not
+    as a number change.
+
+### 2026-09-13 - The now-playing helper dies with the app that spawned it
+- **Developer label:** "fix the ones that can be done make sure no regressions happen"
+- **Agent label:** Follow-up 38 — the teardown existed and nothing called it
+- **Changes:**
+  - **The `mediaremote-adapter.pl` helper outlived every run.** Measured on the development machine:
+    **nine alive at once**, eight reparented to `launchd`, the oldest **fourteen hours**, across four
+    bundle paths — and three of them from `/Applications`, so this was not a side effect of rebuilding.
+  - **Root cause is a retain cycle, not a missing teardown.** `streamTask` captures `self` weakly, but
+    once `processJSONStream()` is entered the task frame holds `self` strongly, and that call never
+    returns — the pipe loop is a `while true` suspended in a continuation. `self` owns the task, the
+    running task owns `self`, so `deinit` is unreachable and dropping the controller did nothing. It is
+    kept as a backstop and documented as not being the teardown path.
+  - **The plumbing to break the cycle already existed and nothing called it.** `JSONLinesPipeHandler
+    .close()` resumes the pending continuation with `CancellationError`, which unwinds the loop,
+    returns from `processJSONStream`, and releases `self`. `MediaControllerProtocol` gains `stop()`
+    (default no-op, so the other four controllers are untouched), `NowPlayingController` implements it,
+    and `MusicManager` routes both the controller switch and `destroy()` through one
+    `releaseActiveController()` — because releasing a controller that owns a child process is not a way
+    to stop it.
+  - `applicationWillTerminate` gets a synchronous `terminateChildProcessesForAppExit()`, separate from
+    `stop()` because termination does not wait for a task and killing the child is the only part that
+    has to happen before the process exits.
+  - **And the orphans already on disk get cleared at launch**, because the app is force-quit and does
+    crash, and neither path runs a teardown. The ownership rule is exact and every shortcut is wrong:
+    `killall perl` hits unrelated processes, a basename match hits *other* Kannu bundles (four coexist
+    on a developer's machine, and killing another build's live helper looks like a bug in that build),
+    and ignoring the parent hits a helper still in use. So the argv must name **this** bundle's script
+    as a whole token *and* the process must already be orphaned to `launchd`. Ten tests, written against
+    the real `ps` output from the leak.
+  - **Proven both ways rather than argued.** A clean quit of a signed build now leaves **zero**
+    survivors. Then `kill -9` on it left exactly one orphan at `ppid 1`, and the next launch reaped it
+    — while all nine helpers belonging to other bundles, including one with a live parent and eight
+    orphans from `/Applications` and other build products, were left untouched.
+  - The vendored `.pl` is deliberately not modified, which would recreate the two-copies-of-one-artifact
+    drift REGRESSIONS entry 1 is about. `Process.terminationHandler` is the wrong tool: it fires when
+    the child dies, not the parent.
+  - One path is code-verified but not runtime-verified here: switching the media controller inside a
+    live app goes through the same `releaseActiveController()` → `stop()`, but the switch is triggered
+    by a local `NotificationCenter` post from Settings, which this host cannot drive.
+  - **From the review, three real holes in the teardown, all closed.** (1) `releaseActiveController()`
+    dropped the controller and left `stop()` to a task, so a controller switch followed immediately by
+    quitting left the old controller off `activeController` — invisible to
+    `stopActiveControllerForTermination()` — with its `stop()` still pending, and the helper outlived
+    the app after all. The child is now terminated synchronously before that function returns;
+    terminating twice is harmless, leaking is not. (2) `init` started an untracked task to spawn the
+    helper, so a controller stopped *during its own setup* saw no process, returned, and then let setup
+    resume and launch a helper nothing owned. The task is tracked and cancelled, and setup re-checks
+    after its `await` and closes the pipe instead of launching. (3) The ownership predicate searched the
+    whole command for the script path as a token; it now requires the script to be the argument directly
+    after the interpreter. A `perl` process can *mention* the file without being the adapter, and
+    signalling one of those is worse than leaking. Positional fails closed, searching fails open.
+  - The reviewer's index was off by one — `Process` sets `argv[0]` to the executable path and appends
+    the arguments after it, so the script is at index 1, not 0 — but the point stood and the check is
+    stricter for it. Re-proved end to end against the rebuilt binary: `kill -9`, one orphan at
+    `ppid 1`, reaped on the next launch, clean quit leaves zero, and the nine helpers belonging to
+    other bundles are untouched with their original PIDs and ages.
+  - **Found reviewing my own diff:** the argv reader decoded each `KERN_PROCARGS2` token with
+    `String(validatingUTF8:)`, a C-string initialiser, on a slice that `split` leaves *without* a NUL
+    terminator. It worked only because the separator happens to sit in the parent buffer just past the
+    slice — a read past the slice's own bounds that stops being true the moment the slicing changes.
+    Decoded from the bytes instead, and the reap test re-run against the rebuilt binary to prove the
+    predicate still identifies the process: `kill -9`, one orphan at `ppid 1`, reaped on the next launch,
+    nine other-bundle helpers untouched.
+  - `.gitignore` now globs `.build-*/` instead of listing three paths by name. A one-off verification
+    build should not need a `.gitignore` edit, and the throwaway derivedData for the test above got
+    staged because it did.
+
+### 2026-09-13 - Three hot paths that were doing work nobody asked for
+- **Developer label:** "fix the ones that can be done make sure no regressions happen"
+- **Agent label:** Follow-up 38 — and two of the three obvious fixes would have been bugs
+- **Changes:**
+  - **A held volume key forked `killall -STOP OSDUIHelper` ten to twenty times a second.** Two calls
+    fire per key event — the interceptor delegate, and the CoreAudio write it causes — and each one
+    unconditionally spawned a subprocess to re-stop a process the first one had already stopped.
+  - **The obvious fix is a bug, so it is explicitly not the fix.** The key handler receives an
+    `isRepeat` flag it ignores, and gating on it would break suppression: macOS jetsam-exits
+    OSDUIHelper when it idles and launchd respawns it with a *fresh PID mid-burst*, which is the
+    entire reason the 150 ms watcher exists. Skip the repeats and a native HUD renders on top of
+    Kannu's until the watcher catches up. The decision is made from state instead — one `sysctl`, one
+    `proc_pidinfo` — through a single `OSDSuppressionDecision.shouldSuspend` that the watcher now
+    calls too, so the two schedules cannot disagree about what "already stopped" means. Seven tests
+    pin it, including that a vanished `proc_pidinfo` lookup counts as *needing* a stop, because it
+    means the process exited between the two syscalls. A comment at the delegate warns off `isRepeat`.
+  - That also removes a latent bug: the old code read the helper's PID *after* signalling it, so it
+    could record a PID that respawned in between and had therefore never been stopped.
+  - **`ioreg -r -l -w 0` selects nothing.** With no `-c`/`-n`/`-k` match criterion it emits **0 bytes
+    and exits 0** — measured — so the IORegistry fallback for AirPods listening mode has always
+    returned nil, and the mode actually comes from the dynamic-selector path and the log-stream
+    observer. It was still costing a `fork`/`exec` on the **main thread** per Bluetooth notification,
+    because the `Task.detached` around it wrapped the whole thing in one `MainActor.run`. Only the
+    IOBluetooth reads and the selector probe need main now; the subprocess does not. The
+    selectors-before-`ioreg` order is unchanged.
+  - **And the dead arm was an armed trap.** It called `waitUntilExit` *before* draining the pipe,
+    which deadlocks as soon as the child writes past the pipe buffer. Adding a `-c` to that command —
+    the natural way to make the arm actually work — takes the output to **912 KB** on this Mac,
+    turning a harmless no-op into a permanent main-thread hang on every AirPods notification, with
+    `HangWatchdog` filing a report for each. It reads before waiting now, matching
+    `collectPmsetAccessoryBatteryEntries` a few hundred lines above it. The arguments are deliberately
+    left alone in this change.
+  - **From the review, and it is the same shape as the bug this session already fixed once:** moving the
+    `ioreg` probe off the main thread removed the accidental serialisation the enclosing
+    `MainActor.run` provided, so a notification arriving after the 180 ms debounce had already elapsed
+    could start a second probe while the first was still draining. Cancelling the surrounding task does
+    not help — cancellation neither interrupts `readDataToEndOfFile()` nor kills the child. One probe at
+    a time now; skipping a concurrent one loses nothing, since it reads a live registry and would return
+    the same answer. Cheap today because the command emits nothing, and exactly the trap that would bite
+    if the arguments were ever fixed.
+  - **The `name: nil, object: nil` distributed-notification observer stays wildcard.** Every
+    notification posted anywhere on the system wakes Kannu through it, and that is load-bearing: the
+    notifications that carry a listening-mode change are undocumented and vary by release, so the
+    payload arm is the discovery mechanism and a fixed name list would silently kill detection on a
+    future macOS. What is gone is the work per notification — it used to join *and* lowercase the
+    entire `userInfo` into one string before deciding it was uninteresting. Now the cheap name arm
+    runs first, a notification with no payload (which is nearly all of them) is answered with no
+    allocation at all, and the payload scan short-circuits per entry instead of materialising a copy.
+  - Two of the three name fragments it matched, `airpodspro.settingschanged` and
+    `audioaccessory.prefschanged`, are already registered as explicit observers with their own
+    handler, so those arms only ever produced a second refresh for a notification already handled.
+    Dropped; `controlcenter.airpods` stays, and is broader than the explicit observer on purpose.
+  - **Cannot be verified on this Mac, and the commits say so.** `osdHelperDrawsSystemHUD` returns
+    false on macOS 26 and this machine is 26.6.2, so the whole OSD suppression path is already a
+    no-op here — it is live on macOS 14 and 15 only. The `ioreg` arm is inert for a different reason,
+    stated above. Both are covered by tests and by measurement of the commands themselves rather than
+    by running the feature.
+
 ### 2026-09-13 - Connecting AirPods no longer freezes the app
 - **Developer label:** "Also BluetoothAudioManager's system_profiler on the main actor, EXPLAIN"
 - **Agent label:** Follow-up 36 — and this **reverses** a decision, deliberately

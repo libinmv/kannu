@@ -178,6 +178,6 @@ __pycache__/
 *.pyc
 
 # Throwaway derived-data paths used while verifying and releasing locally
-.build-verify/
-.build-release/
-.build-tests/
+# Throwaway derivedData paths. The glob is the point: a one-off verification build should never
+# need a .gitignore edit, and .build-leak/ once got staged because it did.
+.build-*/
