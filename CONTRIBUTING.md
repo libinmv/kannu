@@ -7,7 +7,9 @@ Thank you for your interest in contributing to Kannu! We welcome contributions f
 - [Code of Conduct](#code-of-conduct)
 - [Development Setup](#development-setup)
 - [Git Hook Setup](#git-hook-setup)
+- [Working with AI Agents](#working-with-ai-agents)
 - [Pull Request Process](#pull-request-process)
+- [Before Changing Agent Status Code](#before-changing-agent-status-code)
 - [Commit Checklist](#commit-checklist)
 - [Coding Guidelines](#coding-guidelines)
 - [Design Contributions](#design-contributions)
@@ -58,6 +60,21 @@ Run this once after cloning:
 ```
 
 This enables the repo-managed `pre-commit` hook from `.githooks/`.
+
+## Working with AI Agents
+
+Agents do a meaningful share of the work here — the Commit Checklist below asks for an agent feature
+label precisely because of that. If you are pointing one at this repository, or you are one:
+
+- **`AGENTS.md` at the repository root is the canonical instruction file.** It holds the engineering
+  standards: the architecture principles, the build/test/run commands, the house conventions and the
+  traps this project has already paid for. Codex, Cursor, Copilot, Aider and Windsurf read it
+  automatically.
+- **`CLAUDE.md` is Claude Code's entry point**, because Claude Code reads that filename and not
+  `AGENTS.md`. It holds only Claude-specific machinery and imports the shared file with `@AGENTS.md`.
+- **Do not copy rules between them.** One rule in two files is how this repo shipped a documented
+  CHANGELOG shape that the commit hook rejected — twice, in two different files.
+  `KannuTests/ChangelogRuleDocsTests.swift` now fails CI if the copies disagree with the hook.
 
 ## Pull Request Process
 
