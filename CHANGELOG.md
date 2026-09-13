@@ -4,6 +4,42 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-13 - The usage aggregator stops reading transcripts it cannot use
+- **Developer label:** "fix the ones that can be done make sure no regressions happen"
+- **Agent label:** Follow-up 38 — measured, including the part of the prediction that did not hold
+- **Changes:**
+  - `JSONLUsageParser` read and JSON-parsed **every** transcript a provider had ever written in order
+    to compute totals that are a week old at most: the date filter ran *after* parsing each line, and
+    the file enumeration had no cutoff at all. Measured here: **228 files, 648 MB**, largest single file
+    **167 MB**, re-read every few minutes while the Usage card is open. It occupies a cooperative-pool
+    worker, not the main thread.
+  - A file's modification time is never earlier than its newest record, so a file untouched for longer
+    than the widest reported window cannot contribute to any of them. The cutoff is now derived from
+    those windows in one `UsageWindows`, which both providers use — **derived**, not chosen, because a
+    cutoff narrower than a window truncates that window's total with no error and no symptom beyond a
+    number that is quietly too small. `UsageWindowsTests` asserts the ordering against the week, the
+    session and `ClaudeSessionBlocks.blockLength`, so adding a wider window later fails the build
+    instead of the totals. The cutoff is a day wider than the week for DST, corrected clocks and files
+    written by another machine.
+  - **`logsUnavailable` deliberately stays keyed on the *unfiltered* listing.** Otherwise somebody who
+    simply has not run Claude for eight days is told their logs are unavailable and offered a fix for a
+    problem they do not have, instead of an honest zero.
+  - **Be honest about the saving: it is about a tenth.** 161 of 228 files and 578 of 648 MB fall inside
+    the cutoff on this machine, so the filter skips 67 files and 70 MB. The real prize is a cache of
+    *parsed* records keyed on `(mtime, size)` — a larger change with its own review, deliberately not
+    in this pass.
+  - **Verified the property that matters: the totals do not move.** Replaying the real 228-file corpus
+    both ways gives byte-identical figures — 2,430,758,455 in, 6,209,170 out, 6,789 records — filtered
+    and unfiltered. A faster aggregate that quietly reports a different number would be worse than a
+    slow one.
+  - Also fixed, found while reading it: the dedup claim ran *before* the week guard, so a record outside
+    the window could claim its key and then be dropped, making a later duplicate of the same request
+    inside the window count as already-seen and be skipped — an undercount. Resumed and forked
+    transcripts do repeat earlier records verbatim, so the shape is reachable. **The plan predicted
+    totals would rise and they did not:** replayed both orderings over the real corpus, the figures are
+    identical, so nothing on this machine actually triggers it. Fixed as a latent correctness bug, not
+    as a number change.
+
 ### 2026-09-13 - The now-playing helper dies with the app that spawned it
 - **Developer label:** "fix the ones that can be done make sure no regressions happen"
 - **Agent label:** Follow-up 38 — the teardown existed and nothing called it
