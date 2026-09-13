@@ -470,6 +470,49 @@ of `~/.claude/projects` (symlinks resolved, `O_NOFOLLOW`), so no status file can
 protected folder. Guards: `ClaudeTurnTokensTests` (symlinks and outside paths refused, catch-up
 never publishes a partial total, copied history outside the time window never counts).
 
+**2026-09-13 addendum — a subprocess is I/O too, and this rule has to reach outside AgentStatus.**
+`BluetoothAudioManager.updateBatteryStatuses(force:)` collects on the *calling* thread, and two of
+its four collectors spawn `system_profiler SPBluetoothDataType` and `pmset -g accps` and wait. Its
+one thread hop is at the publish (`DispatchQueue.main.sync`), which protects the dictionaries, not
+the caller. Three of its four callers are the main thread — a connect, a disconnect, and the
+lock-screen weather refresh — and the 20 s cache does not help because they all pass `force: true`.
+Measured on the main thread with **zero** devices connected, the cheapest possible state: **228 ms**;
+with devices actually connected it is the 2-8 s `HangReport.hangThreshold` was deliberately set
+above, so it could trip the app's own hang watchdog.
+
+This is the third pass over the same rule in one file. `7b3e290` moved the initial scan off main and
+carried a forced rescan *onto* main in the same change ("partly undoing its own goal"); `ed10284`
+fixed that one; `342bafd` added `includeBattery:`. The two remaining refreshes were then listed in
+CHANGELOG under "reviewed and deliberately left as designed" — reversed on 2026-09-13, because the
+lock-screen path was never covered by that decision and the hang watchdog now reads the stall as a
+freeze. Rule: the forced collection runs on `pmsetFetchQueue`, the apply hops back, and it is
+strictly fire-and-forget — the publish is `main.sync`, so waiting on it from main deadlocks.
+
+**Why it broke twice after the rule was written:** this file says to read it before touching
+`Kannu/managers/AgentStatus/`, and `BluetoothAudioManager.swift` is not in there. The instruction was
+narrower than the rule. It is in [Danger zones](#danger-zones) now, and CLAUDE.md points at that
+table rather than at one directory.
+
+**And moving it off main is not free — the second half of the rule.** A collector that publishes by
+*replacing* shared state is safe only while collection is synchronous, because then nothing can
+interleave. Off the main thread the collect-to-apply window becomes however long the subprocess takes,
+and anything that writes the same state inside that window is silently reverted to a snapshot taken
+before it. That is exactly what the 2026-09-13 fix did on its first pass: a live Bluetooth LE battery
+read landing during a `system_profiler` run was overwritten by the older scan, with no path back,
+because the live reader only re-reads a device whose level is `nil`. Caught in review, before merge.
+
+Rule: when you move a collector off the main actor, decide explicitly what happens to writes that
+land during the window — and do not reach for "higher wins", which fixes the revert by making the
+value unable to fall. Order the writes instead: the live reader stamps each accepted write with a
+counter, the scan captures that counter on main *before* dispatching, and at apply time only keys
+written after that point survive the snapshot.
+
+**Missing:** no guard for the main-actor spawn. A static "subprocess spawned on the main actor" check
+would be noisy and unreliable. Manual check: after a Bluetooth connect or disconnect, `sample` the app
+and confirm no `system_profiler` or `pmset` frame appears on the main thread. The revert half *is*
+guarded: `BluetoothLiveBatteryWritesTests` pins both directions, including that a scan can still lower
+a value as the battery drains — the half a careless fix breaks.
+
 ## 13. A live Claude session is never resumed
 
 **Rule:** `claude://resume?session=<id>` imports a transcript into Claude Desktop and starts a new
@@ -565,6 +608,7 @@ Commit counts across all branches (`--follow`, so pre-rename history counts):
 | `AgentHookInstaller.swift` | 17 | Embedded script + event table + install/uninstall/migration. Grows monotonically; every growth episode has broken `checkInstalled` or a migration (entries 1 and 6). |
 | `CursorAgentStatusMonitor.swift` (usage spawn) | — | The `/usage` fetch invocation. Two silent breakages in one day from added flags/env (entry 8). |
 | `ModalPresenter.swift` | 2 | The only place allowed to stop the main run loop. Every site in the app funnels through it, and the hang watchdog trusts it to declare a deliberate stall (entry 14). |
+| `BluetoothAudioManager.swift` | 19 | Battery collection. Spawns `system_profiler` and `pmset` and waits, on whatever thread calls it — moved off main three separate times, twice re-landing there in the same change that was meant to fix it (entry 11, 2026-09-13 addendum). |
 | `AgentSessionLogParser.swift` | 8 | `readTrailingLines` and the tail verdict. 4 of 8 commits touch the reader; **2 of those 4 fix the same failure mode** — the reader returning nil and silently sending callers down a wrong path (entry 4). |
 
 If you are changing a *constant* in `AgentTrafficLightState.swift`, assume it is load-bearing
