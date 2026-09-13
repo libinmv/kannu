@@ -19,6 +19,7 @@
 import Foundation
 import Combine
 import AppKit
+import os
 import Defaults
 import SwiftUI
 import IOBluetooth
@@ -2070,7 +2071,24 @@ class BluetoothAudioManager: ObservableObject {
     /// matching `collectPmsetAccessoryBatteryEntries` in this same file.
     ///
     /// Not called on the main thread; see `scheduleEventDrivenListeningModeRefresh`.
+    ///
+    /// One probe at a time. Running it off the main thread removed the accidental serialisation the
+    /// enclosing `MainActor.run` used to provide, and cancelling the surrounding task does not help:
+    /// cancellation neither interrupts `readDataToEndOfFile()` nor terminates the child. So a
+    /// notification arriving after the 180 ms debounce had already elapsed could start a second
+    /// `ioreg` while the first was still draining. Skipping the second loses nothing — the probe reads
+    /// a live registry, so a concurrent answer would be the same answer.
+    private static let ioRegistryProbeRunning = OSAllocatedUnfairLock(initialState: false)
+
     private static func readListeningModeFromIORegistry() -> AirPodsListeningMode? {
+        let alreadyRunning = ioRegistryProbeRunning.withLock { running -> Bool in
+            if running { return true }
+            running = true
+            return false
+        }
+        guard !alreadyRunning else { return nil }
+        defer { ioRegistryProbeRunning.withLock { $0 = false } }
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/ioreg")
         process.arguments = ["-r", "-l", "-w", "0"]

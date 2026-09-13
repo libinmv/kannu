@@ -117,6 +117,23 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
   - One path is code-verified but not runtime-verified here: switching the media controller inside a
     live app goes through the same `releaseActiveController()` → `stop()`, but the switch is triggered
     by a local `NotificationCenter` post from Settings, which this host cannot drive.
+  - **From the review, three real holes in the teardown, all closed.** (1) `releaseActiveController()`
+    dropped the controller and left `stop()` to a task, so a controller switch followed immediately by
+    quitting left the old controller off `activeController` — invisible to
+    `stopActiveControllerForTermination()` — with its `stop()` still pending, and the helper outlived
+    the app after all. The child is now terminated synchronously before that function returns;
+    terminating twice is harmless, leaking is not. (2) `init` started an untracked task to spawn the
+    helper, so a controller stopped *during its own setup* saw no process, returned, and then let setup
+    resume and launch a helper nothing owned. The task is tracked and cancelled, and setup re-checks
+    after its `await` and closes the pipe instead of launching. (3) The ownership predicate searched the
+    whole command for the script path as a token; it now requires the script to be the argument directly
+    after the interpreter. A `perl` process can *mention* the file without being the adapter, and
+    signalling one of those is worse than leaking. Positional fails closed, searching fails open.
+  - The reviewer's index was off by one — `Process` sets `argv[0]` to the executable path and appends
+    the arguments after it, so the script is at index 1, not 0 — but the point stood and the check is
+    stricter for it. Re-proved end to end against the rebuilt binary: `kill -9`, one orphan at
+    `ppid 1`, reaped on the next launch, clean quit leaves zero, and the nine helpers belonging to
+    other bundles are untouched with their original PIDs and ages.
   - **Found reviewing my own diff:** the argv reader decoded each `KERN_PROCARGS2` token with
     `String(validatingUTF8:)`, a C-string initialiser, on a slice that `split` leaves *without* a NUL
     terminator. It worked only because the separator happens to sit in the parent buffer just past the
@@ -160,6 +177,14 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     `HangWatchdog` filing a report for each. It reads before waiting now, matching
     `collectPmsetAccessoryBatteryEntries` a few hundred lines above it. The arguments are deliberately
     left alone in this change.
+  - **From the review, and it is the same shape as the bug this session already fixed once:** moving the
+    `ioreg` probe off the main thread removed the accidental serialisation the enclosing
+    `MainActor.run` provided, so a notification arriving after the 180 ms debounce had already elapsed
+    could start a second probe while the first was still draining. Cancelling the surrounding task does
+    not help — cancellation neither interrupts `readDataToEndOfFile()` nor kills the child. One probe at
+    a time now; skipping a concurrent one loses nothing, since it reads a live registry and would return
+    the same answer. Cheap today because the command emits nothing, and exactly the trap that would bite
+    if the arguments were ever fixed.
   - **The `name: nil, object: nil` distributed-notification observer stays wildcard.** Every
     notification posted anywhere on the system wakes Kannu through it, and that is load-bearing: the
     notifications that carry a listening-mode change are undocumented and vary by release, so the

@@ -671,6 +671,14 @@ class MusicManager: ObservableObject {
     private func releaseActiveController() {
         guard let controller = activeController else { return }
         activeController = nil
+
+        // Kill the child synchronously, before returning. `stop()` below does this too, but it runs in
+        // a task that is not guaranteed to get a turn: a controller switch immediately followed by
+        // quitting would leave the old controller off `activeController` — so
+        // `stopActiveControllerForTermination()` cannot see it — with its `stop()` still pending, and
+        // the helper would outlive the app after all. Terminating twice is harmless; leaking is not.
+        controller.terminateChildProcessesForAppExit()
+
         Task { await controller.stop() }
     }
 

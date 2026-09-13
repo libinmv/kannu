@@ -51,19 +51,21 @@ enum MediaRemoteAdapterOwnership {
         return commandNamesScript(command, ownScriptPath)
     }
 
-    /// Whether `command` contains `path` as a complete argv token rather than as a substring, so a
-    /// bundle nested inside another bundle's path cannot be mistaken for it.
+    /// Whether `command` runs `path` as its script argument.
+    ///
+    /// Positional, not a search: the script must be the argument immediately after the interpreter.
+    /// `Process` sets `argv[0]` to the executable path and appends `arguments` after it, so the adapter
+    /// reconstructs as `/usr/bin/perl <script> <framework> stream` — index 0 is `perl`, index 1 is the
+    /// script. (Confirmed against real `ps` output, and pinned by the tests.)
+    ///
+    /// A whole-token search anywhere in the command would also accept a `perl` process that merely
+    /// *mentions* the path — reading it, linting it, passing it to something else. Requiring the
+    /// position fails closed: if argv ever does not look like this, nothing is reaped, which leaks at
+    /// worst. Searching fails open, which signals someone else's process.
     static func commandNamesScript(_ command: String, _ path: String) -> Bool {
         guard !path.isEmpty else { return false }
-        var searchStart = command.startIndex
-        while let found = command.range(of: path, range: searchStart..<command.endIndex) {
-            let startsToken = found.lowerBound == command.startIndex
-                || command[command.index(before: found.lowerBound)] == " "
-            let endsToken = found.upperBound == command.endIndex
-                || command[found.upperBound] == " "
-            if startsToken && endsToken { return true }
-            searchStart = command.index(after: found.lowerBound)
-        }
-        return false
+        let tokens = command.split(separator: " ", omittingEmptySubsequences: true)
+        guard tokens.count >= 2 else { return false }
+        return tokens[1] == path
     }
 }

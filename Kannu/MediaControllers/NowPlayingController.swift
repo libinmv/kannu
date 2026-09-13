@@ -53,6 +53,13 @@ final class NowPlayingController: ObservableObject, MediaControllerProtocol {
     private var process: Process?
     private var pipeHandler: JSONLinesPipeHandler?
     private var streamTask: Task<Void, Never>?
+    /// The task `init` starts to spawn the helper. Tracked so `stop()` can cancel it: without this a
+    /// controller stopped during its own setup would see no process, return, and then have setup resume
+    /// and launch a helper nothing owns.
+    private var setupTask: Task<Void, Never>?
+    /// Set by `stop()`. Checked after every `await` in setup, because a controller can be released
+    /// before it has finished starting.
+    private var isStopped = false
 
     // MARK: - Initialization
     init?() {
@@ -81,7 +88,7 @@ final class NowPlayingController: ObservableObject, MediaControllerProtocol {
         MRMediaRemoteSetRepeatModeFunction = unsafeBitCast(
             MRMediaRemoteSetRepeatModePointer, to: (@convention(c) (Int) -> Void).self)
 
-        Task { await setupNowPlayingObserver() }
+        setupTask = Task { [weak self] in await self?.setupNowPlayingObserver() }
     }
 
     /// Kept as a backstop, and **not** the teardown path — see `stop()`. While the stream loop is
@@ -119,6 +126,11 @@ final class NowPlayingController: ObservableObject, MediaControllerProtocol {
     /// continuation with `CancellationError`, which unwinds `processLines`, returns from
     /// `readJSONLines`, returns from `processJSONStream`, and finally releases `self`.
     func stop() async {
+        // Set first: setup checks this after its own `await`, so a controller stopped mid-start does
+        // not go on to launch a helper.
+        isStopped = true
+        setupTask?.cancel()
+        setupTask = nil
         streamTask?.cancel()
         streamTask = nil
 
@@ -138,6 +150,8 @@ final class NowPlayingController: ObservableObject, MediaControllerProtocol {
     /// See the protocol. Only the child matters here; nothing is awaited, because the app is exiting.
     /// Touches the same properties `deinit` does, on whatever thread termination runs on.
     func terminateChildProcessesForAppExit() {
+        // Also blocks a setup still in flight from launching one after this point.
+        isStopped = true
         guard let process, process.isRunning else { return }
         process.terminate()
     }
@@ -205,6 +219,14 @@ final class NowPlayingController: ObservableObject, MediaControllerProtocol {
         
         let pipeHandler = JSONLinesPipeHandler()
         process.standardOutput = await pipeHandler.getPipe()
+
+        // `getPipe()` is an actor hop, so the controller can have been stopped while this was
+        // suspended. Assigning and launching past that point would hand a released controller a live
+        // child process that nothing would ever terminate.
+        guard !isStopped, !Task.isCancelled else {
+            await pipeHandler.close()
+            return
+        }
 
         // Capture stderr so framework/script errors are logged
         let stderrPipe = Pipe()

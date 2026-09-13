@@ -69,10 +69,23 @@ final class MediaRemoteAdapterOwnershipTests: XCTestCase {
     }
 
     func testAPathThatMerelyContainsOursIsNotOurs() {
-        // A bundle nested inside another path would match a plain `contains`, so the script path has
-        // to land as a whole argv token.
+        // A bundle nested inside another path would match a plain `contains`.
         let nested = "/usr/bin/perl /Volumes/Backup\(installedScript) /x stream"
         XCTAssertFalse(reapable(nested, parent: 1, own: installedScript))
+    }
+
+    func testAPerlProcessThatMerelyMentionsTheScriptIsLeftAlone() {
+        // The reason the match is positional rather than a search: a `perl` process can name the file
+        // without being the adapter — reading it, linting it, handing it to something else. Signalling
+        // one of those would be worse than leaking a helper.
+        XCTAssertFalse(reapable("/usr/bin/perl /Users/x/bin/lint.pl \(installedScript)", parent: 1, own: installedScript))
+        XCTAssertFalse(reapable("/usr/bin/perl -e print \(installedScript)", parent: 1, own: installedScript))
+    }
+
+    func testTheScriptMustFollowTheInterpreterDirectly() {
+        // `Process` puts argv[0] (the executable path) first and the arguments after it, so the script
+        // is index 1. A shifted layout is not ours and must fail closed.
+        XCTAssertFalse(reapable("/usr/bin/perl -w \(installedScript) /x stream", parent: 1, own: installedScript))
     }
 
     func testAnEmptyOwnPathReapsNothing() {
@@ -82,13 +95,16 @@ final class MediaRemoteAdapterOwnershipTests: XCTestCase {
     }
 
     func testTheScriptPathIsFoundAtTheEndOfTheCommandToo() {
+        // The framework path and `stream` are not required — only the interpreter and the script.
         XCTAssertTrue(
             MediaRemoteAdapterOwnership.commandNamesScript("/usr/bin/perl \(installedScript)", installedScript)
         )
     }
 
-    func testTheScriptPathIsFoundWhenItIsTheWholeCommand() {
-        XCTAssertTrue(MediaRemoteAdapterOwnership.commandNamesScript(installedScript, installedScript))
+    func testACommandWithNoScriptArgumentMatchesNothing() {
+        XCTAssertFalse(MediaRemoteAdapterOwnership.commandNamesScript(installedScript, installedScript))
+        XCTAssertFalse(MediaRemoteAdapterOwnership.commandNamesScript("/usr/bin/perl", installedScript))
+        XCTAssertFalse(MediaRemoteAdapterOwnership.commandNamesScript("", installedScript))
     }
 
     func testAPrefixOfTheScriptPathDoesNotMatch() {
