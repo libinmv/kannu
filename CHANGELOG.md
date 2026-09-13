@@ -33,6 +33,20 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     matters: the invariant was already written down and this file broke twice anyway, because the
     instruction to read it was scoped to `Kannu/managers/AgentStatus/` and this file is not in it.
     `CLAUDE.md` now points at the Danger zones table instead of one directory.
+  - **The review of this change found a race it introduced, and the review was right.** Moving
+    collection off the main thread turned the window between `updateBatteryStatuses` collecting and
+    applying from ~0 into a whole `system_profiler` run, and it applies by *replacing* its three maps
+    wholesale. A live Bluetooth LE read landing inside that window was therefore silently reverted to
+    the older snapshot — and nothing recovered it, because the live reader only re-reads a device
+    whose level is `nil` and a reverted value is not nil, so the HUD could sit stale. The change made
+    it worse on purpose by starting the live read *before* dispatching the scan.
+  - A "higher wins" merge would be the wrong fix: a forced scan must stay able to *lower* a value as
+    the battery drains, or a stale peak is pinned forever. So the live reader stamps each accepted
+    write with a counter, the forced path captures that counter on the main thread before it
+    dispatches, and at apply time only the keys written *after* that point are re-applied over the
+    snapshot. The scan stays authoritative for everything it can speak for and yields only for the
+    seconds it cannot. The rule is a pure function in the logic target with seven tests, including the
+    drain case, because that is the half a careless fix breaks.
 
 ### 2026-09-13 - What the review of the unreviewed PR caught
 - **Developer label:** "check each one and see code rabbit comments … then merge pr's in best order"

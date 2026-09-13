@@ -76,6 +76,12 @@ class BluetoothAudioManager: ObservableObject {
     /// True while a forced battery scan is running on `pmsetFetchQueue`, so a burst of connect
     /// notifications spawns one `system_profiler` rather than one per notification.
     private var isForcedBatteryRefreshInFlight = false
+    /// Orders the live Bluetooth LE battery writes against the forced scans that would otherwise
+    /// revert them. Main thread only; see `BluetoothLiveBatteryWrites` for why it exists. Bounded
+    /// by the number of device keys, since each key holds only its newest write.
+    private var liveBatteryWriteSequence: UInt64 = 0
+    private var liveBatteryWritesByAddress: [String: BluetoothLiveBatteryWrite] = [:]
+    private var liveBatteryWritesByName: [String: BluetoothLiveBatteryWrite] = [:]
     private var hudBatteryWaitTasks: [UUID: Task<Void, Never>] = [:]
     private let hudBatteryWaitInterval: TimeInterval = 0.3
     private let hudBatteryWaitTimeout: TimeInterval = 1.8
@@ -825,6 +831,12 @@ class BluetoothAudioManager: ObservableObject {
     ///
     /// Strictly fire-and-forget: `updateBatteryStatuses` publishes through
     /// `DispatchQueue.main.sync`, so anything that waits for it from the main thread deadlocks.
+    ///
+    /// Moving collection off the main thread is also what makes the live-write baseline necessary.
+    /// `updateBatteryStatuses` replaces its maps wholesale, which was harmless while the window
+    /// between collect and apply was ~0 and is not once it is a whole `system_profiler` run — long
+    /// enough for a live BLE read to land and be reverted, with nothing to recover it because the
+    /// live reader only re-reads a device whose level is `nil`. See `BluetoothLiveBatteryWrites`.
     private func refreshBatteryLevelsForConnectedDevices(forceCacheRefresh: Bool = true) {
         guard forceCacheRefresh else {
             applyConnectedDeviceBatteryLevels()
@@ -840,9 +852,15 @@ class BluetoothAudioManager: ObservableObject {
         guard !isForcedBatteryRefreshInFlight else { return }
         isForcedBatteryRefreshInFlight = true
 
+        // Captured here, on the main thread, before the scan can start: anything the live reader
+        // writes past this point is newer than the snapshot the scan is about to take, and
+        // `updateBatteryStatuses` re-applies it rather than reverting it. `triggerLiveBatteryRefresh`
+        // above is exactly such a reader, so this is not a theoretical window.
+        let liveWriteBaseline = liveBatteryWriteSequence
+
         pmsetFetchQueue.async { [weak self] in
             guard let self else { return }
-            self.updateBatteryStatuses(force: true)
+            self.updateBatteryStatuses(force: true, liveWriteBaseline: liveWriteBaseline)
             DispatchQueue.main.async {
                 self.isForcedBatteryRefreshInFlight = false
                 self.applyConnectedDeviceBatteryLevels()
@@ -995,6 +1013,7 @@ class BluetoothAudioManager: ObservableObject {
                 if level > previous {
                     batteryStatusByAddress[addressKey] = level
                     batteryStatus[addressKey] = String(level)
+                    noteLiveBatteryWrite(level: level, addressKey: addressKey, nameKey: nil)
                     didUpdate = true
                 }
             }
@@ -1003,6 +1022,7 @@ class BluetoothAudioManager: ObservableObject {
                 let previous = batteryStatusByName[nameKey] ?? -1
                 if level > previous {
                     batteryStatusByName[nameKey] = level
+                    noteLiveBatteryWrite(level: level, addressKey: nil, nameKey: nameKey)
                     didUpdate = true
                 }
             }
@@ -1013,6 +1033,19 @@ class BluetoothAudioManager: ObservableObject {
         applyConnectedDeviceBatteryLevels()
         if let level = hudBatteryLevelCandidate() {
             updateActiveBluetoothHUDBattery(with: level)
+        }
+    }
+
+    /// Records a live read so a forced scan that started before it cannot revert it. Main thread
+    /// only — `handleLiveBatteryResults` is the sole caller and already hops here.
+    private func noteLiveBatteryWrite(level: Int, addressKey: String?, nameKey: String?) {
+        liveBatteryWriteSequence += 1
+        let write = BluetoothLiveBatteryWrite(level: level, sequence: liveBatteryWriteSequence)
+        if let addressKey, !addressKey.isEmpty {
+            liveBatteryWritesByAddress[addressKey] = write
+        }
+        if let nameKey, !nameKey.isEmpty {
+            liveBatteryWritesByName[nameKey] = write
         }
     }
 
@@ -1200,7 +1233,15 @@ class BluetoothAudioManager: ObservableObject {
         return nil
     }
 
-    private func updateBatteryStatuses(force: Bool = false) {
+    /// Collects battery levels from every source and publishes them.
+    ///
+    /// - Parameter liveWriteBaseline: `liveBatteryWriteSequence` as it stood when this scan was
+    ///   dispatched, for a caller that collects off the main thread. Live reads that land while the
+    ///   scan is out are re-applied over its snapshot; see `BluetoothLiveBatteryWrites`. `nil` means
+    ///   the caller has no such window to protect — nothing can interleave between its collect and
+    ///   its apply — so the snapshot stands as collected, which is the behaviour a forced scan needs
+    ///   to be able to lower a value as the battery drains.
+    private func updateBatteryStatuses(force: Bool = false, liveWriteBaseline: UInt64? = nil) {
         let now = Date()
         if !force, let lastBatteryStatusUpdate,
            now.timeIntervalSince(lastBatteryStatusUpdate) < batteryStatusUpdateInterval {
@@ -1225,15 +1266,31 @@ class BluetoothAudioManager: ObservableObject {
         let pmsetEntries = collectPmsetAccessoryBatteryEntries()
         mergePmsetEntries(pmsetEntries, into: &combinedNamePercentages, logNewEntries: true)
 
-        var statuses: [String: String] = [:]
-        for (key, value) in combinedAddressPercentages {
-            statuses[key] = String(clampBatteryPercentage(value))
-        }
-
         let applyUpdates = {
+            var addresses = combinedAddressPercentages
+            var names = combinedNamePercentages
+
+            if let liveWriteBaseline {
+                addresses = BluetoothLiveBatteryWrites.overlaying(
+                    addresses,
+                    with: self.liveBatteryWritesByAddress,
+                    newerThan: liveWriteBaseline
+                )
+                names = BluetoothLiveBatteryWrites.overlaying(
+                    names,
+                    with: self.liveBatteryWritesByName,
+                    newerThan: liveWriteBaseline
+                )
+            }
+
+            var statuses: [String: String] = [:]
+            for (key, value) in addresses {
+                statuses[key] = String(self.clampBatteryPercentage(value))
+            }
+
             self.batteryStatus = statuses
-            self.batteryStatusByAddress = combinedAddressPercentages
-            self.batteryStatusByName = combinedNamePercentages
+            self.batteryStatusByAddress = addresses
+            self.batteryStatusByName = names
             self.lastBatteryStatusUpdate = now
         }
 

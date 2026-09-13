@@ -493,9 +493,25 @@ strictly fire-and-forget — the publish is `main.sync`, so waiting on it from m
 narrower than the rule. It is in [Danger zones](#danger-zones) now, and CLAUDE.md points at that
 table rather than at one directory.
 
-**Missing:** no guard. A static "subprocess spawned on the main actor" check would be noisy and
-unreliable. Manual check: after a Bluetooth connect or disconnect, `sample` the app and confirm no
-`system_profiler` or `pmset` frame appears on the main thread.
+**And moving it off main is not free — the second half of the rule.** A collector that publishes by
+*replacing* shared state is safe only while collection is synchronous, because then nothing can
+interleave. Off the main thread the collect-to-apply window becomes however long the subprocess takes,
+and anything that writes the same state inside that window is silently reverted to a snapshot taken
+before it. That is exactly what the 2026-09-13 fix did on its first pass: a live Bluetooth LE battery
+read landing during a `system_profiler` run was overwritten by the older scan, with no path back,
+because the live reader only re-reads a device whose level is `nil`. Caught in review, before merge.
+
+Rule: when you move a collector off the main actor, decide explicitly what happens to writes that
+land during the window — and do not reach for "higher wins", which fixes the revert by making the
+value unable to fall. Order the writes instead: the live reader stamps each accepted write with a
+counter, the scan captures that counter on main *before* dispatching, and at apply time only keys
+written after that point survive the snapshot.
+
+**Missing:** no guard for the main-actor spawn. A static "subprocess spawned on the main actor" check
+would be noisy and unreliable. Manual check: after a Bluetooth connect or disconnect, `sample` the app
+and confirm no `system_profiler` or `pmset` frame appears on the main thread. The revert half *is*
+guarded: `BluetoothLiveBatteryWritesTests` pins both directions, including that a scan can still lower
+a value as the battery drains — the half a careless fix breaks.
 
 ## 13. A live Claude session is never resumed
 
