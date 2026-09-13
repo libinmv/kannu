@@ -307,6 +307,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Stop AudioTap capture
         AudioTap.shared.stopCapture()
 
+        // Stop the now-playing helper. Releasing the controller is not enough — its stream task holds
+        // it alive, so without this the `mediaremote-adapter.pl` child outlives the app and is
+        // reparented to launchd. Synchronous on purpose: this is the last chance to signal it.
+        MusicManager.shared.stopActiveControllerForTermination()
+
         // Restore Lunar's native OSD if integration was active
         LunarManager.shared.appWillTerminate()
 
@@ -719,6 +724,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         autoEnableLaunchAtLoginIfNeeded()
         repairLoginItemIfStale()
+
+        // A force-quit or a crash runs no teardown, so a now-playing helper from a previous run can
+        // still be streaming. Off the main thread: it walks the process table and reads argv for each
+        // `perl` it finds. It only ever signals a helper started from *this* bundle's script and
+        // already reparented to launchd — see `MediaRemoteAdapterOwnership`.
+        DispatchQueue.global(qos: .utility).async {
+            MediaRemoteAdapterReaper.reapOrphanedHelpers()
+        }
 
         // Starts before the managers, so a freeze during startup is still caught. The offer for a
         // previous freeze waits: with no window on screen that alert is app-modal, and one of those

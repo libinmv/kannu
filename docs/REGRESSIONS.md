@@ -597,14 +597,55 @@ regex that stops matching fails loudly instead of passing vacuously.
 **Never** answer "the panel did not appear" by activating harder. If a panel or alert is not on
 screen, the question is which window it was anchored to.
 
+## 15. A request's clock spans the request, not the last state change
+
+**Rule:** the run time on a card measures one request. `HookTurn.startedAt` is the source wherever a
+turn exists; where none does, `AgentExecutionClock` is, and it restarts only when the request genuinely
+ended. A card being dimmed by the staleness ladder is not a request ending.
+
+**What happened.** Issue #14, "execution time resets when thinking mode happens", was reported against
+the hook path and fixed there across three commits: `c5ee85b` recorded a turn's start on disk,
+`f47a796` made a prompt arriving mid-request *join* it instead of starting a new one, and `069a8ff`
+made the card prefer `turn.startedAt`. Thinking has not moved the clock since.
+
+The same rule was still broken in the fallback that serves everything with no turn — passive sources
+and pre-v39 hook files. `applyExecutionRunState` read "the previous cycle was not an active run" as
+"this is a new request" and stamped `now`, so **any** non-active dip restarted the clock, including the
+`activeStaleMs` demotion that fires during a long quiet phase where the raw state never stopped being
+`executing`. A twenty-minute turn showed a few seconds — the reported symptom, reached by a different
+route than the one that was fixed.
+
+**Why it hid.** The rule lived inside a `private` method on a `@MainActor` monitor with **no test
+anywhere**, so nothing could state it, let alone check it. Fixing it in place would have been
+unverifiable, which is why the change is an extraction first: the rule is now
+`AgentExecutionClock.resolve`, in the logic target, and the monitor keeps only the plumbing.
+
+**The distinction to preserve:** `displayState` is what the staleness ladder concluded; `rawState` is
+what the source reported. Dipped display with active raw state is a demotion — keep the clock. Raw
+state no longer active is an end — clear it, so a genuinely new request after a real stop still
+restarts. Conflating the two is the bug, in either direction.
+
+**Guard.** `AgentExecutionClockTests` pins both halves, including that a demoted-then-resumed run keeps
+its original start *and* that a stop-then-new-request does not.
+
+**Not fixed by this, and deliberately so:** a passive source whose parser reports a genuine `stopped`
+mid-session — Claude Desktop flips raw state per record, including on any `result` record — still
+restarts, because by the time the clock sees it the source has said the request ended. Telling "ended"
+from "emitted a result record" is the parser's job, not the clock's; moving that decision here would
+mean guessing, and a timer that merges two genuinely separate runs is a worse bug than one that splits
+a single run.
+
+**Never** fix a reset by widening a staleness window. Entry 2 and entry 12 are the same lesson: the
+clock is not the state machine.
+
 ## Danger zones
 
 Commit counts across all branches (`--follow`, so pre-rename history counts):
 
 | File | Commits | What edits here have historically broken |
 |---|---|---|
-| `CursorAgentStatusMonitor.swift` | 18 | The merge/reconcile seam. **Every** edit is chat-name resolution, hook-vs-transcript precedence, or session deletion/ageing. Entries 5 and 6 live here. |
-| `AgentTrafficLightState.swift` | 18 | The state ladder — staleness thresholds and verdict→colour mapping. Mostly *tuning numbers*, which is exactly how entry 2 happened, and how the yellow clock became its only exit (entry 12). |
+| `CursorAgentStatusMonitor.swift` | 18 | The merge/reconcile seam. **Every** edit is chat-name resolution, hook-vs-transcript precedence, or session deletion/ageing. Entries 5, 6 and 15 live here. |
+| `AgentTrafficLightState.swift` | 18 | The state ladder — staleness thresholds and verdict→colour mapping. Mostly *tuning numbers*, which is exactly how entry 2 happened, how the yellow clock became its only exit (entry 12), and how a demotion came to read as a request ending (entry 15). |
 | `AgentHookInstaller.swift` | 17 | Embedded script + event table + install/uninstall/migration. Grows monotonically; every growth episode has broken `checkInstalled` or a migration (entries 1 and 6). |
 | `CursorAgentStatusMonitor.swift` (usage spawn) | — | The `/usage` fetch invocation. Two silent breakages in one day from added flags/env (entry 8). |
 | `ModalPresenter.swift` | 2 | The only place allowed to stop the main run loop. Every site in the app funnels through it, and the hang watchdog trusts it to declare a deliberate stall (entry 14). |

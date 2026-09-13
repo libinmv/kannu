@@ -18,7 +18,12 @@ struct CodexUsageProvider: UsageProvider {
            let en = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) {
             let files = en.compactMap { $0 as? URL }.filter { $0.pathExtension == "jsonl" }
             if !files.isEmpty {
-                snapshot = JSONLUsageParser.aggregate(files: files, now: now)
+                // Same rule as the Claude provider, from the same constant: skip files too old to
+                // contribute, but decide `logsUnavailable` from the unfiltered listing.
+                snapshot = JSONLUsageParser.aggregate(
+                    files: UsageWindows.recentlyModified(files, now: now),
+                    now: now
+                )
             } else {
                 snapshot.logsUnavailable = true
             }

@@ -19,6 +19,7 @@
 import Foundation
 import Combine
 import AppKit
+import os
 import Defaults
 import SwiftUI
 import IOBluetooth
@@ -361,27 +362,15 @@ class BluetoothAudioManager: ObservableObject {
         scheduleEventDrivenListeningModeRefresh(reason: notification.name.rawValue)
     }
 
+    /// Reached by the `name: nil` observer, so this runs for **every** distributed notification
+    /// posted anywhere on the system. The decision lives in `ListeningModeNotificationFilter`, which
+    /// explains why the wildcard stays and what it used to cost.
     @objc private func handlePotentialAirPodsListeningModeNotification(_ notification: Notification) {
         guard Defaults[.showAirPodsListeningModeChanges] else { return }
-        let name = notification.name.rawValue.lowercased()
-        let payload = notification.userInfo?
-            .map { "\($0.key)=\($0.value)" }
-            .joined(separator: " ")
-            .lowercased() ?? ""
-
-        let hasExplicitModePayload = payload.contains("listening") ||
-            payload.contains("lsnm") ||
-            payload.contains("noisecontrol") ||
-            payload.contains("anc") ||
-            payload.contains("transparency") ||
-            payload.contains("adaptive") ||
-            payload.contains("conversation")
-
-        let isSpecificSettingsNotification = name.contains("airpodspro.settingschanged") ||
-            name.contains("audioaccessory.prefschanged") ||
-            name.contains("controlcenter.airpods")
-
-        guard hasExplicitModePayload || isSpecificSettingsNotification else { return }
+        guard ListeningModeNotificationFilter.isPotentialListeningModeChange(
+            name: notification.name.rawValue,
+            userInfo: notification.userInfo
+        ) else { return }
         scheduleEventDrivenListeningModeRefresh(reason: notification.name.rawValue)
     }
 
@@ -1922,13 +1911,21 @@ class BluetoothAudioManager: ObservableObject {
             try? await Task.sleep(nanoseconds: 180_000_000)
             guard let self, !Task.isCancelled else { return }
 
-            await MainActor.run {
-                guard let device = self.primaryConnectedAirPodsDevice(),
-                      let mode = self.readListeningModeViaDynamicSelectors(for: device) ??
-                        Self.readListeningModeFromIORegistry() else {
-                    return
-                }
+            // The IOBluetooth reads and the dynamic-selector probe stay on main; the `ioreg`
+            // subprocess does not. This task was already detached — only the `MainActor.run` span
+            // was too wide, which put a `fork`/`exec`/read of the whole IORegistry on the main
+            // thread for every Bluetooth notification. The selectors-before-ioreg order is
+            // preserved: the fallback runs only when the cheap path returns nothing.
+            let device = await MainActor.run { self.primaryConnectedAirPodsDevice() }
+            guard let device, !Task.isCancelled else { return }
 
+            let selectorMode = await MainActor.run { self.readListeningModeViaDynamicSelectors(for: device) }
+            guard !Task.isCancelled else { return }
+
+            guard let mode = selectorMode ?? Self.readListeningModeFromIORegistry() else { return }
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
                 self.presentListeningModeIfChanged(
                     AirPodsListeningModeEvent(device: device, mode: mode)
                 )
@@ -2059,7 +2056,39 @@ class BluetoothAudioManager: ObservableObject {
         }
     }
 
+    /// Fallback for the listening mode when the dynamic-selector probe finds nothing.
+    ///
+    /// Two things to know before touching the arguments. First, `ioreg -r -l -w 0` with no match
+    /// criterion (`-c`/`-n`/`-k`) selects **nothing** — measured here: 0 bytes, exit 0 — so on this
+    /// machine the function always returns nil and listening mode actually comes from the dynamic
+    /// selectors and the log-stream observer.
+    ///
+    /// Second, that is the only reason the old drain order was survivable. It called `waitUntilExit`
+    /// *before* reading the pipe, which deadlocks the moment the child writes more than the pipe
+    /// buffer (~64 KB) and blocks waiting for a reader that never comes. Add a `-c` to that command
+    /// and the output jumps to megabytes, turning a dead arm into a permanent hang on every AirPods
+    /// notification — and `HangWatchdog` would file a report for each one. It reads first now,
+    /// matching `collectPmsetAccessoryBatteryEntries` in this same file.
+    ///
+    /// Not called on the main thread; see `scheduleEventDrivenListeningModeRefresh`.
+    ///
+    /// One probe at a time. Running it off the main thread removed the accidental serialisation the
+    /// enclosing `MainActor.run` used to provide, and cancelling the surrounding task does not help:
+    /// cancellation neither interrupts `readDataToEndOfFile()` nor terminates the child. So a
+    /// notification arriving after the 180 ms debounce had already elapsed could start a second
+    /// `ioreg` while the first was still draining. Skipping the second loses nothing — the probe reads
+    /// a live registry, so a concurrent answer would be the same answer.
+    private static let ioRegistryProbeRunning = OSAllocatedUnfairLock(initialState: false)
+
     private static func readListeningModeFromIORegistry() -> AirPodsListeningMode? {
+        let alreadyRunning = ioRegistryProbeRunning.withLock { running -> Bool in
+            if running { return true }
+            running = true
+            return false
+        }
+        guard !alreadyRunning else { return nil }
+        defer { ioRegistryProbeRunning.withLock { $0 = false } }
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/ioreg")
         process.arguments = ["-r", "-l", "-w", "0"]
@@ -2074,12 +2103,12 @@ class BluetoothAudioManager: ObservableObject {
             return nil
         }
 
+        // Read, then wait. Reversing these is the >64 KB deadlock.
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
 
         guard process.terminationStatus == 0 else { return nil }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let output = String(data: data, encoding: .utf8) else { return nil }
+        guard !data.isEmpty, let output = String(data: data, encoding: .utf8) else { return nil }
 
         let interestingLines = output
             .components(separatedBy: .newlines)
