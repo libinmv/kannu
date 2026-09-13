@@ -117,6 +117,13 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
   - One path is code-verified but not runtime-verified here: switching the media controller inside a
     live app goes through the same `releaseActiveController()` → `stop()`, but the switch is triggered
     by a local `NotificationCenter` post from Settings, which this host cannot drive.
+  - **Found reviewing my own diff:** the argv reader decoded each `KERN_PROCARGS2` token with
+    `String(validatingUTF8:)`, a C-string initialiser, on a slice that `split` leaves *without* a NUL
+    terminator. It worked only because the separator happens to sit in the parent buffer just past the
+    slice — a read past the slice's own bounds that stops being true the moment the slicing changes.
+    Decoded from the bytes instead, and the reap test re-run against the rebuilt binary to prove the
+    predicate still identifies the process: `kill -9`, one orphan at `ppid 1`, reaped on the next launch,
+    nine other-bundle helpers untouched.
   - `.gitignore` now globs `.build-*/` instead of listing three paths by name. A one-off verification
     build should not need a `.gitignore` edit, and the throwaway derivedData for the test above got
     staged because it did.

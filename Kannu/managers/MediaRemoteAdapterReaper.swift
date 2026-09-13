@@ -117,13 +117,16 @@ enum MediaRemoteAdapterReaper {
 
         // Split the payload on NUL, drop the leading executable path and the padding after it, then
         // take argc arguments — argv[0] included, since the adapter is identified by argv[1].
+        //
+        // Decoded from the bytes rather than through `String(validatingUTF8:)`: a split slice is not
+        // NUL-terminated, and handing a C-string initialiser a pointer to one only works because the
+        // separator happens to sit in the parent buffer just past it. That is a read past the slice's
+        // own bounds, and it stops being true the moment the slicing changes.
         let payload = buffer[MemoryLayout<Int32>.size..<size]
         let tokens = payload
             .split(separator: 0, omittingEmptySubsequences: true)
-            .compactMap { slice -> String? in
-                slice.withUnsafeBufferPointer { pointer in
-                    pointer.baseAddress.flatMap { String(validatingUTF8: $0) }
-                }
+            .map { slice in
+                String(decoding: slice.map { UInt8(bitPattern: $0) }, as: UTF8.self)
             }
         guard tokens.count > 1 else { return nil }
         return tokens.dropFirst().prefix(Int(argc)).joined(separator: " ")
