@@ -33,13 +33,17 @@ The `CONTRIBUTING.md`'s coding guideline is short but load-bearing: *match exist
 3. **One `CHANGELOG.md` entry**: Under `## [Unreleased]`, in exactly this shape. The hook parses it literally: an `### ` heading, then three bullets whose keys are **bold** and end in a colon. Getting the shape wrong is a rejected commit, not a style note.
 
    ```markdown
-   ### YYYY-MM-DD - <developer feature label>
-   - **Developer label:** <developer feature label>
+   ### YYYY-MM-DD - <a short title for the change>
+   - **Developer label:** <the developer feature label, or the request in the requester's own words>
    - **Agent label:** <agent feature label, or "none — human-authored">
    - **Changes:**
      - <change 1, one bullet per discrete change>
      - <change 2>
    ```
+
+   The heading and the `Developer label` are not the same string: the heading titles the change,
+   while the label names the feature or quotes the request that prompted it. Every entry in
+   `CHANGELOG.md` follows that split — read the last few before writing yours.
 
    The heading carries the date and the label; `- **Changes:**` must have at least one indented bullet under it. Add the entry at the **top** of `## [Unreleased]` — the hook validates the newest entry only.
 

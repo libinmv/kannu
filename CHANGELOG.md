@@ -30,6 +30,15 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
   - `ReadMe.md` said to download `Kannu.dmg`; `release.yml` names the asset `Kannu.<version>.dmg` and
     no `Kannu.dmg` has ever existed. It also sent readers to **Settings → Agent Status** twice, a tab
     label the UI does not have — it is **Agents**.
+  - **From the review:** the `log` explanation was itself wrong, in `CLAUDE.md` as well as the file this
+    change touched. `log` really is a zsh builtin (`whence -w log` → `log: builtin`) and a builtin always
+    wins over `PATH`, so bare `log show …` never reaches Apple's tool — but it does not silently mangle
+    anything. It answers `zsh:log:1: too many arguments`, which reads like a mistake in your predicate
+    rather than the wrong program, and that is what makes it worth a note. Both wordings corrected.
+  - **Also from the review:** the CHANGELOG template this change added wrote `<developer feature label>`
+    into both the heading and the `Developer label` field, which says they are the same string. Every
+    entry in this file does the opposite — the heading titles the change, the label quotes the request —
+    so the template now says so explicitly instead of describing a convention the file does not follow.
 
 ### 2026-09-13 - What the review of the unreviewed PR caught
 - **Developer label:** "check each one and see code rabbit comments … then merge pr's in best order"

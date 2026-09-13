@@ -86,12 +86,16 @@ Before each commit:
    trailing colons matter:
 
    ```markdown
-   ### YYYY-MM-DD - <developer feature label>
-   - **Developer label:** <developer feature label>
+   ### YYYY-MM-DD - <a short title for the change>
+   - **Developer label:** <the developer feature label, or the request in the requester's own words>
    - **Agent label:** <agent feature label, or "none — human-authored">
    - **Changes:**
      - <one concrete change per bullet>
    ```
+
+   The heading and the `Developer label` are not the same string: the heading titles the change,
+   while the label names the feature or quotes the request that prompted it. Every entry in
+   `CHANGELOG.md` follows that split — read the last few before writing yours.
 4. Stage `CHANGELOG.md` together with the code changes.
 5. Use a commit subject that reflects the developer feature label (avoid vague messages like `Fixes`).
 
