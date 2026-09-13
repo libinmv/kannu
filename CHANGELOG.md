@@ -4,6 +4,42 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-13 - The documented clone flow works again
+- **Developer label:** "CONTRIBUTING.md still says cd AgentStatDynamicIsland — the pre-rename repo name"
+- **Agent label:** Follow-up 38 — the one-line fix, plus a booby trap found next to it
+- **Changes:**
+  - `CONTRIBUTING.md` told every new contributor to `cd AgentStatDynamicIsland` after cloning. Cloning
+    `libinmv/kannu` produces `kannu/`, so the documented setup failed at step two. It says `cd kannu`
+    now. This was the only surviving pre-rename name in contributor-facing text; the ones left in
+    `Constants.swift`, the `Defaults` keys and the xcstrings are load-bearing and must stay.
+  - **Worth more than the `cd`:** `.agents/skills/kannu-senior-contributor/SKILL.md` documented the
+    CHANGELOG entry as `### Developer label: <x>` with `- Changes:`, and said the Agent label could be
+    omitted. `.githooks/pre-commit` requires a `### ` heading plus `- **Developer label:**`,
+    `- **Agent label:**` and `- **Changes:**`, all three mandatory. Any agent following that skill
+    wrote a commit the hook rejected. Both the skill and `CONTRIBUTING.md` now carry the literal shape
+    the hook parses, and say that it is parsed literally.
+  - `CONTRIBUTING.md` asked for Xcode 15.0 and Swift 5.9. `KannuApp.swift` uses
+    `extension CGRect: @retroactive Hashable`, which needs Swift 6.0, and `ci.yml` says the source
+    needs Swift 6.1+ — which is why it builds on `macos-15` and `macos-26` and not `macos-14`.
+  - `CLAUDE.md`'s "CI runs on `main` only" trap note had itself gone stale: `ci.yml` triggers on push
+    and PR to both `main` and `development`. The real trap is narrower and was just hit on #26 — a PR
+    based on a *feature* branch gets no Build job at all, only SonarCloud, so it can look green having
+    never been compiled. The note says that instead.
+  - `scripts/RELEASE.md` told the reader to run bare `log stream`, which this project's own `CLAUDE.md`
+    warns is a zsh builtin that silently mangles its arguments. It spells out `/usr/bin/log` now.
+  - `ReadMe.md` said to download `Kannu.dmg`; `release.yml` names the asset `Kannu.<version>.dmg` and
+    no `Kannu.dmg` has ever existed. It also sent readers to **Settings → Agent Status** twice, a tab
+    label the UI does not have — it is **Agents**.
+  - **From the review:** the `log` explanation was itself wrong, in `CLAUDE.md` as well as the file this
+    change touched. `log` really is a zsh builtin (`whence -w log` → `log: builtin`) and a builtin always
+    wins over `PATH`, so bare `log show …` never reaches Apple's tool — but it does not silently mangle
+    anything. It answers `zsh:log:1: too many arguments`, which reads like a mistake in your predicate
+    rather than the wrong program, and that is what makes it worth a note. Both wordings corrected.
+  - **Also from the review:** the CHANGELOG template this change added wrote `<developer feature label>`
+    into both the heading and the `Developer label` field, which says they are the same string. Every
+    entry in this file does the opposite — the heading titles the change, the label quotes the request —
+    so the template now says so explicitly instead of describing a convention the file does not follow.
+
 ### 2026-09-13 - A dimmed card is not a finished request
 - **Developer label:** "Issue #14 (execution time resets when thinking mode happens)"
 - **Agent label:** Follow-up 38 — the headline was already fixed; this is what was left

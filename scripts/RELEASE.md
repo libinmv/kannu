@@ -119,7 +119,7 @@ spctl -a -vv /path/to/Kannu.app
 
 1. Install an older build to `/Applications`
 2. Launch Kannu → **Check for Updates…**
-3. Optional logs: `log stream --predicate 'process CONTAINS "Kannu" OR subsystem CONTAINS "sparkle"' --level debug`
+3. Optional logs: `/usr/bin/log stream --predicate 'process CONTAINS "Kannu" OR subsystem CONTAINS "sparkle"' --level debug` — spell out the path. `log` is a zsh builtin and a builtin always wins over `PATH`, so bare `log stream …` never reaches Apple's tool; it answers `zsh:log:1: too many arguments`, which reads like a mistake in your predicate rather than the wrong program.
 
 ## Workflow reference
 

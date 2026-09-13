@@ -51,7 +51,7 @@ For detailed prompts and one-click setup actions, open **Settings** in Kannu. Co
 
 ## Install (Pre-built DMG)
 
-1. Download the latest `Kannu.dmg` from the [Releases page](https://github.com/libinmv/kannu/releases).
+1. Download the latest `Kannu.<version>.dmg` (for example `Kannu.1.2.0.dmg`) from the [Releases page](https://github.com/libinmv/kannu/releases).
 2. Open the DMG and drag **Kannu** into the **Applications** folder.
 3. Launch Kannu from Applications.
 
@@ -88,7 +88,7 @@ Application support data is stored under `~/Library/Application Support/Kannu/`.
 ## Quick Start
 
 1. Launch Kannu and complete onboarding.
-2. Open **Settings → Agent Status** and install editor hooks for Cursor (recommended).
+2. Open **Settings → Agents** and install editor hooks for Cursor (recommended).
 3. Run an AI agent in Cursor — the notch shows the traffic-light status when collapsed.
 4. Optionally upload a notch skin under **Settings → Appearance → Notch skin**.
 
@@ -96,7 +96,7 @@ Application support data is stored under `~/Library/Application Support/Kannu/`.
 
 ## Mobile Notifications Setup
 
-1. Open **Settings → Agent Status → Mobile Notifications**.
+1. Open **Settings → Agents → Mobile Notifications**.
 2. Enable mobile notifications and choose a provider:
   - **ntfy** — create a topic at [ntfy.sh](https://ntfy.sh) or self-host. Install the ntfy app on iPhone or Android and subscribe to your topic.
   - **Pushover** — use your user key and app token from [pushover.net](https://pushover.net).

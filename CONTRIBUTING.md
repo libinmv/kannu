@@ -36,12 +36,12 @@ We are committed to fostering a welcoming and inclusive environment. Please read
 
 - **Requirements:**
 	- macOS Sonoma 14.0 or later
-	- Xcode 15.0+ with Swift 5.9 toolchain
+	- Xcode 16.4 or later, with a Swift 6.1+ toolchain — `KannuApp.swift` uses `extension CGRect: @retroactive Hashable`, which needs Swift 6.0, and CI builds on `macos-15`/`macos-26` for Swift 6.1+
 	- MacBook with a notch (for full feature testing)
 - **Clone the repo:**
 	```bash
 	git clone <your-fork-url>
-	cd AgentStatDynamicIsland
+	cd kannu
 	open Kannu.xcodeproj
 	```
 - **Build & Run:**
@@ -79,11 +79,23 @@ that area, and add an entry when you find a bug recurring.
 Before each commit:
 
 1. Define the **developer feature label** (what you are building).
-2. If using an agent, define the **agent feature label**.
-3. Add one new entry to `CHANGELOG.md` under `## [Unreleased]` with:
-   - `Developer label`
-   - `Agent label`
-   - `Changes` bullets listed one-by-one
+2. Define the **agent feature label** if an agent did any of the work. The line itself is required
+   either way — write `none — human-authored` when it did not.
+3. Add one new entry at the **top** of `## [Unreleased]` in `CHANGELOG.md`, in exactly this shape.
+   `.githooks/pre-commit` parses it literally and rejects anything else, so the bold keys and the
+   trailing colons matter:
+
+   ```markdown
+   ### YYYY-MM-DD - <a short title for the change>
+   - **Developer label:** <the developer feature label, or the request in the requester's own words>
+   - **Agent label:** <agent feature label, or "none — human-authored">
+   - **Changes:**
+     - <one concrete change per bullet>
+   ```
+
+   The heading and the `Developer label` are not the same string: the heading titles the change,
+   while the label names the feature or quotes the request that prompted it. Every entry in
+   `CHANGELOG.md` follows that split — read the last few before writing yours.
 4. Stage `CHANGELOG.md` together with the code changes.
 5. Use a commit subject that reflects the developer feature label (avoid vague messages like `Fixes`).
 
