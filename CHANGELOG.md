@@ -40,6 +40,50 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     entry in this file does the opposite — the heading titles the change, the label quotes the request —
     so the template now says so explicitly instead of describing a convention the file does not follow.
 
+### 2026-09-13 - Connecting AirPods no longer freezes the app
+- **Developer label:** "Also BluetoothAudioManager's system_profiler on the main actor, EXPLAIN"
+- **Agent label:** Follow-up 36 — and this **reverses** a decision, deliberately
+- **Changes:**
+  - `updateBatteryStatuses(force:)` collects on the *calling* thread, and two of its four collectors
+    spawn `system_profiler SPBluetoothDataType` and `pmset -g accps` and wait for them. Its only
+    thread hop is at the publish, which protects the shared dictionaries and not the caller. Three
+    main-thread callers reach it — a connect, a disconnect, and the lock-screen weather refresh — and
+    the 20-second cache never helped, because all of them pass `force: true`.
+  - Measured on the main thread with **zero** Bluetooth devices connected, the cheapest state this
+    code can be in: **228 ms**, against **0 ms** after the change. With devices actually connected it
+    is the 2-8 s figure `HangReport.hangThreshold` was set above — long enough that a slow connect
+    could trip Kannu's own hang watchdog and write a report about a stall it already knew about.
+  - The stall sat immediately before `showDeviceConnectedHUD`, so connecting AirPods froze the notch
+    for seconds and *then* announced them. Now the cached values apply straight away — on a repeat
+    connect they are usually already there, so the first frame is unchanged — the collection runs on
+    the existing `pmsetFetchQueue`, and the result applies on the main actor. A burst of connect
+    notifications coalesces into one scan instead of one per notification, and a HUD already on
+    screen gets its ring patched the way the pmset fallback does, since the HUD's own wait is shorter
+    than a cold `system_profiler`.
+  - **This reverses "reviewed and deliberately left as designed"** (CHANGELOG, 2026-09-02), which
+    covered the two Bluetooth-event refreshes. Two things changed: the lock-screen weather path was
+    never part of that decision, and the hang watchdog shipped since then reads this stall as a
+    freeze.
+  - `docs/REGRESSIONS.md` entry 11 gains the dated addendum, and **`BluetoothAudioManager.swift`
+    joins the Danger zones table** — 19 commits, the most-touched file there. That is the part that
+    matters: the invariant was already written down and this file broke twice anyway, because the
+    instruction to read it was scoped to `Kannu/managers/AgentStatus/` and this file is not in it.
+    `CLAUDE.md` now points at the Danger zones table instead of one directory.
+  - **The review of this change found a race it introduced, and the review was right.** Moving
+    collection off the main thread turned the window between `updateBatteryStatuses` collecting and
+    applying from ~0 into a whole `system_profiler` run, and it applies by *replacing* its three maps
+    wholesale. A live Bluetooth LE read landing inside that window was therefore silently reverted to
+    the older snapshot — and nothing recovered it, because the live reader only re-reads a device
+    whose level is `nil` and a reverted value is not nil, so the HUD could sit stale. The change made
+    it worse on purpose by starting the live read *before* dispatching the scan.
+  - A "higher wins" merge would be the wrong fix: a forced scan must stay able to *lower* a value as
+    the battery drains, or a stale peak is pinned forever. So the live reader stamps each accepted
+    write with a counter, the forced path captures that counter on the main thread before it
+    dispatches, and at apply time only the keys written *after* that point are re-applied over the
+    snapshot. The scan stays authoritative for everything it can speak for and yields only for the
+    seconds it cannot. The rule is a pure function in the logic target with seven tests, including the
+    drain case, because that is the half a careless fix breaks.
+
 ### 2026-09-13 - What the review of the unreviewed PR caught
 - **Developer label:** "check each one and see code rabbit comments … then merge pr's in best order"
 - **Agent label:** Follow-up 35 — #26 had never been built by CI or reviewed; this is that review
