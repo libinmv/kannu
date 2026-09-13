@@ -29,16 +29,19 @@ The `CONTRIBUTING.md`'s coding guideline is short but load-bearing: *match exist
 `CONTRIBUTING.md` requires this before every commit, and it's easy to let slip because it's metadata, not code. Handle it proactively rather than waiting to be asked:
 
 1. **Developer feature label**: A short phrase for what was built, e.g. `Dynamic Island expanded-state layout`. Not a commit message; a stable label a human would use to refer to the feature in a standup.
-2. **Agent feature label**: Only if an agent (Claude, another AI tool) did some or all of the work. Same style, but describing the agent's slice, e.g. `Claude: SwiftUI view scaffolding`. Omit entirely for pure human commits.
-3. **One `CHANGELOG.md` entry**: Under `## [Unreleased]`, in this shape:
+2. **Agent feature label**: Same style, but describing the agent's slice, e.g. `Claude: SwiftUI view scaffolding`. **The line is mandatory** — `.githooks/pre-commit` rejects an entry without it, so for human-authored work write something like `- **Agent label:** none — human-authored` rather than leaving it out.
+3. **One `CHANGELOG.md` entry**: Under `## [Unreleased]`, in exactly this shape. The hook parses it literally: an `### ` heading, then three bullets whose keys are **bold** and end in a colon. Getting the shape wrong is a rejected commit, not a style note.
 
    ```markdown
-   ### Developer label: <developer feature label>
-   ### Agent label: <agent feature label, or omit this line if none>
-   - Changes:
+   ### YYYY-MM-DD - <developer feature label>
+   - **Developer label:** <developer feature label>
+   - **Agent label:** <agent feature label, or "none — human-authored">
+   - **Changes:**
      - <change 1, one bullet per discrete change>
      - <change 2>
    ```
+
+   The heading carries the date and the label; `- **Changes:**` must have at least one indented bullet under it. Add the entry at the **top** of `## [Unreleased]` — the hook validates the newest entry only.
 
    Keep each bullet to one actual change — don't collapse three changes into one run-on bullet, and don't split one change into three bullets to look thorough.
 
@@ -53,10 +56,11 @@ Do all four artifacts together as one deliverable, since they're derived from th
 **Developer label:** <label>
 **Agent label:** <label, or "none — human-authored">
 
-**CHANGELOG.md entry** (add under ## [Unreleased]):
-### Developer label: <label>
-### Agent label: <label>   <!-- omit this heading entirely for human-authored work -->
-- Changes:
+**CHANGELOG.md entry** (add at the top of ## [Unreleased]):
+### YYYY-MM-DD - <label>
+- **Developer label:** <label>
+- **Agent label:** <label, or "none — human-authored">
+- **Changes:**
   - ...
 
 **Commit message:**
