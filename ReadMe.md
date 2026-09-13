@@ -57,21 +57,16 @@ For detailed prompts and one-click setup actions, open **Settings** in Kannu. Co
 
 
 
-### "Kannu can't be opened" (Gatekeeper)
+### Gatekeeper and first launch
 
-Release builds are ad-hoc signed and not notarized by Apple, so macOS shows a
-warning on first launch. This is expected for free open-source apps — you can
-bypass it once and macOS remembers your choice:
+Official DMGs from the [Releases page](https://github.com/libinmv/kannu/releases) are signed with a Developer ID certificate and notarized by Apple. On first launch, macOS may still show the ordinary confirmation that Kannu was downloaded from the internet; choose **Open** to continue. That confirmation is expected and is not the Gatekeeper block described below.
 
-- **Right-click (or Control-click)** `Kannu.app` **in Applications and choose "Open"**, then click **Open** in the dialog. On macOS 15 (Sequoia) and later, the option may only appear the *second* time you right-click → Open.
-- If there is no Open button: go to **System Settings → Privacy & Security**, scroll down to the message about Kannu being blocked, and click **Open Anyway**.
-- Terminal alternative — remove the quarantine flag directly:
-  ```bash
-  xattr -dr com.apple.quarantine /Applications/Kannu.app
-  ```
+A locally built or otherwise non-release copy may be unsigned or unnotarized and can be blocked by Gatekeeper after it is downloaded or transferred to another Mac. If you intentionally trust such a build:
 
-If you prefer, you can always build from source instead — Gatekeeper does not
-warn for apps you build yourself.
+- **Right-click (or Control-click)** `Kannu.app` and choose **Open**, then click **Open** in the dialog. On macOS 15 (Sequoia) and later, the option may only appear the second time you right-click → Open.
+- If there is no Open button, go to **System Settings → Privacy & Security**, find the message about Kannu being blocked, and click **Open Anyway**.
+
+Do not remove the quarantine attribute from an official release as a normal installation step. If an official release is unexpectedly blocked, verify that it came from the Releases page before bypassing Gatekeeper.
 
 ## Build from Source
 
