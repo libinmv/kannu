@@ -436,7 +436,7 @@ launch prompted again. `sample` showed 100 % of main-thread samples in `guarded_
 Documents, Downloads, or any other TCC-protected path run on a worker queue, one at a time, with the
 result handed to the main actor (`refreshWarpExchangesIfNeeded` is the shape: a cached result the
 rescan maps, a refresh that schedules the next rescan only when the result changed). Same rule for
-any new passive source. CLAUDE.md's "first touches of protected resources" trap is this rule stated
+any new passive source. AGENTS.md's "first touches of protected resources" trap is this rule stated
 for `AppDelegate.init`; it applies to every later touch too.
 
 **Guard.** `WarpAgentStoreTests.testSessionsFromExchangesNeedNoDatabase` pins the pure mapping, so
@@ -490,7 +490,7 @@ strictly fire-and-forget — the publish is `main.sync`, so waiting on it from m
 
 **Why it broke twice after the rule was written:** this file says to read it before touching
 `Kannu/managers/AgentStatus/`, and `BluetoothAudioManager.swift` is not in there. The instruction was
-narrower than the rule. It is in [Danger zones](#danger-zones) now, and CLAUDE.md points at that
+narrower than the rule. It is in [Danger zones](#danger-zones) now, and AGENTS.md points at that
 table rather than at one directory.
 
 **And moving it off main is not free — the second half of the rule.** A collector that publishes by
@@ -638,6 +638,43 @@ a single run.
 **Never** fix a reset by widening a staleness window. Entry 2 and entry 12 are the same lesson: the
 clock is not the state machine.
 
+## 16. A rule stated in more than one file must be pinned to the thing that enforces it
+
+**Rule:** `.githooks/pre-commit` is the only authority on the CHANGELOG entry shape. Every file that
+documents that shape carries the hook's literal keys, and a test pins them to the hook's own greps.
+Never describe the shape in a new file without adding it to that test.
+
+**Broken 2 times.** `.agents/skills/kannu-senior-contributor/SKILL.md` documented the entry as
+`### Developer label: <x>` with `- Changes:`, and said the Agent label could be omitted — so every agent
+following the skill wrote a commit the hook rejected. Fixed `995bdb9` (2026-09-13). The identical defect
+was live the whole time in `.cursor/rules/feature-changelog.mdc`, which listed the three keys without
+their literal formatting and is `alwaysApply: true`, so Cursor injected it into every request. It
+survived the first fix because nothing knew it existed.
+
+**Why it keeps happening:** this is entry 1's disease in the instruction files. Four prose copies of one
+rule, and only the parser is ever exercised — nothing links them, so a copy rots invisibly and the
+agent reading it is the one who finds out. The tempting cure is to delete the copies and leave a
+pointer, and this repo's own history says that fails too: "CI runs on `main` only" was a pointer-shaped
+claim that went stale, and entry 11's "read this before touching `Kannu/managers/AgentStatus/`" was a
+pointer *narrower than the rule it pointed at*, which is how it got re-broken twice in a file it did not
+name. A copy checked against the parser is worth more than a pointer checked against nothing.
+
+**Guard — exists.** `KannuTests/ChangelogRuleDocsTests.swift` scrapes the required keys from the hook's
+`grep` patterns rather than from the hook's own error message (which is itself a copy, and can drift
+from the greps forty lines below it), then requires each key to start a line *inside a fenced template*
+in every documenting file — `CONTRIBUTING.md`, `AGENTS.md`, the `.agents/` skill and the `.cursor/` rule.
+A separate test walks every `*.md`/`*.mdc` in the repo and fails if a file mentions the rule without
+carrying the shape, so copy #5 cannot be born quietly. Both were landed **red** against the live
+`.cursor/` drift and then made green, and the scanner has five self-tests so a regex that stops matching
+fails loudly instead of passing vacuously. `.githooks/pre-commit` runs a weaker substring version for
+millisecond local feedback; the test is the gate, because **no CI job runs the hook**.
+
+**Same commit added the split it protects.** `AGENTS.md` is now the canonical vendor-neutral instruction
+file and `CLAUDE.md` imports it with `@AGENTS.md`. The test also pins that the import is the **last**
+line of `CLAUDE.md` — ordering is load-bearing, because the ART contract has to stay first — and that no
+bare `@token` appears outside backticks in either file, since Claude Code parses one as a file import
+and `AGENTS.md` legitimately mentions `@MainActor` twice.
+
 ## Danger zones
 
 Commit counts across all branches (`--follow`, so pre-rename history counts):
@@ -650,6 +687,7 @@ Commit counts across all branches (`--follow`, so pre-rename history counts):
 | `CursorAgentStatusMonitor.swift` (usage spawn) | — | The `/usage` fetch invocation. Two silent breakages in one day from added flags/env (entry 8). |
 | `ModalPresenter.swift` | 2 | The only place allowed to stop the main run loop. Every site in the app funnels through it, and the hang watchdog trusts it to declare a deliberate stall (entry 14). |
 | `BluetoothAudioManager.swift` | 19 | Battery collection. Spawns `system_profiler` and `pmset` and waits, on whatever thread calls it — moved off main three separate times, twice re-landing there in the same change that was meant to fix it (entry 11, 2026-09-13 addendum). |
+| `AGENTS.md` / `CLAUDE.md` | — | The instruction files every agent reads. One rule stated in both drifts silently; the split and the import are pinned by `ChangelogRuleDocsTests` (entry 16). |
 | `AgentSessionLogParser.swift` | 8 | `readTrailingLines` and the tail verdict. 4 of 8 commits touch the reader; **2 of those 4 fix the same failure mode** — the reader returning nil and silently sending callers down a wrong path (entry 4). |
 
 If you are changing a *constant* in `AgentTrafficLightState.swift`, assume it is load-bearing

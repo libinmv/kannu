@@ -157,6 +157,24 @@ fi
 
 # ------------------------------------------------------------------------------
 
+# Every file that documents the CHANGELOG entry shape must carry the literal keys this hook
+# greps for further down. An unpinned copy is how .agents/.../SKILL.md and
+# .cursor/rules/feature-changelog.mdc both came to describe a shape the hook rejects, so every
+# agent following them wrote commits that could not land. KannuTests/ChangelogRuleDocsTests.swift
+# runs the stronger version of this check (inside the fenced template, de-indented) in CI; this is
+# the millisecond tripwire.
+for doc in CONTRIBUTING.md AGENTS.md .agents/skills/kannu-senior-contributor/SKILL.md .cursor/rules/feature-changelog.mdc; do
+  [[ -f "${doc}" ]] || continue
+  for key in '- \*\*Developer label:\*\*' '- \*\*Agent label:\*\*' '- \*\*Changes:\*\*'; do
+    # -e is required: every key starts with "-", which grep would read as an option.
+    if ! grep -q -e "${key}" "${doc}"; then
+      echo "ERROR: ${doc} documents the CHANGELOG entry but is missing the literal '${key}'."
+      echo "       This hook greps for it; a file that says otherwise makes agents write rejected commits."
+      exit 1
+    fi
+  done
+done
+
 staged_files="$(git diff --cached --name-only --diff-filter=ACMR)"
 if [[ -z "${staged_files}" ]]; then
   exit 0
@@ -171,7 +189,9 @@ while IFS= read -r file; do
     || [[ "${file}" == "CONTRIBUTING.md" ]] \
     || [[ "${file}" == "ReadMe.md" ]] \
     || [[ "${file}" == "README.md" ]] \
-    || [[ "${file}" =~ ^\.cursor/rules/ ]]; then
+    || [[ "${file}" =~ ^\.cursor/rules/ ]] \
+    || [[ "${file}" == "AGENTS.md" ]] \
+    || [[ "${file}" == "CLAUDE.md" ]]; then
     has_source_change=true
     break
   fi

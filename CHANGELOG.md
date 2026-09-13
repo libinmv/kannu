@@ -4,6 +4,56 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-13 - One instruction file every agent can read, and a guard so the copies stop drifting
+- **Developer label:** "libinmv/kannu has … no root AGENTS.md … worth confirming it landed"
+- **Agent label:** Follow-up 39 — it had never landed, and the search found a worse bug next door
+- **Changes:**
+  - **`AGENTS.md` is new and canonical.** It had never existed on any branch. It now carries the
+    vendor-neutral half of `CLAUDE.md` — product context, the architect persona, architecture
+    principles, build/test/run, house conventions, all eight known traps — so Codex, Cursor, Copilot,
+    Aider and Windsurf can read Kannu's standards at all. Until now they landed with no pointer past
+    `ReadMe.md`, while `.agents/skills/kannu-senior-contributor/SKILL.md` sat orphaned with nothing in
+    the repo discovering it.
+  - **`CLAUDE.md` keeps only Claude-Code machinery and imports the rest with `@AGENTS.md`** — the
+    bridge Anthropic documents, because Claude Code reads `CLAUDE.md` and not `AGENTS.md`. The ART
+    framework stays byte-identical and first; the import is the last line, which is what leaves the
+    "before the first tool call" contract where it needs to be. 143 lines became 82 + 156.
+  - **Proven, not assumed.** The sentence "Never claim code was tested…" now appears **zero** times in
+    `CLAUDE.md` and once in `AGENTS.md`, and a print-mode session with **tools stripped** still quotes
+    it — so it came from the import, not from a file read. The negative control (`--safe-mode`, which
+    disables `CLAUDE.md`) returns `NOT LOADED`, which is what makes the pass mean something. A nested
+    session also still produced its ART breakdown, so adherence survived the reordering.
+  - **The bug found next door, and it is the one worth reading about.** The CHANGELOG-entry rule lived
+    in **four prose copies plus one parser, with no guard**. `.cursor/rules/feature-changelog.mdc` —
+    `alwaysApply: true`, injected into every Cursor request — listed the three keys without their
+    literal formatting, so a Cursor agent following it wrote commits the hook rejects. That is the same
+    defect fixed in the `.agents/` skill earlier today, in a second file, live the whole time, and it
+    survived the first fix because nothing knew it was there.
+  - **The fix is a guard, not a fifth paragraph.** `KannuTests/ChangelogRuleDocsTests.swift` scrapes the
+    required keys from the hook's `grep` patterns — not from the hook's own error message, which is
+    itself a copy that can drift from the greps forty lines below it — and requires each key to start a
+    line *inside a fenced template*, de-indented, in every documenting file. A second test walks every
+    `*.md`/`*.mdc` and fails if a file describes the rule without carrying the shape, so copy #5 cannot
+    be born quietly. **Landed red against the live drift first**, naming the file and the fix, then made
+    green. The scanner has five self-tests, including that an email address is not a phantom import.
+  - **Deleting the copies would have been the wrong fix**, and this repo's own history says so: "CI runs
+    on `main` only" was a pointer-shaped claim that went stale, and entry 11's pointer was *narrower
+    than the rule it pointed at*, which is how that invariant got re-broken twice in a file it never
+    named. A copy pinned to the parser beats a pointer pinned to nothing. Unpinned copies: 4 → 0.
+  - `.githooks/pre-commit` gains a millisecond substring tripwire for the same rule, and `AGENTS.md`
+    and `CLAUDE.md` join its CHANGELOG trigger list — it already required an entry for a `.cursor/`
+    rule but not for the file every session reads, which is how the stale CI claim got in untracked.
+  - A guard for a trap that is live rather than theoretical: `AGENTS.md` mentions `@MainActor` twice,
+    and Claude Code parses a bare `@token` outside backticks as a file import. The test rejects one.
+  - **Two stale cross-references fixed in the same commit**, because leaving them would be self-parody:
+    `docs/REGRESSIONS.md` named `CLAUDE.md` as the home of the "first touches of protected resources"
+    trap and of the Danger-zones pointer, both of which moved.
+  - `CONTRIBUTING.md` gains a **Working with AI Agents** section — it asked for an "agent feature label"
+    while telling agents nothing about where to start — plus the TOC entry it was missing for
+    **Before Changing Agent Status Code**.
+  - `docs/REGRESSIONS.md` **entry 16**, added on the file's own stated criterion ("Add one when a bug
+    recurs") with the shape it requires, and a Danger-zones row for the two instruction files.
+
 ### 2026-09-13 - The documented clone flow works again
 - **Developer label:** "CONTRIBUTING.md still says cd AgentStatDynamicIsland — the pre-rename repo name"
 - **Agent label:** Follow-up 38 — the one-line fix, plus a booby trap found next to it
