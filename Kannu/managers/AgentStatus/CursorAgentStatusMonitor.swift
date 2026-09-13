@@ -1702,36 +1702,30 @@ final class CursorAgentStatusMonitor: ObservableObject {
         return result
     }
 
+    /// Stamps each session's `executionStartedAt`. The rule is `AgentExecutionClock`, which is where the
+    /// reasoning and the tests live; this is the plumbing that feeds it and applies the answer.
     private func applyExecutionRunState(
         to sessions: [AgentSessionStatus],
         previousStateByConversationID: [String: AgentTrafficLightState],
         now: Date
     ) -> [AgentSessionStatus] {
-        let activeConversationIDs = Set(sessions.map(\.conversationID))
-        executionStartByConversationID = executionStartByConversationID.filter {
-            activeConversationIDs.contains($0.key)
-        }
+        let resolution = AgentExecutionClock.resolve(
+            inputs: sessions.map { session in
+                AgentExecutionClock.Input(
+                    conversationID: session.conversationID,
+                    isActiveRun: session.displayState.isActiveRun,
+                    hasActiveRawState: session.hasActiveRawState,
+                    updatedAt: session.updatedAt,
+                    previousWasActiveRun: previousStateByConversationID[session.conversationID]?.isActiveRun == true
+                )
+            },
+            existing: executionStartByConversationID,
+            now: now
+        )
+        executionStartByConversationID = resolution.startByConversationID
 
         return sessions.map { session in
-            let start: Date?
-            if session.displayState.isActiveRun {
-                let previousState = previousStateByConversationID[session.conversationID]
-                if previousState?.isActiveRun == true {
-                    let existing = executionStartByConversationID[session.conversationID]
-                    let fallback = session.updatedAt
-                    let resolvedStart = existing ?? fallback
-                    executionStartByConversationID[session.conversationID] = resolvedStart
-                    start = resolvedStart
-                } else {
-                    executionStartByConversationID[session.conversationID] = now
-                    start = now
-                }
-            } else {
-                executionStartByConversationID.removeValue(forKey: session.conversationID)
-                start = nil
-            }
-
-            let executionStartForSession = session.displayState.isActiveRun ? start : nil
+            let executionStartForSession = resolution.displayedStartByConversationID[session.conversationID]
 
             return AgentSessionStatus(
                 id: session.id,

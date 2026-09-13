@@ -78,6 +78,7 @@
 		AA1000000000000000000099 /* ListeningModeNotificationFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000098 /* ListeningModeNotificationFilter.swift */; };
 		AA100000000000000000009B /* MediaRemoteAdapterOwnership.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000009A /* MediaRemoteAdapterOwnership.swift */; };
 		AA100000000000000000009D /* UsageWindows.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000009C /* UsageWindows.swift */; };
+		AA100000000000000000009F /* AgentExecutionClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000009E /* AgentExecutionClock.swift */; };
 		F910B9C812C7AEFE2293F7D2 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4A9C58195E197C19F691DA62 /* Cocoa.framework */; };
 /* End PBXBuildFile section */
 
@@ -159,6 +160,7 @@
 		AA1000000000000000000098 /* ListeningModeNotificationFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ListeningModeNotificationFilter.swift; path = Kannu/managers/ListeningModeNotificationFilter.swift; sourceTree = SOURCE_ROOT; };
 		AA100000000000000000009A /* MediaRemoteAdapterOwnership.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MediaRemoteAdapterOwnership.swift; path = Kannu/managers/MediaRemoteAdapterOwnership.swift; sourceTree = SOURCE_ROOT; };
 		AA100000000000000000009C /* UsageWindows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UsageWindows.swift; path = Kannu/managers/LLMUsage/UsageWindows.swift; sourceTree = SOURCE_ROOT; };
+		AA100000000000000000009E /* AgentExecutionClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentExecutionClock.swift; path = Kannu/managers/AgentStatus/AgentExecutionClock.swift; sourceTree = SOURCE_ROOT; };
 		DAA671E7B1B26733F02166C5 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F4C1DD09EC134302938E84F6 /* MediaRemoteAdapter.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MediaRemoteAdapter.framework; path = Frameworks/MediaRemoteAdapter.framework; sourceTree = SOURCE_ROOT; };
 		F54406E72CD4987A00C7AFD9 /* Kannu.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Kannu.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -588,6 +590,7 @@
 				AA1000000000000000000099 /* ListeningModeNotificationFilter.swift in Sources */,
 				AA100000000000000000009B /* MediaRemoteAdapterOwnership.swift in Sources */,
 				AA100000000000000000009D /* UsageWindows.swift in Sources */,
+				AA100000000000000000009F /* AgentExecutionClock.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

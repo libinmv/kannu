@@ -4,6 +4,44 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-13 - A dimmed card is not a finished request
+- **Developer label:** "Issue #14 (execution time resets when thinking mode happens)"
+- **Agent label:** Follow-up 38 — the headline was already fixed; this is what was left
+- **Changes:**
+  - **Checked at HEAD before changing anything, and thinking no longer moves the clock.** Issue #14's
+    headline symptom is fixed for Claude Code and for every hooked provider: thinking is derived from
+    `PostToolUse`/`afterAgentThought`/`AfterTool`/`PostInvocation`, all of which only bump
+    `turn_tool_calls` and leave the turn keys untouched; a prompt opens a turn only when none is open
+    (`f47a796`, so a background task finishing *joins* the request instead of resetting it); and the
+    display rule prefers `turn.startedAt` whenever a turn exists (`c5ee85b`, `069a8ff`). Pinned by
+    `HookScriptTests`.
+  - **What still reset is the fallback, and not because of thinking.** `applyExecutionRunState` — which
+    serves everything with no turn, so passive sources and pre-v39 hook files — treated "the previous
+    cycle was not an active run" as "this is a new request" and stamped `now`. So **any** non-active dip
+    restarted the clock, including the `activeStaleMs` demotion that fires during a long quiet phase
+    where the raw state never stopped being `executing`. A twenty-minute turn showed a few seconds:
+    the reported symptom, reached by a different route than the one that was fixed.
+  - The rule now separates a demotion from an end. `displayState` is what the staleness ladder
+    concluded; `rawState` is what the source reported. Dipped display with an active raw state keeps its
+    clock and resumes it; a raw state that is no longer active clears it, so a genuinely new request
+    after a real stop still restarts.
+  - **The extraction is most of the work, and the reason to do it properly.** The rule lived inside a
+    `private` method on a `@MainActor` monitor with **no test anywhere** — which is why this kept being
+    reported and kept being hard to pin down, and why fixing it in place would have been unverifiable.
+    It is now `AgentExecutionClock.resolve` in the logic target, following the
+    `AgentTrafficLightMapper.reconcileClaudeSessions` pattern, with the monitor keeping only the
+    plumbing. Nine tests pin both halves: a demoted-then-resumed run keeps its original start, **and** a
+    stop-then-new-request does not.
+  - **One case is deliberately not fixed.** A passive source whose parser reports a genuine `stopped`
+    mid-session — Claude Desktop flips raw state per record, including on any `result` record — still
+    restarts, because by the time the clock sees it the source has said the request ended. Telling
+    "ended" from "emitted a result record" belongs in that parser; moving the guess here would risk
+    merging two genuinely separate runs, which is a worse bug than splitting one.
+  - `docs/REGRESSIONS.md` gains entry 15, and the Danger zones rows for
+    `CursorAgentStatusMonitor.swift` and `AgentTrafficLightState.swift` point at it — with the lesson
+    entries 2 and 12 already taught: never fix a reset by widening a staleness window, because the clock
+    is not the state machine.
+
 ### 2026-09-13 - The usage aggregator stops reading transcripts it cannot use
 - **Developer label:** "fix the ones that can be done make sure no regressions happen"
 - **Agent label:** Follow-up 38 — measured, including the part of the prediction that did not hold
