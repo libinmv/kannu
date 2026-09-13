@@ -71,12 +71,6 @@ struct UsageSettings: View {
                 }
 
                 Section {
-                    SettingsRow("Show a gauge beside the lights near a limit", description: "When any usage limit passes 95%, a small gauge appears next to the traffic light. It goes away when the limit resets.") {
-                        Defaults.Toggle(key: .showUsageLimitCue) {
-                            Text("Show a gauge beside the lights near a limit")
-                        }
-                    }
-                    .settingsHighlight(id: highlightID("Show a gauge beside the lights near a limit"))
                     SettingsRow("Check Codex and Cursor limits in the background", description: "While a Codex or Cursor agent is working, Kannu asks for your usage every 5 minutes — the same request the Usage tab makes when it is open. Off: they update only while the Usage tab is open.") {
                         Defaults.Toggle(key: .checkQuotaInBackground) {
                             Text("Check Codex and Cursor limits in the background")

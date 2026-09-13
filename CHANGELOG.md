@@ -53,6 +53,25 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     **Before Changing Agent Status Code**.
   - `docs/REGRESSIONS.md` **entry 16**, added on the file's own stated criterion ("Add one when a bug
     recurs") with the shape it requires, and a Danger-zones row for the two instruction files.
+  - **The usage gauge is out of the notch.** It showed `gauge.with.dots.needle.100percent` beside the
+    traffic light whenever a live usage window passed 95 %, and it was not understandable: a bare 9 pt
+    dial with no number and no window name, sitting next to a shield glyph of the same size and colour.
+    It is what prompted "what is this new icon and why are no findings listed" — the honest answer being
+    that it is not a finding at all. Removed along with its `showUsageLimitCue` key, its Settings row and
+    that row's search entry, so no setting is left controlling nothing.
+  - `UsageAlertManager` is untouched, so nothing is lost: the opt-in push still fires and the Usage tab
+    still shows the bars and the forecast. Only the unexplained glyph is gone. A side benefit — that call
+    site was the closed notch's **only** use of `usageAlerts`, so the traffic light no longer observes the
+    alert manager at all and usage refreshes stop re-rendering it.
+  - `SettingsHighlightInventoryTests`' pinned counts move 201/252/246 → 200/251/245. They are pinned
+    precisely so a removed row has to be a deliberate edit rather than a row that quietly lost its
+    modifier.
+  - **From the review of this PR:** the new doc-parity block in `.githooks/pre-commit` read each file from
+    the **working tree**. Staging a template with a key deleted and then restoring that key as an unstaged
+    edit would have passed the check while committing the broken file — the same shape of hole the guard
+    exists to close, and every other check in that hook already reads the index. It now uses
+    `git cat-file -e ":${doc}"` and `git show ":${doc}"`. Verified against exactly that case: index broken,
+    working tree clean, hook rejects.
 
 ### 2026-09-13 - The documented clone flow works again
 - **Developer label:** "CONTRIBUTING.md still says cd AgentStatDynamicIsland — the pre-rename repo name"

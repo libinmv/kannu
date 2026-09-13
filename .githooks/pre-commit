@@ -164,10 +164,13 @@ fi
 # runs the stronger version of this check (inside the fenced template, de-indented) in CI; this is
 # the millisecond tripwire.
 for doc in CONTRIBUTING.md AGENTS.md .agents/skills/kannu-senior-contributor/SKILL.md .cursor/rules/feature-changelog.mdc; do
-  [[ -f "${doc}" ]] || continue
+  # Read the INDEX, not the working tree. Staging a template with a key deleted and then restoring
+  # that key as an unstaged edit would otherwise pass this check while committing the broken file.
+  # Every other check in this hook reads the index; this one used to be the exception.
+  git cat-file -e ":${doc}" 2>/dev/null || continue
   for key in '- \*\*Developer label:\*\*' '- \*\*Agent label:\*\*' '- \*\*Changes:\*\*'; do
     # -e is required: every key starts with "-", which grep would read as an option.
-    if ! grep -q -e "${key}" "${doc}"; then
+    if ! git show ":${doc}" | grep -q -e "${key}"; then
       echo "ERROR: ${doc} documents the CHANGELOG entry but is missing the literal '${key}'."
       echo "       This hook greps for it; a file that says otherwise makes agents write rejected commits."
       exit 1
