@@ -4,6 +4,49 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-13 - The now-playing helper dies with the app that spawned it
+- **Developer label:** "fix the ones that can be done make sure no regressions happen"
+- **Agent label:** Follow-up 38 — the teardown existed and nothing called it
+- **Changes:**
+  - **The `mediaremote-adapter.pl` helper outlived every run.** Measured on the development machine:
+    **nine alive at once**, eight reparented to `launchd`, the oldest **fourteen hours**, across four
+    bundle paths — and three of them from `/Applications`, so this was not a side effect of rebuilding.
+  - **Root cause is a retain cycle, not a missing teardown.** `streamTask` captures `self` weakly, but
+    once `processJSONStream()` is entered the task frame holds `self` strongly, and that call never
+    returns — the pipe loop is a `while true` suspended in a continuation. `self` owns the task, the
+    running task owns `self`, so `deinit` is unreachable and dropping the controller did nothing. It is
+    kept as a backstop and documented as not being the teardown path.
+  - **The plumbing to break the cycle already existed and nothing called it.** `JSONLinesPipeHandler
+    .close()` resumes the pending continuation with `CancellationError`, which unwinds the loop,
+    returns from `processJSONStream`, and releases `self`. `MediaControllerProtocol` gains `stop()`
+    (default no-op, so the other four controllers are untouched), `NowPlayingController` implements it,
+    and `MusicManager` routes both the controller switch and `destroy()` through one
+    `releaseActiveController()` — because releasing a controller that owns a child process is not a way
+    to stop it.
+  - `applicationWillTerminate` gets a synchronous `terminateChildProcessesForAppExit()`, separate from
+    `stop()` because termination does not wait for a task and killing the child is the only part that
+    has to happen before the process exits.
+  - **And the orphans already on disk get cleared at launch**, because the app is force-quit and does
+    crash, and neither path runs a teardown. The ownership rule is exact and every shortcut is wrong:
+    `killall perl` hits unrelated processes, a basename match hits *other* Kannu bundles (four coexist
+    on a developer's machine, and killing another build's live helper looks like a bug in that build),
+    and ignoring the parent hits a helper still in use. So the argv must name **this** bundle's script
+    as a whole token *and* the process must already be orphaned to `launchd`. Ten tests, written against
+    the real `ps` output from the leak.
+  - **Proven both ways rather than argued.** A clean quit of a signed build now leaves **zero**
+    survivors. Then `kill -9` on it left exactly one orphan at `ppid 1`, and the next launch reaped it
+    — while all nine helpers belonging to other bundles, including one with a live parent and eight
+    orphans from `/Applications` and other build products, were left untouched.
+  - The vendored `.pl` is deliberately not modified, which would recreate the two-copies-of-one-artifact
+    drift REGRESSIONS entry 1 is about. `Process.terminationHandler` is the wrong tool: it fires when
+    the child dies, not the parent.
+  - One path is code-verified but not runtime-verified here: switching the media controller inside a
+    live app goes through the same `releaseActiveController()` → `stop()`, but the switch is triggered
+    by a local `NotificationCenter` post from Settings, which this host cannot drive.
+  - `.gitignore` now globs `.build-*/` instead of listing three paths by name. A one-off verification
+    build should not need a `.gitignore` edit, and the throwaway derivedData for the test above got
+    staged because it did.
+
 ### 2026-09-13 - Three hot paths that were doing work nobody asked for
 - **Developer label:** "fix the ones that can be done make sure no regressions happen"
 - **Agent label:** Follow-up 38 — and two of the three obvious fixes would have been bugs

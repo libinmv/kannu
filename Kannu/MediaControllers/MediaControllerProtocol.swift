@@ -37,4 +37,26 @@ protocol MediaControllerProtocol: ObservableObject {
     func toggleRepeat() async
     func isActive() -> Bool
     func updatePlaybackInfo() async
+
+    /// Releases anything the controller owns outside the process — a child process, a pipe, a stream
+    /// task. Most controllers own nothing of the sort and take the default no-op.
+    ///
+    /// This exists because `deinit` is not a teardown path for a controller that keeps a live child.
+    /// `NowPlayingController` holds a `Task` that holds the controller (its stream loop never returns,
+    /// so the strong reference the call takes is never released) — a retain cycle that makes `deinit`
+    /// unreachable, so dropping the last visible reference left the `mediaremote-adapter.pl` helper
+    /// streaming to nobody, reparented to `launchd`. Whoever stops using a controller must say so.
+    func stop() async
+
+    /// Signals any child process to exit, synchronously, for `applicationWillTerminate`.
+    ///
+    /// Separate from `stop()` because that is `async` and app termination does not wait for a task.
+    /// Terminating the child is the only part that must happen before the process exits — the pipe and
+    /// the stream task die with it either way.
+    func terminateChildProcessesForAppExit()
+}
+
+extension MediaControllerProtocol {
+    func stop() async {}
+    func terminateChildProcessesForAppExit() {}
 }

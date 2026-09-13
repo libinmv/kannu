@@ -653,8 +653,25 @@ class MusicManager: ObservableObject {
         controllerCancellables.removeAll()
         transitionWorkItem?.cancel()
 
-        // Release active controller
+        // Release active controller. `stop()` first — a controller that owns a child process cannot
+        // be torn down by releasing it, because its own stream task keeps it alive (see
+        // `NowPlayingController.stop()`).
+        releaseActiveController()
+    }
+
+    /// Last-chance teardown from `applicationWillTerminate`, which cannot await.
+    ///
+    /// Without this the `mediaremote-adapter.pl` child outlives the app and is reparented to launchd —
+    /// the leak that had nine helpers alive at once on the development machine.
+    func stopActiveControllerForTermination() {
+        activeController?.terminateChildProcessesForAppExit()
+    }
+
+    /// Stops the active controller and drops it. The only correct way to stop using one.
+    private func releaseActiveController() {
+        guard let controller = activeController else { return }
         activeController = nil
+        Task { await controller.stop() }
     }
 
     // MARK: - Setup Methods
@@ -662,7 +679,7 @@ class MusicManager: ObservableObject {
         // Cleanup previous controller
         if activeController != nil {
             controllerCancellables.removeAll()
-            activeController = nil
+            releaseActiveController()
         }
 
         let newController: (any MediaControllerProtocol)?
