@@ -59,14 +59,14 @@ For detailed prompts and one-click setup actions, open **Settings** in Kannu. Co
 
 ### Gatekeeper and first launch
 
-Official DMGs from the [Releases page](https://github.com/libinmv/kannu/releases) are signed with a Developer ID certificate and notarized by Apple. On first launch, macOS may still show the ordinary confirmation that Kannu was downloaded from the internet; choose **Open** to continue. That confirmation is expected and is not the Gatekeeper block described below.
+DMGs produced by Kannu's automated release workflow are signed with a Developer ID certificate and notarized by Apple. On first launch, macOS may still show the ordinary confirmation that Kannu was downloaded from the internet; choose **Open** to continue. That confirmation is expected and is not the Gatekeeper block described below.
 
-A locally built or otherwise non-release copy may be unsigned or unnotarized and can be blocked by Gatekeeper after it is downloaded or transferred to another Mac. If you intentionally trust such a build:
+A locally built copy or a DMG published through the manual fallback release path may be unsigned or unnotarized and can be blocked by Gatekeeper after it is downloaded or transferred to another Mac. If you intentionally trust such a build:
 
 - **Right-click (or Control-click)** `Kannu.app` and choose **Open**, then click **Open** in the dialog. On macOS 15 (Sequoia) and later, the option may only appear the second time you right-click → Open.
 - If there is no Open button, go to **System Settings → Privacy & Security**, find the message about Kannu being blocked, and click **Open Anyway**.
 
-Do not remove the quarantine attribute from an official release as a normal installation step. If an official release is unexpectedly blocked, verify that it came from the Releases page before bypassing Gatekeeper.
+Do not remove the quarantine attribute from an automated notarized release as a normal installation step. If a release DMG is unexpectedly blocked, verify how it was produced before bypassing Gatekeeper.
 
 ## Build from Source
 

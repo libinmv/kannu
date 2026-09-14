@@ -4,12 +4,12 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
-### 2026-09-13 - Official release Gatekeeper guidance matches notarization
+### 2026-09-13 - Automated release Gatekeeper guidance matches notarization
 - **Developer label:** "ReadMe tells users to bypass Gatekeeper, but release DMGs are notarized"
-- **Agent label:** Documentation correction for notarized release installs
+- **Agent label:** Documentation correction for automated notarized release installs
 - **Changes:**
-  - `ReadMe.md` now states that official release DMGs are Developer ID signed and Apple-notarized, while keeping the ordinary first-launch download confirmation distinct from a Gatekeeper block.
-  - Gatekeeper bypass guidance is scoped to trusted local or non-release builds, and the normal installation path no longer tells users to strip the quarantine attribute.
+  - `ReadMe.md` now states that DMGs produced by the automated release workflow are Developer ID signed and Apple-notarized, while keeping the ordinary first-launch download confirmation distinct from a Gatekeeper block.
+  - Gatekeeper bypass guidance now also covers manual fallback release artifacts that may be unnotarized, and the normal notarized installation path no longer tells users to strip the quarantine attribute.
 
 ### 2026-09-13 - The documented clone flow works again
 - **Developer label:** "CONTRIBUTING.md still says cd AgentStatDynamicIsland — the pre-rename repo name"
