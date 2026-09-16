@@ -1642,6 +1642,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if windowsHiddenForLock, !LockScreenManager.shared.isLocked {
             restoreWindowsAfterLock()
         }
+        // A display unplugged while the screen is locked still loses its window: the lock defers
+        // creating and showing windows, never tearing down one whose display is gone.
+        if Defaults[.displayPlacement].usesOneWindowPerDisplay {
+            let liveIDs = Set(NSScreen.screens.compactMap(DisplayPlacementRuntime.displayID(for:)))
+            for id in windows.keys where !liveIDs.contains(id) {
+                tearDownWindow(forDisplay: id)
+            }
+        }
         guard !windowsHiddenForLock, !LockScreenManager.shared.isLocked else { return }
 
         if Defaults[.displayPlacement].usesOneWindowPerDisplay {
@@ -1651,10 +1659,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 },
                 uniquingKeysWith: { first, _ in first }
             )
-
-            for id in windows.keys where screensByID[id] == nil {
-                tearDownWindow(forDisplay: id)
-            }
 
             for (id, screen) in screensByID {
                 if windows[id] == nil {

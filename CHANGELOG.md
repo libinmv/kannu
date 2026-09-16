@@ -4,6 +4,39 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-16 - The notch asks the presenter what is on screen, the watchdog stops counting sleep, and the crash scan leaves the main thread
+- **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — findings M8, M9, L6, L7, L11, L12, L13, L18 and L20 of that review
+- **Agent label:** Follow-up 42, PR G — modal, watchdog, crash reporter, display
+- **Changes:**
+  - `KannuViewModel.open()` inferred "a dialog is up" from `NSApp.modalWindow` and `attachedSheet`.
+    That missed `ModalPresenter`'s `panel.begin` fallback — neither modal nor a sheet, and the normal
+    path whenever Settings is closed — so hovering the notch opened it over the very picker the user
+    had to answer; and it caught every unrelated SwiftUI `.sheet` on Settings, which locked the notch
+    out behind the Spotify sign-in. `ModalPresenter` now counts what it has presented and the notch
+    asks it. It also queues alerts: a second one while the first was a sheet on Settings found no
+    anchor and went app-modal on top of the sheet.
+  - `HangWatchdog` measured the outstanding ping on the wall clock. An hour with the lid closed came
+    back as an hour-long freeze: on wake the watchdog thread suspended the main thread for a stack
+    walk and offered a bogus report at the next launch. It uses `systemUptime`, which stops with the
+    Mac. And its pong was posted in `commonModes`, which in a Cocoa app already contains
+    `NSModalPanelRunLoopMode` — so a stray `runModal()`, the freeze the watchdog exists to catch,
+    answered every ping and was never reported. The modes are explicit now, and the comment that
+    claimed the opposite is corrected.
+  - `CrashReporter.newestReport()` ran on the main actor 4 s after launch and called
+    `ProcessInfo.hostName`, which resolves the name and blocks for as long as a captive portal or a
+    dead resolver takes — while the watchdog was watching. The scan runs on a utility queue, hops
+    back to present, and takes the host name from SystemConfiguration. The offer-once rule is a pure
+    `CrashReport.shouldOffer` with a test.
+  - An extension's file picker outlived its connection: a pick after the client had gone still added
+    to the Shelf with the reply dropped. The server registers each picker by connection and cancels
+    it when the connection is removed.
+  - `DisplayPlacementRuntime.pointerDisplayID` used `CGRect.contains`, which excludes the top edge —
+    exactly where a pointer goes to reach the notch. `NSMouseInRect` now. `adjustWindowPosition`'s
+    lock guard also skipped the stale-display teardown, so a display unplugged while locked kept its
+    window until the next reconfiguration; the teardown runs before the guard.
+  - `DiagnosticScrub.paths` redacts `/Volumes/<name>` — usually the owner's name — in hang and crash
+    reports alike.
+
 ### 2026-09-16 - The shield shows without agent activity, and only once
 - **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — findings M6 and L4 of that review
 - **Agent label:** Follow-up 42, PR F — notch security cue

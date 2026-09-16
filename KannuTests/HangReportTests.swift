@@ -109,6 +109,10 @@ final class HangReportTests: XCTestCase {
 
         let other = HangReport.scrub("/Users/anotherperson/Applications/Kannu.app", home: "/Users/someone")
         XCTAssertEqual(other, "/Users/redacted/Applications/Kannu.app")
+
+        // A mounted volume is usually named after its owner; an app run from one puts it in every frame.
+        let volume = HangReport.scrub("4  Kannu  /Volumes/Davids-MacBook-Pro/Kannu.app/Contents/MacOS/Kannu", home: "/Users/someone")
+        XCTAssertEqual(volume, "4  Kannu  /Volumes/redacted/Kannu.app/Contents/MacOS/Kannu")
     }
 
     func testScrubbingKeepsWhatTheReportIsFor() {

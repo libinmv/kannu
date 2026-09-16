@@ -17,6 +17,7 @@
  */
 
 import Foundation
+import AppKit
 import Network
 import Defaults
 
@@ -31,6 +32,10 @@ final class ExtensionRPCServer {
     private var connections: [UUID: RPCClientConnection] = [:]
     private var activeConnectionByBundleIdentifier: [String: UUID] = [:]
     private var shelfSubscribers: Set<String> = [] // bundleIdentifiers subscribed to shelf events
+    /// File pickers a request opened, by the connection that asked. A client that disconnects
+    /// while its picker is up must not leave it on screen: a later pick would land in the Shelf
+    /// for a client that is gone, with the reply dropped.
+    private var openPanelsByConnection: [UUID: [NSSavePanel]] = [:]
     private let port: UInt16 = 9020
     private let queue = DispatchQueue(label: "com.kannu.app.rpc.server", qos: .userInitiated)
     private let decoder = JSONDecoder()
@@ -385,7 +390,17 @@ final class ExtensionRPCServer {
         }
     }
 
+    func register(_ panel: NSSavePanel, for connID: UUID) {
+        openPanelsByConnection[connID, default: []].append(panel)
+    }
+
+    func unregister(_ panel: NSSavePanel, for connID: UUID) {
+        openPanelsByConnection[connID]?.removeAll { $0 === panel }
+        if openPanelsByConnection[connID]?.isEmpty == true { openPanelsByConnection.removeValue(forKey: connID) }
+    }
+
     private func removeConnection(connID: UUID) {
+        openPanelsByConnection.removeValue(forKey: connID)?.forEach { $0.cancel(nil) }
         if let boundIdentifier = connections[connID]?.bundleIdentifier,
            activeConnectionByBundleIdentifier[boundIdentifier] == connID {
             activeConnectionByBundleIdentifier.removeValue(forKey: boundIdentifier)
