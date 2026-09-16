@@ -588,56 +588,6 @@ class BluetoothAudioManager: ObservableObject {
     }
 
     /// Fallback: attempt to get VendorID/ProductID from system_profiler SPBluetoothDataType JSON.
-    private func vendorProductIDsFromSystemProfiler(forNormalizedAddress target: String) -> (vendor: UInt16, product: UInt16)? {
-        guard !target.isEmpty else { return nil }
-        guard let root = systemProfilerBluetoothDictionary() else { return nil }
-        guard let deviceConnected = root["device_connected"] as? [Any] else { return nil }
-
-        func pidFromPayload(_ payload: [String: Any]) -> UInt16? {
-            if let raw = payload["device_productID"] as? String {
-                let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                if trimmed.hasPrefix("0x"), let value = UInt16(trimmed.dropFirst(2), radix: 16) { return value }
-                if let value = UInt16(trimmed, radix: 16) { return value }
-            }
-            let productKeys = ["device_productID", "ProductID", "product_id", "productID", "DeviceProductID", "ProductId", "Product ID"]
-            return extractUInt16(from: payload, keys: productKeys)
-                ?? deepSearchUInt16(in: payload) { $0.lowercased().contains("productid") }
-        }
-
-        func vidFromPayload(_ payload: [String: Any]) -> UInt16? {
-            let vendorKeys = ["device_vendorID", "VendorID", "vendor_id", "vendorID", "DeviceVendorID", "VendorId", "Vendor ID"]
-            return extractUInt16(from: payload, keys: vendorKeys)
-                ?? deepSearchUInt16(in: payload) { $0.lowercased().contains("vendorid") }
-        }
-
-        for item in deviceConnected {
-            guard let dict = item as? [String: Any],
-                  let nameKey = dict.keys.first,
-                  let infoAny = dict[nameKey],
-                  let payload = infoAny as? [String: Any] else {
-                continue
-            }
-
-            if let address = payload["device_address"] as? String {
-                if normalizeBluetoothIdentifier(address) != target { continue }
-            } else {
-                let candidates = profilerAddressCandidates(from: payload).map(normalizeBluetoothIdentifier)
-                if !candidates.contains(target) { continue }
-            }
-
-            if let pid = pidFromPayload(payload) {
-                if let vid = vidFromPayload(payload) {
-                    return (vendor: vid, product: pid)
-                }
-                if devicePIDMap[pid] != nil {
-                    return (vendor: appleVendorID, product: pid)
-                }
-            }
-        }
-
-        return nil
-    }
-
     /// Attempts to find VendorID/ProductID for a device using Bluetooth caches.
     private func vendorProductIDs(for device: IOBluetoothDevice) -> (vendor: UInt16, product: UInt16)? {
         guard let preferences = UserDefaults(suiteName: bluetoothPreferencesSuite),
@@ -709,10 +659,11 @@ class BluetoothAudioManager: ObservableObject {
             }
         }
 
-        if let fromProfiler = vendorProductIDsFromSystemProfiler(forNormalizedAddress: target) {
-            return fromProfiler
-        }
-
+        // No system_profiler fallback here. This runs inside `createBluetoothAudioDevice` on the
+        // main thread (`detectDeviceType` asks for the PID before it reads the name), and on a
+        // device missing from both preference caches it spawned `system_profiler` and waited —
+        // the same stall as the battery lookup, one field over. A device the caches do not know
+        // is typed by its name, or shown as generic.
         return nil
     }
 

@@ -26,6 +26,12 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     means nothing can interleave.
   - `docs/REGRESSIONS.md` entry 11 gains a 2026-09-16 addendum restating the rule at full width — no
     collector on the main thread, forced or not — and the Danger zones row counts the fourth pass.
+  - Found by CodeRabbit on this PR, same class, one field over: `detectDeviceType` asked for the
+    device's vendor/product id *before* reading its name, and on a device missing from both
+    Bluetooth preference caches `vendorProductIDs(for:)` fell back to spawning `system_profiler`
+    synchronously — also inside `createBluetoothAudioDevice`, also on the main thread. The fallback
+    is deleted; a device the caches do not know is typed by its name, or shown as generic. Nothing
+    in `createBluetoothAudioDevice` spawns anything now.
   - Not verified here: a real connect (17 devices paired, none connected on this Mac). The claim is
     the call chain, checked by reading; the `sample` check after a connect is still the manual guard.
 
