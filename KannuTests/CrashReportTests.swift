@@ -229,6 +229,25 @@ final class CrashReportTests: XCTestCase {
         )
     }
 
+    func testTheFileNameIsScrubbedEvenWhenTheHostNameIsUnknown() throws {
+        // SystemConfiguration can return no local name; the host pass then has nothing to look for.
+        let report = try XCTUnwrap(CrashReport.parse(fileName: cpuDiagnosticName, contents: cpuDiagnostic, home: home, hostName: ""))
+        XCTAssertEqual(report.sourceName, "Kannu_2026-09-12-033808_this-mac.cpu_resource.diag")
+        XCTAssertFalse(report.issueBody.contains(host))
+        let url = try XCTUnwrap(report.issueURL(repository: "libinmv/kannu")).absoluteString
+        XCTAssertFalse(url.contains(host))
+    }
+
+    func testTheHostIndependentPassKnowsBothShapes() {
+        XCTAssertEqual(DiagnosticScrub.fileName("Kannu_2026-09-12-210411_Someones Mac.ips"), "Kannu_2026-09-12-210411_this-mac.ips")
+        XCTAssertEqual(DiagnosticScrub.fileName("Kannu_2026-09-12-210411_host.wakeups_resource.diag"),
+                       "Kannu_2026-09-12-210411_this-mac.wakeups_resource.diag")
+        XCTAssertEqual(DiagnosticScrub.fileName("Kannu-2026-09-12-213652.ips"), "Kannu-2026-09-12-213652.ips",
+                       "the crash shape carries no host")
+        XCTAssertEqual(DiagnosticScrub.fileName("Kannu_2026-09-12-033808_this-mac.cpu_resource.diag"),
+                       "Kannu_2026-09-12-033808_this-mac.cpu_resource.diag", "idempotent")
+    }
+
     func testTheIssueKeepsWhatAMaintainerNeeds() throws {
         let body = try XCTUnwrap(parseIPS()).issueBody
         XCTAssertTrue(body.contains("1.3.0 (3)"))
