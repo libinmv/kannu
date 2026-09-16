@@ -4,6 +4,28 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-16 - A kept hook file no longer hides a finished chat, and a leftover subagent never shows one as running
+- **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — findings M5, L2 and L3 of that review
+- **Agent label:** Follow-up 42, PR E — agent status state
+- **Changes:**
+  - `hookFileOutlivesStaleCap` keeps a Claude `executing` file while its process lives. After
+    `activeStaleMs` that file resolves invisible, and `reconcileClaudeSessions`' fallthrough returned
+    the invisible hook session over the passive side's visible dim card — so after an Esc mid-tool
+    with the process left open, the chat vanished from Recent chats until the process exited (before
+    the exemption the file was deleted at 30 min and the dim card took over). The fallthrough now
+    shows a *finished* passive card when the hook session is invisible; an aged yellow is still not
+    repainted by a passive active verdict (entry 3). Pinned in `ClaudeReconcilerTests`.
+  - `AgentSubagentFold`: with no parent file in the scan, the stand-in copied the subagent's own
+    light, so a leftover subagent file after the chat ended (SessionEnd unlinks only the parent's
+    file) showed the ended chat as running — the file's own doc said a leftover changes nothing.
+    The stand-in is inactive and invisible now; the reconciler still lights it from live passive
+    evidence when the parent really is running. Two `SubagentFoldTests` pin both directions.
+  - `AgentSessionLogParser`: the title cache memoised only Claude's *title records*, and nil meant
+    "no entry" and "no title" alike, so every new Claude session — named from its first prompt until
+    the first title record lands — re-read its 32 KB head on the main actor on every rescan. The
+    parser now remembers the *resolved* name per `(mtime, size)`, nil included, and a titleless
+    transcript is read once per version; `leadingReadCount` is a test hook that proves it.
+
 ### 2026-09-16 - A refused Gemini settings.json no longer reinstalls every provider on every launch
 - **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — finding M4 of that review
 - **Agent label:** Follow-up 42, PR D — hook installer

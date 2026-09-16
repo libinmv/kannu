@@ -91,10 +91,32 @@ final class SubagentFoldTests: XCTestCase {
         XCTAssertEqual(standIn.id, "claude-parent-uuid")
         XCTAssertEqual(standIn.conversationID, "parent-uuid")
         XCTAssertNil(standIn.chatName)
+        // Dim until the reconciler proves the parent alive: the usual reason the parent's file is
+        // missing is that the chat ended, and a leftover subagent file showed it as running.
+        XCTAssertFalse(standIn.isVisible)
+        XCTAssertEqual(standIn.displayState, .inactive)
+        XCTAssertEqual(standIn.rawState, "executing", "kept, so live passive evidence can promote it")
         let passive = session("parent-uuid", "executing", .executing, name: "The real title")
         let named = M.reconcileClaudeSessions(hookSessions: result.sessions, passiveSessions: [passive], deadPIDConversationIDs: [],
                                               collapseMs: 60_000, inactiveMs: 120_000, nowMs: 1_788_000_000_000)
-        XCTAssertEqual(named.first { $0.conversationID == "parent-uuid" }?.chatName, "The real title")
+        let promoted = named.first { $0.conversationID == "parent-uuid" }
+        XCTAssertEqual(promoted?.chatName, "The real title")
+        XCTAssertEqual(promoted?.displayState, .executing, "a live parent lights it")
+        XCTAssertEqual(promoted?.isVisible, true)
+    }
+
+    func testALeftoverSubagentWithNoParentFileNeverShowsAnEndedChatAsRunning() {
+        // SessionEnd unlinks only the parent's file. With no passive evidence of a live parent —
+        // no session record, or a dead pid — the stand-in stays dim and invisible.
+        let sub = session("sub", "executing", .executing)
+        let standIns = fold([sub], ["claude|sub": "parent-uuid"]).sessions
+        let alone = M.reconcileClaudeSessions(hookSessions: standIns, passiveSessions: [], deadPIDConversationIDs: [],
+                                              collapseMs: 60_000, inactiveMs: 120_000, nowMs: 1_788_000_000_000)
+        XCTAssertEqual(alone.first { $0.conversationID == "parent-uuid" }?.isVisible, false)
+        let dead = M.reconcileClaudeSessions(hookSessions: standIns, passiveSessions: [], deadPIDConversationIDs: ["parent-uuid"],
+                                             collapseMs: 60_000, inactiveMs: 120_000, nowMs: 1_788_000_000_000)
+        XCTAssertEqual(dead.first { $0.conversationID == "parent-uuid" }?.isVisible, false)
+        XCTAssertNotEqual(dead.first { $0.conversationID == "parent-uuid" }?.displayState, .executing)
     }
 
     func testProvidersNeverCrossAndAnEmptyMapChangesNothing() {

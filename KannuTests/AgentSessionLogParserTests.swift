@@ -293,6 +293,21 @@ final class AgentSessionLogParserTests: XCTestCase {
         XCTAssertEqual(name(), "Renamed chat")
     }
 
+    func testATitlelessTranscriptIsReadOncePerVersion() throws {
+        // "No title record yet" is a verdict worth memoising: every new Claude session is in that
+        // state for its first minute, and each of them re-read 32 KB on the main actor per rescan.
+        let url = try transcript([#"{"type":"user","message":{"role":"user","content":"Fix the parser please"}}"#])
+        func name() -> String? { AgentSessionLogParser.displayChatName(from: URL(fileURLWithPath: url.path), provider: .claude) }
+        let before = AgentSessionLogParser.leadingReadCount
+        XCTAssertEqual(name(), "Fix the parser please")
+        XCTAssertEqual(AgentSessionLogParser.leadingReadCount, before + 1)
+        XCTAssertEqual(name(), "Fix the parser please")
+        XCTAssertEqual(AgentSessionLogParser.leadingReadCount, before + 1, "same (mtime, size): no second read")
+        try append([#"{"type":"custom-title","customTitle":"Parser rewrite"}"#], to: url)
+        XCTAssertEqual(name(), "Parser rewrite")
+        XCTAssertEqual(AgentSessionLogParser.leadingReadCount, before + 2, "a changed file is read again")
+    }
+
     func testResolvedTitlePrecedence() {
         XCTAssertEqual(AgentSessionLogParser.resolvedClaudeTitle(tail: "T", lastKnownTail: "L", head: "H"), "T")
         XCTAssertEqual(AgentSessionLogParser.resolvedClaudeTitle(tail: nil, lastKnownTail: "L", head: "H"), "L")

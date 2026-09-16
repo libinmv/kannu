@@ -28,8 +28,10 @@ extension AgentTrafficLightMapper {
     ///   parent's own progress cannot hide that prompt.
     /// - Once the parent's turn has ended, a leftover subagent file changes nothing — it used to
     ///   relight the whole light green for up to six minutes after the chat finished.
-    /// - With no parent file this scan, a stand-in carries the parent's id; enrichment and the
-    ///   reconciler name it from the parent's transcript and process.
+    /// - With no parent file this scan, a stand-in carries the parent's id — inactive and
+    ///   invisible, because the usual reason a parent file is missing is that the chat ended
+    ///   (SessionEnd unlinks only the parent's own file). The reconciler promotes it from the
+    ///   parent's transcript and process when the parent is provably still running, and names it.
     ///
     /// Identity, name, project and locators stay the parent's; extras (sightings, the unattended
     /// flag) ride `carryingExtras` from both sides (docs/REGRESSIONS.md entry 7). The turn is the
@@ -58,6 +60,9 @@ extension AgentTrafficLightMapper {
             if let index = indexByKey[parentKey] {
                 out[index] = folding(sub, into: out[index])
             } else {
+                // Not the subagent's light: a leftover file after the chat ended showed the ended
+                // chat as running until the stale sweep. The raw state stays so the reconciler's
+                // promote arm can still light it from live passive evidence.
                 var standIn = AgentSessionStatus(
                     id: "\(sub.provider)-\(parentID)",
                     provider: sub.provider,
@@ -65,9 +70,9 @@ extension AgentTrafficLightMapper {
                     chatName: nil,
                     projectName: sub.projectName,
                     rawState: sub.rawState,
-                    displayState: sub.displayState,
+                    displayState: .inactive,
                     updatedAt: sub.updatedAt,
-                    isVisible: sub.isVisible,
+                    isVisible: false,
                     executionStartedAt: sub.executionStartedAt,
                     cwd: sub.cwd,
                     hostPID: nil
