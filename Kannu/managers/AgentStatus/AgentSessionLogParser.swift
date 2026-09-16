@@ -128,8 +128,13 @@ enum AgentSessionLogParser {
     }
 
     static func displayChatName(from path: URL, provider: AgentSessionLogProvider) -> String? {
-        // A quiet session whose title is already known costs a stat, not a 32 KB read.
-        if provider == .claude, let title = freshCachedClaudeTitle(at: path) { return title }
+        // A quiet Claude session whose name is already known — a title record, the first prompt,
+        // or nothing yet — costs a stat, not a 32 KB read. The double optional is the point:
+        // `.some(nil)` is a memoised "nothing to show yet". The title-only cache below could not
+        // express that (nil meant "no entry" and "no title" alike), and it never covered the
+        // prompt-derived fallback, so every titleless transcript was re-read on every rescan.
+        if provider == .claude, let cached = freshCachedDisplayName(at: path) { return cached }
+        leadingReadCount &+= 1
         guard let text = readLeadingLines(at: path) else { return nil }
         let lines = text.split(separator: "\n", omittingEmptySubsequences: true)
 
@@ -138,7 +143,7 @@ enum AgentSessionLogParser {
         // Read both from the leading and trailing bytes — they land late in long sessions —
         // and let custom win, or Kannu names a chat differently from Claude itself.
         if provider == .claude {
-            if let title = cachedClaudeTitle(at: path, leadingText: text) { return title }
+            if let title = cachedClaudeTitle(at: path, leadingText: text) { return rememberDisplayName(title, at: path) }
         }
 
         for line in lines {
@@ -148,22 +153,39 @@ enum AgentSessionLogParser {
                   let title = normalizedChatTitle(fromUserText: raw) else {
                 continue
             }
-            return title
+            return provider == .claude ? rememberDisplayName(title, at: path) : title
         }
-        return nil
+        return provider == .claude ? rememberDisplayName(nil, at: path) : nil
     }
 
     private static var titleCache: [String: (mtime: Date, size: Int, title: String?)] = [:]
+    /// The name `displayChatName` last resolved per Claude transcript, against the file version it
+    /// was read from — whichever of the three sources it came from, nil included.
+    private static var displayNameCache: [String: (mtime: Date, size: Int, name: String?)] = [:]
+    /// Test hook: leading-window reads made by `displayChatName`. A fresh cache entry, name or
+    /// not, must not add one.
+    static private(set) var leadingReadCount = 0
     /// The newest title a tail window found per transcript. A long turn can push the title record
     /// past the last window (1 MiB) — seen on an 89 MB session — and the name then fell back to an
     /// older title or the first prompt; it now keeps the last one found instead.
     private static var lastTailTitleByPath: [String: String] = [:]
 
-    private static func freshCachedClaudeTitle(at url: URL) -> String? {
+    /// `nil`: no fresh entry. `.some(name)`: a fresh entry, whose name may itself be nil.
+    private static func freshCachedDisplayName(at url: URL) -> String?? {
         let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
         guard let mtime = values?.contentModificationDate, let size = values?.fileSize,
-              let cached = titleCache[url.path], cached.mtime == mtime, cached.size == size else { return nil }
-        return cached.title
+              let cached = displayNameCache[url.path], cached.mtime == mtime, cached.size == size else { return nil }
+        return .some(cached.name)
+    }
+
+    @discardableResult
+    private static func rememberDisplayName(_ name: String?, at url: URL) -> String? {
+        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        if let mtime = values?.contentModificationDate, let size = values?.fileSize {
+            if displayNameCache.count > 2 * maxSessionsPerScan { displayNameCache.removeAll() }
+            displayNameCache[url.path] = (mtime, size, name)
+        }
+        return name
     }
 
     /// Tail first (the newest copy), then the last title a tail showed, then the head (a session too

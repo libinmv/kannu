@@ -360,7 +360,20 @@ enum AgentTrafficLightMapper {
             guard session.hasActiveRawState,
                   let passive,
                   passive.displayState.isActiveRun
-            else { return inheritingPassiveData(session) }
+            else {
+                // A hook file kept past its stale cap (`hookFileOutlivesStaleCap`: the process is
+                // alive) resolves invisible once `activeStaleMs` passes, while the passive side may
+                // still have a card to show — the dim `.turnFinished` after an Esc mid-tool with the
+                // process left open. Before the exemption the file was simply deleted at 30 min and
+                // the passive card took over; kept, it shadowed the card and the chat vanished from
+                // Recent chats until the process exited. Invisible must not hide visible. Only a
+                // *finished* passive card, though: an aged yellow is still not repainted by a passive
+                // active verdict (entry 3's one unreadable tail would turn it green).
+                if let passive, passive.isVisible, !passive.displayState.isActiveRun, !session.isVisible {
+                    return inheritingPassiveData(session.withDisplayState(passive.displayState, visible: true))
+                }
+                return inheritingPassiveData(session)
+            }
 
             // `!session.displayState.isActiveRun` is structurally implied here by the
             // early return above, so the promotion is unconditional.
