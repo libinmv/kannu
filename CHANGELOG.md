@@ -4,6 +4,23 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-16 - A refused Gemini settings.json no longer reinstalls every provider on every launch
+- **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — finding M4 of that review
+- **Agent label:** Follow-up 42, PR D — hook installer
+- **Changes:**
+  - `installSharedSettingsHooks` (Gemini CLI, Qwen Code) read the tool's `settings.json` — and
+    refused it when it had comments or trailing commas — *before* writing the shared script, so
+    the script it already pointed at could never be brought to a new version. Its own doc comment
+    said "the script first"; the code now does that, and the refusal only stops the settings merge.
+  - `migrateHookScriptVersionIfNeeded` decided "needs refresh" across all providers at once and then
+    re-ran `install()` for every provider with a script on disk. With one permanently-stale script
+    that meant `~/.claude/settings.json`, `~/.cursor/hooks.json` and the Codex and Antigravity configs
+    were rewritten on every launch, forever, with `lastError` set each time. It is per provider now:
+    only a script behind the marker triggers its own install.
+  - No logic-target test reaches the installer (it touches `Defaults` and the home directory).
+    Verified by hand with a fixture HOME holding a commented `~/.gemini/settings.json`: after the
+    change a second launch leaves `~/.claude/settings.json`'s mtime alone.
+
 ### 2026-09-16 - Hook v41: the payload goes through a file, and the allow line is unconditional
 - **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — finding M3 of that review, plus hook hygiene
 - **Agent label:** Follow-up 42, PR C — hook script v41
