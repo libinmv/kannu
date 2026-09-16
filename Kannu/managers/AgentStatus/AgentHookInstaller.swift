@@ -28,7 +28,7 @@ final class AgentHookInstaller: ObservableObject {
     private static let logger = os.Logger(subsystem: "com.kannu.app", category: "AgentHookInstaller")
 
     static let scriptName = AgentHookLayout.scriptName
-    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=40"
+    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=41"
 
     private static var home: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -262,7 +262,14 @@ final class AgentHookInstaller: ObservableObject {
         # 700: the files carry session titles and project names, and Kannu trusts their
         # contents to drive the traffic light — no reason for other users to see them.
         mkdir -p "$KANNU_STATUS_DIR" && chmod 700 "$KANNU_STATUS_DIR"
-        export KANNU_INPUT="$(cat)"
+        # The payload goes to Python through a file, not the environment. Exported as KANNU_INPUT, a
+        # tool input over ~1 MiB made execve fail with "Argument list too long" before the heredoc ran,
+        # and the script fell through to `exit 0` with no status write and no allow line. mktemp makes
+        # the file 0600 inside the 700 directory; Python unlinks it, and the rm below covers every
+        # other way out.
+        KANNU_INPUT_FILE="$(mktemp "$KANNU_STATUS_DIR/.kannu-input.XXXXXX" 2>/dev/null)" || KANNU_INPUT_FILE=""
+        if [ -n "$KANNU_INPUT_FILE" ]; then cat > "$KANNU_INPUT_FILE"; else cat > /dev/null; fi
+        export KANNU_INPUT_FILE
 
         if ! command -v python3 >/dev/null 2>&1; then
           TS=$(($(date +%s) * 1000))
@@ -275,6 +282,7 @@ final class AgentHookInstaller: ObservableObject {
             vscode) if [ -n "$COPILOT_CLI" ]; then echo '{}'; else echo '{"permission":"allow","continue":true}'; fi ;;
             *) echo '{"permission":"allow","continue":true}' ;;
           esac
+          [ -n "$KANNU_INPUT_FILE" ] && rm -f "$KANNU_INPUT_FILE"
           exit 0
         fi
 
@@ -306,7 +314,26 @@ final class AgentHookInstaller: ObservableObject {
         hook_event = os.environ.get("KANNU_HOOK_EVENT", "unknown")
         hook_matcher = os.environ.get("KANNU_HOOK_MATCHER", "")
         status_dir = Path(os.environ.get("KANNU_STATUS_DIR", "")).expanduser()
-        raw = os.environ.get("KANNU_INPUT", "")
+        # Read from the file the wrapper wrote (see the top of this script); the environment variable is
+        # only a fallback for a caller that still exports one. Capped so a runaway payload cannot be held
+        # whole in memory: past the cap the event still updates the light, uncounted.
+        INPUT_CAP = 16 * 1024 * 1024
+        raw = ""
+        _input_path = os.environ.get("KANNU_INPUT_FILE", "")
+        if _input_path:
+            try:
+                with open(_input_path, "r", encoding="utf-8", errors="replace") as _fh:
+                    raw = _fh.read(INPUT_CAP + 1)
+            except Exception:
+                raw = ""
+            try:
+                os.unlink(_input_path)
+            except Exception:
+                pass
+            if len(raw) > INPUT_CAP:
+                raw = ""
+        else:
+            raw = os.environ.get("KANNU_INPUT", "")
         status_dir.mkdir(parents=True, exist_ok=True)
 
         try:
@@ -412,7 +439,8 @@ final class AgentHookInstaller: ObservableObject {
             return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else default
 
         def ht_token(value, limit=64):
-            return re.sub("[^A-Za-z0-9_.:-]", "", value)[:limit] if isinstance(value, str) else ""
+            # Cut before the regex, not after: the value can come back from the status file at any length.
+            return re.sub("[^A-Za-z0-9_.:-]", "", value[:limit * 4])[:limit] if isinstance(value, str) else ""
 
         def ht_vs_text(run):
             # Butler (2025): byte b -> U+FE00+b (b < 16) or U+E0100+(b-16).
@@ -1245,10 +1273,11 @@ final class AgentHookInstaller: ObservableObject {
 
         def turn_call_key(turn, now_ms):
             # (key, already counted). The tool call's id when the agent sends one; otherwise the tool and
-            # the size of its input, so one completion delivered twice within 2 s counts once.
+            # the size of the payload, so one completion delivered twice within 2 s counts once. The raw
+            # length is already known; stringifying tool_input was the one O(n) pass outside every budget.
             if sighting_call:
                 return sighting_call, sighting_call in turn["turn_tool_ids"]
-            stem = "nx:" + sighting_tool[:24] + ":" + str(len(str(tool_input))) + ":"
+            stem = "nx:" + sighting_tool[:24] + ":" + str(len(raw)) + ":"
             for token in turn["turn_tool_ids"]:
                 tail = token[len(stem):] if token.startswith(stem) else ""
                 if tail.isdigit() and now_ms - int(tail) <= TURN_NOID_WINDOW_MS:
@@ -1571,7 +1600,7 @@ final class AgentHookInstaller: ObservableObject {
         # Discovery cannot observe this on macOS (its process listing has no argv), so this is the one
         # signal Kannu adds to a security finding itself.
         _mode = pick_str(data.get("permission_mode"), data.get("permissionMode"), data.get("approval_policy"))
-        unattended = bool(existing.get("unattended")) or normalize_token(_mode) in {
+        unattended = existing.get("unattended") is True or normalize_token(_mode) in {
             "bypasspermissions", "dangerouslyskippermissions", "never", "yolo", "autoapprove",
         }
 
@@ -1774,7 +1803,11 @@ final class AgentHookInstaller: ObservableObject {
                     existing.update(turn)
                     if transcript:
                         existing["transcript_path"] = transcript
-                    write_status(status_file, existing)
+                    try:
+                        write_status(status_file, existing)
+                    except Exception:
+                        # A full disk or a path replaced by a directory must not cost the allow line.
+                        pass
                     emit(hidden_notes_out)
                     raise SystemExit(0)
 
@@ -1813,9 +1846,14 @@ final class AgentHookInstaller: ObservableObject {
         payload.update(turn)
         if transcript:
             payload["transcript_path"] = transcript
-        write_status(status_file, payload)
+        try:
+            write_status(status_file, payload)
+        except Exception:
+            # The host is waiting for the line below; a failed status write must not cost it.
+            pass
         emit(hidden_notes_out)
         PY
+        [ -n "$KANNU_INPUT_FILE" ] && rm -f "$KANNU_INPUT_FILE"
         exit 0
         """
 

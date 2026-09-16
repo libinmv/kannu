@@ -4,6 +4,34 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-16 - Hook v41: the payload goes through a file, and the allow line is unconditional
+- **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — finding M3 of that review, plus hook hygiene
+- **Agent label:** Follow-up 42, PR C — hook script v41
+- **Changes:**
+  - The wrapper exported the whole payload as `KANNU_INPUT`. A tool input past ARG_MAX (~1 MiB)
+    made `execve` fail with "Argument list too long" before the Python heredoc ran, and the script
+    fell through to `exit 0` — no status write and **no allow line**, so Cursor lost its
+    `permission:allow` for that call and every provider's light froze on the previous state.
+    Reproduced with a 1.5 MB `tool_input`; the ledger had it down as merely "uncounted". The payload
+    now goes through a `mktemp` file (0600, in the 700 status directory) that Python reads and
+    unlinks, capped at 16 MiB; the wrapper removes it on every other exit.
+  - The two `write_status` calls were the only unwrapped step left: an `os.replace` failure (full
+    disk, a path replaced by a directory) raised past `emit()` and cost the allow line. Both are
+    wrapped; the line prints no matter what the write did.
+  - Hygiene from the same review: `unattended` is read back from the status file as the literal
+    `true` only, like every other carried key (junk was laundered into a real "permission checks
+    bypassed" finding — same-user only, so hygiene, not a hole); `ht_token` cuts before it regexes an
+    unbounded carried string; the no-id tool-call key uses the payload length already in hand instead
+    of stringifying `tool_input` outside every budget.
+  - Not changed: the VS Code → Copilot CLI flip on a controlling tty alone (M7). The obvious
+    discriminator, `VSCODE_PID`, would misfile Copilot CLI run inside VS Code's integrated terminal
+    — a more common setup than VS Code launched from a terminal foreground — and neither can be
+    exercised on this Mac. Recorded, not guessed at.
+  - `KANNU_HOOK_SCRIPT_VERSION=41` in both copies; the embedded copy regenerated from the mirror.
+    Three new `HookScriptTests`: a 1.5 MB payload still writes the status and prints the allow
+    line and leaves no temp file; a status path replaced by a directory still prints the allow line;
+    carried `"unattended": "yes"` is dropped. `docs/REGRESSIONS.md` entry 1 gains the v41 addendum.
+
 ### 2026-09-16 - Security-finding and usage-limit pushes arrive once, on time, and without the chat's name
 - **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — findings H2, M1, M2, M10 and L10 of that review
 - **Agent label:** Follow-up 42, PR B — push delivery
