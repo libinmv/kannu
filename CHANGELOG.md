@@ -22,6 +22,11 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     the old pattern.
   - Tests: an unknown host still yields `…_this-mac…` in the name, body and URL; both file-name
     shapes; spaced, bare and multi-line volume paths.
+  - From CodeRabbit's review of this PR: a bare spaced volume label that ended its line was only
+    half redacted (`/Volumes/redacted MacBook`). A third pass takes such a label to the line end;
+    mid-line, the first word still goes and the sentence survives, since a spaced label there is
+    indistinguishable from prose and redacting to the line end would over-redact.
+
 ### 2026-09-16 - An agent policy Kannu can enforce: block ssh (or anything) on Claude Code and Cursor
 - **Developer label:** "how do i set a policy, can i enforce a policy like no agents can use ssh … give a copy prompt for sample policy generation, actually give a block policy if it is possible"
 - **Agent label:** Follow-up 43, PR J — agent block policy (hook v42)

@@ -45,10 +45,16 @@ enum DiagnosticScrub {
         )
         // A mounted volume is usually named after its owner too ("Davids-MacBook-Pro", "Work SSD"),
         // and an app run from one symbolises every frame to it.
-        // Two passes. A label followed by a path is taken whole, spaces included ("Davids MacBook"
+        // Three passes. A label followed by a path is taken whole, spaces included ("Davids MacBook"
         // used to keep "MacBook"); the line break bounds it so it cannot run into the next frame. A
-        // bare volume root at the end of a token is the old pattern.
-        for pattern in [#"/Volumes/[^/"\n]+(?=/)"#, #"/Volumes/(?!redacted(?:/|$))[^/\s"]+"#] {
+        // bare label runs to the end of its line, because a spaced label cannot be told apart from
+        // prose that happens to follow it — and these strings end up in public issue bodies, so the
+        // deliberate trade is over-redacting a rest-of-line rather than leaking half a label. The
+        // old single-token pattern stays for the leftovers the first two bound out (a label right
+        // before a quote).
+        for pattern in [#"/Volumes/[^/"\n]+(?=/)"#,
+                        #"(?m)/Volumes/(?!redacted(?:/|$))[^/"\n]+$"#,
+                        #"/Volumes/(?!redacted(?:/|$))[^/\s"]+"#] {
             guard let volumes = try? NSRegularExpression(pattern: pattern) else { continue }
             out = volumes.stringByReplacingMatches(
                 in: out,

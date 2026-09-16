@@ -120,6 +120,16 @@ final class HangReportTests: XCTestCase {
         XCTAssertEqual(HangReport.scrub("loaded from /Volumes/Work", home: "/Users/someone"), "loaded from /Volumes/redacted")
         XCTAssertEqual(HangReport.scrub("a /Volumes/One Disk/x\nb /usr/lib/y", home: "/Users/someone"),
                        "a /Volumes/redacted/x\nb /usr/lib/y")
+        // A bare spaced label ending its line goes whole — "MacBook" used to survive — and the next
+        // line is untouched.
+        XCTAssertEqual(HangReport.scrub("mounted /Volumes/Davids MacBook\nnext frame", home: "/Users/someone"),
+                       "mounted /Volumes/redacted\nnext frame")
+        XCTAssertEqual(HangReport.scrub("mounted /Volumes/Davids MacBook", home: "/Users/someone"),
+                       "mounted /Volumes/redacted")
+        // Mid-line, a spaced bare label cannot be told apart from prose after it; the deliberate
+        // trade is to redact to the line end rather than leak half a label into an issue body.
+        XCTAssertEqual(HangReport.scrub("/Volumes/Work was slow. More text.\nnext line", home: "/Users/someone"),
+                       "/Volumes/redacted\nnext line")
     }
 
     func testScrubbingKeepsWhatTheReportIsFor() {
