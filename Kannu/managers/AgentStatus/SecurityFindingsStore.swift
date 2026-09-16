@@ -213,12 +213,13 @@ final class SecurityFindingsStore: ObservableObject {
             }
             .store(in: &cancellables)
         // The hook reads marker files for the local-check settings; keep them in step.
-        for key in [Defaults.Keys.detectHiddenText, .warnAgentAboutHiddenText, .detectSecrets, .detectSensitivePaths] {
+        for key in [Defaults.Keys.detectHiddenText, .warnAgentAboutHiddenText, .detectSecrets, .detectSensitivePaths, .enforceAgentPolicy] {
             Defaults.publisher(key, options: [])
                 .sink { [weak self] _ in Task { @MainActor in self?.syncLocalCheckSettings() } }
                 .store(in: &cancellables)
         }
         syncLocalCheckSettings()
+        checkAgentPolicy()
         // Know whether the tool is there before the first cadence tick; cheap and bounded.
         ADRConnection.shared.checkAgain()
         Defaults.publisher(.watchMCPServers, options: [])
@@ -282,6 +283,31 @@ final class SecurityFindingsStore: ObservableObject {
         snoozes = []
         Defaults[.adrAcknowledgedFindingIDs] = []
         Defaults[.adrFindingSnoozes] = []
+    }
+
+    // MARK: - Agent policy (hook v42)
+
+    /// What `~/.kannu/agent-policy.json` holds, or why the hook is ignoring it. Read off the main
+    /// actor (docs/REGRESSIONS.md entry 11) on start, on appear and on "Check again".
+    @Published private(set) var agentPolicyStatus: Result<AgentPolicy, AgentPolicy.LoadError> = .failure(.notFound)
+
+    func checkAgentPolicy() {
+        DispatchQueue.global(qos: .utility).async {
+            let result = AgentPolicy.load()
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    if result != self.agentPolicyStatus { self.agentPolicyStatus = result }
+                }
+            }
+        }
+    }
+
+    /// Puts the drafting prompt on the clipboard for the user's own agent. Kannu never writes the
+    /// policy file itself.
+    func copyPolicyDraftingPrompt() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(AgentPolicy.draftingPrompt, forType: .string)
     }
 
     /// Puts a request about this finding on the clipboard, ready to paste into the user's agent.
@@ -553,6 +579,7 @@ final class SecurityFindingsStore: ObservableObject {
         place(HiddenTextIncident.warnAgentMarker, present: warn)
         place(SecretSighting.detectionOffMarker, present: !enabled.secrets)
         place(SensitivePathSighting.detectionOffMarker, present: !enabled.sensitivePaths)
+        place(AgentPolicy.enforceMarker, present: Defaults[.enforceAgentPolicy])
         let kept = sightingRecords.keepingOnly(enabled)
         if kept != sightingRecords { storeSightingRecords(kept) }
     }

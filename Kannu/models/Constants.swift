@@ -1271,6 +1271,10 @@ extension Defaults.Keys {
     static let detectSensitivePaths = Key<Bool>("detectSensitivePaths", default: true)
     // Kannu's "new MCP server" check: local reads of agents' MCP settings, nothing sent.
     static let watchMCPServers = Key<Bool>("watchMCPServers", default: true)
+    /// The agent policy (`~/.kannu/agent-policy.json`, hook v42): off means every match is reported
+    /// and the call runs; on means Claude Code and Cursor refuse it. Off by default — a change to
+    /// what an agent does is opt-in, and the file itself is the first opt-in.
+    static let enforceAgentPolicy = Key<Bool>("enforceAgentPolicy", default: false)
     static let mcpServerBaseline = Key<MCPServerWatch.Baseline>("mcpServerBaseline", default: MCPServerWatch.Baseline())
     static let mcpServerAdditions = Key<[MCPServerWatch.Addition]>("mcpServerAdditions", default: [])
     /// Sightings from the hook's local checks, kept past their session until acknowledged.
