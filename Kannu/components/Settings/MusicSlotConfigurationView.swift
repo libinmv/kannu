@@ -62,6 +62,7 @@ struct MusicSlotConfigurationView: View {
             Text("Drag items between slots or drop from the palette to remap controls.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+                .textSelection(.enabled)
         }
     }
 
@@ -99,6 +100,7 @@ struct MusicSlotConfigurationView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
+                    .textSelection(.enabled)
             }
             .frame(width: 72)
         }
@@ -115,6 +117,7 @@ struct MusicSlotConfigurationView: View {
             Text("Drag a control onto a slot or tap to place it in the first empty slot.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .textSelection(.enabled)
 
             ScrollView(.horizontal, showsIndicators: true) {
                 LazyHStack(spacing: 12) {

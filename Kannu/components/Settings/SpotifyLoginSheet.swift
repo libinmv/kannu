@@ -56,6 +56,7 @@ struct SpotifyLoginSheet: View {
                     Text(statusText)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
                 }
                 Spacer()
                 Button {

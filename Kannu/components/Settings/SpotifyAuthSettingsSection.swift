@@ -85,10 +85,13 @@ struct SpotifyAuthSettingsSection: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("1. Open Spotify in a browser and log in")
                         .font(.caption)
+                        .textSelection(.enabled)
                     Text("2. Developer Tools -> Application/Storage -> Cookies -> https://open.spotify.com")
                         .font(.caption)
+                        .textSelection(.enabled)
                     Text("3. Copy the value of `sp_dc` and paste it here")
                         .font(.caption)
+                        .textSelection(.enabled)
 
                     HStack(spacing: 12) {
                         Link("Open Spotify Web Player", destination: URL(string: "https://open.spotify.com")!)
@@ -102,7 +105,7 @@ struct SpotifyAuthSettingsSection: View {
             .font(.caption)
             .foregroundStyle(.secondary)
         } header: {
-            Text("Spotify Canvas Session")
+            SettingsSectionHeader("Spotify Canvas Session")
         } footer: {
             VStack(alignment: .leading, spacing: 4) {
                 SettingsFooter("Sign in to Spotify to capture the `sp_dc` cookie automatically, or paste it in below.")

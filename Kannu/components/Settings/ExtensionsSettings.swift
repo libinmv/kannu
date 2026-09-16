@@ -86,7 +86,7 @@ struct ExtensionsSettingsView: View {
                     .settingsHighlight(id: highlightID("Enable extension diagnostics logging"))
             }
         } header: {
-            Text("Global Settings")
+            SettingsSectionHeader("Global Settings")
         } footer: {
             if Defaults[.enableThirdPartyExtensions] {
                 SettingsFooter("Third-party apps using Extension Kit can display live activities, lock screen widgets, and dedicated notch experiences. Toggle features above or manage individual app permissions below.")
@@ -107,11 +107,13 @@ struct ExtensionsSettingsView: View {
                     Text("No extensions yet")
                         .font(.headline)
                         .foregroundStyle(.secondary)
-                    
+                        .textSelection(.enabled)
+
                     Text("Apps using Extension Kit will appear here once they request permission")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
+                        .textSelection(.enabled)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 40)
@@ -130,12 +132,13 @@ struct ExtensionsSettingsView: View {
             }
         } header: {
             HStack {
-                Text("App Permissions")
+                SettingsSectionHeader("App Permissions")
                 Spacer()
                 if !authManager.entries.isEmpty {
                     Text("\(authManager.entries.count) \(authManager.entries.count == 1 ? "app" : "apps")")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
                 }
             }
             .settingsHighlight(id: highlightID("App permissions list"))
@@ -144,7 +147,7 @@ struct ExtensionsSettingsView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Permission States:")
                         .font(.caption.weight(.semibold))
-                    
+
                     HStack(spacing: 16) {
                         Label("Authorized", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
@@ -156,6 +159,7 @@ struct ExtensionsSettingsView: View {
                     .font(.caption2)
                 }
                 .foregroundStyle(.secondary)
+                .textSelection(.enabled)
             }
         }
     }
@@ -183,6 +187,7 @@ private struct ExtensionEntryRow: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(entry.appName)
                         .font(.system(size: 13, weight: .medium))
+                        .textSelection(.enabled)
                     Text(entry.bundleIdentifier)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
@@ -257,8 +262,10 @@ private struct ExtensionEntryRow: View {
                     Text("Status:")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
                     Text(entry.status.rawValue.capitalized)
                         .font(.caption)
+                        .textSelection(.enabled)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
                         .background(statusColor.opacity(0.15))
@@ -279,9 +286,11 @@ private struct ExtensionEntryRow: View {
                         Text("Last Denied Reason:")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
                         Text(deniedReason)
                             .font(.caption)
                             .foregroundStyle(.red.opacity(0.9))
+                            .textSelection(.enabled)
                     }
                 }
             }
@@ -314,6 +323,7 @@ private struct ExtensionEntryRow: View {
             Text("Allowed Features")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
+                .textSelection(.enabled)
             
             Toggle("Live Activities", isOn: Binding(
                 get: { entry.allowedScopes.contains(.liveActivities) },
@@ -367,6 +377,7 @@ private struct ExtensionEntryRow: View {
             Text("Recent Activity (last 5 minutes)")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
+                .textSelection(.enabled)
             
             HStack(spacing: 20) {
                 if !record.activityTimestamps.isEmpty {
@@ -374,8 +385,10 @@ private struct ExtensionEntryRow: View {
                         Text("Live Activities")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
                         Text("\(record.activityTimestamps.count)")
                             .font(.caption.monospacedDigit())
+                            .textSelection(.enabled)
                     }
                 }
                 
@@ -384,8 +397,10 @@ private struct ExtensionEntryRow: View {
                         Text("Widget Updates")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
                         Text("\(record.widgetTimestamps.count)")
                             .font(.caption.monospacedDigit())
+                            .textSelection(.enabled)
                     }
                 }
 
@@ -394,8 +409,10 @@ private struct ExtensionEntryRow: View {
                         Text("Notch Experiences")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
                         Text("\(record.notchExperienceTimestamps.count)")
                             .font(.caption.monospacedDigit())
+                            .textSelection(.enabled)
                     }
                 }
             }
@@ -494,8 +511,10 @@ private struct ExtensionEntryRow: View {
             Text("\(label):")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .textSelection(.enabled)
             Text(value)
                 .font(.caption)
+                .textSelection(.enabled)
         }
     }
     

@@ -26,6 +26,9 @@ import SwiftUI
 // labels never can: a selectable Text inside a Toggle, Picker, Button or Menu label swallows the
 // click meant for the control. That is why a row with a description hides the control's own
 // label (it stays the accessibility label) and draws the title beside it instead.
+//
+// The full construction rules live in docs/SETTINGS.md, and SettingsLayoutRulesTests enforces
+// them against the sources — including that these components keep their .textSelection.
 
 extension View {
     /// Secondary explanatory text: wraps, and can be selected and copied.
@@ -160,12 +163,35 @@ struct SettingsSliderRow<Value: BinaryFloatingPoint>: View where Value.Stride: B
                 valueText
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
                     .frame(minWidth: 40, alignment: .trailing)
             }
             .frame(width: 220)
         } label: {
             title
         }
+    }
+}
+
+/// A Section header. Selectable — a header is explanatory text, not a control label — so the
+/// section's name can be copied like everything else around it. Use it for every
+/// `Section { … } header: { … }` in Settings; `SettingsLayoutRulesTests` rejects a raw `Text`
+/// there.
+struct SettingsSectionHeader: View {
+    private let text: Text
+
+    init(_ text: LocalizedStringKey) {
+        self.text = Text(text)
+    }
+
+    @_disfavoredOverload
+    init(_ text: String) {
+        self.text = Text(verbatim: text)
+    }
+
+    var body: some View {
+        text
+            .textSelection(.enabled)
     }
 }
 

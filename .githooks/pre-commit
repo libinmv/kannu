@@ -123,6 +123,29 @@ EOF
     exit 1
   fi
 fi
+# --- Settings layout invariant -------------------------------------------------
+# A Section header or footer built as a raw Text cannot be selected or copied; the shared
+# SettingsSectionHeader / SettingsFooter components exist so it can. Full rules:
+# docs/SETTINGS.md; the real gate is KannuTests/SettingsLayoutRulesTests (no CI job runs
+# this hook). Reads the index, like every check here.
+settings_offender=$(git diff --cached --name-only -- 'Kannu/components/Settings/*.swift' | while read -r f; do
+  git show ":${f}" 2>/dev/null | awk -v file="${f}" '
+    { trimmed = $0; sub(/^[[:space:]]+/, "", trimmed) }
+    trimmed ~ /^\/\// { prev = ""; next }
+    /header: \{[[:space:]]*Text\(/ || /footer: \{[[:space:]]*Text\(/ { print file ": " trimmed }
+    prev ~ /(header|footer): \{[[:space:]]*$/ && trimmed ~ /^Text\(/ { print file ": " trimmed }
+    { prev = $0 }
+  '
+done)
+if [[ -n "${settings_offender}" ]]; then
+  cat <<EOF
+ERROR: a Settings Section header/footer is a raw Text — it cannot be selected.
+Use SettingsSectionHeader / SettingsFooter instead. See docs/SETTINGS.md.
+${settings_offender}
+EOF
+  exit 1
+fi
+
 # --- Modal presentation invariant ---------------------------------------------
 # A file panel's runModal() stops the main run loop, and this app keeps publishing on the
 # main queue while it is stopped, so SwiftUI re-enters layout underneath the modal session.

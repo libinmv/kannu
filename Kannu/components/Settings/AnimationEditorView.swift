@@ -111,6 +111,7 @@ struct AnimationEditorView: View {
                 Text(sourceDescription)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
             }
             Spacer()
             Button("Cancel") {
@@ -145,6 +146,7 @@ struct AnimationEditorView: View {
                 Text("Dash outline equals the exact notch bounds.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
             }
             previewCanvas
             previewZoomControls
@@ -198,6 +200,7 @@ struct AnimationEditorView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
+                    .textSelection(.enabled)
             }
             HStack(spacing: 10) {
                 Button {
@@ -240,6 +243,7 @@ struct AnimationEditorView: View {
             Text("Current Transform")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .textSelection(.enabled)
             HStack(spacing: 10) {
                 PreviewStatChip(title: "Scale", value: String(format: "%.2fx", scale))
                 PreviewStatChip(title: "Output", value: "\(Int(cropWidth * scale))x\(Int(cropHeight * scale)) px")
@@ -257,6 +261,7 @@ struct AnimationEditorView: View {
                             Text("Animation Name")
                                 .font(.subheadline)
                                 .fontWeight(.medium)
+                                .textSelection(.enabled)
                             TextField("Name", text: $name)
                                 .textFieldStyle(.roundedBorder)
                         }
@@ -273,6 +278,7 @@ struct AnimationEditorView: View {
                             Text("Loop Mode")
                                 .font(.subheadline)
                                 .fontWeight(.medium)
+                                .textSelection(.enabled)
                             Picker("Loop Mode", selection: $loopMode) {
                                 ForEach(AnimationLoopMode.allCases, id: \.self) { mode in
                                     Text(mode.rawValue).tag(mode)
@@ -361,14 +367,24 @@ struct AnimationEditorView: View {
                             resetValue: 1,
                             step: 0.01
                         )
-                        Toggle(isOn: $expandWithAnimation) {
+                        // The caption sits beside the toggle, not inside its label, so it stays
+                        // selectable without swallowing the toggle's click.
+                        HStack(alignment: .top, spacing: 8) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Expand notch to follow animation width")
                                     .fontWeight(.medium)
+                                    .textSelection(.enabled)
                                 Text("Enable when scaling beyond 30x20px so the Kannu opens gracefully.")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
                             }
+                            Spacer()
+                            Toggle(isOn: $expandWithAnimation) {
+                                Text("Expand notch to follow animation width")
+                            }
+                            .labelsHidden()
+                            .toggleStyle(.switch)
                         }
                     }
                 }
@@ -539,6 +555,7 @@ private struct EditorSectionCard<Content: View>: View {
                     Text(subtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
                 }
             }
             content
@@ -574,6 +591,7 @@ private struct ParameterSliderRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
+                    .textSelection(.enabled)
             }
             HStack(spacing: 10) {
                 slider
@@ -614,10 +632,12 @@ private struct PreviewStatChip: View {
             Text(title)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+                .textSelection(.enabled)
             Text(value)
                 .font(.caption)
                 .fontWeight(.semibold)
                 .monospacedDigit()
+                .textSelection(.enabled)
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 10)

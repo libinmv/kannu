@@ -1,0 +1,57 @@
+# Settings construction rules
+
+How a Settings section is built in Kannu. These rules exist so every tab reads like System
+Settings, and so anything informational on screen can be selected and copied. They are enforced,
+not advisory: `KannuTests/SettingsLayoutRulesTests.swift` scans the sources under
+`Kannu/components/Settings/` and fails on a violation, and `.githooks/pre-commit` runs a fast
+subset of the same checks. When a rule here and the test disagree, the test wins — fix this file.
+
+## The one law
+
+**Explanatory text is selectable; control labels never are.** A selectable `Text` inside a
+`Toggle`/`Picker`/`Button`/`Stepper`/`Slider`/`Menu` label swallows the click meant for the
+control. That is why a row with a description hides the control's own label (kept for
+accessibility) and draws the title beside the control instead — and why a caption must never live
+inside a control's label. If a control needs a caption, put the text next to the control
+(`SettingsRow(title, description:)`, or an adjacent `VStack` with the control's label hidden),
+never inside it.
+
+## Which component for what
+
+All in `Kannu/components/Settings/SettingsComponents.swift`. Never rebuild these shapes by hand.
+
+| You are adding | Use |
+|---|---|
+| A section header | `SettingsSectionHeader("…")` — never a raw `Text` in `header: {}` |
+| Text under a group of rows | `SettingsFooter("…")` — never a raw `Text` in `footer: {}` |
+| A row: title (+ caption) with a trailing control | `SettingsRow("Title", description: "…") { control }` |
+| A slider row | `SettingsSliderRow` — one width everywhere, selectable readout |
+| A read-only trailing value (path, date, count) | `SettingsValueText(value)` |
+| A status line with a ready dot | `SettingsStatusText(text, isReady:)` |
+| A red error line under a control | `SettingsErrorText(message)` |
+| One or more buttons on a row | `SettingsActionRow` — trailing, never a lone left-hanging button |
+| Overflow actions on a row | `SettingsMoreMenu { … }` (the "…" button) |
+| Free-standing explanatory text | `.settingsDescriptionStyle()` (selectable, secondary, wraps) |
+| A copy-to-pasteboard action for agents | `CopyForAgentButton` |
+
+## Section rules
+
+- One concern per `Section`; separate concerns get separate Sections, never a `Divider` inside one.
+- Every row with a `settingsSearchIndex` entry carries a `.settingsHighlight(id:)` whose id
+  matches the entry exactly (`SettingsHighlightInventoryTests` pins the pairing and the counts;
+  the counts move only as a deliberate edit).
+- Captions and footers state what the thing does and what "off" means, in plain words.
+- Badges (`customBadge`, `comingSoonTag`, `alphaBadge`, `proFeatureBadge`) are decorative chips
+  and stay unselectable — they are the pinned exceptions in `SettingsLayoutRulesTests`, along
+  with labels inside tappable cards. A new exception is added to that pin with a reason, not
+  slipped past it.
+- User-facing strings use `String(localized:)`; the shared components take `LocalizedStringKey`
+  so literals localize on their own.
+
+## Selectability in practice
+
+- New informational `Text` styled secondary/caption gets `.textSelection(.enabled)` or goes
+  through `settingsDescriptionStyle()`; the layout test counts the survivors per file.
+- A container-level `.textSelection(.enabled)` covers every `Text` inside it — fine for a small
+  legend or a two-line prose row.
+- `LabeledContent` labels and values are display, not controls: both sides may be selectable.
