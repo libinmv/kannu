@@ -36,6 +36,17 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     window until the next reconfiguration; the teardown runs before the guard.
   - `DiagnosticScrub.paths` redacts `/Volumes/<name>` — usually the owner's name — in hang and crash
     reports alike.
+  - **The usage gauge is out of the notch** (moved here from #30 at the user's request). It showed
+    `gauge.with.dots.needle.100percent` beside the traffic light whenever a live usage window passed
+    95 %, and it was not understandable: a bare 9 pt dial with no number and no window name, next to
+    a shield glyph of the same size and colour — it is what prompted "what is this new icon and why
+    are no findings listed", the honest answer being that it is not a finding at all. Removed with
+    its `showUsageLimitCue` key, its Settings row and that row's search entry, so no setting is left
+    controlling nothing. `UsageAlertManager` is untouched: the opt-in push still fires and the Usage
+    tab still shows the bars and the forecast. That call site was the closed notch's only use of
+    `usageAlerts`, so the traffic light no longer observes the alert manager at all.
+  - `SettingsHighlightInventoryTests`' pinned counts move 201/252/246 → 200/251/245 — pinned so a
+    removed row has to be a deliberate edit rather than a row that quietly lost its modifier.
 
 ### 2026-09-16 - The shield shows without agent activity, and only once
 - **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — findings M6 and L4 of that review
