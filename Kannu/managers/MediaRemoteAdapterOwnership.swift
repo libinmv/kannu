@@ -42,30 +42,33 @@ enum MediaRemoteAdapterOwnership {
     static let orphanParentPID: Int32 = 1
 
     /// - Parameters:
-    ///   - command: the process's full argv, space-joined.
+    ///   - argv: the process's argv, one element per argument, `argv[0]` included.
     ///   - parentPID: its current parent.
     ///   - ownScriptPath: the absolute path of *this* bundle's `mediaremote-adapter.pl`.
-    static func isReapable(command: String, parentPID: Int32, ownScriptPath: String) -> Bool {
+    static func isReapable(argv: [String], parentPID: Int32, ownScriptPath: String) -> Bool {
         guard parentPID == orphanParentPID else { return false }
         guard !ownScriptPath.isEmpty else { return false }
-        return commandNamesScript(command, ownScriptPath)
+        return commandNamesScript(argv, ownScriptPath)
     }
 
-    /// Whether `command` runs `path` as its script argument.
+    /// Whether `argv` runs `path` as its script argument.
     ///
     /// Positional, not a search: the script must be the argument immediately after the interpreter.
     /// `Process` sets `argv[0]` to the executable path and appends `arguments` after it, so the adapter
     /// reconstructs as `/usr/bin/perl <script> <framework> stream` — index 0 is `perl`, index 1 is the
     /// script. (Confirmed against real `ps` output, and pinned by the tests.)
     ///
-    /// A whole-token search anywhere in the command would also accept a `perl` process that merely
+    /// The arguments arrive as the kernel hands them out, one element each. They were space-joined
+    /// and split again once, which made a bundle under a path with a space in it — `/Applications/Dev
+    /// Tools/Kannu.app` — never match, so its orphans were never reaped (closed, at least: nothing
+    /// else was signalled either).
+    ///
+    /// A whole-token search anywhere in argv would also accept a `perl` process that merely
     /// *mentions* the path — reading it, linting it, passing it to something else. Requiring the
     /// position fails closed: if argv ever does not look like this, nothing is reaped, which leaks at
     /// worst. Searching fails open, which signals someone else's process.
-    static func commandNamesScript(_ command: String, _ path: String) -> Bool {
-        guard !path.isEmpty else { return false }
-        let tokens = command.split(separator: " ", omittingEmptySubsequences: true)
-        guard tokens.count >= 2 else { return false }
-        return tokens[1] == path
+    static func commandNamesScript(_ argv: [String], _ path: String) -> Bool {
+        guard !path.isEmpty, argv.count >= 2 else { return false }
+        return argv[1] == path
     }
 }
