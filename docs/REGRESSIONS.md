@@ -372,13 +372,13 @@ environment is plain inheritance (`nil`), the forbidden env key is recorded, and
 stays bare** — that bare invocation is the one observed to actually fetch. Both regressions were
 verified to turn the suite red before this was committed.
 
----
-
 **2026-09-10 addendum.** The ADR Detection run (`uv run --project <checkout> python
 <adapter> …`) is pinned the same way: `ADRDetectionCommand` holds the arguments and the
 environment whitelist as data, `ADRDetectionCommandTests` pins both, and the embedded adapter is
 tested identical to `scripts/adr-analyze-session.py`. Permission and tool flags never pass
 through Kannu — the adapter alone decides how upstream runs its Claude session.
+
+---
 
 ## 9. Notch tooltips are custom; `.help()` is dead there
 
@@ -396,7 +396,8 @@ active application, and this accessory app with a non-activating panel is never 
 the type system or the build says so.
 
 **Guard — exists.** `.githooks/pre-commit` rejects any `.help(` in those directories, requires
-`HoverTooltip.swift` to keep a bare `.fixedSize()`, and rejects `fixedSize(horizontal:)` there.
+`HoverTooltip.swift` to keep a bare `.fixedSize()`, and rejects `fixedSize(horizontal:)` in that one
+file — not directory-wide; `AgentTrafficLightLiveActivity` uses it legitimately.
 The layout rules that cannot be grepped — `edge` versus container clipping, one hover source per
 control — are written up in **docs/TOOLTIPS.md** with the reasoning and a checklist.
 
@@ -546,22 +547,7 @@ interleave" was true only for a caller that collects on main. It reads the count
 now, and the doc says `nil` is for main-thread callers only. Guards unchanged: the revert half by
 `BluetoothLiveBatteryWritesTests`, the spawn half by the manual `sample` check — still missing.
 
-## 13. A live Claude session is never resumed
-
-**Rule:** `claude://resume?session=<id>` imports a transcript into Claude Desktop and starts a new
-`claude --resume` host for it. On a session whose process is still alive that is a second consumer
-of the same transcript. Only a chat whose process is gone may be resumed, and only once its card is
-dim. A live chat goes to its terminal, its tmux pane, or nowhere.
-
-**What happened (2026-09-11).** The opener's own header already said "never resume a live
-session", but the Claude arm resumed any `.inactive` card that had no reachable host. A live but
-idle session in tmux (whose server's parent is launchd), `screen` or ssh has a `hostPID` and no GUI
-app up its parent chain, and its dim card read as "not running" — so a click spawned a duplicate.
-
-**Guard.** The decision moved into `AgentClickThroughPolicy` (logic target);
-`AgentClickThroughPolicyTests.testInactiveLiveSessionNeverResumes` and
-`…testLiveSessionWithoutAHostNeverResumes` pin it. A live process is "live" by `hostPID` today;
-anything that later proves liveness (a hook-reported terminal) must feed the same flag.
+---
 
 ## 12. Yellow follows evidence, not the clock
 
@@ -599,6 +585,27 @@ target — manual check: the waiting session's file survives past 30 min in `~/.
 **Never** fix a false yellow by shortening `awaitingInputStaleMs` or by refreshing `ts` in the
 script. Add or remove evidence.
 
+---
+
+## 13. A live Claude session is never resumed
+
+**Rule:** `claude://resume?session=<id>` imports a transcript into Claude Desktop and starts a new
+`claude --resume` host for it. On a session whose process is still alive that is a second consumer
+of the same transcript. Only a chat whose process is gone may be resumed, and only once its card is
+dim. A live chat goes to its terminal, its tmux pane, or nowhere.
+
+**Broken once**, fixed in `b759a4e` (2026-09-11). The opener's own header already said "never resume a
+live session", but the Claude arm resumed any `.inactive` card that had no reachable host. A live but
+idle session in tmux (whose server's parent is launchd), `screen` or ssh has a `hostPID` and no GUI
+app up its parent chain, and its dim card read as "not running" — so a click spawned a duplicate.
+
+**Guard.** The decision moved into `AgentClickThroughPolicy` (logic target);
+`AgentClickThroughPolicyTests.testInactiveLiveSessionNeverResumes` and
+`…testLiveSessionWithoutAHostNeverResumes` pin it. A live process is "live" by `hostPID` today;
+anything that later proves liveness (a hook-reported terminal) must feed the same flag.
+
+---
+
 ## 14. Nothing stops the main thread except one helper
 
 **Rule:** `runModal()` and `beginSheetModal` appear only in `Kannu/helpers/ModalPresenter.swift`.
@@ -606,7 +613,9 @@ A file panel is never modal — `NSSavePanel.begin(completionHandler:)` exists. 
 when a titled window is on screen, and otherwise activated and raised above Kannu's own windows
 before it runs. No sheet is ever anchored to a window that cannot be focused.
 
-**What happened (2026-09-12).** A user clicked the ADR policy picker and Kannu stopped. A sample of
+**Broken twice**, fixed in `ed7b0ca` (2026-09-12, the five Settings pickers) and `f6c6bfc`
+(2026-09-12, the ban, after the RPC picker and the alerts were found still modal). A user clicked the
+ADR policy picker and Kannu stopped. A sample of
 the live process named it: `choosePolicyFile()` → `-[NSSavePanel runModal]` →
 `-[NSApplication runModalForWindow:]`, parked in `__CFRunLoopRun` for 1,596 of 1,599 samples at 0 %
 CPU with the panel out of reach — which the user reported as a crash, because force-quitting is what
@@ -629,6 +638,8 @@ regex that stops matching fails loudly instead of passing vacuously.
 
 **Never** answer "the panel did not appear" by activating harder. If a panel or alert is not on
 screen, the question is which window it was anchored to.
+
+---
 
 ## 15. A request's clock spans the request, not the last state change
 
@@ -670,6 +681,8 @@ a single run.
 
 **Never** fix a reset by widening a staleness window. Entry 2 and entry 12 are the same lesson: the
 clock is not the state machine.
+
+---
 
 ## Danger zones
 

@@ -215,7 +215,8 @@ enum AgentSessionOpener {
             if source != .claudeDesktop, let cwd = session.cwd, FileManager.default.fileExists(atPath: cwd) {
                 // Launch the IDE on the session's project rather than bare — lands the user
                 // in the right workspace even from cold.
-                log.notice("launching \(appURL.lastPathComponent, privacy: .public) on \(cwd, privacy: .public)")
+                // The app name is fine in the unified log; the project path is the user's.
+                log.notice("launching \(appURL.lastPathComponent, privacy: .public) on \(cwd, privacy: .private)")
                 NSWorkspace.shared.open([URL(fileURLWithPath: cwd)], withApplicationAt: appURL, configuration: configuration)
             } else {
                 log.notice("launching \(appURL.lastPathComponent, privacy: .public)")
