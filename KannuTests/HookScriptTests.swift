@@ -340,6 +340,18 @@ final class HookScriptTests: XCTestCase {
         XCTAssertTrue(try policySightings("tl2").isEmpty)
     }
 
+    func testANullReasonIsAnAbsentReasonInTheHookToo() throws {
+        // Settings reads null as "no reason"; the hook rejected the whole file, so Settings said
+        // "2 rules" while nothing was matched or blocked.
+        try writePolicy(#"{"version": 1, "block": [{"command": "ssh", "reason": null}, {"command": null, "tool": "WebFetch"}]}"#)
+        try placeMarker(AgentPolicy.enforceMarker)
+        let out = try run(state: "executing", event: "PreToolUse", conversation: "nul1",
+                          extra: ["tool_input": ["command": "ssh prod"]])
+        XCTAssertTrue(out.contains(#""permissionDecision":"deny""#), out)
+        XCTAssertTrue(out.contains("Ask the user before trying another way."), "no reason, the fixed text only")
+        XCTAssertEqual(try policySightings("nul1").first?["blocked"] as? Bool, true)
+    }
+
     func testAMalformedPolicyMeansNoPolicyAndTheHookStillAnswers() throws {
         try placeMarker(AgentPolicy.enforceMarker)
         for (name, json) in [("not json", "{"), ("wrong version", #"{"version": 2, "block": [{"command": "ssh"}]}"#),

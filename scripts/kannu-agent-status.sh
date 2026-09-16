@@ -913,6 +913,10 @@ def load_policy():
         if not isinstance(rule, dict):
             return None
         reason = rule.get("reason", "")
+        if reason is None:
+            # JSON null is an absent reason, as it is for "command" and "tool" -- and as Settings
+            # reads it. Rejected here, the file was "valid, 3 rules" in Settings and nothing here.
+            reason = ""
         if reason != "" and not policy_text(reason):
             return None
         command, tool_name = rule.get("command"), rule.get("tool")

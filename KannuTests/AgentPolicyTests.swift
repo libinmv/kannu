@@ -31,6 +31,9 @@ final class AgentPolicyTests: XCTestCase {
         XCTAssertEqual(policy.rules[0], .init(command: "ssh", tool: nil, reason: "Servers are off limits."))
         XCTAssertEqual(policy.rules[1], .init(command: "rm -rf /", tool: nil, reason: nil))
         XCTAssertEqual(policy.rules[2], .init(command: nil, tool: "WebFetch", reason: nil))
+        // null is absent for every key — the hook reads it the same way (HookScriptTests).
+        let nulls = try parse(#"{"version": 1, "block": [{"command": "ssh", "reason": null}, {"command": null, "tool": "WebFetch", "reason": null}]}"#).get()
+        XCTAssertEqual(nulls.rules, [.init(command: "ssh", tool: nil, reason: nil), .init(command: nil, tool: "WebFetch", reason: nil)])
     }
 
     func testEveryWayAFileIsIgnoredHasAReason() {

@@ -37,6 +37,10 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     plus carried junk), `AgentPolicyTests` (every shape and cap, the drafting prompt), sightings and
     guide tests; `SettingsHighlightInventoryTests` counts +2. `docs/ADR.md` §9 documents it and §6
     says which "policy" is which; `docs/REGRESSIONS.md` entry 1 gains the v42 addendum.
+  - CodeRabbit on this PR: a rule with `"reason": null` made the hook reject the whole file while
+    Settings read the same file as valid ("2 rules") — nothing matched or blocked, and Settings said
+    otherwise. `null` is an absent reason in the hook now, as it already was for `command` and `tool`
+    and in Swift; `AgentPolicyTests` and a new `HookScriptTests` case pin both sides.
   - Not verified here: a live Cursor refusal (the shape follows Cursor's hook docs and the symmetry
     of the `permission: allow` Kannu already sends) — that live check is the first thing to do with
     a Cursor agent chat.
