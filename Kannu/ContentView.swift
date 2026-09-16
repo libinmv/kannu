@@ -504,6 +504,10 @@ struct ContentView: View {
         // shared snapshot — testing `isPlaying` alone missed the paused-but-still-shown pill,
         // which is exactly when the blink was visible.
         if isClosedMusicPairingEligible { return true }
+        // A pending high finding is a cue in its own right. With no agent activity there is no
+        // deadline and no hover, and the shield the Settings copy promises ("stays beside the
+        // traffic light until you acknowledge") never appeared on a notched Mac.
+        if securityCueWanted { return true }
         return agentLightDeadline != nil || isHovering
     }
 

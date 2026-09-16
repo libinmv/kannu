@@ -4,6 +4,19 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-16 - The shield shows without agent activity, and only once
+- **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — findings M6 and L4 of that review
+- **Agent label:** Follow-up 42, PR F — notch security cue
+- **Changes:**
+  - `showAgentTrafficLight` admitted `securityCueWanted` through its first guard only; on a notched
+    Mac the last line still required an agent-activity deadline or a hover, so a high finding with no
+    agent running never showed the shield the Settings copy promises. A pending high finding now
+    shows the light on its own.
+  - `AgentTrafficLightIndicator` drew its standalone shield in every mode but Off while
+    `SecurityAlertPill` drew its own beside it, so pill modes showed two shields (and the width
+    jumped twice in the five-second mode). The indicator suppresses its glyph while the pill is
+    visible.
+
 ### 2026-09-16 - A kept hook file no longer hides a finished chat, and a leftover subagent never shows one as running
 - **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — findings M5, L2 and L3 of that review
 - **Agent label:** Follow-up 42, PR E — agent status state
