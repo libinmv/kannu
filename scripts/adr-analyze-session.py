@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# KANNU_ADR_ADAPTER_VERSION=2
+# KANNU_ADR_ADAPTER_VERSION=3
 #
 # Kannu (കണ്ണ്) — Copyright (C) 2024-2026 Kannu Contributors — GPL-3.0-or-later.
 #
@@ -52,6 +52,9 @@ def load_transcript(path, max_messages):
             try:
                 record = json.loads(line)
             except ValueError:
+                continue
+            if not isinstance(record, dict):
+                # `[]`, `"x"` or `123` is valid JSON with no .get(); it used to be a traceback.
                 continue
             kind = record.get("type")
             message = record.get("message") if isinstance(record.get("message"), dict) else {}

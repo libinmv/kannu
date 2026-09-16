@@ -24,10 +24,10 @@ Calendar, terminal, and color picker features from the Atoll/Boring.Notch lineag
 
 ## Requirements
 
-- macOS 14.0 or later (optimised for macOS 15+).
+- macOS 14.6 or later (optimised for macOS 15+).
 - MacBook with a notch, or a non-notch Mac using floating Dynamic Island pill mode.
 - Apple silicon or Intel — the app builds universal.
-- Xcode 15+ to build from source.
+- Xcode 16+ to build from source (the source needs Swift 6.1).
 - Permissions as needed: Accessibility, Screen Recording, Music.
 
 
@@ -59,9 +59,10 @@ For detailed prompts and one-click setup actions, open **Settings** in Kannu. Co
 
 ### "Kannu can't be opened" (Gatekeeper)
 
-Release builds are ad-hoc signed and not notarized by Apple, so macOS shows a
-warning on first launch. This is expected for free open-source apps — you can
-bypass it once and macOS remembers your choice:
+Releases on the Releases page are signed with a Developer ID and notarized by Apple, so a DMG
+downloaded from there opens without a warning. A build you made yourself, or a DMG somebody
+handed you outside the Releases page, is not — macOS then shows a warning on first launch, which
+you can bypass once (macOS remembers your choice):
 
 - **Right-click (or Control-click)** `Kannu.app` **in Applications and choose "Open"**, then click **Open** in the dialog. On macOS 15 (Sequoia) and later, the option may only appear the *second* time you right-click → Open.
 - If there is no Open button: go to **System Settings → Privacy & Security**, scroll down to the message about Kannu being blocked, and click **Open Anyway**.

@@ -1391,11 +1391,19 @@ struct GeneralSettings: View {
     /// would be a control that does nothing.
     @ViewBuilder
     private var perDisplayOverridesSection: some View {
-        perDisplayOverrideSections(
-            NSScreen.screens
-                .filter { $0.safeAreaInsets.top <= 0 }
-                .map { (name: $0.localizedName, isBuiltIn: isBuiltInDisplay($0)) }
-        )
+        perDisplayOverrideSections(overrideDisplays)
+    }
+
+    /// One entry per *name*: the override dictionaries are keyed by `localizedName`, so two
+    /// identical monitors share one entry, and two rows with one identity made SwiftUI's `ForEach`
+    /// undefined. One row for the pair is honest about what the setting can express; keying the
+    /// overrides on `CGDirectDisplayID` is the real fix and is recorded as a follow-up.
+    private var overrideDisplays: [(name: String, isBuiltIn: Bool)] {
+        var seen = Set<String>()
+        return NSScreen.screens
+            .filter { $0.safeAreaInsets.top <= 0 }
+            .map { (name: $0.localizedName, isBuiltIn: isBuiltInDisplay($0)) }
+            .filter { seen.insert($0.name).inserted }
     }
 
     /// One group per display: its two overrides and Reset. The explanation sits under the last one.

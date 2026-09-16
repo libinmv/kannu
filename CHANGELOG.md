@@ -4,6 +4,41 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-16 - The pre-commit hook reads the index, the ledger gets its hashes back, and the docs match the code
+- **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — findings L1, L14, L16, L17, the quality and docs items
+- **Agent label:** Follow-up 42, PR I — guards, docs, hygiene
+- **Changes:**
+  - `.githooks/pre-commit`'s hook-script mirror check and modal ban read the working tree; the
+    CHANGELOG check read the index. Stage a drifted mirror while a matching copy sits unstaged and
+    the hook passed the commit it was gating. Both read what is being committed now (`git show
+    ":path"`, `git grep --cached`), and `/*` joins the comment exemption so the hook and
+    `ModalPresentationRulesTests` agree.
+  - `scripts/adr-analyze-session.py` (and its embedded copy, marker 3): a transcript line that is
+    valid JSON but not an object raised `AttributeError` — a traceback on stderr and "exited 1
+    without a verdict" for that chat. Skipped now.
+  - `AgentSessionOpener` logged the project path with `privacy: .public`, the only user path in the
+    range written unredacted to the unified log. `NotchAgentStatusView` stat-ed the ADR report from
+    inside a menu builder on every render; the menu item shows whenever a report path exists.
+  - Settings' per-display override rows were keyed by `localizedName`, so two identical monitors gave
+    `ForEach` duplicate identities. One row per name now — honest about what name-keyed overrides
+    can express. Keying the overrides on `CGDirectDisplayID` touches every consumer in
+    `ContentView` and `matters.swift` and cannot be verified without a second display here; recorded
+    as a follow-up, not done blind.
+  - Dead code: `migrateDisplayPlacement` wrote the new key to its own default behind a flag and never
+    read the legacy keys its comment named (losing `preferredScreen` was the Follow-up 33 decision);
+    it, `didMigrateDisplayPlacement`, `showOnAllDisplays` and `automaticallySwitchDisplay` are gone.
+    `adrSensorDirectory` had no reader. `cleanupWindows` duplicated `tearDownAllWindows` and tore
+    down only the current placement's lifecycle; the screen-change task calls the full one.
+  - `docs/REGRESSIONS.md`: entries 13 and 14 carry their commit hashes (the ledger's own bar),
+    entry 13 is filed after 12, entries 12–15 have their separators back, entry 8's ADR addendum sits
+    inside entry 8, and entry 9 no longer claims a directory-wide `fixedSize(horizontal:)` ban.
+  - `ReadMe.md`: macOS 14.6 (the target), Xcode 16+, and the Gatekeeper section says Releases are
+    notarized and keeps the workaround for self-built DMGs.
+  - `ClaudeTurnTokenFollower` joins the logic target so it can be tested; `BrowserTabLocator`
+    (it calls the app's `AppleScriptHelper`) and `MediaRemoteAdapterReaper` (the app's `Logger`)
+    cannot yet. One GPL header (`ClaudeDesktopAgentSessionStore.swift`) had an extra blank comment
+    line; fixed.
+
 ### 2026-09-16 - One bounded process runner, and the reaper compares argv as argv
 - **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — findings M11, L9, L15 and L8 of that review, and the reuse pass's "five copies of one shell runner"
 - **Agent label:** Follow-up 42, PR H — bounded process runner
