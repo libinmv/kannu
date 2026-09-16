@@ -4,6 +4,37 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-16 - The Bluetooth connect path stops spawning on the main thread
+- **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — findings H1 and L5 of that review
+- **Agent label:** Follow-up 42, PR A — Bluetooth connect path
+- **Changes:**
+  - #27 moved the *forced* battery refresh onto `pmsetFetchQueue` and measured the connect path at
+    0 ms with zero devices connected. With a device actually connecting, `checkForNewlyConnectedDevices`
+    (main thread: the 3 s poll and the connect notification) first built the device through
+    `createBluetoothAudioDevice`'s default `includeBattery: true`, whose `getBatteryLevel` ran an
+    unforced `updateBatteryStatuses()` — on a cache older than 20 s that is `system_profiler` and
+    `pmset` inline on the main thread, immediately before the connect HUD. The original 2-8 s stall,
+    one call earlier than the one #27 fixed.
+  - `getBatteryLevel` and the `includeBattery` parameter are deleted rather than defaulted off: the
+    device is built without a level and `refreshBatteryLevelsForConnectedDevices` on the next line
+    applies the cache and fetches the rest off-main, so there is no synchronous way left to ask for a
+    level. `updateBatteryStatuses` now runs only on `pmsetFetchQueue` and the launch scan's queue.
+  - The launch scan (`checkInitialDevices`, utility queue) called the forced scan with no
+    `liveWriteBaseline`, so a live BLE write landing during its `system_profiler` run was reverted by
+    the older snapshot — the race #27 fixed for the forced refresh, in its other off-main caller. It
+    reads `liveBatteryWriteSequence` on main first now; the parameter doc no longer claims `nil`
+    means nothing can interleave.
+  - `docs/REGRESSIONS.md` entry 11 gains a 2026-09-16 addendum restating the rule at full width — no
+    collector on the main thread, forced or not — and the Danger zones row counts the fourth pass.
+  - Found by CodeRabbit on this PR, same class, one field over: `detectDeviceType` asked for the
+    device's vendor/product id *before* reading its name, and on a device missing from both
+    Bluetooth preference caches `vendorProductIDs(for:)` fell back to spawning `system_profiler`
+    synchronously — also inside `createBluetoothAudioDevice`, also on the main thread. The fallback
+    is deleted; a device the caches do not know is typed by its name, or shown as generic. Nothing
+    in `createBluetoothAudioDevice` spawns anything now.
+  - Not verified here: a real connect (17 devices paired, none connected on this Mac). The claim is
+    the call chain, checked by reading; the `sample` check after a connect is still the manual guard.
+
 ### 2026-09-13 - The documented clone flow works again
 - **Developer label:** "CONTRIBUTING.md still says cd AgentStatDynamicIsland — the pre-rename repo name"
 - **Agent label:** Follow-up 38 — the one-line fix, plus a booby trap found next to it
