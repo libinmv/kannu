@@ -30,6 +30,10 @@ struct ClaudeUsageSnapshot: Equatable {
         /// reports one. Today only the cached-usage source carries it; the statusline hook (v4+)
         /// forwards it whenever a bucket supplies one. Drives the bar accent.
         var severity: String? = nil
+        /// True when `resetsAt` was derived rather than reported — the desktop history records no
+        /// reset and infers one from the last rollover it saw. `merged` never lets such a reset
+        /// displace an exact one for the same key, whatever their ages.
+        var resetIsInferred: Bool = false
     }
 
     let windows: [Window]
@@ -149,10 +153,23 @@ struct ClaudeUsageSnapshot: Equatable {
     /// the gauges do not reshuffle between reads. `observedAt` is the newest among the sources
     /// that contributed a window.
     ///
+    /// One exception to "the winning window is taken whole": an *inferred* reset never beats an
+    /// exact one. The desktop history derives its reset from the last rollover it happened to
+    /// sample, so it lands minutes after the server's; taken by freshness it displaced the API's
+    /// own reset on every read, the countdown moved, and the usage-alert push key — which is the
+    /// reset — treated the same window as a new instance and pushed it twice. The fresher percent
+    /// still wins; its reset is borrowed from the highest-ranked live source that has an exact one.
+    ///
     /// Returns nil when nothing is live anywhere. Pure in its inputs, so repeated merges of
     /// unchanged files compare equal and do not republish.
     static func merged(_ sources: [ClaudeUsageSnapshot?], now: Date) -> ClaudeUsageSnapshot? {
         let present = sources.compactMap { $0 }
+        var exactResets: [String: Date] = [:]
+        for source in present {
+            for window in source.displayWindows(now: now) where !window.resetIsInferred {
+                if let reset = window.resetsAt, exactResets[window.key] == nil { exactResets[window.key] = reset }
+            }
+        }
         // Winner per key: newest observedAt, ties to the earlier (higher-ranked) source.
         var winnerIndex: [String: Int] = [:]
         for (index, source) in present.enumerated() {
@@ -167,7 +184,12 @@ struct ClaudeUsageSnapshot: Equatable {
         var observedAt: Date?
         for (index, source) in present.enumerated() {
             for window in source.displayWindows(now: now) where winnerIndex[window.key] == index {
-                windows.append(window)
+                if window.resetIsInferred, let exact = exactResets[window.key] {
+                    windows.append(Window(key: window.key, percent: window.percent, resetsAt: exact,
+                                          label: window.label, severity: window.severity, resetIsInferred: false))
+                } else {
+                    windows.append(window)
+                }
                 observedAt = max(observedAt ?? source.observedAt, source.observedAt)
             }
         }
