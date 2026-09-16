@@ -513,6 +513,26 @@ and confirm no `system_profiler` or `pmset` frame appears on the main thread. Th
 guarded: `BluetoothLiveBatteryWritesTests` pins both directions, including that a scan can still lower
 a value as the battery drains — the half a careless fix breaks.
 
+**2026-09-16 addendum — the fourth pass, and the rule at full width.** The 2026-09-13 fix moved the
+*forced* refresh onto `pmsetFetchQueue` and measured the connect path at 0 ms — with zero devices
+connected. With a device actually connecting, `checkForNewlyConnectedDevices` (main thread: the 3 s
+poll and the connect notification) first built the device through `createBluetoothAudioDevice`'s
+default `includeBattery: true`, whose `getBatteryLevel` ran an *unforced* `updateBatteryStatuses()`;
+on a cache older than 20 s that is both collectors inline, on main, immediately before the connect
+HUD — the original stall, one call earlier than the one that was fixed. Found by a review of the
+merged PR, not by a user, because this Mac has nothing to connect. The rule as the addendum above
+stated it ("the forced collection runs on `pmsetFetchQueue`") was narrower than the rule:
+**no collector runs on the main thread, forced or not.** `getBatteryLevel` and the `includeBattery`
+parameter are gone, so there is no longer a synchronous way to ask for a level;
+`updateBatteryStatuses` is called only from `pmsetFetchQueue` and the launch scan's utility queue.
+
+The launch scan also needed the second half of the rule. It collects off main too, and called the
+forced scan with no `liveWriteBaseline`, so a live BLE write landing during its `system_profiler` run
+was reverted exactly as in the forced-refresh case above; the parameter doc's "nothing can
+interleave" was true only for a caller that collects on main. It reads the counter on main first
+now, and the doc says `nil` is for main-thread callers only. Guards unchanged: the revert half by
+`BluetoothLiveBatteryWritesTests`, the spawn half by the manual `sample` check — still missing.
+
 ## 13. A live Claude session is never resumed
 
 **Rule:** `claude://resume?session=<id>` imports a transcript into Claude Desktop and starts a new
@@ -649,7 +669,7 @@ Commit counts across all branches (`--follow`, so pre-rename history counts):
 | `AgentHookInstaller.swift` | 17 | Embedded script + event table + install/uninstall/migration. Grows monotonically; every growth episode has broken `checkInstalled` or a migration (entries 1 and 6). |
 | `CursorAgentStatusMonitor.swift` (usage spawn) | — | The `/usage` fetch invocation. Two silent breakages in one day from added flags/env (entry 8). |
 | `ModalPresenter.swift` | 2 | The only place allowed to stop the main run loop. Every site in the app funnels through it, and the hang watchdog trusts it to declare a deliberate stall (entry 14). |
-| `BluetoothAudioManager.swift` | 19 | Battery collection. Spawns `system_profiler` and `pmset` and waits, on whatever thread calls it — moved off main three separate times, twice re-landing there in the same change that was meant to fix it (entry 11, 2026-09-13 addendum). |
+| `BluetoothAudioManager.swift` | 19 | Battery collection. Spawns `system_profiler` and `pmset` and waits, on whatever thread calls it — moved off main four separate times: twice re-landing there in the same change that was meant to fix it, once leaving the connect path itself on main (entry 11, 2026-09-13 and 2026-09-16 addenda). |
 | `AgentSessionLogParser.swift` | 8 | `readTrailingLines` and the tail verdict. 4 of 8 commits touch the reader; **2 of those 4 fix the same failure mode** — the reader returning nil and silently sending callers down a wrong path (entry 4). |
 
 If you are changing a *constant* in `AgentTrafficLightState.swift`, assume it is load-bearing

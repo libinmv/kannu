@@ -296,12 +296,10 @@ class BluetoothAudioManager: ObservableObject {
         
         print("🎧 [BluetoothAudioManager] Found \(connectedAudioDevices.count) connected audio devices")
 
-        // No battery lookup on this queue: it reads batteryStatusByName/ByAddress and
-        // missingBatteryLog, which the main thread mutates concurrently from the pmset
-        // completion and the merge helpers — an unsynchronised Dictionary race. Battery is
-        // filled on main below from the cache this scan warms.
+        // No battery lookup on this queue: the caches are main-thread state. Battery is filled
+        // on main below from the cache this scan warms.
         let devices = connectedAudioDevices.compactMap { device in
-            createBluetoothAudioDevice(from: device, includeBattery: false)
+            createBluetoothAudioDevice(from: device)
         }
 
         // Warm the battery cache from here. updateBatteryStatuses collects on the calling
@@ -309,7 +307,13 @@ class BluetoothAudioManager: ObservableObject {
         // hopped write, not an off-main read; force: true also skips the unsynchronised
         // lastBatteryStatusUpdate read.
         if !devices.isEmpty {
-            updateBatteryStatuses(force: true)
+            // This scan collects off the main thread too, so it has the same collect-to-apply
+            // window as the forced refresh: a live BLE read that lands while `system_profiler`
+            // runs must not be reverted by the older snapshot. Read the counter on main first.
+            let liveWriteBaseline = Thread.isMainThread
+                ? liveBatteryWriteSequence
+                : DispatchQueue.main.sync { self.liveBatteryWriteSequence }
+            updateBatteryStatuses(force: true, liveWriteBaseline: liveWriteBaseline)
         }
 
         // The IOBluetooth reads above may run on a background queue (first launch touch);
@@ -420,6 +424,12 @@ class BluetoothAudioManager: ObservableObject {
             if !connectedDevices.contains(where: { $0.address == address }) {
                 print("🎧 [BluetoothAudioManager] 🎉 New audio device connected: \(device.name ?? "Unknown")")
                 
+                // No battery here. This used to take one synchronously, which ran an unforced
+                // `updateBatteryStatuses()` — on a cache older than 20 s that spawned
+                // `system_profiler` and `pmset` inline on this thread (the main thread, via the
+                // 3 s poll or the connect notification), immediately before the connect HUD. That
+                // is the stall `refreshBatteryLevelsForConnectedDevices` below was rewritten to
+                // remove; it applies whatever the cache holds and fetches the rest off-main.
                 guard let audioDevice = createBluetoothAudioDevice(from: device) else {
                     continue
                 }
@@ -497,51 +507,26 @@ class BluetoothAudioManager: ObservableObject {
         return majorClass == audioVideoMajorClass
     }
     
-    /// Creates a BluetoothAudioDevice model from IOBluetoothDevice
-    /// `includeBattery: false` keeps the battery caches untouched — required when called off
-    /// the main thread, since those dictionaries are main-thread state.
-    private func createBluetoothAudioDevice(from device: IOBluetoothDevice, includeBattery: Bool = true) -> BluetoothAudioDevice? {
+    /// Creates a BluetoothAudioDevice model from IOBluetoothDevice.
+    ///
+    /// Never with a battery level. The level used to come from a synchronous
+    /// `updateBatteryStatuses()` here, which spawns `system_profiler` and `pmset` on the calling
+    /// thread; every caller fills it afterwards from the cache via
+    /// `refreshBatteryLevelsForConnectedDevices`, which collects off-main. Keeping a synchronous
+    /// path around is how the connect-path stall survived the 2026-09-13 fix.
+    private func createBluetoothAudioDevice(from device: IOBluetoothDevice) -> BluetoothAudioDevice? {
         let name = device.name ?? "Bluetooth Device"
         let address = device.addressString ?? "Unknown"
-        let batteryLevel = includeBattery ? getBatteryLevel(from: device) : nil
         let deviceType = detectDeviceType(from: device, name: name)
         
         return BluetoothAudioDevice(
             name: name,
             address: address,
-            batteryLevel: batteryLevel,
+            batteryLevel: nil,
             deviceType: deviceType
         )
     }
     
-    /// Extracts battery level from Bluetooth device
-    private func getBatteryLevel(from device: IOBluetoothDevice) -> Int? {
-        updateBatteryStatuses()
-
-        if let level = batteryLevelFromRegistry(forAddress: device.addressString) {
-            clearMissingBatteryInfo(for: device)
-            return level
-        }
-
-        if let name = device.name, let level = batteryLevelFromRegistry(forName: name) {
-            clearMissingBatteryInfo(for: device)
-            return level
-        }
-
-        if let level = batteryLevelFromDefaults(forAddress: device.addressString) {
-            clearMissingBatteryInfo(for: device)
-            return level
-        }
-
-        if let name = device.name, let level = batteryLevelFromDefaults(forName: name) {
-            clearMissingBatteryInfo(for: device)
-            return level
-        }
-
-        logMissingBatteryInfo(for: device)
-        return nil
-    }
-
     // MARK: - PID-based device detection
 
     /// Extract a UInt16 from common payload formats (Int/NSNumber/String including hex like "0x201B").
@@ -1226,10 +1211,11 @@ class BluetoothAudioManager: ObservableObject {
     ///
     /// - Parameter liveWriteBaseline: `liveBatteryWriteSequence` as it stood when this scan was
     ///   dispatched, for a caller that collects off the main thread. Live reads that land while the
-    ///   scan is out are re-applied over its snapshot; see `BluetoothLiveBatteryWrites`. `nil` means
-    ///   the caller has no such window to protect — nothing can interleave between its collect and
-    ///   its apply — so the snapshot stands as collected, which is the behaviour a forced scan needs
-    ///   to be able to lower a value as the battery drains.
+    ///   scan is out are re-applied over its snapshot; see `BluetoothLiveBatteryWrites`. `nil` is
+    ///   only for a caller that collects *and* applies on the main thread, where nothing can
+    ///   interleave between the two; every off-main caller (the launch scan, the forced refresh)
+    ///   must pass one. The snapshot otherwise stands as collected, which is what lets a forced scan
+    ///   lower a value as the battery drains.
     private func updateBatteryStatuses(force: Bool = false, liveWriteBaseline: UInt64? = nil) {
         let now = Date()
         if !force, let lastBatteryStatusUpdate,
