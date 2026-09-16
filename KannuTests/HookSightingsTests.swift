@@ -38,6 +38,28 @@ final class HookSightingsTests: XCTestCase {
         XCTAssertTrue(HookSightings(hookFile: ["hidden_text": "junk"]).isEmpty)
     }
 
+    func testAPolicySightingParsesFromTheStatusFileAndIsUntrusted() {
+        let json: [String: Any] = ["policy": [
+            ["kind": "command", "matched": "ssh", "tool": "Bash", "blocked": true, "events": 2, "first_ts": NSNumber(value: t0)],
+            ["kind": "tool", "matched": "WebFetch\u{7}x", "blocked": "yes", "first_ts": NSNumber(value: t0 + 1)],
+            ["kind": "mystery", "matched": "ssh", "first_ts": NSNumber(value: t0)],
+            ["kind": "command", "matched": 42, "first_ts": NSNumber(value: t0)],
+            ["kind": "command", "matched": "ssh", "first_ts": 5],
+        ]]
+        let parsed = HookSightings(hookFile: json).policy
+        XCTAssertEqual(parsed.count, 2)
+        XCTAssertEqual(parsed[0].matched, "ssh")
+        XCTAssertTrue(parsed[0].blocked)
+        XCTAssertEqual(parsed[0].eventCount, 2)
+        XCTAssertEqual(parsed[1].matched, "WebFetchx", "control characters are dropped")
+        XCTAssertFalse(parsed[1].blocked, "blocked is the literal true or nothing")
+        XCTAssertEqual(parsed[0].severity, .medium, "blocked is the policy working")
+        XCTAssertEqual(parsed[1].severity, .high, "ran is the one to look at")
+        XCTAssertNotEqual(parsed[0].key, PolicySighting(kind: .command, matched: "ssh", tool: nil, blocked: false, eventCount: 1,
+                                                        firstSeenMs: t0, lastSeenMs: t0).key,
+                          "the same rule blocked and run are two sightings")
+    }
+
     func testUnionIsPerKindAndEmptyIsTheIdentity() {
         let a = HookSightings(hiddenText: [incident(first: t0)])
         let b = HookSightings(hiddenText: [incident(first: t0 + 5)])

@@ -79,6 +79,8 @@
 		AA100000000000000000009B /* MediaRemoteAdapterOwnership.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000009A /* MediaRemoteAdapterOwnership.swift */; };
 		AA100000000000000000009D /* UsageWindows.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000009C /* UsageWindows.swift */; };
 		AA100000000000000000009F /* AgentExecutionClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000009E /* AgentExecutionClock.swift */; };
+		AA10000000000000000000A8 /* PolicySighting.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000A7 /* PolicySighting.swift */; };
+		AA10000000000000000000A6 /* AgentPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000A5 /* AgentPolicy.swift */; };
 		AA10000000000000000000A4 /* ClaudeTurnTokenFollower.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000A3 /* ClaudeTurnTokenFollower.swift */; };
 		AA10000000000000000000A2 /* BoundedProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000A1 /* BoundedProcessRunner.swift */; };
 		F910B9C812C7AEFE2293F7D2 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4A9C58195E197C19F691DA62 /* Cocoa.framework */; };
@@ -163,6 +165,8 @@
 		AA100000000000000000009A /* MediaRemoteAdapterOwnership.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MediaRemoteAdapterOwnership.swift; path = Kannu/managers/MediaRemoteAdapterOwnership.swift; sourceTree = SOURCE_ROOT; };
 		AA100000000000000000009C /* UsageWindows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UsageWindows.swift; path = Kannu/managers/LLMUsage/UsageWindows.swift; sourceTree = SOURCE_ROOT; };
 		AA100000000000000000009E /* AgentExecutionClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentExecutionClock.swift; path = Kannu/managers/AgentStatus/AgentExecutionClock.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000A7 /* PolicySighting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PolicySighting.swift; path = Kannu/managers/AgentStatus/PolicySighting.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000A5 /* AgentPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentPolicy.swift; path = Kannu/managers/AgentStatus/AgentPolicy.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000A3 /* ClaudeTurnTokenFollower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeTurnTokenFollower.swift; path = Kannu/managers/AgentStatus/ClaudeTurnTokenFollower.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000A1 /* BoundedProcessRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BoundedProcessRunner.swift; path = Kannu/managers/BoundedProcessRunner.swift; sourceTree = SOURCE_ROOT; };
 		DAA671E7B1B26733F02166C5 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -595,6 +599,8 @@
 				AA100000000000000000009B /* MediaRemoteAdapterOwnership.swift in Sources */,
 				AA100000000000000000009D /* UsageWindows.swift in Sources */,
 				AA100000000000000000009F /* AgentExecutionClock.swift in Sources */,
+				AA10000000000000000000A8 /* PolicySighting.swift in Sources */,
+				AA10000000000000000000A6 /* AgentPolicy.swift in Sources */,
 				AA10000000000000000000A4 /* ClaudeTurnTokenFollower.swift in Sources */,
 				AA10000000000000000000A2 /* BoundedProcessRunner.swift in Sources */,
 			);
