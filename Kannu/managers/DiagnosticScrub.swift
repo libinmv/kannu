@@ -45,11 +45,35 @@ enum DiagnosticScrub {
         )
         // A mounted volume is usually named after its owner too ("Davids-MacBook-Pro", "Work SSD"),
         // and an app run from one symbolises every frame to it.
-        guard let volumes = try? NSRegularExpression(pattern: "/Volumes/[^/\\s\"]+") else { return out }
-        return volumes.stringByReplacingMatches(
-            in: out,
-            range: NSRange(out.startIndex..., in: out),
-            withTemplate: "/Volumes/redacted"
+        // Two passes. A label followed by a path is taken whole, spaces included ("Davids MacBook"
+        // used to keep "MacBook"); the line break bounds it so it cannot run into the next frame. A
+        // bare volume root at the end of a token is the old pattern.
+        for pattern in [#"/Volumes/[^/"\n]+(?=/)"#, #"/Volumes/(?!redacted(?:/|$))[^/\s"]+"#] {
+            guard let volumes = try? NSRegularExpression(pattern: pattern) else { continue }
+            out = volumes.stringByReplacingMatches(
+                in: out,
+                range: NSRange(out.startIndex..., in: out),
+                withTemplate: "/Volumes/redacted"
+            )
+        }
+        return out
+    }
+
+    /// The host part of a diagnostic's own file name, whatever the host is called.
+    ///
+    /// macOS names resource reports `<App>_<date>-<time>_<host>.<kind>`. `hostName(_:in:)` needs the
+    /// name to find it, and a Mac whose local name cannot be read left the file name — shown to the
+    /// user and put in the GitHub issue — carrying it. This pass needs nothing: the component
+    /// between the timestamp and a known extension is the host. The hyphen shape macOS uses for
+    /// crashes (`Kannu-2026-09-12-213652.ips`) has no host and is left as it is.
+    static func fileName(_ name: String) -> String {
+        guard let pattern = try? NSRegularExpression(
+            pattern: #"^([^_/]+_[0-9-]+_)(.+?)(\.cpu_resource\.diag|\.wakeups_resource\.diag|\.ips|\.hang|\.spin)$"#
+        ) else { return name }
+        return pattern.stringByReplacingMatches(
+            in: name,
+            range: NSRange(name.startIndex..., in: name),
+            withTemplate: "$1this-mac$3"
         )
     }
 

@@ -117,10 +117,18 @@ final class CrashReporter {
     /// on a busy Mac, and this ran 4 s after launch on main — while the hang watchdog was watching
     /// it. The host name comes from SystemConfiguration, not `ProcessInfo.hostName`, which resolves
     /// the name and blocks for as long as a slow resolver takes.
+    /// `gethostname(2)`: the kernel's copy, no lookup. The fallback when SystemConfiguration has no
+    /// local name; `DiagnosticScrub.fileName` covers the case where neither does.
+    nonisolated private static func kernelHostName() -> String {
+        var buffer = [CChar](repeating: 0, count: 256)
+        guard gethostname(&buffer, buffer.count) == 0 else { return "" }
+        return String(cString: buffer)
+    }
+
     nonisolated static func newestReport() -> (url: URL, report: CrashReport)? {
         let manager = FileManager.default
         let home = NSHomeDirectory()
-        let host = (SCDynamicStoreCopyLocalHostName(nil) as String?) ?? ""
+        let host = (SCDynamicStoreCopyLocalHostName(nil) as String?) ?? Self.kernelHostName()
 
         var candidates: [(URL, Date)] = []
         for directory in searchPaths {
