@@ -177,6 +177,24 @@ final class ClaudeReconcilerTests: XCTestCase {
                        "a finished passive card past its window is invisible either way")
     }
 
+    func testAKeptAgedHookFileDoesNotHideAFinishedPassiveCard() {
+        // Esc mid-tool, process left open: hookFileOutlivesStaleCap keeps the executing file, it
+        // resolves invisible after activeStaleMs, and the passive tail says the turn finished. The
+        // dim card must show; the chat used to vanish from Recent chats until the process exited.
+        let kept = session(rawState: "executing", display: .inactive, updatedAt: Date(timeIntervalSince1970: 100), visible: false)
+        let finished = session(chatName: "Esc'd", rawState: "stopped", display: .inactive,
+                               updatedAt: Date(timeIntervalSince1970: 1_900), visible: true, hostPID: 9)
+        let out = reconcile(hooks: [kept], passive: [finished])[0]
+        XCTAssertTrue(out.isVisible)
+        XCTAssertEqual(out.displayState, .inactive)
+        XCTAssertEqual(out.chatName, "Esc'd")
+        XCTAssertEqual(out.hostPID, 9)
+        // Only a finished card. An aged yellow is still not repainted by a passive *active* verdict.
+        let agedYellow = session(rawState: "awaiting_input", display: .inactive, updatedAt: Date(timeIntervalSince1970: 100), visible: false)
+        let thinking = session(rawState: "thinking", display: .thinking, updatedAt: Date(timeIntervalSince1970: 1_900), visible: true)
+        XCTAssertFalse(reconcile(hooks: [agedYellow], passive: [thinking])[0].isVisible)
+    }
+
     func testRunVerdictSeamPrefersTheHookThenTheMoreSpecificReason() {
         // Both sides describe the same stop: the more specific reason wins.
         let hookFailed = session(rawState: "stopped", display: .stopped, runError: .failed)

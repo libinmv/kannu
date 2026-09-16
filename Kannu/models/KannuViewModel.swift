@@ -293,12 +293,13 @@ class KannuViewModel: NSObject, ObservableObject {
 
 
     func open() {
-        // A sheet or an alert owns the screen while it is up. The notch window overrides
-        // canBecomeKey/canBecomeMain and sits at .mainMenu + 3, so opening it over a Settings file
-        // picker puts it in front of the very panel the user has to answer — the app then looks
-        // frozen. Hover and the global click monitor both reach this, so the guard lives here.
-        guard NSApp.modalWindow == nil,
-              !NSApp.windows.contains(where: { $0.attachedSheet != nil }) else { return }
+        // A panel or an alert owns the screen while it is up. The notch window overrides
+        // canBecomeKey/canBecomeMain and sits at .mainMenu + 3, so opening it over a file picker
+        // puts it in front of the very panel the user has to answer — the app then looks frozen.
+        // Hover and the global click monitor both reach this, so the guard lives here. Asked of
+        // `ModalPresenter`, not inferred from `NSApp`: `attachedSheet` missed a picker shown with
+        // `panel.begin` (Settings closed) and blocked the notch behind the Spotify sign-in sheet.
+        guard NSApp.modalWindow == nil, !ModalPresenter.isPresenting else { return }
 
         let targetSize = calculateDynamicNotchSize()
 

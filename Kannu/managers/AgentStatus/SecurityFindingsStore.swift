@@ -213,12 +213,13 @@ final class SecurityFindingsStore: ObservableObject {
             }
             .store(in: &cancellables)
         // The hook reads marker files for the local-check settings; keep them in step.
-        for key in [Defaults.Keys.detectHiddenText, .warnAgentAboutHiddenText, .detectSecrets, .detectSensitivePaths] {
+        for key in [Defaults.Keys.detectHiddenText, .warnAgentAboutHiddenText, .detectSecrets, .detectSensitivePaths, .enforceAgentPolicy] {
             Defaults.publisher(key, options: [])
                 .sink { [weak self] _ in Task { @MainActor in self?.syncLocalCheckSettings() } }
                 .store(in: &cancellables)
         }
         syncLocalCheckSettings()
+        checkAgentPolicy()
         // Know whether the tool is there before the first cadence tick; cheap and bounded.
         ADRConnection.shared.checkAgain()
         Defaults.publisher(.watchMCPServers, options: [])
@@ -284,6 +285,31 @@ final class SecurityFindingsStore: ObservableObject {
         Defaults[.adrFindingSnoozes] = []
     }
 
+    // MARK: - Agent policy (hook v42)
+
+    /// What `~/.kannu/agent-policy.json` holds, or why the hook is ignoring it. Read off the main
+    /// actor (docs/REGRESSIONS.md entry 11) on start, on appear and on "Check again".
+    @Published private(set) var agentPolicyStatus: Result<AgentPolicy, AgentPolicy.LoadError> = .failure(.notFound)
+
+    func checkAgentPolicy() {
+        DispatchQueue.global(qos: .utility).async {
+            let result = AgentPolicy.load()
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    if result != self.agentPolicyStatus { self.agentPolicyStatus = result }
+                }
+            }
+        }
+    }
+
+    /// Puts the drafting prompt on the clipboard for the user's own agent. Kannu never writes the
+    /// policy file itself.
+    func copyPolicyDraftingPrompt() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(AgentPolicy.draftingPrompt, forType: .string)
+    }
+
     /// Puts a request about this finding on the clipboard, ready to paste into the user's agent.
     /// Built by `SecurityFindingGuide` — no key, hidden text or chat name — and never logged.
     func copyAgentPrompt(for finding: AgentSecurityFinding) {
@@ -344,35 +370,19 @@ final class SecurityFindingsStore: ObservableObject {
             process.executableURL = executable
             process.arguments = arguments
             process.currentDirectoryURL = directory
-            // `--json` also prints the whole snapshot to stdout; the file is what we read.
-            process.standardOutput = FileHandle.nullDevice
-            let stderr = Pipe()
-            process.standardError = stderr
-            var collected = Data()
-            stderr.fileHandleForReading.readabilityHandler = { handle in
-                let chunk = handle.availableData
-                if collected.count < 16_384 { collected.append(chunk) }
-            }
-            var status: Int32 = -1
+            // `--json` also prints the whole snapshot to stdout; the file is what we read, so stdout
+            // is drained and dropped (cap 0). Through the shared runner: the readability handlers
+            // that used to collect stderr appended to a captured `Data` from the handle's queue with
+            // nothing synchronising the read on this thread.
+            let result = BoundedProcessRunner.run(process, timeout: ADRDiscoveryCommand.timeout, stdoutCap: 0, stderrCap: 16_384, killGrace: 3)
+            let status = result.status
             var failure: String?
-            do {
-                try process.run()
-                let deadline = Date().addingTimeInterval(ADRDiscoveryCommand.timeout)
-                while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.25) }
-                if process.isRunning {
-                    process.terminate()
-                    let killDeadline = Date().addingTimeInterval(3)
-                    while process.isRunning && Date() < killDeadline { Thread.sleep(forTimeInterval: 0.1) }
-                    if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-                    failure = String(localized: "adr-discovery did not finish within \(Int(ADRDiscoveryCommand.timeout)) s and was stopped.")
-                }
-                process.waitUntilExit()
-                status = process.terminationStatus
-            } catch {
-                failure = error.localizedDescription
+            if result.timedOut {
+                failure = String(localized: "adr-discovery did not finish within \(Int(ADRDiscoveryCommand.timeout)) s and was stopped.")
+            } else if status == -1 {
+                failure = String(decoding: result.stderr, as: UTF8.self)
             }
-            stderr.fileHandleForReading.readabilityHandler = nil
-            let stderrTail = String(decoding: collected.suffix(400), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            let stderrTail = String(decoding: result.stderr.suffix(400), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
 
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
@@ -569,6 +579,7 @@ final class SecurityFindingsStore: ObservableObject {
         place(HiddenTextIncident.warnAgentMarker, present: warn)
         place(SecretSighting.detectionOffMarker, present: !enabled.secrets)
         place(SensitivePathSighting.detectionOffMarker, present: !enabled.sensitivePaths)
+        place(AgentPolicy.enforceMarker, present: Defaults[.enforceAgentPolicy])
         let kept = sightingRecords.keepingOnly(enabled)
         if kept != sightingRecords { storeSightingRecords(kept) }
     }
@@ -676,32 +687,13 @@ final class SecurityFindingsStore: ObservableObject {
             process.arguments = plan.arguments
             process.currentDirectoryURL = plan.checkout
             process.environment = plan.environment
-            let stdout = Pipe(), stderr = Pipe()
-            process.standardOutput = stdout
-            process.standardError = stderr
-            var out = Data(), err = Data()
-            stdout.fileHandleForReading.readabilityHandler = { h in let c = h.availableData; if out.count < 1_000_000 { out.append(c) } }
-            stderr.fileHandleForReading.readabilityHandler = { h in let c = h.availableData; if err.count < 64_000 { err.append(c) } }
-            do {
-                try process.run()
-            } catch {
-                self.finishAnalysis(plan, outcome: .failure(AnalysisFailure(error.localizedDescription)))
+            let result = BoundedProcessRunner.run(process, timeout: plan.timeout, stdoutCap: 1_000_000, stderrCap: 64_000, killGrace: 5, pollInterval: 0.25)
+            if result.status == -1 {
+                self.finishAnalysis(plan, outcome: .failure(AnalysisFailure(String(decoding: result.stderr, as: UTF8.self))))
                 return
             }
-            let deadline = Date().addingTimeInterval(plan.timeout)
-            while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.5) }
-            var timedOut = false
-            if process.isRunning {
-                timedOut = true
-                process.terminate()
-                let killDeadline = Date().addingTimeInterval(5)
-                while process.isRunning && Date() < killDeadline { Thread.sleep(forTimeInterval: 0.2) }
-                if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-            }
-            process.waitUntilExit()
-            stdout.fileHandleForReading.readabilityHandler = nil
-            stderr.fileHandleForReading.readabilityHandler = nil
-            if timedOut {
+            let out = result.stdout, err = result.stderr
+            if result.timedOut {
                 self.finishAnalysis(plan, outcome: .failure(AnalysisFailure(String(localized: "Analysis did not finish within \(Int(plan.timeout)) s and was stopped."))))
                 return
             }
@@ -716,7 +708,7 @@ final class SecurityFindingsStore: ObservableObject {
                 self.finishAnalysis(plan, outcome: .failure(AnalysisFailure(reason)))
             } catch {
                 let tail = String(decoding: err.suffix(300), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-                self.finishAnalysis(plan, outcome: .failure(AnalysisFailure(String(localized: "adr adapter exited \(process.terminationStatus) without a verdict. \(tail)"))))
+                self.finishAnalysis(plan, outcome: .failure(AnalysisFailure(String(localized: "adr adapter exited \(result.status) without a verdict. \(tail)"))))
             }
         }
     }

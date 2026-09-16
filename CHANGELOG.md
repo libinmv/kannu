@@ -4,6 +4,286 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-16 - An agent policy Kannu can enforce: block ssh (or anything) on Claude Code and Cursor
+- **Developer label:** "how do i set a policy, can i enforce a policy like no agents can use ssh … give a copy prompt for sample policy generation, actually give a block policy if it is possible"
+- **Agent label:** Follow-up 43, PR J — agent block policy (hook v42)
+- **Changes:**
+  - Two things were called "policy" and neither could say no. The `--policy` file in Settings is
+    Uber's ADR Discovery policy — three lists about MCP servers, one extra finding — and Kannu's hook
+    only ever printed the allow line. Now there is an **agent policy**: `~/.kannu/agent-policy.json`,
+    a file you write (Kannu never writes it) naming commands and tools an agent may not use, with an
+    optional reason per rule. Word matching, not regex: first word (or basename) of any command
+    segment after `sudo`/`env`/`nohup`, multi-word rules in order, `sh -c` strings opened; tool
+    rules by exact name. 64 KB, 200 rules, 200 characters — anything malformed means no policy, and
+    the hook never fails closed on its own configuration.
+  - Every match is a finding (`policy_command` / `policy_tool`): the rule, the tool, blocked or ran.
+    **Block matching tool calls** (Settings › Agents › Agent policy, off by default) turns the
+    report into a refusal on the two hosts whose hook contract has a deny: Claude Code `PreToolUse`
+    (`permissionDecision: deny`, reason to the model and the transcript) and Cursor's pre events
+    (`permission: deny`). Codex, VS Code, Gemini, Qwen, Copilot, Antigravity and opencode get the
+    finding only — no verified deny, or no pre-tool event — and Kannu does not guess at a host's
+    protocol. A refused call is medium (the policy working); one that ran is high.
+  - **Copy a prompt that drafts a policy** puts a prompt for your own agent on the clipboard — the
+    format, the matching rules, the caps, and "ask me which commands and tools, then write the file".
+    The Settings row shows the rule count or, in words, why the file is being ignored; Reveal in
+    Finder and Check again beside it.
+  - Hook v42 (mirror + embedded, no backslash, Python 3.9): `load_policy`, `policy_segments` (the
+    sensitive-path splitter's shape), `policy_match`, the `policy` sighting carried on every write
+    path like `secrets`, and the deny branch in `emit()` gated on the match, the enforce marker and
+    `POLICY_DENY_EVENTS`. `PolicySighting` and `AgentPolicy` (logic target), `HookSightings.policy`,
+    the `policy` guide family, `enforceAgentPolicy` with its marker in `syncLocalCheckSettings`.
+  - Tests: six `HookScriptTests` (report-only, Claude deny, Cursor deny plus Codex/Gemini/Qwen/Copilot
+    report-only, word-vs-substring matching table, tool rule and bare strings, every malformed shape
+    plus carried junk), `AgentPolicyTests` (every shape and cap, the drafting prompt), sightings and
+    guide tests; `SettingsHighlightInventoryTests` counts +2. `docs/ADR.md` §9 documents it and §6
+    says which "policy" is which; `docs/REGRESSIONS.md` entry 1 gains the v42 addendum.
+  - CodeRabbit on this PR: a rule with `"reason": null` made the hook reject the whole file while
+    Settings read the same file as valid ("2 rules") — nothing matched or blocked, and Settings said
+    otherwise. `null` is an absent reason in the hook now, as it already was for `command` and `tool`
+    and in Swift; `AgentPolicyTests` and a new `HookScriptTests` case pin both sides.
+  - Not verified here: a live Cursor refusal (the shape follows Cursor's hook docs and the symmetry
+    of the `permission: allow` Kannu already sends) — that live check is the first thing to do with
+    a Cursor agent chat.
+
+### 2026-09-16 - The pre-commit hook reads the index, the ledger gets its hashes back, and the docs match the code
+- **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — findings L1, L14, L16, L17, the quality and docs items
+- **Agent label:** Follow-up 42, PR I — guards, docs, hygiene
+- **Changes:**
+  - `.githooks/pre-commit`'s hook-script mirror check and modal ban read the working tree; the
+    CHANGELOG check read the index. Stage a drifted mirror while a matching copy sits unstaged and
+    the hook passed the commit it was gating. Both read what is being committed now (`git show
+    ":path"`, `git grep --cached`), and `/*` joins the comment exemption so the hook and
+    `ModalPresentationRulesTests` agree.
+  - `scripts/adr-analyze-session.py` (and its embedded copy, marker 3): a transcript line that is
+    valid JSON but not an object raised `AttributeError` — a traceback on stderr and "exited 1
+    without a verdict" for that chat. Skipped now.
+  - `AgentSessionOpener` logged the project path with `privacy: .public`, the only user path in the
+    range written unredacted to the unified log. `NotchAgentStatusView` stat-ed the ADR report from
+    inside a menu builder on every render; the menu item shows whenever a report path exists.
+  - Settings' per-display override rows were keyed by `localizedName`, so two identical monitors gave
+    `ForEach` duplicate identities. One row per name now — honest about what name-keyed overrides
+    can express. Keying the overrides on `CGDirectDisplayID` touches every consumer in
+    `ContentView` and `matters.swift` and cannot be verified without a second display here; recorded
+    as a follow-up, not done blind.
+  - Dead code: `migrateDisplayPlacement` wrote the new key to its own default behind a flag and never
+    read the legacy keys its comment named (losing `preferredScreen` was the Follow-up 33 decision);
+    it, `didMigrateDisplayPlacement`, `showOnAllDisplays` and `automaticallySwitchDisplay` are gone.
+    `adrSensorDirectory` had no reader. `cleanupWindows` duplicated `tearDownAllWindows` and tore
+    down only the current placement's lifecycle; the screen-change task calls the full one.
+  - `docs/REGRESSIONS.md`: entries 13 and 14 carry their commit hashes (the ledger's own bar),
+    entry 13 is filed after 12, entries 12–15 have their separators back, entry 8's ADR addendum sits
+    inside entry 8, and entry 9 no longer claims a directory-wide `fixedSize(horizontal:)` ban.
+  - `ReadMe.md`: macOS 14.6 (the target), Xcode 16+, and the Gatekeeper section says Releases are
+    notarized and keeps the workaround for self-built DMGs.
+  - `ClaudeTurnTokenFollower` joins the logic target so it can be tested; `BrowserTabLocator`
+    (it calls the app's `AppleScriptHelper`) and `MediaRemoteAdapterReaper` (the app's `Logger`)
+    cannot yet. One GPL header (`ClaudeDesktopAgentSessionStore.swift`) had an extra blank comment
+    line; fixed.
+
+### 2026-09-16 - One bounded process runner, and the reaper compares argv as argv
+- **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — findings M11, L9, L15 and L8 of that review, and the reuse pass's "five copies of one shell runner"
+- **Agent label:** Follow-up 42, PR H — bounded process runner
+- **Changes:**
+  - `BoundedProcessRunner` (Foundation-only, logic target): runs a child under a deadline, draining
+    both pipes non-blockingly *while* waiting, escalating SIGTERM → SIGKILL, and closing the pipes
+    once the child is gone. It replaces five hand-rolled copies — `ADRConnection.readVersion` and
+    `readVersionFromUVToolList`, `SecurityFindingsStore.runScanNow` and `runAnalysis`, and
+    `TmuxLocator.run` — that disagreed on poll intervals and kill escalation, and two of which could
+    park a thread for the app's lifetime: the ADR version probes called `readDataToEndOfFile()` after
+    a bare `terminate()` with stderr never drained (a uv shim's grandchild holding the pipe left
+    "Check again" disabled forever), and the tmux runner waited *then* read (the >64 KB pipe
+    deadlock, rescued only by its 2 s timeout). The two `SecurityFindingsStore` copies appended to a
+    captured `Data` from the handle's queue with nothing synchronising the read.
+  - `TmuxLocator.run` hands tmux a minimal environment (`PATH`, `HOME`, `TMPDIR`, `TMUX_TMPDIR`, …)
+    instead of everything Kannu's process holds.
+  - `MediaRemoteAdapterReaper` space-joined argv and `MediaRemoteAdapterOwnership` split it again, so
+    a bundle under a path with a space (`/Applications/Dev Tools/Kannu.app`) never matched and its
+    orphans were never reaped. argv is an array end to end now; `isReapable(argv:parentPID:ownScriptPath:)`.
+  - Six `BoundedProcessRunnerTests` against `/bin/sh`: 300 KB of output does not deadlock, caps keep
+    reading, a child that traps SIGTERM is killed within the grace period, a grandchild holding the
+    pipe does not hold the caller, a launch failure is reported, exit status and both streams arrive.
+    `MediaRemoteAdapterOwnershipTests` gains the path-with-a-space case.
+
+### 2026-09-16 - The notch asks the presenter what is on screen, the watchdog stops counting sleep, and the crash scan leaves the main thread
+- **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — findings M8, M9, L6, L7, L11, L12, L13, L18 and L20 of that review
+- **Agent label:** Follow-up 42, PR G — modal, watchdog, crash reporter, display
+- **Changes:**
+  - `KannuViewModel.open()` inferred "a dialog is up" from `NSApp.modalWindow` and `attachedSheet`.
+    That missed `ModalPresenter`'s `panel.begin` fallback — neither modal nor a sheet, and the normal
+    path whenever Settings is closed — so hovering the notch opened it over the very picker the user
+    had to answer; and it caught every unrelated SwiftUI `.sheet` on Settings, which locked the notch
+    out behind the Spotify sign-in. `ModalPresenter` now counts what it has presented and the notch
+    asks it. It also queues alerts: a second one while the first was a sheet on Settings found no
+    anchor and went app-modal on top of the sheet.
+  - `HangWatchdog` measured the outstanding ping on the wall clock. An hour with the lid closed came
+    back as an hour-long freeze: on wake the watchdog thread suspended the main thread for a stack
+    walk and offered a bogus report at the next launch. It uses `systemUptime`, which stops with the
+    Mac. And its pong was posted in `commonModes`, which in a Cocoa app already contains
+    `NSModalPanelRunLoopMode` — so a stray `runModal()`, the freeze the watchdog exists to catch,
+    answered every ping and was never reported. The modes are explicit now, and the comment that
+    claimed the opposite is corrected.
+  - `CrashReporter.newestReport()` ran on the main actor 4 s after launch and called
+    `ProcessInfo.hostName`, which resolves the name and blocks for as long as a captive portal or a
+    dead resolver takes — while the watchdog was watching. The scan runs on a utility queue, hops
+    back to present, and takes the host name from SystemConfiguration. The offer-once rule is a pure
+    `CrashReport.shouldOffer` with a test.
+  - An extension's file picker outlived its connection: a pick after the client had gone still added
+    to the Shelf with the reply dropped. The server registers each picker by connection and cancels
+    it when the connection is removed.
+  - `DisplayPlacementRuntime.pointerDisplayID` used `CGRect.contains`, which excludes the top edge —
+    exactly where a pointer goes to reach the notch. `NSMouseInRect` now. `adjustWindowPosition`'s
+    lock guard also skipped the stale-display teardown, so a display unplugged while locked kept its
+    window until the next reconfiguration; the teardown runs before the guard.
+  - `DiagnosticScrub.paths` redacts `/Volumes/<name>` — usually the owner's name — in hang and crash
+    reports alike.
+  - **The usage gauge is out of the notch** (moved here from #30 at the user's request). It showed
+    `gauge.with.dots.needle.100percent` beside the traffic light whenever a live usage window passed
+    95 %, and it was not understandable: a bare 9 pt dial with no number and no window name, next to
+    a shield glyph of the same size and colour — it is what prompted "what is this new icon and why
+    are no findings listed", the honest answer being that it is not a finding at all. Removed with
+    its `showUsageLimitCue` key, its Settings row and that row's search entry, so no setting is left
+    controlling nothing. `UsageAlertManager` is untouched: the opt-in push still fires and the Usage
+    tab still shows the bars and the forecast. That call site was the closed notch's only use of
+    `usageAlerts`, so the traffic light no longer observes the alert manager at all.
+  - `SettingsHighlightInventoryTests`' pinned counts move 201/252/246 → 200/251/245 — pinned so a
+    removed row has to be a deliberate edit rather than a row that quietly lost its modifier.
+
+### 2026-09-16 - The shield shows without agent activity, and only once
+- **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — findings M6 and L4 of that review
+- **Agent label:** Follow-up 42, PR F — notch security cue
+- **Changes:**
+  - `showAgentTrafficLight` admitted `securityCueWanted` through its first guard only; on a notched
+    Mac the last line still required an agent-activity deadline or a hover, so a high finding with no
+    agent running never showed the shield the Settings copy promises. A pending high finding now
+    shows the light on its own.
+  - `AgentTrafficLightIndicator` drew its standalone shield in every mode but Off while
+    `SecurityAlertPill` drew its own beside it, so pill modes showed two shields (and the width
+    jumped twice in the five-second mode). The indicator suppresses its glyph while the pill is
+    visible.
+
+### 2026-09-16 - A kept hook file no longer hides a finished chat, and a leftover subagent never shows one as running
+- **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — findings M5, L2 and L3 of that review
+- **Agent label:** Follow-up 42, PR E — agent status state
+- **Changes:**
+  - `hookFileOutlivesStaleCap` keeps a Claude `executing` file while its process lives. After
+    `activeStaleMs` that file resolves invisible, and `reconcileClaudeSessions`' fallthrough returned
+    the invisible hook session over the passive side's visible dim card — so after an Esc mid-tool
+    with the process left open, the chat vanished from Recent chats until the process exited (before
+    the exemption the file was deleted at 30 min and the dim card took over). The fallthrough now
+    shows a *finished* passive card when the hook session is invisible; an aged yellow is still not
+    repainted by a passive active verdict (entry 3). Pinned in `ClaudeReconcilerTests`.
+  - `AgentSubagentFold`: with no parent file in the scan, the stand-in copied the subagent's own
+    light, so a leftover subagent file after the chat ended (SessionEnd unlinks only the parent's
+    file) showed the ended chat as running — the file's own doc said a leftover changes nothing.
+    The stand-in is inactive and invisible now; the reconciler still lights it from live passive
+    evidence when the parent really is running. Two `SubagentFoldTests` pin both directions.
+  - `AgentSessionLogParser`: the title cache memoised only Claude's *title records*, and nil meant
+    "no entry" and "no title" alike, so every new Claude session — named from its first prompt until
+    the first title record lands — re-read its 32 KB head on the main actor on every rescan. The
+    parser now remembers the *resolved* name per `(mtime, size)`, nil included, and a titleless
+    transcript is read once per version; `leadingReadCount` is a test hook that proves it.
+
+### 2026-09-16 - A refused Gemini settings.json no longer reinstalls every provider on every launch
+- **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — finding M4 of that review
+- **Agent label:** Follow-up 42, PR D — hook installer
+- **Changes:**
+  - `installSharedSettingsHooks` (Gemini CLI, Qwen Code) read the tool's `settings.json` — and
+    refused it when it had comments or trailing commas — *before* writing the shared script, so
+    the script it already pointed at could never be brought to a new version. Its own doc comment
+    said "the script first"; the code now does that, and the refusal only stops the settings merge.
+  - `migrateHookScriptVersionIfNeeded` decided "needs refresh" across all providers at once and then
+    re-ran `install()` for every provider with a script on disk. With one permanently-stale script
+    that meant `~/.claude/settings.json`, `~/.cursor/hooks.json` and the Codex and Antigravity configs
+    were rewritten on every launch, forever, with `lastError` set each time. It is per provider now:
+    only a script behind the marker triggers its own install.
+  - No logic-target test reaches the installer (it touches `Defaults` and the home directory).
+    Verified by hand with a fixture HOME holding a commented `~/.gemini/settings.json`: after the
+    change a second launch leaves `~/.claude/settings.json`'s mtime alone.
+
+### 2026-09-16 - Hook v41: the payload goes through a file, and the allow line is unconditional
+- **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — finding M3 of that review, plus hook hygiene
+- **Agent label:** Follow-up 42, PR C — hook script v41
+- **Changes:**
+  - The wrapper exported the whole payload as `KANNU_INPUT`. A tool input past ARG_MAX (~1 MiB)
+    made `execve` fail with "Argument list too long" before the Python heredoc ran, and the script
+    fell through to `exit 0` — no status write and **no allow line**, so Cursor lost its
+    `permission:allow` for that call and every provider's light froze on the previous state.
+    Reproduced with a 1.5 MB `tool_input`; the ledger had it down as merely "uncounted". The payload
+    now goes through a `mktemp` file (0600, in the 700 status directory) that Python reads and
+    unlinks, capped at 16 MiB; the wrapper removes it on every other exit.
+  - The two `write_status` calls were the only unwrapped step left: an `os.replace` failure (full
+    disk, a path replaced by a directory) raised past `emit()` and cost the allow line. Both are
+    wrapped; the line prints no matter what the write did.
+  - Hygiene from the same review: `unattended` is read back from the status file as the literal
+    `true` only, like every other carried key (junk was laundered into a real "permission checks
+    bypassed" finding — same-user only, so hygiene, not a hole); `ht_token` cuts before it regexes an
+    unbounded carried string; the no-id tool-call key uses the payload length already in hand instead
+    of stringifying `tool_input` outside every budget.
+  - Not changed: the VS Code → Copilot CLI flip on a controlling tty alone (M7). The obvious
+    discriminator, `VSCODE_PID`, would misfile Copilot CLI run inside VS Code's integrated terminal
+    — a more common setup than VS Code launched from a terminal foreground — and neither can be
+    exercised on this Mac. Recorded, not guessed at.
+  - `KANNU_HOOK_SCRIPT_VERSION=41` in both copies; the embedded copy regenerated from the mirror.
+    Three new `HookScriptTests`: a 1.5 MB payload still writes the status and prints the allow
+    line and leaves no temp file; a status path replaced by a directory still prints the allow line;
+    carried `"unattended": "yes"` is dropped. `docs/REGRESSIONS.md` entry 1 gains the v41 addendum.
+
+### 2026-09-16 - Security-finding and usage-limit pushes arrive once, on time, and without the chat's name
+- **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — findings H2, M1, M2, M10 and L10 of that review
+- **Agent label:** Follow-up 42, PR B — push delivery
+- **Changes:**
+  - A new high finding was not pushed. `AgentStatusNotificationBridge` ranked the store's findings
+    from inside the `$findings` sink, and `@Published` emits in `willSet`, so it ranked the list the
+    store was *about* to replace; because the store only assigns on change, the push waited for the
+    next unrelated change — possibly never. The sink hops once through `DispatchQueue.main` and runs
+    after the assignment.
+  - Every open high finding was pushed again after each relaunch: the bridge started before the
+    findings store, its subscribe-time value was the store's empty initial list, and the persisted
+    "already pushed" ids were pruned against it. The store starts first now. The usage-limit keys
+    had the same shape (`nearLimit` starts empty) with no enable gate at all; an empty list no longer
+    prunes anything.
+  - The push body was `finding.summary`, which for Kannu's own findings names the chat and the
+    home-relative file ("~/code/acme/.env, with Read, in “rotate prod credentials”") — right on the
+    card, wrong on a phone or a third-party webhook, and against the rule the same file states for
+    its other two pushes. `AgentSecurityFinding.pushBody` carries severity and source only; the
+    webhook's `asset` is sent for ADR Discovery findings alone. A test walks every builder that
+    names the chat.
+  - The desktop history's *inferred* reset (derived from the last rollover it sampled) beat the API's
+    exact reset for the same window by freshness, so the countdown moved on every read and the
+    usage-alert push key — which is the reset — fired the same window twice. `Window.resetIsInferred`
+    marks it, and `merged` borrows an exact reset for an inferred one while keeping the fresher
+    percent. Two merge tests and one history test pin it.
+
+### 2026-09-16 - The Bluetooth connect path stops spawning on the main thread
+- **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — findings H1 and L5 of that review
+- **Agent label:** Follow-up 42, PR A — Bluetooth connect path
+- **Changes:**
+  - #27 moved the *forced* battery refresh onto `pmsetFetchQueue` and measured the connect path at
+    0 ms with zero devices connected. With a device actually connecting, `checkForNewlyConnectedDevices`
+    (main thread: the 3 s poll and the connect notification) first built the device through
+    `createBluetoothAudioDevice`'s default `includeBattery: true`, whose `getBatteryLevel` ran an
+    unforced `updateBatteryStatuses()` — on a cache older than 20 s that is `system_profiler` and
+    `pmset` inline on the main thread, immediately before the connect HUD. The original 2-8 s stall,
+    one call earlier than the one #27 fixed.
+  - `getBatteryLevel` and the `includeBattery` parameter are deleted rather than defaulted off: the
+    device is built without a level and `refreshBatteryLevelsForConnectedDevices` on the next line
+    applies the cache and fetches the rest off-main, so there is no synchronous way left to ask for a
+    level. `updateBatteryStatuses` now runs only on `pmsetFetchQueue` and the launch scan's queue.
+  - The launch scan (`checkInitialDevices`, utility queue) called the forced scan with no
+    `liveWriteBaseline`, so a live BLE write landing during its `system_profiler` run was reverted by
+    the older snapshot — the race #27 fixed for the forced refresh, in its other off-main caller. It
+    reads `liveBatteryWriteSequence` on main first now; the parameter doc no longer claims `nil`
+    means nothing can interleave.
+  - `docs/REGRESSIONS.md` entry 11 gains a 2026-09-16 addendum restating the rule at full width — no
+    collector on the main thread, forced or not — and the Danger zones row counts the fourth pass.
+  - Found by CodeRabbit on this PR, same class, one field over: `detectDeviceType` asked for the
+    device's vendor/product id *before* reading its name, and on a device missing from both
+    Bluetooth preference caches `vendorProductIDs(for:)` fell back to spawning `system_profiler`
+    synchronously — also inside `createBluetoothAudioDevice`, also on the main thread. The fallback
+    is deleted; a device the caches do not know is typed by its name, or shown as generic. Nothing
+    in `createBluetoothAudioDevice` spawns anything now.
+  - Not verified here: a real connect (17 devices paired, none connected on this Mac). The claim is
+    the call chain, checked by reading; the `sample` check after a connect is still the manual guard.
 ### 2026-09-13 - One instruction file every agent can read, and a guard so the copies stop drifting
 - **Developer label:** "libinmv/kannu has … no root AGENTS.md … worth confirming it landed"
 - **Agent label:** Follow-up 39 — it had never landed, and the search found a worse bug next door
@@ -53,19 +333,6 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     **Before Changing Agent Status Code**.
   - `docs/REGRESSIONS.md` **entry 16**, added on the file's own stated criterion ("Add one when a bug
     recurs") with the shape it requires, and a Danger-zones row for the two instruction files.
-  - **The usage gauge is out of the notch.** It showed `gauge.with.dots.needle.100percent` beside the
-    traffic light whenever a live usage window passed 95 %, and it was not understandable: a bare 9 pt
-    dial with no number and no window name, sitting next to a shield glyph of the same size and colour.
-    It is what prompted "what is this new icon and why are no findings listed" — the honest answer being
-    that it is not a finding at all. Removed along with its `showUsageLimitCue` key, its Settings row and
-    that row's search entry, so no setting is left controlling nothing.
-  - `UsageAlertManager` is untouched, so nothing is lost: the opt-in push still fires and the Usage tab
-    still shows the bars and the forecast. Only the unexplained glyph is gone. A side benefit — that call
-    site was the closed notch's **only** use of `usageAlerts`, so the traffic light no longer observes the
-    alert manager at all and usage refreshes stop re-rendering it.
-  - `SettingsHighlightInventoryTests`' pinned counts move 201/252/246 → 200/251/245. They are pinned
-    precisely so a removed row has to be a deliberate edit rather than a row that quietly lost its
-    modifier.
   - **From the review of this PR:** the new doc-parity block in `.githooks/pre-commit` read each file from
     the **working tree**. Staging a template with a key deleted and then restoring that key as an unstaged
     edit would have passed the check while committing the broken file — the same shape of hole the guard

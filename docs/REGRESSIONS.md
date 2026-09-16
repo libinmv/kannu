@@ -84,11 +84,38 @@ made every background-task wake restart the displayed run time, and keying one o
 the same, because Claude Code submits a background task's result as a `UserPromptSubmit`
 (measured live: a `sleep` finishing restarted the turn). The
 computation is wrapped in `try/except` with the carried turn as fallback: an uncaught error there
-would cost the light and the allow line. Two known holes: a payload over ~1 MiB never reaches
-Python (the `KANNU_INPUT` environment variable hits ARG_MAX), so that call is uncounted; and a
+would cost the light and the allow line. One known hole: a
 file Kannu deletes as stale takes its turn with it — never "fix" that by treating an empty file as
 the end of a turn, which would split it. Guards: the `HookScriptTests` "v39" group, run twice
 (Homebrew's Python and `/usr/bin/python3` 3.9).
+
+**v41 addendum — the payload goes through a file, and the allow line is unconditional.** The v39
+note used to list a second hole, "a payload over ~1 MiB never reaches Python, so that call is
+uncounted". It was worse than uncounted: exported as `KANNU_INPUT`, a tool input past ARG_MAX made
+`execve` fail with "Argument list too long" before the heredoc ran, and the wrapper fell through
+to `exit 0` — no status write, no allow line, so Cursor lost its `permission:allow` for that call
+and every provider's light froze on the previous state (reproduced 2026-09-16 with a 1.5 MB
+`tool_input`; the no-python3 fallback was strictly better, it printed the line). The wrapper now
+writes stdin to a `mktemp` file in the status directory and Python reads and unlinks it, capped at
+16 MiB — past the cap the event still updates the light, uncounted. And the two `write_status`
+calls were the only unwrapped step left on the write path: an `os.replace` failure (full disk, a
+path replaced by a directory) raised past `emit()`. Both are wrapped; the allow line prints no
+matter what the write did. Guards: `testAPayloadPastArgMaxStillWritesTheStatusAndPrintsTheAllowLine`
+and `testAFailedStatusWriteStillPrintsTheAllowLine`.
+
+**v42 addendum — the hook can say no, on two hosts, under the user's own policy.** Until v42 the
+only stdout the script ever wrote was the allow line. `emit()` now has one deny branch, and three
+things gate it, all of them pinned: a rule in `~/.kannu/agent-policy.json` matched (the hook is the
+only matcher; Swift only validates the file, so the two cannot drift), the `.kannu-policy-enforce`
+marker exists (`Defaults[.enforceAgentPolicy]`, off by default), and the host's documented contract
+has a deny — Claude Code `PreToolUse` (`permissionDecision`) and Cursor's pre events (`permission`).
+Every other provider gets the finding only, Codex included: it validates strictly and its deny is
+unverified. Rules: a deny never also says allow; the policy file is untrusted input with caps and
+no regex, and anything malformed means *no policy* — the hook never fails closed on its own
+configuration; the matched rule is recorded, never the command line. Guards: the `HookScriptTests`
+"Agent policy (v42)" group (`…RefusedOnClaudeCodeWhenBlockingIsOn`, `…RefusedOnCursorAndOnlyReportedElsewhere`,
+`…MatchingIsByWordNotBySubstring`, `…MalformedPolicyMeansNoPolicyAndTheHookStillAnswers`),
+`AgentPolicyTests` for the file's shape. Widen `POLICY_DENY_EVENTS` only after a live check on that host.
 
 ---
 
@@ -359,13 +386,13 @@ environment is plain inheritance (`nil`), the forbidden env key is recorded, and
 stays bare** — that bare invocation is the one observed to actually fetch. Both regressions were
 verified to turn the suite red before this was committed.
 
----
-
 **2026-09-10 addendum.** The ADR Detection run (`uv run --project <checkout> python
 <adapter> …`) is pinned the same way: `ADRDetectionCommand` holds the arguments and the
 environment whitelist as data, `ADRDetectionCommandTests` pins both, and the embedded adapter is
 tested identical to `scripts/adr-analyze-session.py`. Permission and tool flags never pass
 through Kannu — the adapter alone decides how upstream runs its Claude session.
+
+---
 
 ## 9. Notch tooltips are custom; `.help()` is dead there
 
@@ -383,7 +410,8 @@ active application, and this accessory app with a non-activating panel is never 
 the type system or the build says so.
 
 **Guard — exists.** `.githooks/pre-commit` rejects any `.help(` in those directories, requires
-`HoverTooltip.swift` to keep a bare `.fixedSize()`, and rejects `fixedSize(horizontal:)` there.
+`HoverTooltip.swift` to keep a bare `.fixedSize()`, and rejects `fixedSize(horizontal:)` in that one
+file — not directory-wide; `AgentTrafficLightLiveActivity` uses it legitimately.
 The layout rules that cannot be grepped — `edge` versus container clipping, one hover source per
 control — are written up in **docs/TOOLTIPS.md** with the reasoning and a checklist.
 
@@ -513,22 +541,27 @@ and confirm no `system_profiler` or `pmset` frame appears on the main thread. Th
 guarded: `BluetoothLiveBatteryWritesTests` pins both directions, including that a scan can still lower
 a value as the battery drains — the half a careless fix breaks.
 
-## 13. A live Claude session is never resumed
+**2026-09-16 addendum — the fourth pass, and the rule at full width.** The 2026-09-13 fix moved the
+*forced* refresh onto `pmsetFetchQueue` and measured the connect path at 0 ms — with zero devices
+connected. With a device actually connecting, `checkForNewlyConnectedDevices` (main thread: the 3 s
+poll and the connect notification) first built the device through `createBluetoothAudioDevice`'s
+default `includeBattery: true`, whose `getBatteryLevel` ran an *unforced* `updateBatteryStatuses()`;
+on a cache older than 20 s that is both collectors inline, on main, immediately before the connect
+HUD — the original stall, one call earlier than the one that was fixed. Found by a review of the
+merged PR, not by a user, because this Mac has nothing to connect. The rule as the addendum above
+stated it ("the forced collection runs on `pmsetFetchQueue`") was narrower than the rule:
+**no collector runs on the main thread, forced or not.** `getBatteryLevel` and the `includeBattery`
+parameter are gone, so there is no longer a synchronous way to ask for a level;
+`updateBatteryStatuses` is called only from `pmsetFetchQueue` and the launch scan's utility queue.
 
-**Rule:** `claude://resume?session=<id>` imports a transcript into Claude Desktop and starts a new
-`claude --resume` host for it. On a session whose process is still alive that is a second consumer
-of the same transcript. Only a chat whose process is gone may be resumed, and only once its card is
-dim. A live chat goes to its terminal, its tmux pane, or nowhere.
+The launch scan also needed the second half of the rule. It collects off main too, and called the
+forced scan with no `liveWriteBaseline`, so a live BLE write landing during its `system_profiler` run
+was reverted exactly as in the forced-refresh case above; the parameter doc's "nothing can
+interleave" was true only for a caller that collects on main. It reads the counter on main first
+now, and the doc says `nil` is for main-thread callers only. Guards unchanged: the revert half by
+`BluetoothLiveBatteryWritesTests`, the spawn half by the manual `sample` check — still missing.
 
-**What happened (2026-09-11).** The opener's own header already said "never resume a live
-session", but the Claude arm resumed any `.inactive` card that had no reachable host. A live but
-idle session in tmux (whose server's parent is launchd), `screen` or ssh has a `hostPID` and no GUI
-app up its parent chain, and its dim card read as "not running" — so a click spawned a duplicate.
-
-**Guard.** The decision moved into `AgentClickThroughPolicy` (logic target);
-`AgentClickThroughPolicyTests.testInactiveLiveSessionNeverResumes` and
-`…testLiveSessionWithoutAHostNeverResumes` pin it. A live process is "live" by `hostPID` today;
-anything that later proves liveness (a hook-reported terminal) must feed the same flag.
+---
 
 ## 12. Yellow follows evidence, not the clock
 
@@ -566,6 +599,27 @@ target — manual check: the waiting session's file survives past 30 min in `~/.
 **Never** fix a false yellow by shortening `awaitingInputStaleMs` or by refreshing `ts` in the
 script. Add or remove evidence.
 
+---
+
+## 13. A live Claude session is never resumed
+
+**Rule:** `claude://resume?session=<id>` imports a transcript into Claude Desktop and starts a new
+`claude --resume` host for it. On a session whose process is still alive that is a second consumer
+of the same transcript. Only a chat whose process is gone may be resumed, and only once its card is
+dim. A live chat goes to its terminal, its tmux pane, or nowhere.
+
+**Broken once**, fixed in `b759a4e` (2026-09-11). The opener's own header already said "never resume a
+live session", but the Claude arm resumed any `.inactive` card that had no reachable host. A live but
+idle session in tmux (whose server's parent is launchd), `screen` or ssh has a `hostPID` and no GUI
+app up its parent chain, and its dim card read as "not running" — so a click spawned a duplicate.
+
+**Guard.** The decision moved into `AgentClickThroughPolicy` (logic target);
+`AgentClickThroughPolicyTests.testInactiveLiveSessionNeverResumes` and
+`…testLiveSessionWithoutAHostNeverResumes` pin it. A live process is "live" by `hostPID` today;
+anything that later proves liveness (a hook-reported terminal) must feed the same flag.
+
+---
+
 ## 14. Nothing stops the main thread except one helper
 
 **Rule:** `runModal()` and `beginSheetModal` appear only in `Kannu/helpers/ModalPresenter.swift`.
@@ -573,7 +627,9 @@ A file panel is never modal — `NSSavePanel.begin(completionHandler:)` exists. 
 when a titled window is on screen, and otherwise activated and raised above Kannu's own windows
 before it runs. No sheet is ever anchored to a window that cannot be focused.
 
-**What happened (2026-09-12).** A user clicked the ADR policy picker and Kannu stopped. A sample of
+**Broken twice**, fixed in `ed7b0ca` (2026-09-12, the five Settings pickers) and `f6c6bfc`
+(2026-09-12, the ban, after the RPC picker and the alerts were found still modal). A user clicked the
+ADR policy picker and Kannu stopped. A sample of
 the live process named it: `choosePolicyFile()` → `-[NSSavePanel runModal]` →
 `-[NSApplication runModalForWindow:]`, parked in `__CFRunLoopRun` for 1,596 of 1,599 samples at 0 %
 CPU with the panel out of reach — which the user reported as a crash, because force-quitting is what
@@ -596,6 +652,8 @@ regex that stops matching fails loudly instead of passing vacuously.
 
 **Never** answer "the panel did not appear" by activating harder. If a panel or alert is not on
 screen, the question is which window it was anchored to.
+
+---
 
 ## 15. A request's clock spans the request, not the last state change
 
@@ -638,6 +696,8 @@ a single run.
 **Never** fix a reset by widening a staleness window. Entry 2 and entry 12 are the same lesson: the
 clock is not the state machine.
 
+---
+
 ## 16. A rule stated in more than one file must be pinned to the thing that enforces it
 
 **Rule:** `.githooks/pre-commit` is the only authority on the CHANGELOG entry shape. Every file that
@@ -675,6 +735,8 @@ line of `CLAUDE.md` — ordering is load-bearing, because the ART contract has t
 bare `@token` appears outside backticks in either file, since Claude Code parses one as a file import
 and `AGENTS.md` legitimately mentions `@MainActor` twice.
 
+---
+
 ## Danger zones
 
 Commit counts across all branches (`--follow`, so pre-rename history counts):
@@ -686,7 +748,7 @@ Commit counts across all branches (`--follow`, so pre-rename history counts):
 | `AgentHookInstaller.swift` | 17 | Embedded script + event table + install/uninstall/migration. Grows monotonically; every growth episode has broken `checkInstalled` or a migration (entries 1 and 6). |
 | `CursorAgentStatusMonitor.swift` (usage spawn) | — | The `/usage` fetch invocation. Two silent breakages in one day from added flags/env (entry 8). |
 | `ModalPresenter.swift` | 2 | The only place allowed to stop the main run loop. Every site in the app funnels through it, and the hang watchdog trusts it to declare a deliberate stall (entry 14). |
-| `BluetoothAudioManager.swift` | 19 | Battery collection. Spawns `system_profiler` and `pmset` and waits, on whatever thread calls it — moved off main three separate times, twice re-landing there in the same change that was meant to fix it (entry 11, 2026-09-13 addendum). |
+| `BluetoothAudioManager.swift` | 19 | Battery collection. Spawns `system_profiler` and `pmset` and waits, on whatever thread calls it — moved off main four separate times: twice re-landing there in the same change that was meant to fix it, once leaving the connect path itself on main (entry 11, 2026-09-13 and 2026-09-16 addenda). |
 | `AGENTS.md` / `CLAUDE.md` | — | The instruction files every agent reads. One rule stated in both drifts silently; the split and the import are pinned by `ChangelogRuleDocsTests` (entry 16). |
 | `AgentSessionLogParser.swift` | 8 | `readTrailingLines` and the tail verdict. 4 of 8 commits touch the reader; **2 of those 4 fix the same failure mode** — the reader returning nil and silently sending callers down a wrong path (entry 4). |
 

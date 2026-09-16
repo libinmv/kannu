@@ -76,6 +76,15 @@ struct CrashReport: Equatable {
     /// `Kannu-2026-09-12-213652.ips` and a resource report is
     /// `Kannu_2026-09-12-033808_<host>.cpu_resource.diag`. So the delimiter is `-` or `_`; requiring
     /// only `Kannu_` would reject every crash report, which is the thing this reads.
+    /// Whether a diagnostic is worth offering: not offered before, and from the session the user
+    /// just had. Anything older than the previous launch is history they have already lived through
+    /// — on a first run with no marker, anything older than a day. Without this, updating to a build
+    /// that has this feature greets the user with a warning about something from months ago.
+    static func shouldOffer(fileName: String, written: Date?, lastOffered: String?, previousLaunch: Date?, now: Date) -> Bool {
+        guard lastOffered != fileName, let written else { return false }
+        return written >= (previousLaunch ?? now.addingTimeInterval(-86_400))
+    }
+
     static func isDiagnostic(fileName: String, appName: String = "Kannu") -> Bool {
         guard fileName.hasPrefix(appName) else { return false }
         guard let delimiter = fileName.dropFirst(appName.count).first,

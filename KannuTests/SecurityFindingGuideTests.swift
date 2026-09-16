@@ -43,6 +43,9 @@ final class SecurityFindingGuideTests: XCTestCase {
                            changed.contains(category) ? .sensitiveFileChanged : .sensitiveFile, category.rawValue)
         }
         XCTAssertEqual(Guide.family(forRule: MCPServerWatch.Addition.rule), .mcpServerAdded)
+        for kind in PolicySighting.Kind.allCases {
+            XCTAssertEqual(Guide.family(forRule: PolicySighting.rulePrefix + kind.rawValue), .policy)
+        }
         XCTAssertEqual(Guide.family(forRule: "unpinned_mcp_server"), .unpinnedMCPServer)
         XCTAssertEqual(Guide.family(forRule: "plaintext_transport"), .plaintextTransport)
         XCTAssertEqual(Guide.family(forRule: "undeclared_mcp_server"), .undeclaredMCPServer)
@@ -55,7 +58,8 @@ final class SecurityFindingGuideTests: XCTestCase {
     func testEveryFamilyHasPlainNonEmptyTexts() {
         let sampleRules = ["unpinned_mcp_server", "plaintext_transport", "undeclared_mcp_server", "third_party_destination",
                            "unattended_execution", "detection_x", "hidden_text_tags", "hidden_text_bidi", "secret_npm_token",
-                           "sensitive_file_env_file", "sensitive_file_autorun", MCPServerWatch.Addition.rule, "brand_new_rule"]
+                           "sensitive_file_env_file", "sensitive_file_autorun", MCPServerWatch.Addition.rule, "policy_command",
+                           "brand_new_rule"]
         let guides = sampleRules.map(Guide.init(rule:))
         XCTAssertEqual(Set(guides.map(\.family)).count, Guide.Family.allCases.count, "one sample per family")
         for guide in guides {
@@ -133,6 +137,57 @@ final class SecurityFindingGuideTests: XCTestCase {
         XCTAssertFalse(prompt.contains(String(conversation.prefix(8))), "no session id, nothing that leads to a transcript")
         XCTAssertTrue(prompt.contains("Claude session started without permission prompts"))
         XCTAssertTrue(unattended.summary.contains(chat), "the summary, shown in Kannu, still names it")
+    }
+
+    func testThePushBodyNamesNeitherTheChatNorAFile() throws {
+        // A push (default: a world-readable ntfy topic) and a webhook get `pushBody`, not
+        // `summary`. Every builder that names the chat or the file is checked here.
+        let path = SensitivePathSighting(category: .envFile, access: .read, path: "~/code/kannu/.env", tool: "Read", failed: false,
+                                         eventCount: 1, firstSeenMs: t0, lastSeenMs: t0)
+            .finding(conversationID: conversation, provider: "claude", chatName: chat, projectName: "kannu", cwd: "/Users/u/code/kannu")
+        let secret = SecretSighting(kind: .awsAccessKey, location: .prompt, tool: nil, prefix: "AKIA", length: 20,
+                                    fingerprint: "cb2619a301de", eventCount: 1, firstSeenMs: t0, lastSeenMs: t0)
+            .finding(conversationID: conversation, provider: "claude", chatName: chat, projectName: "kannu", cwd: "/Users/u/code/kannu")
+        let hidden = HiddenTextIncident(kind: .tags, location: .toolResult, tool: "Read", characterCount: 25, eventCount: 1,
+                                        preview: "SECRET PAYLOAD", firstSeenMs: t0, lastSeenMs: t0)
+            .finding(conversationID: conversation, provider: "claude", chatName: chat, projectName: "kannu", cwd: "/Users/u/code/kannu")
+        var session = AgentSessionStatus(id: "claude-" + conversation, provider: "claude", conversationID: conversation, chatName: chat,
+                                         projectName: "kannu", rawState: "executing", displayState: .executing,
+                                         updatedAt: Date(timeIntervalSince1970: 1_000), isVisible: true, executionStartedAt: nil,
+                                         cwd: "/Users/u/code/kannu", hostPID: nil)
+        session.isUnattended = true
+        let unattended = try XCTUnwrap(AgentSecurityFinding.nativeFindings(from: [session]).first)
+
+        for finding in [path, secret, hidden, unattended] {
+            let body = finding.pushBody
+            XCTAssertFalse(body.contains(chat), body)
+            XCTAssertFalse(body.contains(conversation), body)
+            XCTAssertFalse(body.contains(".env") || body.contains("/Users") || body.contains("~/"), body)
+            XCTAssertFalse(body.contains("SECRET PAYLOAD") || body.contains("AKIA") || body.contains("cb2619a301de"), body)
+            XCTAssertTrue(body.contains(finding.severity.label), body)
+            XCTAssertTrue(body.contains("Kannu's own check"), body)
+            XCTAssertTrue(finding.summary.contains(chat), "the card still names the chat")
+        }
+    }
+
+    func testAPolicyFindingNamesTheRuleNeverTheCommandLine() {
+        // The hook records the rule that matched, never the command line (it can carry a secret);
+        // the prompt and the push follow from that.
+        let sighting = PolicySighting(kind: .command, matched: "ssh", tool: "Bash", blocked: false, eventCount: 1,
+                                      firstSeenMs: t0, lastSeenMs: t0)
+        let finding = sighting.finding(conversationID: conversation, provider: "claude", chatName: chat, projectName: "kannu", cwd: "/Users/u/code/kannu")
+        let prompt = Guide.agentPrompt(for: finding)
+        XCTAssertTrue(prompt.contains("Rule: command “ssh”"))
+        XCTAssertTrue(prompt.contains("agent-policy.json"))
+        XCTAssertFalse(prompt.contains(chat))
+        XCTAssertFalse(finding.pushBody.contains(chat))
+        XCTAssertTrue(finding.summary.contains(chat), "the card still names the chat")
+        XCTAssertEqual(finding.severity, .high)
+        let blocked = PolicySighting(kind: .tool, matched: "WebFetch", tool: "WebFetch", blocked: true, eventCount: 1,
+                                     firstSeenMs: t0, lastSeenMs: t0)
+            .finding(conversationID: conversation, provider: "cursor", chatName: chat, projectName: "kannu", cwd: "/p")
+        XCTAssertEqual(blocked.severity, .medium)
+        XCTAssertTrue(blocked.title.contains("blocked"))
     }
 
     func testTheUnattendedIdIsUnchanged() {

@@ -49,7 +49,9 @@ enum DisplayPlacementRuntime {
     /// The display the pointer is on, or nil when it cannot be placed.
     static func pointerDisplayID() -> CGDirectDisplayID? {
         let location = NSEvent.mouseLocation
-        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(location) }) else { return nil }
+        // `NSMouseInRect`, not `CGRect.contains`: the latter is half-open and excludes the top and
+        // right edges, and the top edge is exactly where a pointer goes to reach the notch.
+        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(location, $0.frame, false) }) else { return nil }
         return displayID(for: screen)
     }
 

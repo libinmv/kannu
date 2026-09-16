@@ -937,6 +937,8 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .agentStatus, title: "Look for secrets in prompts and tool calls", keywords: ["secret", "api key", "token", "private key", "leak", "credential", "aws", "github"], highlightID: SettingsTab.agentStatus.highlightID(for: "Look for secrets in prompts and tool calls")),
             SettingsSearchEntry(tab: .agentStatus, title: "Watch for agents touching sensitive files", keywords: ["sensitive", "ssh", "keychain", "credentials", "env", "launch agent", "zshrc", "browser", "password", "history"], highlightID: SettingsTab.agentStatus.highlightID(for: "Watch for agents touching sensitive files")),
             SettingsSearchEntry(tab: .agentStatus, title: "Notice new MCP servers", keywords: ["mcp", "server", "new", "added", "config", "supply chain", "tool"], highlightID: SettingsTab.agentStatus.highlightID(for: "Notice new MCP servers")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Policy rules", keywords: ["policy", "agent policy", "block", "ssh", "forbid", "deny", "command", "tool", "rules", "json"], highlightID: SettingsTab.agentStatus.highlightID(for: "Policy rules")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Block matching tool calls", keywords: ["policy", "block", "deny", "enforce", "refuse", "ssh", "claude", "cursor"], highlightID: SettingsTab.agentStatus.highlightID(for: "Block matching tool calls")),
             SettingsSearchEntry(tab: .agentStatus, title: "Tell the agent when hidden text is found", keywords: ["hidden", "invisible", "unicode", "agent", "warn", "context", "note"], highlightID: SettingsTab.agentStatus.highlightID(for: "Tell the agent when hidden text is found")),
             SettingsSearchEntry(tab: .agentStatus, title: "Analyze chats with ADR Detection", keywords: ["adr", "detection", "analyze", "analysis", "session", "transcript", "malicious", "prompt injection"], highlightID: SettingsTab.agentStatus.highlightID(for: "Analyze chats with ADR Detection")),
             SettingsSearchEntry(tab: .agentStatus, title: "Detection checkout", keywords: ["adr", "detection", "checkout", "uv", "clone"], highlightID: SettingsTab.agentStatus.highlightID(for: "Detection checkout")),
@@ -1391,11 +1393,19 @@ struct GeneralSettings: View {
     /// would be a control that does nothing.
     @ViewBuilder
     private var perDisplayOverridesSection: some View {
-        perDisplayOverrideSections(
-            NSScreen.screens
-                .filter { $0.safeAreaInsets.top <= 0 }
-                .map { (name: $0.localizedName, isBuiltIn: isBuiltInDisplay($0)) }
-        )
+        perDisplayOverrideSections(overrideDisplays)
+    }
+
+    /// One entry per *name*: the override dictionaries are keyed by `localizedName`, so two
+    /// identical monitors share one entry, and two rows with one identity made SwiftUI's `ForEach`
+    /// undefined. One row for the pair is honest about what the setting can express; keying the
+    /// overrides on `CGDirectDisplayID` is the real fix and is recorded as a follow-up.
+    private var overrideDisplays: [(name: String, isBuiltIn: Bool)] {
+        var seen = Set<String>()
+        return NSScreen.screens
+            .filter { $0.safeAreaInsets.top <= 0 }
+            .map { (name: $0.localizedName, isBuiltIn: isBuiltInDisplay($0)) }
+            .filter { seen.insert($0.name).inserted }
     }
 
     /// One group per display: its two overrides and Reset. The explanation sits under the last one.
@@ -7773,6 +7783,7 @@ struct AgentStatusSettings: View {
         securityFindingsSection
         adrDiscoverySection
         kannuChecksSection
+        agentPolicySection
         sessionAnalysisSections
     }
 
@@ -7978,6 +7989,54 @@ struct AgentStatusSettings: View {
         } footer: {
             SettingsFooter("Kannu also flags sessions started with permission checks turned off; that check has no setting.")
         }
+    }
+
+    /// The user's own block list, enforced where a host's hook can refuse a call.
+    private var agentPolicySection: some View {
+        Section {
+            SettingsRow("Policy rules", description: "A JSON file you write — ~/.kannu/agent-policy.json — naming commands and tools an agent may not use. Kannu never writes it. Every match is reported as a finding; whether it is also blocked is the switch below.") {
+                SettingsStatusText(agentPolicyStatusText, isReady: agentPolicyIsReady)
+            }
+            .settingsHighlight(id: highlightID("Policy rules"))
+            SettingsActionRow {
+                Button("Copy a prompt that drafts a policy") { findingsStore.copyPolicyDraftingPrompt() }
+                Button("Reveal in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([AgentPolicy.fileURL])
+                }
+                .disabled(!agentPolicyExists)
+                Button("Check again") { findingsStore.checkAgentPolicy() }
+            }
+            SettingsRow("Block matching tool calls", description: "Off: every match is reported and the call runs. On: Claude Code and Cursor refuse the call and tell the agent why — their hooks can say no. Every other agent still only gets the finding.") {
+                Defaults.Toggle(key: .enforceAgentPolicy) {
+                    Text("Block matching tool calls")
+                }
+            }
+            .settingsHighlight(id: highlightID("Block matching tool calls"))
+        } header: {
+            Text("Agent policy")
+        } footer: {
+            SettingsFooter("A command rule matches a command's first word (or its basename) in any segment joined by ;, &&, || or |, after sudo, env and nohup; a multi-word rule matches a segment that starts with it; a tool rule matches the tool's exact name. No regex. Copy the prompt to have your own agent draft the file.")
+        }
+        .onAppear { findingsStore.checkAgentPolicy() }
+    }
+
+    private var agentPolicyStatusText: String {
+        switch findingsStore.agentPolicyStatus {
+        case .success(let policy):
+            return String(localized: "\(policy.rules.count) rules · ~/.kannu/agent-policy.json")
+        case .failure(let error):
+            return error.message
+        }
+    }
+
+    private var agentPolicyIsReady: Bool {
+        if case .success = findingsStore.agentPolicyStatus { return true }
+        return false
+    }
+
+    private var agentPolicyExists: Bool {
+        if case .failure(.notFound) = findingsStore.agentPolicyStatus { return false }
+        return true
     }
 
     /// ADR Detection — off by default, behind a consent alert, and every run is the user's click.

@@ -427,7 +427,10 @@ struct NotchAgentStatusView: View {
             Button(String(localized: "Analyze with ADR Detection…")) { requestAnalysis(session) }
         }
         if let analysis = findingsStore.analysis(for: session.conversationID) {
-            if let path = analysis.reportPath, FileManager.default.fileExists(atPath: path) {
+            // No `fileExists` here: this is a view body, and a stat per render is exactly the
+            // filesystem work AGENTS.md keeps out of views. Finder simply shows nothing for a path
+            // that is gone.
+            if let path = analysis.reportPath {
                 Button(String(localized: "Reveal ADR report in Finder")) {
                     NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
                 }

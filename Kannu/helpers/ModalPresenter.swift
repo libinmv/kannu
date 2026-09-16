@@ -43,6 +43,21 @@ import AppKit
 @MainActor
 enum ModalPresenter {
 
+    // MARK: - What is on screen
+
+    /// Panels and alerts presented through here that have not completed yet. The notch consults
+    /// this before opening. It used to infer the fact from `NSApp.modalWindow` and `attachedSheet`,
+    /// which missed the `panel.begin` fallback below (neither modal nor a sheet — the normal path
+    /// when Settings is closed, so the notch opened over the very picker the user had to answer)
+    /// and caught every unrelated SwiftUI `.sheet` on Settings, which locked the notch out for as
+    /// long as the Spotify sign-in was up.
+    private(set) static var presentedCount = 0
+    static var isPresenting: Bool { presentedCount > 0 }
+
+    /// Alerts waiting for the one on screen. A second alert while the first is a sheet on Settings
+    /// found no anchor (the window already had a sheet) and fell to app-modal, over the sheet.
+    private static var pendingAlerts: [(NSAlert, (NSApplication.ModalResponse) -> Void)] = []
+
     // MARK: - Anchors
 
     /// A window a sheet may safely hang from, or nil.
@@ -67,10 +82,16 @@ enum ModalPresenter {
     /// Presents an open or save panel without ever entering a modal run loop.
     ///
     /// `NSOpenPanel` is an `NSSavePanel`, so this covers both.
-    static func present(_ panel: NSSavePanel, completion: @escaping (NSApplication.ModalResponse) -> Void) {
+    static func present(_ panel: NSSavePanel, completion handler: @escaping (NSApplication.ModalResponse) -> Void) {
         // The notch panels are non-activating, so the app is not necessarily front when one of its
         // buttons is clicked; a picker behind another app is the freeze again.
         NSApp.activate(ignoringOtherApps: true)
+        presentedCount += 1
+        let completion: (NSApplication.ModalResponse) -> Void = { response in
+            presentedCount -= 1
+            handler(response)
+            drainPendingAlerts()
+        }
         if let window = sheetAnchorWindow() {
             panel.beginSheetModal(for: window, completionHandler: completion)
         } else {
@@ -85,12 +106,29 @@ enum ModalPresenter {
     /// With a titled window on screen this is a sheet and no run loop is nested. Without one it is
     /// app-modal, raised and activated so it is on screen, and `completion` runs once it closes.
     static func present(_ alert: NSAlert, completion: @escaping (NSApplication.ModalResponse) -> Void = { _ in }) {
+        // One at a time. The next one is shown from the current one's completion.
+        if isPresenting {
+            pendingAlerts.append((alert, completion))
+            return
+        }
         if let window = sheetAnchorWindow() {
             NSApp.activate(ignoringOtherApps: true)
-            alert.beginSheetModal(for: window) { response in completion(response) }
+            presentedCount += 1
+            alert.beginSheetModal(for: window) { response in
+                presentedCount -= 1
+                completion(response)
+                drainPendingAlerts()
+            }
             return
         }
         completion(runAppModal(alert))
+        drainPendingAlerts()
+    }
+
+    private static func drainPendingAlerts() {
+        guard !isPresenting, !pendingAlerts.isEmpty else { return }
+        let (alert, completion) = pendingAlerts.removeFirst()
+        present(alert, completion: completion)
     }
 
     /// App-modal, for the callers that cannot return until they know the answer — a restart prompt,
@@ -103,6 +141,8 @@ enum ModalPresenter {
     static func runAppModal(_ alert: NSAlert) -> NSApplication.ModalResponse {
         NSApp.activate(ignoringOtherApps: true)
         raiseAboveOwnWindows(alert)
+        presentedCount += 1
+        defer { presentedCount -= 1 }
         // A dialog waiting for the user is a stopped main thread on purpose, so the hang watchdog
         // must not call it a freeze. This is the only place that has to say so.
         return HangWatchdog.shared.duringExpectedStall { alert.runModal() }

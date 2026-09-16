@@ -284,6 +284,38 @@ final class ClaudeUsageSnapshotTests: XCTestCase {
         XCTAssertEqual(merged?.observedAt, now.addingTimeInterval(-1_800))
     }
 
+    func testMergeBorrowsAnExactResetForAnInferredOne() {
+        // Desktop history derives its reset from the last rollover it sampled, so it lands after
+        // the server's. Taken by freshness it replaced the API's reset on every read, and the
+        // usage-alert push key (the reset) fired the same window twice. The fresher percent still
+        // wins; the exact reset rides along.
+        let exact = now.addingTimeInterval(3 * 86_400)
+        let cache = ClaudeUsageSnapshot(windows: [window("seven_day", pct: 90, resetsIn: 3 * 86_400)],
+                                        observedAt: now.addingTimeInterval(-1_200))
+        let desktop = ClaudeUsageSnapshot(
+            windows: [.init(key: "seven_day", percent: 96, resetsAt: exact.addingTimeInterval(1_800), resetIsInferred: true)],
+            observedAt: now.addingTimeInterval(-300))
+        let merged = ClaudeUsageSnapshot.merged([cache, desktop], now: now)
+        XCTAssertEqual(merged?.sevenDayPercent, 96)
+        XCTAssertEqual(merged?.sevenDayResetsAt, exact)
+        XCTAssertEqual(merged?.window("seven_day")?.resetIsInferred, false)
+        XCTAssertEqual(merged?.observedAt, now.addingTimeInterval(-300))
+    }
+
+    func testMergeKeepsAnInferredResetWhenNoSourceHasAnExactOne() {
+        let inferred = now.addingTimeInterval(3 * 86_400)
+        let cache = ClaudeUsageSnapshot(windows: [window("seven_day", pct: 90, resetsIn: nil)],
+                                        observedAt: now.addingTimeInterval(-1_200))
+        let desktop = ClaudeUsageSnapshot(
+            windows: [.init(key: "seven_day", percent: 96, resetsAt: inferred, resetIsInferred: true)],
+            observedAt: now.addingTimeInterval(-300))
+        let merged = ClaudeUsageSnapshot.merged([cache, desktop], now: now)
+        XCTAssertEqual(merged?.sevenDayResetsAt, inferred)
+        XCTAssertEqual(merged?.window("seven_day")?.resetIsInferred, true)
+        // And an exact reset is never replaced by an inferred one, even when the inferred window wins.
+        XCTAssertEqual(ClaudeUsageSnapshot.merged([desktop, cache], now: now)?.sevenDayResetsAt, inferred)
+    }
+
     func testMergeRankOnlyBreaksTiesInFreshness() {
         let higher = ClaudeUsageSnapshot(windows: [window("five_hour", pct: 40, resetsIn: 300)], observedAt: now.addingTimeInterval(-10))
         let lower = ClaudeUsageSnapshot(windows: [window("five_hour", pct: 45, resetsIn: 900)], observedAt: now.addingTimeInterval(-10))

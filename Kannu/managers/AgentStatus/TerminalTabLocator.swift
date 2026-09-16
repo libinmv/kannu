@@ -74,24 +74,19 @@ enum TmuxLocator {
                 let process = Process()
                 process.executableURL = executable
                 process.arguments = arguments
-                var environment = ProcessInfo.processInfo.environment
-                environment.removeValue(forKey: "TMUX")
-                process.environment = environment
-                let output = Pipe()
-                process.standardOutput = output
-                process.standardError = FileHandle.nullDevice
-                do {
-                    try process.run()
-                } catch {
-                    continuation.resume(returning: nil)
-                    return
+                // Only what tmux needs to find its server — not the whole environment of a process
+                // that holds API keys in it. No `TMUX`: inside a session tmux would target that one.
+                let inherited = ProcessInfo.processInfo.environment
+                var environment: [String: String] = [:]
+                for key in ["PATH", "HOME", "USER", "SHELL", "TMPDIR", "TMUX_TMPDIR", "LANG", "LC_ALL"] {
+                    if let value = inherited[key] { environment[key] = value }
                 }
-                let deadline = Date().addingTimeInterval(timeout)
-                while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
-                if process.isRunning { process.terminate() }
-                process.waitUntilExit()
-                let data = output.fileHandleForReading.readDataToEndOfFile()
-                continuation.resume(returning: process.terminationStatus == 0 ? String(decoding: data, as: UTF8.self) : nil)
+                process.environment = environment
+                // Through the shared runner: this waited and *then* read, the >64 KB pipe deadlock,
+                // rescued only by the timeout; and a tmux server the client spawned kept the pipe
+                // open past the client's exit, which parked this thread and its continuation.
+                let result = BoundedProcessRunner.run(process, timeout: timeout, stdoutCap: 1_000_000, stderrCap: 4_096, killGrace: 1, pollInterval: 0.02)
+                continuation.resume(returning: result.status == 0 && !result.timedOut ? String(decoding: result.stdout, as: UTF8.self) : nil)
             }
         }
     }

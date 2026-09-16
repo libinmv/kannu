@@ -368,7 +368,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
-    /// Drops one display's window, the way `cleanupWindows` drops all of them.
+    /// Drops one display's window, the way `tearDownAllWindows` drops all of them.
     ///
     /// The unplug path used to close the window without removing it from `notchSpace.windows`, so
     /// every disconnect retained a dead window for the life of the process.
@@ -381,27 +381,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.close()
         windows.removeValue(forKey: id)
         viewModels.removeValue(forKey: id)
-    }
-
-    private func cleanupWindows() {
-        if Defaults[.displayPlacement].usesOneWindowPerDisplay {
-            for (screen, window) in windows {
-                // Tear down the hosted ContentView before dropping the window
-                // (`.onDisappear` is unreliable for borderless panels).
-                viewModels[screen]?.onViewTeardown?()
-                viewModels[screen]?.onViewTeardown = nil
-                NotchSpaceManager.shared.notchSpace.windows.remove(window)
-                window.close()
-            }
-            windows.removeAll()
-            viewModels.removeAll()
-        } else if let window = window {
-            vm.onViewTeardown?()
-            vm.onViewTeardown = nil
-            NotchSpaceManager.shared.notchSpace.windows.remove(window)
-            window.close()
-            self.window = nil
-        }
     }
 
     /// Rebuilds the notch's CGSSpace membership from the current hide option and the
@@ -761,7 +740,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Defaults.Keys.migrateMediaControllerToNowPlaying()
         Defaults.Keys.migrateCapsLockTintMode()
         Defaults.Keys.migrateNonNotchAlwaysShow()
-        Defaults.Keys.migrateDisplayPlacement()
         Defaults.Keys.migrateThirdPartyDDCIntegration()
         Defaults.Keys.enforceRemovedFeatureDefaults()
         SecureSecretsStore.migrateFromDefaultsIfNeeded()
@@ -984,8 +962,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             CursorAgentStatusMonitor.shared.start()
             UsageAlertManager.shared.start()
-            AgentStatusNotificationBridge.shared.start()
+            // The store before the bridge: the bridge subscribes to `$findings` and prunes the
+            // persisted "already pushed" ids against whatever it receives first. Started the other
+            // way round that first value was the store's empty initial list, the ids were wiped, and
+            // every open high finding was pushed again after each relaunch.
             SecurityFindingsStore.shared.start()
+            AgentStatusNotificationBridge.shared.start()
         }
         Defaults.publisher(.enableAgentStatusFeature, options: []).sink { change in
             Task { @MainActor in
@@ -1543,7 +1525,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled, let self else { return }
             self.screenChangeTask = nil
-            self.cleanupWindows()
+            // Both lifecycles, not only the one the current placement uses: `cleanupWindows` tore
+            // down one or the other and left the wrong one's windows behind on a placement change.
+            self.tearDownAllWindows()
             self.adjustWindowPosition()
             self.syncPointerTracking()
         }
@@ -1638,6 +1622,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if windowsHiddenForLock, !LockScreenManager.shared.isLocked {
             restoreWindowsAfterLock()
         }
+        // A display unplugged while the screen is locked still loses its window: the lock defers
+        // creating and showing windows, never tearing down one whose display is gone.
+        if Defaults[.displayPlacement].usesOneWindowPerDisplay {
+            let liveIDs = Set(NSScreen.screens.compactMap(DisplayPlacementRuntime.displayID(for:)))
+            for id in windows.keys where !liveIDs.contains(id) {
+                tearDownWindow(forDisplay: id)
+            }
+        }
         guard !windowsHiddenForLock, !LockScreenManager.shared.isLocked else { return }
 
         if Defaults[.displayPlacement].usesOneWindowPerDisplay {
@@ -1647,10 +1639,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 },
                 uniquingKeysWith: { first, _ in first }
             )
-
-            for id in windows.keys where screensByID[id] == nil {
-                tearDownWindow(forDisplay: id)
-            }
 
             for (id, screen) in screensByID {
                 if windows[id] == nil {

@@ -38,10 +38,18 @@ enum DiagnosticScrub {
             out = out.replacingOccurrences(of: trimmedHome, with: "~")
         }
         guard let pattern = try? NSRegularExpression(pattern: "/Users/[^/\\s\"]+") else { return out }
-        return pattern.stringByReplacingMatches(
+        out = pattern.stringByReplacingMatches(
             in: out,
             range: NSRange(out.startIndex..., in: out),
             withTemplate: "/Users/redacted"
+        )
+        // A mounted volume is usually named after its owner too ("Davids-MacBook-Pro", "Work SSD"),
+        // and an app run from one symbolises every frame to it.
+        guard let volumes = try? NSRegularExpression(pattern: "/Volumes/[^/\\s\"]+") else { return out }
+        return volumes.stringByReplacingMatches(
+            in: out,
+            range: NSRange(out.startIndex..., in: out),
+            withTemplate: "/Volumes/redacted"
         )
     }
 

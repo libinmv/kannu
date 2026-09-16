@@ -13,9 +13,13 @@ fi
 # Prose alone did not hold this invariant, so it is checked here.
 installer_script="Kannu/managers/AgentStatus/AgentHookInstaller.swift"
 mirror_script="scripts/kannu-agent-status.sh"
+# The INDEX, not the working tree: a check that reads the file on disk validates something other
+# than what is being committed (stage a drifted mirror, keep a matching copy unstaged, and the old
+# check passed). A file not in the index falls back to the working copy.
+committed() { git show ":$1" 2>/dev/null || cat "$1"; }
 if [[ -f "${installer_script}" && -f "${mirror_script}" ]]; then
-  installer_version="$(grep -o 'KANNU_HOOK_SCRIPT_VERSION=[0-9]*' "${installer_script}" | head -1 || true)"
-  mirror_version="$(grep -o 'KANNU_HOOK_SCRIPT_VERSION=[0-9]*' "${mirror_script}" | head -1 || true)"
+  installer_version="$(committed "${installer_script}" | grep -o 'KANNU_HOOK_SCRIPT_VERSION=[0-9]*' | head -1 || true)"
+  mirror_version="$(committed "${mirror_script}" | grep -o 'KANNU_HOOK_SCRIPT_VERSION=[0-9]*' | head -1 || true)"
   if [[ -n "${installer_version}" && "${installer_version}" != "${mirror_version}" ]]; then
     cat <<EOF
 ERROR: Hook script mirror is out of sync.
@@ -37,15 +41,15 @@ fi
 # embedded copy is a plain Swift string literal, where "\n" becomes a newline and "\U" does not
 # compile. Build code points with chr(). See docs/REGRESSIONS.md entry 1.
 if [[ -f "${installer_script}" && -f "${mirror_script}" ]]; then
-  mirror_body="$(awk "/^python3 <<'PY'\$/{f=1;next} /^PY\$/{f=0} f" "${mirror_script}")"
+  mirror_body="$(committed "${mirror_script}" | awk "/^python3 <<'PY'\$/{f=1;next} /^PY\$/{f=0} f")"
   if [[ "${mirror_body}" == *\\* ]]; then
     echo "ERROR: ${mirror_script} has a backslash in its Python body. The embedded Swift literal cannot carry one; use chr()."
     exit 1
   fi
-  installer_marker="$(grep -o 'KANNU_HOOK_SCRIPT_VERSION=[0-9]*' "${installer_script}" | head -1 || true)"
-  embedded_body="$(awk '/let script = """$/ && !seen {seen=1; f=1; next} f && /^        """$/ {exit} f' "${installer_script}" \
+  installer_marker="$(committed "${installer_script}" | grep -o 'KANNU_HOOK_SCRIPT_VERSION=[0-9]*' | head -1 || true)"
+  embedded_body="$(committed "${installer_script}" | awk '/let script = """$/ && !seen {seen=1; f=1; next} f && /^        """$/ {exit} f' \
     | sed -e 's/^        //' -e "s/\\\\(scriptVersionMarker)/${installer_marker}/")"
-  if [[ "${embedded_body}" != "$(cat "${mirror_script}")" ]]; then
+  if [[ "${embedded_body}" != "$(committed "${mirror_script}")" ]]; then
     cat <<EOF
 ERROR: the hook script body in ${installer_script} differs from ${mirror_script}.
 
@@ -132,9 +136,11 @@ fi
 # pattern ending in "(" walked straight past it. beginSheet(/beginCriticalSheet are NSWindow's own
 # spelling of the same mistake.
 modal_helper="Kannu/helpers/ModalPresenter.swift"
-stray_modal="$(grep -rnE 'runModal|beginSheetModal|beginSheet\(|beginCriticalSheet|beginModalSession' Kannu 2>/dev/null \
+# `git grep --cached`: the index, not the working tree. `/\*` joins the comment exemption so the two
+# copies of this rule (here and ModalPresentationRulesTests) agree.
+stray_modal="$(git grep --cached -nE 'runModal|beginSheetModal|beginSheet\(|beginCriticalSheet|beginModalSession' -- Kannu 2>/dev/null \
   | grep -v "^${modal_helper}:" \
-  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true)"
+  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*|/\*)' || true)"
 if [[ -n "${stray_modal}" ]]; then
   cat <<EOF
 ERROR: runModal()/beginSheetModal outside ${modal_helper}.

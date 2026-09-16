@@ -88,6 +88,16 @@ struct AgentSecurityFinding: Equatable, Hashable, Identifiable, Codable {
         return path
     }
 
+    /// What a push or webhook carries about this finding: severity and source, and a pointer to
+    /// where the details are. Never `summary`. Kannu's own summaries name the chat and the file
+    /// ("~/code/acme/.env, with Read, in “rotate prod credentials”"), which is right on the card
+    /// and wrong on a phone or a third-party webhook: the wait reminder and the usage alert in
+    /// `AgentStatusNotificationBridge` already carry "never the chat's name", and the default ntfy
+    /// topic is readable by anyone who knows it.
+    var pushBody: String {
+        String(localized: "\(severity.label) severity, reported by \(SecurityFindingGuide.sourceName(source)). Details are in Settings › Agents › Security findings.")
+    }
+
     /// The same finding first seen at `date` — a rebuild that keeps every other field.
     func withFirstSeen(_ date: Date) -> AgentSecurityFinding {
         var copy = self

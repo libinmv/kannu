@@ -28,7 +28,7 @@ final class AgentHookInstaller: ObservableObject {
     private static let logger = os.Logger(subsystem: "com.kannu.app", category: "AgentHookInstaller")
 
     static let scriptName = AgentHookLayout.scriptName
-    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=40"
+    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=42"
 
     private static var home: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -262,7 +262,14 @@ final class AgentHookInstaller: ObservableObject {
         # 700: the files carry session titles and project names, and Kannu trusts their
         # contents to drive the traffic light — no reason for other users to see them.
         mkdir -p "$KANNU_STATUS_DIR" && chmod 700 "$KANNU_STATUS_DIR"
-        export KANNU_INPUT="$(cat)"
+        # The payload goes to Python through a file, not the environment. Exported as KANNU_INPUT, a
+        # tool input over ~1 MiB made execve fail with "Argument list too long" before the heredoc ran,
+        # and the script fell through to `exit 0` with no status write and no allow line. mktemp makes
+        # the file 0600 inside the 700 directory; Python unlinks it, and the rm below covers every
+        # other way out.
+        KANNU_INPUT_FILE="$(mktemp "$KANNU_STATUS_DIR/.kannu-input.XXXXXX" 2>/dev/null)" || KANNU_INPUT_FILE=""
+        if [ -n "$KANNU_INPUT_FILE" ]; then cat > "$KANNU_INPUT_FILE"; else cat > /dev/null; fi
+        export KANNU_INPUT_FILE
 
         if ! command -v python3 >/dev/null 2>&1; then
           TS=$(($(date +%s) * 1000))
@@ -275,6 +282,7 @@ final class AgentHookInstaller: ObservableObject {
             vscode) if [ -n "$COPILOT_CLI" ]; then echo '{}'; else echo '{"permission":"allow","continue":true}'; fi ;;
             *) echo '{"permission":"allow","continue":true}' ;;
           esac
+          [ -n "$KANNU_INPUT_FILE" ] && rm -f "$KANNU_INPUT_FILE"
           exit 0
         fi
 
@@ -306,7 +314,26 @@ final class AgentHookInstaller: ObservableObject {
         hook_event = os.environ.get("KANNU_HOOK_EVENT", "unknown")
         hook_matcher = os.environ.get("KANNU_HOOK_MATCHER", "")
         status_dir = Path(os.environ.get("KANNU_STATUS_DIR", "")).expanduser()
-        raw = os.environ.get("KANNU_INPUT", "")
+        # Read from the file the wrapper wrote (see the top of this script); the environment variable is
+        # only a fallback for a caller that still exports one. Capped so a runaway payload cannot be held
+        # whole in memory: past the cap the event still updates the light, uncounted.
+        INPUT_CAP = 16 * 1024 * 1024
+        raw = ""
+        _input_path = os.environ.get("KANNU_INPUT_FILE", "")
+        if _input_path:
+            try:
+                with open(_input_path, "r", encoding="utf-8", errors="replace") as _fh:
+                    raw = _fh.read(INPUT_CAP + 1)
+            except Exception:
+                raw = ""
+            try:
+                os.unlink(_input_path)
+            except Exception:
+                pass
+            if len(raw) > INPUT_CAP:
+                raw = ""
+        else:
+            raw = os.environ.get("KANNU_INPUT", "")
         status_dir.mkdir(parents=True, exist_ok=True)
 
         try:
@@ -317,6 +344,8 @@ final class AgentHookInstaller: ObservableObject {
         if not isinstance(data, dict):
             # `[]`, `"x"` or `42` is valid JSON with no .get(): it killed the script before the allow line.
             data = {}
+        # v42: set below once the agent policy has been consulted; emit() turns it into a deny.
+        policy_deny = None
 
         def pick_str(*values):
             for value in values:
@@ -412,7 +441,8 @@ final class AgentHookInstaller: ObservableObject {
             return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else default
 
         def ht_token(value, limit=64):
-            return re.sub("[^A-Za-z0-9_.:-]", "", value)[:limit] if isinstance(value, str) else ""
+            # Cut before the regex, not after: the value can come back from the status file at any length.
+            return re.sub("[^A-Za-z0-9_.:-]", "", value[:limit * 4])[:limit] if isinstance(value, str) else ""
 
         def ht_vs_text(run):
             # Butler (2025): byte b -> U+FE00+b (b < 16) or U+E0100+(b-16).
@@ -620,6 +650,17 @@ final class AgentHookInstaller: ObservableObject {
             # CLI parses stdout as JSON (and falls back to stderr when it is empty); Qwen Code and
             # Copilot CLI need nothing from Kannu. An empty object says nothing.
             agent_note, user_note = notes
+            # v42: a policy match with enforcement on, on a host whose contract has a deny. Claude Code's
+            # PreToolUse takes permissionDecision (the reason reaches the model and the transcript);
+            # Cursor's pre events take permission. A deny never also says allow, so nothing else rides.
+            if policy_deny and hook_event in POLICY_DENY_EVENTS.get(provider, ()):
+                if provider == "cursor":
+                    out = {"permission": "deny", "user_message": policy_deny, "agent_message": policy_deny}
+                else:
+                    out = {"hookSpecificOutput": {"hookEventName": hook_event, "permissionDecision": "deny",
+                                                  "permissionDecisionReason": policy_deny}}
+                print(json.dumps(out, separators=(",", ":")))
+                return
             if provider in EMPTY_OBJECT_PROVIDERS:
                 print("{}")
                 return
@@ -1080,6 +1121,195 @@ final class AgentHookInstaller: ObservableObject {
                         break
             return hits
 
+        # --- Agent policy (v42) ------------------------------------------------------------------
+        # A user-authored ~/.kannu/agent-policy.json names commands and tools an agent may not use.
+        # Every match is recorded (`policy` in the status file). With the enforce marker present, and
+        # only on hosts whose hook contract has a deny (Claude Code PreToolUse, Cursor's pre events),
+        # the call is refused and the model is told why. No regex from the file: a pattern from
+        # untrusted input is a ReDoS in a hook that must answer in milliseconds. Anything malformed
+        # means no policy -- the hook never fails closed on its own configuration. Still no backslash.
+        POLICY_FILE = os.path.join(os.path.expanduser("~"), ".kannu", "agent-policy.json")
+        POLICY_ENFORCE_MARKER = ".kannu-policy-enforce"
+        POLICY_MAX_BYTES = 65536
+        POLICY_MAX_RULES = 200
+        POLICY_MAX_LEN = 200
+        POLICY_MAX_ENTRIES = 3
+        POLICY_DENY_EVENTS = {"claude": {"PreToolUse"},
+                              "cursor": {"beforeShellExecution", "beforeMCPExecution", "preToolUse"}}
+        POLICY_SHELLS = {"bash", "sh", "zsh", "dash", "ksh"}
+
+        def policy_text(value):
+            return (isinstance(value, str) and 0 < len(value) <= POLICY_MAX_LEN
+                    and all(ord(c) >= 32 for c in value))
+
+        def load_policy():
+            # [(kind, value, reason)] or None. value: the word list of a command, the name of a tool.
+            try:
+                st = os.lstat(POLICY_FILE)
+                if (st.st_mode & 61440) != 32768 or st.st_size > POLICY_MAX_BYTES:
+                    return None
+                with open(POLICY_FILE, "r", encoding="utf-8") as fh:
+                    doc = json.load(fh)
+            except Exception:
+                return None
+            # `True == 1` in Python: a boolean version is not version 1.
+            if not isinstance(doc, dict) or isinstance(doc.get("version"), bool) or doc.get("version") != 1:
+                return None
+            rules = doc.get("block")
+            if not isinstance(rules, list) or len(rules) > POLICY_MAX_RULES:
+                return None
+            out = []
+            for rule in rules:
+                if not isinstance(rule, dict):
+                    return None
+                reason = rule.get("reason", "")
+                if reason is None:
+                    # JSON null is an absent reason, as it is for "command" and "tool" -- and as Settings
+                    # reads it. Rejected here, the file was "valid, 3 rules" in Settings and nothing here.
+                    reason = ""
+                if reason != "" and not policy_text(reason):
+                    return None
+                command, tool_name = rule.get("command"), rule.get("tool")
+                if command is not None:
+                    if tool_name is not None or not policy_text(command) or not command.split():
+                        return None
+                    out.append(("command", command.split(), reason))
+                elif tool_name is not None:
+                    if not policy_text(tool_name) or tool_name.strip() != tool_name or " " in tool_name:
+                        return None
+                    out.append(("tool", tool_name, reason))
+                else:
+                    return None
+            return out
+
+        def policy_segments(command, depth=0):
+            # Simple commands as word lists: split on ; && || | and newlines, wrappers and VAR=x
+            # stripped, the first word reduced to its basename, `sh -c "..."` opened one level. Bounded.
+            out = []
+            if not isinstance(command, str) or depth > 2:
+                return out
+            import shlex
+            segments = []
+            for line in command.split(chr(10))[:200]:
+                if not line.strip():
+                    continue
+                try:
+                    lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
+                    lexer.whitespace_split = True
+                    words = list(lexer)
+                except Exception:
+                    words = line.split()
+                current = []
+                for word in words + [";"]:
+                    if word and all(c in SP_SEPARATOR_CHARS for c in word):
+                        if current:
+                            segments.append(current)
+                        current = []
+                    else:
+                        current.append(word)
+                if len(segments) > 200:
+                    break
+            for words in segments[:200]:
+                i = 0
+                while i < len(words):
+                    word = words[i]
+                    if word in SP_WRAPPERS or (i > 0 and words[i - 1] in SP_WRAPPERS and word.startswith("-")):
+                        i += 1
+                    elif "=" in word and word.split("=", 1)[0].replace("_", "").isalnum():
+                        i += 1
+                    else:
+                        break
+                words = words[i:]
+                if not words:
+                    continue
+                name = words[0].rsplit("/", 1)[-1]
+                out.append([name] + words[1:])
+                if name in POLICY_SHELLS and len(words) >= 3 and words[1] in ("-c", "-lc", "-ic", "-lic"):
+                    out.extend(policy_segments(words[2], depth + 1))
+            return out[:400]
+
+        def policy_commands(payload, tool_input, event, tool_name):
+            # The command strings a pre-tool event carries: tool_input.command, Cursor's top-level
+            # command, and a stringified tool_input (Cursor sends JSON text). A bare string is a command
+            # only for a shell tool or Cursor's shell event -- a file path is not a command line.
+            compact = "".join(c for c in (tool_name or "").lower() if c.isalpha())
+            shell_like = event == "beforeShellExecution" or compact in SP_SHELL_TOOLS
+            out = []
+            for item in (tool_input, payload.get("command")):
+                if isinstance(item, str) and item[:64].lstrip()[:1] in ("{", "["):
+                    try:
+                        item = json.loads(item)
+                    except Exception:
+                        pass
+                if isinstance(item, dict):
+                    for key in ("command", "cmd", "commandLine"):
+                        value = item.get(key)
+                        if isinstance(value, str):
+                            out.append(value)
+                        elif isinstance(value, list):
+                            out.append(" ".join(v for v in value if isinstance(v, str)))
+                elif isinstance(item, str) and shell_like:
+                    out.append(item)
+            return [c[:100000] for c in out if c]
+
+        def policy_match(rules, tool_name, commands):
+            # The first rule that matches: (kind, matched text, reason). Tool rules first: they are exact.
+            for kind, value, reason in rules:
+                if kind == "tool" and tool_name and tool_name == value:
+                    return ("tool", value, reason)
+            segments = []
+            for command in commands:
+                segments.extend(policy_segments(command))
+                if len(segments) > 400:
+                    break
+            for kind, value, reason in rules:
+                if kind != "command":
+                    continue
+                for words in segments:
+                    if words[:len(value)] == value:
+                        return ("command", " ".join(value), reason)
+            return None
+
+        def policy_denial(hit):
+            kind, matched, reason = hit
+            text = "Kannu policy: " + chr(34) + matched + chr(34) + " is blocked on this Mac by the user"
+            text += chr(39) + "s agent policy. "
+            if reason:
+                text += reason.strip() + " "
+            return text + "Ask the user before trying another way."
+
+        def carried_policy(value):
+            out = []
+            for item in (value if isinstance(value, list) else [])[-POLICY_MAX_ENTRIES:]:
+                if not isinstance(item, dict):
+                    continue
+                kind, matched = item.get("kind"), item.get("matched")
+                first = ht_int(item.get("first_ts"))
+                if kind not in ("command", "tool") or not isinstance(matched, str) or first < HT_PLAUSIBLE_MS:
+                    continue
+                out.append({"kind": kind, "matched": printable_ascii(matched, POLICY_MAX_LEN),
+                            "tool": ht_token(item.get("tool")), "blocked": item.get("blocked") is True,
+                            "events": max(1, min(ht_int(item.get("events"), 1), 999)),
+                            "first_ts": first, "last_ts": max(first, ht_int(item.get("last_ts"))),
+                            "tool_use_id": ht_token(item.get("tool_use_id"))})
+            return out
+
+        def record_policy(entries, hit, blocked, now_ms, tool_name, tool_use_id):
+            # The same rule with the same outcome is one sighting; the same tool call never counts twice.
+            kind, matched, _reason = hit
+            matched = printable_ascii(matched, POLICY_MAX_LEN)
+            for entry in reversed(entries):
+                if entry["kind"] == kind and entry["matched"] == matched and entry["blocked"] == blocked:
+                    if not (tool_use_id and entry["tool_use_id"] == tool_use_id):
+                        entry["events"] = min(entry["events"] + 1, 999)
+                    entry["last_ts"] = now_ms
+                    if tool_use_id:
+                        entry["tool_use_id"] = tool_use_id
+                    return
+            entries.append({"kind": kind, "matched": matched, "tool": tool_name, "blocked": blocked,
+                            "events": 1, "first_ts": now_ms, "last_ts": now_ms, "tool_use_id": tool_use_id})
+            del entries[:-POLICY_MAX_ENTRIES]
+
         def carried_paths(value):
             out = []
             for item in (value if isinstance(value, list) else [])[-SP_MAX_ENTRIES:]:
@@ -1245,10 +1475,11 @@ final class AgentHookInstaller: ObservableObject {
 
         def turn_call_key(turn, now_ms):
             # (key, already counted). The tool call's id when the agent sends one; otherwise the tool and
-            # the size of its input, so one completion delivered twice within 2 s counts once.
+            # the size of the payload, so one completion delivered twice within 2 s counts once. The raw
+            # length is already known; stringifying tool_input was the one O(n) pass outside every budget.
             if sighting_call:
                 return sighting_call, sighting_call in turn["turn_tool_ids"]
-            stem = "nx:" + sighting_tool[:24] + ":" + str(len(str(tool_input))) + ":"
+            stem = "nx:" + sighting_tool[:24] + ":" + str(len(raw)) + ":"
             for token in turn["turn_tool_ids"]:
                 tail = token[len(stem):] if token.startswith(stem) else ""
                 if tail.isdigit() and now_ms - int(tail) <= TURN_NOID_WINDOW_MS:
@@ -1503,6 +1734,21 @@ final class AgentHookInstaller: ObservableObject {
             except Exception:
                 path_hits = []
 
+        # v42: the agent policy, also before the lock. A hit is always recorded; the deny needs the
+        # enforce marker and a host whose contract has one.
+        policy_hit = None
+        if hook_event in SEC_TOOL_EVENTS:
+            try:
+                _rules = load_policy()
+                if _rules:
+                    policy_hit = policy_match(_rules, tool, policy_commands(data, tool_input, hook_event, tool))
+                    if (policy_hit and hook_event in POLICY_DENY_EVENTS.get(provider, ())
+                            and os.path.exists(str(status_dir / POLICY_ENFORCE_MARKER))):
+                        policy_deny = policy_denial(policy_hit)
+            except Exception:
+                policy_hit = None
+                policy_deny = None
+
         # Claude runs the matcher-scoped and generic hook groups for one event as separate
         # processes, in parallel, with no ordering guarantee. The STATE_PRIORITY merge below
         # compares against what is on disk, so without a lock both processes read the same
@@ -1571,7 +1817,7 @@ final class AgentHookInstaller: ObservableObject {
         # Discovery cannot observe this on macOS (its process listing has no argv), so this is the one
         # signal Kannu adds to a security finding itself.
         _mode = pick_str(data.get("permission_mode"), data.get("permissionMode"), data.get("approval_policy"))
-        unattended = bool(existing.get("unattended")) or normalize_token(_mode) in {
+        unattended = existing.get("unattended") is True or normalize_token(_mode) in {
             "bypasspermissions", "dangerouslyskippermissions", "never", "yolo", "autoapprove",
         }
 
@@ -1609,6 +1855,16 @@ final class AgentHookInstaller: ObservableObject {
                     record_secret(secrets, _hit, sighting_ms, sighting_tool, sighting_call)
                 except Exception:
                     pass
+        policy = []
+        try:
+            policy = carried_policy(existing.get("policy"))
+        except Exception:
+            policy = []
+        if policy_hit:
+            try:
+                record_policy(policy, policy_hit, policy_deny is not None, sighting_ms, sighting_tool, sighting_call)
+            except Exception:
+                pass
         sensitive_paths = []
         if not paths_off:
             try:
@@ -1763,7 +2019,7 @@ final class AgentHookInstaller: ObservableObject {
                         existing["hidden_text"] = hidden_text
                     else:
                         existing.pop("hidden_text", None)
-                    for _key, _value in (("secrets", secrets), ("sensitive_paths", sensitive_paths),
+                    for _key, _value in (("secrets", secrets), ("sensitive_paths", sensitive_paths), ("policy", policy),
                                          ("tty", terminal[0]), ("tty_sid", terminal[1]), ("tty_start", terminal[2])):
                         if _value:
                             existing[_key] = _value
@@ -1774,7 +2030,11 @@ final class AgentHookInstaller: ObservableObject {
                     existing.update(turn)
                     if transcript:
                         existing["transcript_path"] = transcript
-                    write_status(status_file, existing)
+                    try:
+                        write_status(status_file, existing)
+                    except Exception:
+                        # A full disk or a path replaced by a directory must not cost the allow line.
+                        pass
                     emit(hidden_notes_out)
                     raise SystemExit(0)
 
@@ -1804,6 +2064,8 @@ final class AgentHookInstaller: ObservableObject {
             payload["parent_id"] = parent_id
         if sensitive_paths:
             payload["sensitive_paths"] = sensitive_paths
+        if policy:
+            payload["policy"] = policy
         if terminal[1]:
             payload["tty_sid"] = terminal[1]
         if terminal[0]:
@@ -1813,9 +2075,14 @@ final class AgentHookInstaller: ObservableObject {
         payload.update(turn)
         if transcript:
             payload["transcript_path"] = transcript
-        write_status(status_file, payload)
+        try:
+            write_status(status_file, payload)
+        except Exception:
+            # The host is waiting for the line below; a failed status write must not cost it.
+            pass
         emit(hidden_notes_out)
         PY
+        [ -n "$KANNU_INPUT_FILE" ] && rm -f "$KANNU_INPUT_FILE"
         exit 0
         """
 
@@ -2169,18 +2436,21 @@ final class AgentHookInstaller: ObservableObject {
     }
 
     /// Reinstalls hooks when the shared status script gains new approval-detection logic.
+    ///
+    /// Per provider, not all-or-nothing. One script that can never be brought current — a Gemini
+    /// `settings.json` with comments, which the install refuses — used to make *every* provider
+    /// with a script reinstall on every launch, rewriting `~/.claude/settings.json` and the Cursor,
+    /// Codex and Antigravity configs each time, forever. Now only the providers whose own script is
+    /// behind are touched, and one that stays behind costs nothing but its own retry.
     private func migrateHookScriptVersionIfNeeded() {
-        let scriptURLs = AgentHookProvider.allCases.map(Self.scriptURL(for:))
-        let needsRefresh = scriptURLs.contains { url in
-            guard FileManager.default.fileExists(atPath: url.path),
-                  let content = try? String(contentsOf: url, encoding: .utf8) else { return false }
-            return !content.contains(Self.scriptVersionMarker)
-        }
-        guard needsRefresh else { return }
         // Gate on the script existing, not on `checkInstalled`. A provider whose config schema
         // changed in this same release would fail the install check and skip its own upgrade —
         // exactly the users who need it most.
-        for provider in AgentHookProvider.allCases where FileManager.default.fileExists(atPath: Self.scriptURL(for: provider).path) {
+        for provider in AgentHookProvider.allCases {
+            let url = Self.scriptURL(for: provider)
+            guard FileManager.default.fileExists(atPath: url.path),
+                  let content = try? String(contentsOf: url, encoding: .utf8),
+                  !content.contains(Self.scriptVersionMarker) else { continue }
             install(provider)
         }
     }
@@ -2331,8 +2601,11 @@ final class AgentHookInstaller: ObservableObject {
                                                    handlerName: String?, timeout: Int) throws {
         let files = layout.files(for: provider)
         guard let target = files.configs.first(where: { $0.write == .always }) else { return }
-        let config = try readJSONRefusingComments(at: target.url)
+        // The script first, as the doc says: a refused settings.json (comments, trailing commas)
+        // must not leave the script it already points at on an old version for good. Reading first
+        // did exactly that, and the version migration then retried it on every launch.
         try writeScript(to: files.script)
+        let config = try readJSONRefusingComments(at: target.url)
         let merged = AgentHookLayout.mergingKannuGroups(into: config, events: events, script: files.script,
                                                         provider: provider.rawValue, handlerName: handlerName, timeout: timeout)
         try writeJSON(merged, to: target.url)

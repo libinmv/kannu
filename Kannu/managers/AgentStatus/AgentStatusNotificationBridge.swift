@@ -47,8 +47,13 @@ final class AgentStatusNotificationBridge: ObservableObject {
 
         // Security findings ride on the findings store, not on the traffic light.
         let store = SecurityFindingsStore.shared
+        // `@Published` emits in `willSet`. Delivered synchronously, `handleFindingsChange` ranked the
+        // list the store was *about* to replace — the finding that had just been added was not in it,
+        // and because the store only assigns on change, the push waited for the next unrelated
+        // change. One hop puts the handler after the assignment.
         store.$findings.map { _ in () }
             .merge(with: store.$acknowledgedIDs.map { _ in () }, store.$snoozes.map { _ in () })
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] in self?.handleFindingsChange() }
             .store(in: &cancellables)
 
@@ -146,10 +151,12 @@ final class AgentStatusNotificationBridge: ObservableObject {
         }
     }
 
+    /// Title, severity and source — never `summary`, which for Kannu's own findings names the
+    /// chat and the file. See `AgentSecurityFinding.pushBody`.
     private func deliverFinding(_ finding: AgentSecurityFinding) async {
         let payload = NotificationPayload(
             title: String(localized: "Security finding: \(finding.title)"),
-            body: finding.summary,
+            body: finding.pushBody,
             priority: finding.severity == .high ? 5 : 4,
             tag: "security-finding"
         )
@@ -158,8 +165,11 @@ final class AgentStatusNotificationBridge: ObservableObject {
             "severity": finding.severity == .high ? "high" : "medium",
             // Not "source": the base body's "source": "Kannu" wins that merge and dropped it.
             "finding_source": finding.source.rawValue,
-            "asset": finding.assetName ?? "",
-            "summary": finding.summary
+            "title": finding.title,
+            // Discovery's asset is a tool or server name. Detection's is the chat name and Kannu's
+            // own is the project folder; neither leaves the Mac.
+            "asset": finding.source == .discovery ? (finding.assetName ?? "") : "",
+            "summary": finding.pushBody
         ])
     }
 
@@ -186,6 +196,11 @@ final class AgentStatusNotificationBridge: ObservableObject {
     /// Once per window instance, pruned to windows still near their limit so the next cycle of
     /// the same window can push again. Provider, window and reset only — no chat names.
     private func handleUsageAlerts(_ near: [UsageWindowReading]) {
+        // `nearLimit` starts empty and stays empty until readings arrive, so the subscribe-time
+        // emission is `[]`. Pruning against it erased the persisted keys on every launch and the
+        // same window was pushed again minutes later. An empty list changes nothing here: the next
+        // non-empty one prunes against exactly the windows still near their limit.
+        guard !near.isEmpty else { return }
         pushedUsageKeys.formIntersection(Set(near.map(UsageAlertPolicy.pushKey)))
         var fresh: [UsageWindowReading] = []
         if Defaults[.enableAgentStatusMobileNotifications], Defaults[.pushUsageLimitAlerts] {

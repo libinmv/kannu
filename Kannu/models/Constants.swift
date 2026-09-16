@@ -913,10 +913,6 @@ extension Defaults.Keys {
     /// `preferred_screen_name`, which between them could not express "the monitor, while it is
     /// plugged in". See `DisplayPlacementResolver`.
     static let displayPlacement = Key<DisplayPlacement>("displayPlacement", default: .externalTakesOver)
-    static let didMigrateDisplayPlacement = Key<Bool>("didMigrateDisplayPlacement", default: false)
-    /// Legacy, read once by `migrateDisplayPlacement` and then unused.
-    static let showOnAllDisplays = Key<Bool>("showOnAllDisplays", default: true)
-    static let automaticallySwitchDisplay = Key<Bool>("automaticallySwitchDisplay", default: true)
     static let hideDynamicIslandFromScreenCapture = Key<Bool>("hideDynamicIslandFromScreenCapture", default: false)
     
         // MARK: Behavior
@@ -1244,8 +1240,6 @@ extension Defaults.Keys {
     static let adrToolDirectory = Key<String>("adrToolDirectory", default: "")
     /// Where `adr-discovery --output-dir` snapshots are read from. Empty = `~/.kannu/adr/discovery`.
     static let adrSnapshotDirectory = Key<String>("adrSnapshotDirectory", default: "")
-    /// Where `adr-sensor --save-sessions` files are read from. Empty = `~/.cache/adr_sensor`.
-    static let adrSensorDirectory = Key<String>("adrSensorDirectory", default: "")
     static let adrAcknowledgedFindingIDs = Key<[String]>("adrAcknowledgedFindingIDs", default: [])
     static let adrFindingSnoozes = Key<[SecurityFindingSnooze]>("adrFindingSnoozes", default: [])
     static let adrLastScan = Key<ADRScanRecord?>("adrLastScan", default: nil)
@@ -1277,6 +1271,10 @@ extension Defaults.Keys {
     static let detectSensitivePaths = Key<Bool>("detectSensitivePaths", default: true)
     // Kannu's "new MCP server" check: local reads of agents' MCP settings, nothing sent.
     static let watchMCPServers = Key<Bool>("watchMCPServers", default: true)
+    /// The agent policy (`~/.kannu/agent-policy.json`, hook v42): off means every match is reported
+    /// and the call runs; on means Claude Code and Cursor refuse it. Off by default — a change to
+    /// what an agent does is opt-in, and the file itself is the first opt-in.
+    static let enforceAgentPolicy = Key<Bool>("enforceAgentPolicy", default: false)
     static let mcpServerBaseline = Key<MCPServerWatch.Baseline>("mcpServerBaseline", default: MCPServerWatch.Baseline())
     static let mcpServerAdditions = Key<[MCPServerWatch.Addition]>("mcpServerAdditions", default: [])
     /// Sightings from the hook's local checks, kept past their session until acknowledged.
@@ -1541,12 +1539,6 @@ extension Defaults.Keys {
     /// top edge, which is the behaviour being fixed. Carrying the old choice forward would carry the
     /// complaint forward. A user who wants every display back says so in one picker, and
     /// `chooseDisplay` keeps reading the same `preferred_screen_name` it always did.
-    static func migrateDisplayPlacement() {
-        guard Defaults[.didMigrateDisplayPlacement] == false else { return }
-        Defaults[.displayPlacement] = .externalTakesOver
-        Defaults[.didMigrateDisplayPlacement] = true
-    }
-
     static func migrateCapsLockTintMode() {
         guard Defaults[.didMigrateCapsLockTintMode] == false else { return }
 
