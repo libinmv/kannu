@@ -4,6 +4,32 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-16 - Security-finding and usage-limit pushes arrive once, on time, and without the chat's name
+- **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — findings H2, M1, M2, M10 and L10 of that review
+- **Agent label:** Follow-up 42, PR B — push delivery
+- **Changes:**
+  - A new high finding was not pushed. `AgentStatusNotificationBridge` ranked the store's findings
+    from inside the `$findings` sink, and `@Published` emits in `willSet`, so it ranked the list the
+    store was *about* to replace; because the store only assigns on change, the push waited for the
+    next unrelated change — possibly never. The sink hops once through `DispatchQueue.main` and runs
+    after the assignment.
+  - Every open high finding was pushed again after each relaunch: the bridge started before the
+    findings store, its subscribe-time value was the store's empty initial list, and the persisted
+    "already pushed" ids were pruned against it. The store starts first now. The usage-limit keys
+    had the same shape (`nearLimit` starts empty) with no enable gate at all; an empty list no longer
+    prunes anything.
+  - The push body was `finding.summary`, which for Kannu's own findings names the chat and the
+    home-relative file ("~/code/acme/.env, with Read, in “rotate prod credentials”") — right on the
+    card, wrong on a phone or a third-party webhook, and against the rule the same file states for
+    its other two pushes. `AgentSecurityFinding.pushBody` carries severity and source only; the
+    webhook's `asset` is sent for ADR Discovery findings alone. A test walks every builder that
+    names the chat.
+  - The desktop history's *inferred* reset (derived from the last rollover it sampled) beat the API's
+    exact reset for the same window by freshness, so the countdown moved on every read and the
+    usage-alert push key — which is the reset — fired the same window twice. `Window.resetIsInferred`
+    marks it, and `merged` borrows an exact reset for an inferred one while keeping the fresher
+    percent. Two merge tests and one history test pin it.
+
 ### 2026-09-16 - The Bluetooth connect path stops spawning on the main thread
 - **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — findings H1 and L5 of that review
 - **Agent label:** Follow-up 42, PR A — Bluetooth connect path

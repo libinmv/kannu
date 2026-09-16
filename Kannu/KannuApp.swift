@@ -984,8 +984,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             CursorAgentStatusMonitor.shared.start()
             UsageAlertManager.shared.start()
-            AgentStatusNotificationBridge.shared.start()
+            // The store before the bridge: the bridge subscribes to `$findings` and prunes the
+            // persisted "already pushed" ids against whatever it receives first. Started the other
+            // way round that first value was the store's empty initial list, the ids were wiped, and
+            // every open high finding was pushed again after each relaunch.
             SecurityFindingsStore.shared.start()
+            AgentStatusNotificationBridge.shared.start()
         }
         Defaults.publisher(.enableAgentStatusFeature, options: []).sink { change in
             Task { @MainActor in

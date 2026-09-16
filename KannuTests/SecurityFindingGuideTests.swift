@@ -135,6 +135,37 @@ final class SecurityFindingGuideTests: XCTestCase {
         XCTAssertTrue(unattended.summary.contains(chat), "the summary, shown in Kannu, still names it")
     }
 
+    func testThePushBodyNamesNeitherTheChatNorAFile() throws {
+        // A push (default: a world-readable ntfy topic) and a webhook get `pushBody`, not
+        // `summary`. Every builder that names the chat or the file is checked here.
+        let path = SensitivePathSighting(category: .envFile, access: .read, path: "~/code/kannu/.env", tool: "Read", failed: false,
+                                         eventCount: 1, firstSeenMs: t0, lastSeenMs: t0)
+            .finding(conversationID: conversation, provider: "claude", chatName: chat, projectName: "kannu", cwd: "/Users/u/code/kannu")
+        let secret = SecretSighting(kind: .awsAccessKey, location: .prompt, tool: nil, prefix: "AKIA", length: 20,
+                                    fingerprint: "cb2619a301de", eventCount: 1, firstSeenMs: t0, lastSeenMs: t0)
+            .finding(conversationID: conversation, provider: "claude", chatName: chat, projectName: "kannu", cwd: "/Users/u/code/kannu")
+        let hidden = HiddenTextIncident(kind: .tags, location: .toolResult, tool: "Read", characterCount: 25, eventCount: 1,
+                                        preview: "SECRET PAYLOAD", firstSeenMs: t0, lastSeenMs: t0)
+            .finding(conversationID: conversation, provider: "claude", chatName: chat, projectName: "kannu", cwd: "/Users/u/code/kannu")
+        var session = AgentSessionStatus(id: "claude-" + conversation, provider: "claude", conversationID: conversation, chatName: chat,
+                                         projectName: "kannu", rawState: "executing", displayState: .executing,
+                                         updatedAt: Date(timeIntervalSince1970: 1_000), isVisible: true, executionStartedAt: nil,
+                                         cwd: "/Users/u/code/kannu", hostPID: nil)
+        session.isUnattended = true
+        let unattended = try XCTUnwrap(AgentSecurityFinding.nativeFindings(from: [session]).first)
+
+        for finding in [path, secret, hidden, unattended] {
+            let body = finding.pushBody
+            XCTAssertFalse(body.contains(chat), body)
+            XCTAssertFalse(body.contains(conversation), body)
+            XCTAssertFalse(body.contains(".env") || body.contains("/Users") || body.contains("~/"), body)
+            XCTAssertFalse(body.contains("SECRET PAYLOAD") || body.contains("AKIA") || body.contains("cb2619a301de"), body)
+            XCTAssertTrue(body.contains(finding.severity.label), body)
+            XCTAssertTrue(body.contains("Kannu's own check"), body)
+            XCTAssertTrue(finding.summary.contains(chat), "the card still names the chat")
+        }
+    }
+
     func testTheUnattendedIdIsUnchanged() {
         // The shown line lost its session id; the id must not change with it (acknowledgements hold).
         var session = AgentSessionStatus(id: "claude-a", provider: "claude", conversationID: "a", chatName: chat, projectName: "p",
