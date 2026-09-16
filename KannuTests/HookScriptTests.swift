@@ -237,6 +237,32 @@ final class HookScriptTests: XCTestCase {
         try run(state: "thinking", event: "UserPromptSubmit", conversation: "u2",
                 extra: ["permission_mode": "default", "prompt": "go"])
         XCTAssertNil(try readJSON("u2")?["unattended"])
+        // A carried value counts only as the literal `true`: junk is dropped, not laundered.
+        try writeStatus("u3", state: "thinking", event: "PreToolUse", tsMs: Self.nowMs, extra: ["unattended": "yes"])
+        try run(state: "executing", event: "PreToolUse", conversation: "u3")
+        XCTAssertNil(try readJSON("u3")?["unattended"])
+    }
+
+    func testAPayloadPastArgMaxStillWritesTheStatusAndPrintsTheAllowLine() throws {
+        // Exported as an environment variable, a payload this size made execve fail before the
+        // heredoc ran: no status file, no allow line, exit 0. It goes through a file now.
+        let big = String(repeating: "x", count: 1_500_000)
+        let object: [String: Any] = ["session_id": "big1", "tool_name": "Write", "hook_event_name": "PreToolUse",
+                                     "tool_input": ["file_path": "/tmp/a", "content": big]]
+        let out = try run(state: "executing", event: "PreToolUse", conversation: "big1",
+                          rawPayload: JSONSerialization.data(withJSONObject: object))
+        XCTAssertEqual(out, #"{"permission":"allow","continue":true}"#)
+        XCTAssertEqual(try readState("big1"), "executing")
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: statusDir.path).filter { $0.hasPrefix(".kannu-input.") }
+        XCTAssertEqual(leftovers, [], "the payload file is unlinked after the read")
+    }
+
+    func testAFailedStatusWriteStillPrintsTheAllowLine() throws {
+        // A path the writer cannot replace — a directory where the file should be. The host is
+        // waiting on stdout: the light is lost for this event, the verdict is not.
+        try FileManager.default.createDirectory(at: statusFile("dir1"), withIntermediateDirectories: true)
+        let out = try run(state: "executing", event: "PreToolUse", conversation: "dir1")
+        XCTAssertEqual(out, #"{"permission":"allow","continue":true}"#)
     }
 
     func testToolErrorsCountPerTurnAndIgnoreInterrupts() throws {

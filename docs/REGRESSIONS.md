@@ -84,11 +84,24 @@ made every background-task wake restart the displayed run time, and keying one o
 the same, because Claude Code submits a background task's result as a `UserPromptSubmit`
 (measured live: a `sleep` finishing restarted the turn). The
 computation is wrapped in `try/except` with the carried turn as fallback: an uncaught error there
-would cost the light and the allow line. Two known holes: a payload over ~1 MiB never reaches
-Python (the `KANNU_INPUT` environment variable hits ARG_MAX), so that call is uncounted; and a
+would cost the light and the allow line. One known hole: a
 file Kannu deletes as stale takes its turn with it — never "fix" that by treating an empty file as
 the end of a turn, which would split it. Guards: the `HookScriptTests` "v39" group, run twice
 (Homebrew's Python and `/usr/bin/python3` 3.9).
+
+**v41 addendum — the payload goes through a file, and the allow line is unconditional.** The v39
+note used to list a second hole, "a payload over ~1 MiB never reaches Python, so that call is
+uncounted". It was worse than uncounted: exported as `KANNU_INPUT`, a tool input past ARG_MAX made
+`execve` fail with "Argument list too long" before the heredoc ran, and the wrapper fell through
+to `exit 0` — no status write, no allow line, so Cursor lost its `permission:allow` for that call
+and every provider's light froze on the previous state (reproduced 2026-09-16 with a 1.5 MB
+`tool_input`; the no-python3 fallback was strictly better, it printed the line). The wrapper now
+writes stdin to a `mktemp` file in the status directory and Python reads and unlinks it, capped at
+16 MiB — past the cap the event still updates the light, uncounted. And the two `write_status`
+calls were the only unwrapped step left on the write path: an `os.replace` failure (full disk, a
+path replaced by a directory) raised past `emit()`. Both are wrapped; the allow line prints no
+matter what the write did. Guards: `testAPayloadPastArgMaxStillWritesTheStatusAndPrintsTheAllowLine`
+and `testAFailedStatusWriteStillPrintsTheAllowLine`.
 
 ---
 
