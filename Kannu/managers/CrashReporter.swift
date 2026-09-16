@@ -19,6 +19,7 @@
 import AppKit
 import Defaults
 import Foundation
+import SystemConfiguration
 
 /// Notices that Kannu died last time, and gives the user a way to say so.
 ///
@@ -111,10 +112,15 @@ final class CrashReporter {
     ///
     /// Both directories are read; `/Library/...` is where resource reports land and the home one is
     /// where crashes land. A directory Kannu may not read is skipped rather than failing the lookup.
-    static func newestReport() -> (url: URL, report: CrashReport)? {
+    ///
+    /// Not on the main actor: DiagnosticReports is a Full Disk Access path with hundreds of files
+    /// on a busy Mac, and this ran 4 s after launch on main — while the hang watchdog was watching
+    /// it. The host name comes from SystemConfiguration, not `ProcessInfo.hostName`, which resolves
+    /// the name and blocks for as long as a slow resolver takes.
+    nonisolated static func newestReport() -> (url: URL, report: CrashReport)? {
         let manager = FileManager.default
         let home = NSHomeDirectory()
-        let host = ProcessInfo.processInfo.hostName
+        let host = (SCDynamicStoreCopyLocalHostName(nil) as String?) ?? ""
 
         var candidates: [(URL, Date)] = []
         for directory in searchPaths {
@@ -147,43 +153,41 @@ final class CrashReporter {
     /// alert with no window to hang from is app-modal, and one of those inside
     /// `applicationDidFinishLaunching` would stop the rest of startup.
     func offerNewestReport() {
-        guard let (url, report) = Self.newestReport(),
-              Defaults[.lastOfferedCrashReport] != url.lastPathComponent,
-              isRecent(url)
-        else { return }
-        Defaults[.lastOfferedCrashReport] = url.lastPathComponent
-        present(report, at: url, informative: String(localized: """
-            macOS wrote a report about it. Nothing has been sent anywhere. Reporting it opens a \
-            GitHub issue with the details filled in — the version, the failure and the stack, with \
-            no name and nothing identifying your Mac — for you to read and submit.
-            """))
-    }
-
-    /// Whether a diagnostic belongs to the session the user just had.
-    ///
-    /// Anything older than the previous launch is history they have already lived through — on a
-    /// first run with no marker, anything older than a day. Without this, updating to a build that
-    /// has this feature greets the user with a warning about something from months ago.
-    private func isRecent(_ url: URL) -> Bool {
-        guard let written = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
-            .contentModificationDate
-        else { return false }
-        let floor = previousLaunch ?? Date().addingTimeInterval(-86_400)
-        return written >= floor
+        let previousLaunch = previousLaunch
+        DispatchQueue.global(qos: .utility).async {
+            guard let (url, report) = Self.newestReport() else { return }
+            let written = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            DispatchQueue.main.async {
+                guard CrashReport.shouldOffer(fileName: url.lastPathComponent, written: written,
+                                              lastOffered: Defaults[.lastOfferedCrashReport],
+                                              previousLaunch: previousLaunch, now: Date()) else { return }
+                Defaults[.lastOfferedCrashReport] = url.lastPathComponent
+                self.present(report, at: url, informative: String(localized: """
+                    macOS wrote a report about it. Nothing has been sent anywhere. Reporting it opens a \
+                    GitHub issue with the details filled in — the version, the failure and the stack, with \
+                    no name and nothing identifying your Mac — for you to read and submit.
+                    """))
+            }
+        }
     }
 
     /// About › "Report a problem": the same flow, on demand, whether or not anything crashed.
     func reportAProblem() {
-        guard let (url, report) = Self.newestReport() else {
-            if let plain = URL(string: "https://github.com/\(ReleaseInfo.repository)/issues/new") {
-                NSWorkspace.shared.open(plain)
+        DispatchQueue.global(qos: .utility).async {
+            let found = Self.newestReport()
+            DispatchQueue.main.async {
+                guard let (url, report) = found else {
+                    if let plain = URL(string: "https://github.com/\(ReleaseInfo.repository)/issues/new") {
+                        NSWorkspace.shared.open(plain)
+                    }
+                    return
+                }
+                self.present(report, at: url, informative: String(localized: """
+                    This is the most recent report macOS wrote about Kannu. Nothing has been sent anywhere. \
+                    Reporting it opens a GitHub issue with the details filled in for you to read and submit.
+                    """))
             }
-            return
         }
-        present(report, at: url, informative: String(localized: """
-            This is the most recent report macOS wrote about Kannu. Nothing has been sent anywhere. \
-            Reporting it opens a GitHub issue with the details filled in for you to read and submit.
-            """))
     }
 
     private func present(_ report: CrashReport, at url: URL, informative: String) {
@@ -211,6 +215,10 @@ final class CrashReporter {
 
     /// The text the old "Copy Latest Crash Report" button was meant to produce: the trimmed, scrubbed
     /// summary rather than the whole file, which carries the machine's identifiers.
+    ///
+    /// Synchronous on purpose: the button reports "Copied" from its return value. What made the
+    /// scan dangerous on main was the resolving host-name call, which is gone; a directory listing
+    /// on a click the user just made is the acceptable remainder.
     func copyNewestReportToPasteboard() -> Bool {
         guard let (_, report) = Self.newestReport() else { return false }
         NSPasteboard.general.clearContents()

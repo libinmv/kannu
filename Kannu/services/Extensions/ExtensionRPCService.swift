@@ -553,7 +553,9 @@ final class ExtensionRPCService {
         // `self` is captured strongly on purpose: the server builds one service per request, and
         // this one has to outlive the request to write the reply. It holds the server weakly, so
         // there is no cycle, and it is released once the panel closes.
+        server?.register(panel, for: connID)
         ModalPresenter.present(panel) { response in
+            self.server?.unregister(panel, for: self.connID)
             var newItemIDs: [RPCValue] = []
             var newItems: [ShelfItem] = []
 

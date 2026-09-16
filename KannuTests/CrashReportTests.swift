@@ -205,6 +205,21 @@ final class CrashReportTests: XCTestCase {
         }
     }
 
+    func testAReportIsOfferedOnceAndOnlyFromTheSessionJustHad() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let launch = now.addingTimeInterval(-3_600)
+        let fresh = now.addingTimeInterval(-600)
+        XCTAssertTrue(CrashReport.shouldOffer(fileName: "a.ips", written: fresh, lastOffered: nil, previousLaunch: launch, now: now))
+        XCTAssertFalse(CrashReport.shouldOffer(fileName: "a.ips", written: fresh, lastOffered: "a.ips", previousLaunch: launch, now: now), "offered once")
+        XCTAssertTrue(CrashReport.shouldOffer(fileName: "b.ips", written: fresh, lastOffered: "a.ips", previousLaunch: launch, now: now), "a newer one is new")
+        XCTAssertFalse(CrashReport.shouldOffer(fileName: "old.ips", written: launch.addingTimeInterval(-1), lastOffered: nil, previousLaunch: launch, now: now),
+                       "older than the previous launch is history already lived through")
+        // No marker (first run with this feature): a day is the floor, so months-old reports stay quiet.
+        XCTAssertTrue(CrashReport.shouldOffer(fileName: "a.ips", written: now.addingTimeInterval(-3_600), lastOffered: nil, previousLaunch: nil, now: now))
+        XCTAssertFalse(CrashReport.shouldOffer(fileName: "a.ips", written: now.addingTimeInterval(-90_000), lastOffered: nil, previousLaunch: nil, now: now))
+        XCTAssertFalse(CrashReport.shouldOffer(fileName: "a.ips", written: nil, lastOffered: nil, previousLaunch: nil, now: now), "unreadable date: never offered")
+    }
+
     /// The file name is shown to the user, so it must be scrubbed in the field too, not only in the
     /// body that happens to contain it.
     func testTheDiagnosticsOwnNameIsScrubbed() throws {

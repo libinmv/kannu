@@ -323,7 +323,11 @@ final class HangWatchdog {
 /// thread may be wedged, so it must not touch anything that needs the main actor.
 private final class WatchdogState: @unchecked Sendable {
     private let lock = NSLock()
-    private var pingSentAt: Date?
+    /// `ProcessInfo.systemUptime`, which stops while the Mac sleeps. Measured on the wall clock,
+    /// an hour with the lid closed came back as an hour-long freeze: the watchdog thread woke before
+    /// the main run loop drained the pong, suspended the main thread for a stack walk, and offered
+    /// a bogus report at the next launch.
+    private var pingSentAt: TimeInterval?
     private var reportedThisHang = false
     private var suspendDepth = 0
 
@@ -332,22 +336,24 @@ private final class WatchdogState: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         guard suspendDepth == 0, let pingSentAt else { return nil }
-        return Date().timeIntervalSince(pingSentAt)
+        return ProcessInfo.processInfo.systemUptime - pingSentAt
     }
 
     func sendPing() {
         lock.lock()
         guard suspendDepth == 0 else { lock.unlock(); return }
-        pingSentAt = Date()
+        pingSentAt = ProcessInfo.processInfo.systemUptime
         lock.unlock()
 
         // Not `DispatchQueue.main.async`: the main queue is not drained while a nested run loop is
         // turning, so a context menu the user leaves open would read as a freeze. A run-loop block
         // in the tracking modes answers from menus, drags and window resizes alike.
         //
-        // `NSModalPanelRunLoopMode` is deliberately absent. A modal session Kannu opened on purpose
-        // is bracketed by `duringExpectedStall`; one entered anywhere else is the freeze that
-        // started all of this, and it must still be reported.
+        // `NSModalPanelRunLoopMode` is deliberately absent — and so is `commonModes`, because in a
+        // Cocoa app the common set already contains the modal-panel mode, so a pong posted there
+        // answered from inside `runModal` and the freeze that started all of this was never
+        // reported. A modal session Kannu opened on purpose is bracketed by `duringExpectedStall`;
+        // one entered anywhere else must still be reported.
         CFRunLoopPerformBlock(CFRunLoopGetMain(), Self.pongModes) { [weak self] in
             guard let self else { return }
             self.lock.lock()
@@ -359,7 +365,7 @@ private final class WatchdogState: @unchecked Sendable {
     }
 
     private static let pongModes: CFArray = [
-        CFRunLoopMode.commonModes.rawValue as String,
+        CFRunLoopMode.defaultMode.rawValue as String,
         "NSEventTrackingRunLoopMode"
     ] as CFArray
 

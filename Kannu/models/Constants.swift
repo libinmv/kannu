@@ -1179,9 +1179,10 @@ extension Defaults.Keys {
     static let enableClaudeProvider = Key<Bool>("enableClaudeProvider", default: false)
     static let enableCodexProvider = Key<Bool>("enableCodexProvider", default: false)
     static let enableCursorProvider = Key<Bool>("enableCursorProvider", default: false)
-    /// Usage forecast and alerts. The gauge beside the lights is local; a background quota check
-    /// sends requests and a push sends data out, so both are opt-in.
-    static let showUsageLimitCue = Key<Bool>("showUsageLimitCue", default: true)
+    /// Usage forecast and alerts. The notch gauge was removed — it showed a bare 9 pt dial with no
+    /// number or window name, next to a shield it was easy to confuse with. The Usage tab carries the
+    /// same information legibly. A background quota check sends requests and a push sends data out, so
+    /// both are opt-in.
     static let checkQuotaInBackground = Key<Bool>("checkQuotaInBackground", default: false)
     static let pushUsageLimitAlerts = Key<Bool>("pushUsageLimitAlerts", default: false)
     static let usageForecastSamples = Key<[String: [UsageForecast.Sample]]>("usageForecastSamples", default: [:])
