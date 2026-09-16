@@ -2207,18 +2207,21 @@ final class AgentHookInstaller: ObservableObject {
     }
 
     /// Reinstalls hooks when the shared status script gains new approval-detection logic.
+    ///
+    /// Per provider, not all-or-nothing. One script that can never be brought current — a Gemini
+    /// `settings.json` with comments, which the install refuses — used to make *every* provider
+    /// with a script reinstall on every launch, rewriting `~/.claude/settings.json` and the Cursor,
+    /// Codex and Antigravity configs each time, forever. Now only the providers whose own script is
+    /// behind are touched, and one that stays behind costs nothing but its own retry.
     private func migrateHookScriptVersionIfNeeded() {
-        let scriptURLs = AgentHookProvider.allCases.map(Self.scriptURL(for:))
-        let needsRefresh = scriptURLs.contains { url in
-            guard FileManager.default.fileExists(atPath: url.path),
-                  let content = try? String(contentsOf: url, encoding: .utf8) else { return false }
-            return !content.contains(Self.scriptVersionMarker)
-        }
-        guard needsRefresh else { return }
         // Gate on the script existing, not on `checkInstalled`. A provider whose config schema
         // changed in this same release would fail the install check and skip its own upgrade —
         // exactly the users who need it most.
-        for provider in AgentHookProvider.allCases where FileManager.default.fileExists(atPath: Self.scriptURL(for: provider).path) {
+        for provider in AgentHookProvider.allCases {
+            let url = Self.scriptURL(for: provider)
+            guard FileManager.default.fileExists(atPath: url.path),
+                  let content = try? String(contentsOf: url, encoding: .utf8),
+                  !content.contains(Self.scriptVersionMarker) else { continue }
             install(provider)
         }
     }
@@ -2369,8 +2372,11 @@ final class AgentHookInstaller: ObservableObject {
                                                    handlerName: String?, timeout: Int) throws {
         let files = layout.files(for: provider)
         guard let target = files.configs.first(where: { $0.write == .always }) else { return }
-        let config = try readJSONRefusingComments(at: target.url)
+        // The script first, as the doc says: a refused settings.json (comments, trailing commas)
+        // must not leave the script it already points at on an old version for good. Reading first
+        // did exactly that, and the version migration then retried it on every launch.
         try writeScript(to: files.script)
+        let config = try readJSONRefusingComments(at: target.url)
         let merged = AgentHookLayout.mergingKannuGroups(into: config, events: events, script: files.script,
                                                         provider: provider.rawValue, handlerName: handlerName, timeout: timeout)
         try writeJSON(merged, to: target.url)
