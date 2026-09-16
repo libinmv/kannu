@@ -36,14 +36,26 @@ final class MediaRemoteAdapterOwnershipTests: XCTestCase {
         /Users/x/kannu/.build-release/Build/Products/Release/Kannu.app/Contents/Resources/MediaRemoteAdapter.framework stream
         """
 
+    /// The `ps` lines above have no spaces inside their paths, so splitting them is exactly the
+    /// argv the kernel hands out; `testABundlePathWithASpaceIsStillOurs` covers the case where it
+    /// is not.
     private func reapable(_ command: String, parent: Int32, own: String) -> Bool {
         MediaRemoteAdapterOwnership.isReapable(
-            command: command, parentPID: parent, ownScriptPath: own
+            argv: command.split(separator: " ").map(String.init), parentPID: parent, ownScriptPath: own
         )
     }
 
     func testOurOwnOrphanIsReaped() {
         XCTAssertTrue(reapable(installedArgv, parent: 1, own: installedScript))
+    }
+
+    func testABundlePathWithASpaceIsStillOurs() {
+        // argv was space-joined and re-split once; "/Applications/Dev Tools/Kannu.app" then never
+        // matched and that bundle's orphans were never reaped.
+        let script = "/Applications/Dev Tools/Kannu.app/Contents/Resources/mediaremote-adapter.pl"
+        let argv = ["/usr/bin/perl", script, "/Applications/Dev Tools/Kannu.app/Contents/Resources/MediaRemoteAdapter.framework", "stream"]
+        XCTAssertTrue(MediaRemoteAdapterOwnership.isReapable(argv: argv, parentPID: 1, ownScriptPath: script))
+        XCTAssertFalse(MediaRemoteAdapterOwnership.isReapable(argv: argv, parentPID: 1, ownScriptPath: installedScript))
     }
 
     func testAHelperWithALiveParentIsLeftAlone() {
@@ -97,20 +109,20 @@ final class MediaRemoteAdapterOwnershipTests: XCTestCase {
     func testTheScriptPathIsFoundAtTheEndOfTheCommandToo() {
         // The framework path and `stream` are not required — only the interpreter and the script.
         XCTAssertTrue(
-            MediaRemoteAdapterOwnership.commandNamesScript("/usr/bin/perl \(installedScript)", installedScript)
+            MediaRemoteAdapterOwnership.commandNamesScript(["/usr/bin/perl", installedScript], installedScript)
         )
     }
 
     func testACommandWithNoScriptArgumentMatchesNothing() {
-        XCTAssertFalse(MediaRemoteAdapterOwnership.commandNamesScript(installedScript, installedScript))
-        XCTAssertFalse(MediaRemoteAdapterOwnership.commandNamesScript("/usr/bin/perl", installedScript))
-        XCTAssertFalse(MediaRemoteAdapterOwnership.commandNamesScript("", installedScript))
+        XCTAssertFalse(MediaRemoteAdapterOwnership.commandNamesScript([installedScript], installedScript))
+        XCTAssertFalse(MediaRemoteAdapterOwnership.commandNamesScript(["/usr/bin/perl"], installedScript))
+        XCTAssertFalse(MediaRemoteAdapterOwnership.commandNamesScript([], installedScript))
     }
 
     func testAPrefixOfTheScriptPathDoesNotMatch() {
         XCTAssertFalse(
             MediaRemoteAdapterOwnership.commandNamesScript(
-                "/usr/bin/perl /Applications/Kannu.app/Contents/Resources/mediaremote-adapter.plx /x stream",
+                ["/usr/bin/perl", "/Applications/Kannu.app/Contents/Resources/mediaremote-adapter.plx", "/x", "stream"],
                 installedScript
             )
         )

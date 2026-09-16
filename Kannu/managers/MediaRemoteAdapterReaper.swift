@@ -41,7 +41,7 @@ enum MediaRemoteAdapterReaper {
         var reaped = 0
         for candidate in userProcesses() {
             guard MediaRemoteAdapterOwnership.isReapable(
-                command: candidate.command,
+                argv: candidate.argv,
                 parentPID: candidate.parentPID,
                 ownScriptPath: ownScriptPath
             ) else { continue }
@@ -60,7 +60,7 @@ enum MediaRemoteAdapterReaper {
     private struct Candidate {
         let pid: Int32
         let parentPID: Int32
-        let command: String
+        let argv: [String]
     }
 
     /// Every process this user owns whose executable name is `perl`, with its argv.
@@ -87,17 +87,17 @@ enum MediaRemoteAdapterReaper {
             guard name == "perl" else { continue }
 
             let pid = proc.kp_proc.p_pid
-            guard pid != getpid(), let command = commandLine(of: pid) else { continue }
+            guard pid != getpid(), let argv = commandLine(of: pid) else { continue }
             candidates.append(
-                Candidate(pid: pid, parentPID: proc.kp_eproc.e_ppid, command: command)
+                Candidate(pid: pid, parentPID: proc.kp_eproc.e_ppid, argv: argv)
             )
         }
         return candidates
     }
 
-    /// A process's argv, space-joined. `KERN_PROCARGS2` lays out an `Int32` argc, then the executable
-    /// path, then NUL-padding, then argc NUL-terminated arguments.
-    private static func commandLine(of pid: Int32) -> String? {
+    /// A process's argv, one element per argument. `KERN_PROCARGS2` lays out an `Int32` argc, then
+    /// the executable path, then NUL-padding, then argc NUL-terminated arguments.
+    private static func commandLine(of pid: Int32) -> [String]? {
         var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
         var size = 0
         guard sysctl(&mib, UInt32(mib.count), nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else {
@@ -129,6 +129,6 @@ enum MediaRemoteAdapterReaper {
                 String(decoding: slice.map { UInt8(bitPattern: $0) }, as: UTF8.self)
             }
         guard tokens.count > 1 else { return nil }
-        return tokens.dropFirst().prefix(Int(argc)).joined(separator: " ")
+        return Array(tokens.dropFirst().prefix(Int(argc)))
     }
 }

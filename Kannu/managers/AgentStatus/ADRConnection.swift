@@ -243,15 +243,12 @@ final class ADRConnection: ObservableObject {
         let process = Process()
         process.executableURL = executable
         process.arguments = versionArguments
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = Pipe()
-        do { try process.run() } catch { return nil }
-        let deadline = Date().addingTimeInterval(5)
-        while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
-        if process.isRunning { process.terminate() }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        let text = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        // Through the shared runner: this used to `readDataToEndOfFile()` after a bare `terminate()`,
+        // with stderr never drained, so a shim's grandchild holding the pipe parked this utility
+        // thread for the app's lifetime and `isChecking` never cleared.
+        let result = BoundedProcessRunner.run(process, timeout: 5, stdoutCap: 4_096, stderrCap: 4_096, killGrace: 1)
+        guard result.status != -1 else { return nil }
+        let text = String(decoding: result.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         // `adr-sensor --version` prints the bare number; be tolerant of "name 1.2.3" too.
         let last = text.split(separator: " ").last.map(String.init) ?? text
         return last.isEmpty ? nil : String(last.prefix(32))
@@ -272,14 +269,9 @@ final class ADRConnection: ObservableObject {
         let process = Process()
         process.executableURL = uv
         process.arguments = uvToolListArguments
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = Pipe()
-        do { try process.run() } catch { return nil }
-        let deadline = Date().addingTimeInterval(5)
-        while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
-        if process.isRunning { process.terminate() }
-        let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        let result = BoundedProcessRunner.run(process, timeout: 5, stdoutCap: 64_000, stderrCap: 4_096, killGrace: 1)
+        guard result.status != -1 else { return nil }
+        let text = String(decoding: result.stdout, as: UTF8.self)
         for line in text.split(separator: "\n") {
             let parts = line.split(separator: " ")
             guard parts.count >= 2, parts[0] == Substring(tool.rawValue) else { continue }

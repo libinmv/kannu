@@ -4,6 +4,30 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-16 - One bounded process runner, and the reaper compares argv as argv
+- **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — findings M11, L9, L15 and L8 of that review, and the reuse pass's "five copies of one shell runner"
+- **Agent label:** Follow-up 42, PR H — bounded process runner
+- **Changes:**
+  - `BoundedProcessRunner` (Foundation-only, logic target): runs a child under a deadline, draining
+    both pipes non-blockingly *while* waiting, escalating SIGTERM → SIGKILL, and closing the pipes
+    once the child is gone. It replaces five hand-rolled copies — `ADRConnection.readVersion` and
+    `readVersionFromUVToolList`, `SecurityFindingsStore.runScanNow` and `runAnalysis`, and
+    `TmuxLocator.run` — that disagreed on poll intervals and kill escalation, and two of which could
+    park a thread for the app's lifetime: the ADR version probes called `readDataToEndOfFile()` after
+    a bare `terminate()` with stderr never drained (a uv shim's grandchild holding the pipe left
+    "Check again" disabled forever), and the tmux runner waited *then* read (the >64 KB pipe
+    deadlock, rescued only by its 2 s timeout). The two `SecurityFindingsStore` copies appended to a
+    captured `Data` from the handle's queue with nothing synchronising the read.
+  - `TmuxLocator.run` hands tmux a minimal environment (`PATH`, `HOME`, `TMPDIR`, `TMUX_TMPDIR`, …)
+    instead of everything Kannu's process holds.
+  - `MediaRemoteAdapterReaper` space-joined argv and `MediaRemoteAdapterOwnership` split it again, so
+    a bundle under a path with a space (`/Applications/Dev Tools/Kannu.app`) never matched and its
+    orphans were never reaped. argv is an array end to end now; `isReapable(argv:parentPID:ownScriptPath:)`.
+  - Six `BoundedProcessRunnerTests` against `/bin/sh`: 300 KB of output does not deadlock, caps keep
+    reading, a child that traps SIGTERM is killed within the grace period, a grandchild holding the
+    pipe does not hold the caller, a launch failure is reported, exit status and both streams arrive.
+    `MediaRemoteAdapterOwnershipTests` gains the path-with-a-space case.
+
 ### 2026-09-16 - The notch asks the presenter what is on screen, the watchdog stops counting sleep, and the crash scan leaves the main thread
 - **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — findings M8, M9, L6, L7, L11, L12, L13, L18 and L20 of that review
 - **Agent label:** Follow-up 42, PR G — modal, watchdog, crash reporter, display
