@@ -103,6 +103,20 @@ path replaced by a directory) raised past `emit()`. Both are wrapped; the allow 
 matter what the write did. Guards: `testAPayloadPastArgMaxStillWritesTheStatusAndPrintsTheAllowLine`
 and `testAFailedStatusWriteStillPrintsTheAllowLine`.
 
+**v42 addendum — the hook can say no, on two hosts, under the user's own policy.** Until v42 the
+only stdout the script ever wrote was the allow line. `emit()` now has one deny branch, and three
+things gate it, all of them pinned: a rule in `~/.kannu/agent-policy.json` matched (the hook is the
+only matcher; Swift only validates the file, so the two cannot drift), the `.kannu-policy-enforce`
+marker exists (`Defaults[.enforceAgentPolicy]`, off by default), and the host's documented contract
+has a deny — Claude Code `PreToolUse` (`permissionDecision`) and Cursor's pre events (`permission`).
+Every other provider gets the finding only, Codex included: it validates strictly and its deny is
+unverified. Rules: a deny never also says allow; the policy file is untrusted input with caps and
+no regex, and anything malformed means *no policy* — the hook never fails closed on its own
+configuration; the matched rule is recorded, never the command line. Guards: the `HookScriptTests`
+"Agent policy (v42)" group (`…RefusedOnClaudeCodeWhenBlockingIsOn`, `…RefusedOnCursorAndOnlyReportedElsewhere`,
+`…MatchingIsByWordNotBySubstring`, `…MalformedPolicyMeansNoPolicyAndTheHookStillAnswers`),
+`AgentPolicyTests` for the file's shape. Widen `POLICY_DENY_EVENTS` only after a live check on that host.
+
 ---
 
 ## 2. The active-state staleness window must exceed the longest tool call

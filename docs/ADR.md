@@ -154,7 +154,8 @@ snapshot folder at wherever those snapshots land.
 Discovery accepts `--policy policy.json` with `approved`, `forbidden` and `tenant_domains` lists;
 `tenant_domains` enables the *third-party destination* finding. See the upstream Discovery README
 for the format. Point Kannu at it with Settings → Agents → ADR Discovery → **Policy file**; Kannu passes
-it to every scan it runs.
+it to every scan it runs. This is ADR's policy, about the MCP servers on the machine; it cannot
+name a command. The policy that can — and that Kannu can enforce — is the *agent policy* in §9.
 
 ## 7. ADR Sensor (optional, not used yet)
 
@@ -198,6 +199,53 @@ and, only with triage on, to OpenAI. Nothing else, nothing automatic, nothing wi
 The adapter Kannu runs is its own GPL script (`scripts/adr-analyze-session.py`, written to
 `~/.kannu/adr/detection/` at run time); it imports ADR from your checkout and copies nothing.
 
+## 9. Agent policy (opt-in; blocking on Claude Code and Cursor)
+
+A JSON file you write, `~/.kannu/agent-policy.json`, naming commands and tools an agent may not use:
+
+```json
+{
+  "version": 1,
+  "block": [
+    { "command": "ssh",     "reason": "Servers are off limits to agents on this Mac." },
+    { "command": "scp" },
+    { "command": "rm -rf /" },
+    { "tool": "WebFetch",   "reason": "No web fetches from agents in this repo." }
+  ]
+}
+```
+
+- A `command` rule matches a shell command whose first word — after `sudo`, `env`, `nohup` and
+  the like, and reduced to its basename, so `/usr/bin/ssh` is `ssh` — is that word, in any segment
+  joined by `;`, `&&`, `||` or `|`, and inside a `sh -c "…"` string. A multi-word rule matches a
+  segment that starts with those words. `sshd` and `sshpass` do not match `ssh`; `echo ssh` does
+  not either. There is no regex: a pattern from a file is a denial-of-service risk in a hook that
+  must answer in milliseconds.
+- A `tool` rule matches a tool by its exact name, on every agent.
+- `reason` is optional and is what the agent is told.
+- Caps: 64 KB, 200 rules, 200 characters per string. Anything else — missing, not JSON, over a cap,
+  `version` not 1, a rule with neither key — means **no policy**; the hook never fails closed on
+  its own configuration, and Settings → Agents → **Agent policy** says why.
+
+Kannu never writes this file. **Copy a prompt that drafts a policy** puts a prompt on the clipboard
+for your own agent — the format, the rules above, and "ask me which commands and tools" — the same
+way Copy install command and Copy for agent work.
+
+Every match is recorded as a finding (`policy_command` / `policy_tool`) with the rule, the tool,
+and whether the call was refused or ran. **Block matching tool calls** (off by default) is what
+turns a report into a refusal: on Claude Code (`PreToolUse`, through `permissionDecision: deny`,
+whose reason reaches the model and the transcript) and on Cursor (`beforeShellExecution`,
+`beforeMCPExecution`, `preToolUse`, through `permission: deny`), the hook refuses the call and tells
+the agent `Kannu policy: "ssh" is blocked on this Mac by the user's agent policy. <reason> Ask the
+user before trying another way.` A refused call is a medium finding — the policy working; a call
+that ran is high. Codex, VS Code, Gemini CLI, Qwen Code, Copilot CLI, Antigravity and opencode get
+the finding only: their hook contracts either have no verified deny or no pre-tool event at all,
+and Kannu does not guess at a host's protocol.
+
+Real enforcement for an agent Kannu cannot refuse lives in that agent's own permission system —
+for Claude Code, `"permissions": {"deny": ["Bash(ssh *)"]}` in `settings.json`, which Kannu neither
+reads nor writes.
+
 ## What Kannu does with findings
 
 - Lists them in Settings → Agents → Security findings, highest severity first. Each row is
@@ -221,7 +269,9 @@ The adapter Kannu runs is its own GPL script (`scripts/adr-analyze-session.py`, 
   removed. Nothing is sent until you paste it.
 - Never changes the traffic light. Green, yellow and red keep meaning working, needs input, and
   finished; a security finding is shown with a shield instead.
-- Never terminates a process, edits a configuration file, or installs software.
+- Never terminates a process, edits a configuration file, or installs software. It refuses a tool
+  call only under your own agent policy (§9), only with blocking switched on, and only on a host
+  whose hook can say no.
 
 ## Licence
 

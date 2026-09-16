@@ -43,6 +43,9 @@ final class SecurityFindingGuideTests: XCTestCase {
                            changed.contains(category) ? .sensitiveFileChanged : .sensitiveFile, category.rawValue)
         }
         XCTAssertEqual(Guide.family(forRule: MCPServerWatch.Addition.rule), .mcpServerAdded)
+        for kind in PolicySighting.Kind.allCases {
+            XCTAssertEqual(Guide.family(forRule: PolicySighting.rulePrefix + kind.rawValue), .policy)
+        }
         XCTAssertEqual(Guide.family(forRule: "unpinned_mcp_server"), .unpinnedMCPServer)
         XCTAssertEqual(Guide.family(forRule: "plaintext_transport"), .plaintextTransport)
         XCTAssertEqual(Guide.family(forRule: "undeclared_mcp_server"), .undeclaredMCPServer)
@@ -55,7 +58,8 @@ final class SecurityFindingGuideTests: XCTestCase {
     func testEveryFamilyHasPlainNonEmptyTexts() {
         let sampleRules = ["unpinned_mcp_server", "plaintext_transport", "undeclared_mcp_server", "third_party_destination",
                            "unattended_execution", "detection_x", "hidden_text_tags", "hidden_text_bidi", "secret_npm_token",
-                           "sensitive_file_env_file", "sensitive_file_autorun", MCPServerWatch.Addition.rule, "brand_new_rule"]
+                           "sensitive_file_env_file", "sensitive_file_autorun", MCPServerWatch.Addition.rule, "policy_command",
+                           "brand_new_rule"]
         let guides = sampleRules.map(Guide.init(rule:))
         XCTAssertEqual(Set(guides.map(\.family)).count, Guide.Family.allCases.count, "one sample per family")
         for guide in guides {
@@ -164,6 +168,26 @@ final class SecurityFindingGuideTests: XCTestCase {
             XCTAssertTrue(body.contains("Kannu's own check"), body)
             XCTAssertTrue(finding.summary.contains(chat), "the card still names the chat")
         }
+    }
+
+    func testAPolicyFindingNamesTheRuleNeverTheCommandLine() {
+        // The hook records the rule that matched, never the command line (it can carry a secret);
+        // the prompt and the push follow from that.
+        let sighting = PolicySighting(kind: .command, matched: "ssh", tool: "Bash", blocked: false, eventCount: 1,
+                                      firstSeenMs: t0, lastSeenMs: t0)
+        let finding = sighting.finding(conversationID: conversation, provider: "claude", chatName: chat, projectName: "kannu", cwd: "/Users/u/code/kannu")
+        let prompt = Guide.agentPrompt(for: finding)
+        XCTAssertTrue(prompt.contains("Rule: command “ssh”"))
+        XCTAssertTrue(prompt.contains("agent-policy.json"))
+        XCTAssertFalse(prompt.contains(chat))
+        XCTAssertFalse(finding.pushBody.contains(chat))
+        XCTAssertTrue(finding.summary.contains(chat), "the card still names the chat")
+        XCTAssertEqual(finding.severity, .high)
+        let blocked = PolicySighting(kind: .tool, matched: "WebFetch", tool: "WebFetch", blocked: true, eventCount: 1,
+                                     firstSeenMs: t0, lastSeenMs: t0)
+            .finding(conversationID: conversation, provider: "cursor", chatName: chat, projectName: "kannu", cwd: "/p")
+        XCTAssertEqual(blocked.severity, .medium)
+        XCTAssertTrue(blocked.title.contains("blocked"))
     }
 
     func testTheUnattendedIdIsUnchanged() {

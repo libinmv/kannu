@@ -56,14 +56,16 @@ struct HookSightings: Equatable {
     var hiddenText: [HiddenTextIncident] = []
     var secrets: [SecretSighting] = []
     var sensitivePaths: [SensitivePathSighting] = []
+    var policy: [PolicySighting] = []
 
-    var isEmpty: Bool { hiddenText.isEmpty && secrets.isEmpty && sensitivePaths.isEmpty }
+    var isEmpty: Bool { hiddenText.isEmpty && secrets.isEmpty && sensitivePaths.isEmpty && policy.isEmpty }
 
     init(hiddenText: [HiddenTextIncident] = [], secrets: [SecretSighting] = [],
-         sensitivePaths: [SensitivePathSighting] = []) {
+         sensitivePaths: [SensitivePathSighting] = [], policy: [PolicySighting] = []) {
         self.hiddenText = hiddenText
         self.secrets = secrets
         self.sensitivePaths = sensitivePaths
+        self.policy = policy
     }
 
     /// From a session's status file — untrusted input, re-sanitised by each kind's parser.
@@ -71,12 +73,14 @@ struct HookSightings: Equatable {
         hiddenText = HiddenTextIncident.list(fromHookValue: json["hidden_text"])
         secrets = SecretSighting.list(fromHookValue: json["secrets"])
         sensitivePaths = SensitivePathSighting.list(fromHookValue: json["sensitive_paths"])
+        policy = PolicySighting.list(fromHookValue: json["policy"])
     }
 
     static func union(_ lhs: HookSightings, _ rhs: HookSightings) -> HookSightings {
         HookSightings(hiddenText: HiddenTextIncident.union(lhs.hiddenText, rhs.hiddenText),
                       secrets: SecretSighting.union(lhs.secrets, rhs.secrets),
-                      sensitivePaths: SensitivePathSighting.union(lhs.sensitivePaths, rhs.sensitivePaths))
+                      sensitivePaths: SensitivePathSighting.union(lhs.sensitivePaths, rhs.sensitivePaths),
+                      policy: PolicySighting.union(lhs.policy, rhs.policy))
     }
 }
 
@@ -136,14 +140,17 @@ struct HookSightingRecords: Codable, Equatable {
     var hiddenText: [HookSightingRecord<HiddenTextIncident>] = []
     var secrets: [HookSightingRecord<SecretSighting>] = []
     var sensitivePaths: [HookSightingRecord<SensitivePathSighting>] = []
+    var policy: [HookSightingRecord<PolicySighting>] = []
 
     static let capPerKind = 50
 
-    /// Which checks are on; a check that is off records nothing.
+    /// Which checks are on; a check that is off records nothing. The policy has no switch here:
+    /// its opt-in is the file the user writes.
     struct Enabled: Equatable {
         var hiddenText = true
         var secrets = true
         var sensitivePaths = true
+        var policy = true
     }
 
     init() {}
@@ -153,12 +160,13 @@ struct HookSightingRecords: Codable, Equatable {
         hiddenText = (try? container.decodeIfPresent([HookSightingRecord<HiddenTextIncident>].self, forKey: .hiddenText)) ?? []
         secrets = (try? container.decodeIfPresent([HookSightingRecord<SecretSighting>].self, forKey: .secrets)) ?? []
         sensitivePaths = (try? container.decodeIfPresent([HookSightingRecord<SensitivePathSighting>].self, forKey: .sensitivePaths)) ?? []
+        policy = (try? container.decodeIfPresent([HookSightingRecord<PolicySighting>].self, forKey: .policy)) ?? []
     }
 
-    var isEmpty: Bool { hiddenText.isEmpty && secrets.isEmpty && sensitivePaths.isEmpty }
+    var isEmpty: Bool { hiddenText.isEmpty && secrets.isEmpty && sensitivePaths.isEmpty && policy.isEmpty }
 
     var findings: [AgentSecurityFinding] {
-        hiddenText.map(\.finding) + secrets.map(\.finding) + sensitivePaths.map(\.finding)
+        hiddenText.map(\.finding) + secrets.map(\.finding) + sensitivePaths.map(\.finding) + policy.map(\.finding)
     }
 
     func upserting(_ sessions: [AgentSessionStatus], enabled: Enabled) -> HookSightingRecords {
@@ -172,6 +180,9 @@ struct HookSightingRecords: Codable, Equatable {
         if enabled.sensitivePaths {
             out.sensitivePaths = HookSightingRecord.upserting(sessions, \.sensitivePaths, into: sensitivePaths, cap: Self.capPerKind)
         }
+        if enabled.policy {
+            out.policy = HookSightingRecord.upserting(sessions, \.policy, into: policy, cap: Self.capPerKind)
+        }
         return out
     }
 
@@ -182,6 +193,7 @@ struct HookSightingRecords: Codable, Equatable {
         if !enabled.hiddenText { out.hiddenText = [] }
         if !enabled.secrets { out.secrets = [] }
         if !enabled.sensitivePaths { out.sensitivePaths = [] }
+        if !enabled.policy { out.policy = [] }
         return out
     }
 }

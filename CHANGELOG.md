@@ -4,6 +4,43 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-16 - An agent policy Kannu can enforce: block ssh (or anything) on Claude Code and Cursor
+- **Developer label:** "how do i set a policy, can i enforce a policy like no agents can use ssh … give a copy prompt for sample policy generation, actually give a block policy if it is possible"
+- **Agent label:** Follow-up 43, PR J — agent block policy (hook v42)
+- **Changes:**
+  - Two things were called "policy" and neither could say no. The `--policy` file in Settings is
+    Uber's ADR Discovery policy — three lists about MCP servers, one extra finding — and Kannu's hook
+    only ever printed the allow line. Now there is an **agent policy**: `~/.kannu/agent-policy.json`,
+    a file you write (Kannu never writes it) naming commands and tools an agent may not use, with an
+    optional reason per rule. Word matching, not regex: first word (or basename) of any command
+    segment after `sudo`/`env`/`nohup`, multi-word rules in order, `sh -c` strings opened; tool
+    rules by exact name. 64 KB, 200 rules, 200 characters — anything malformed means no policy, and
+    the hook never fails closed on its own configuration.
+  - Every match is a finding (`policy_command` / `policy_tool`): the rule, the tool, blocked or ran.
+    **Block matching tool calls** (Settings › Agents › Agent policy, off by default) turns the
+    report into a refusal on the two hosts whose hook contract has a deny: Claude Code `PreToolUse`
+    (`permissionDecision: deny`, reason to the model and the transcript) and Cursor's pre events
+    (`permission: deny`). Codex, VS Code, Gemini, Qwen, Copilot, Antigravity and opencode get the
+    finding only — no verified deny, or no pre-tool event — and Kannu does not guess at a host's
+    protocol. A refused call is medium (the policy working); one that ran is high.
+  - **Copy a prompt that drafts a policy** puts a prompt for your own agent on the clipboard — the
+    format, the matching rules, the caps, and "ask me which commands and tools, then write the file".
+    The Settings row shows the rule count or, in words, why the file is being ignored; Reveal in
+    Finder and Check again beside it.
+  - Hook v42 (mirror + embedded, no backslash, Python 3.9): `load_policy`, `policy_segments` (the
+    sensitive-path splitter's shape), `policy_match`, the `policy` sighting carried on every write
+    path like `secrets`, and the deny branch in `emit()` gated on the match, the enforce marker and
+    `POLICY_DENY_EVENTS`. `PolicySighting` and `AgentPolicy` (logic target), `HookSightings.policy`,
+    the `policy` guide family, `enforceAgentPolicy` with its marker in `syncLocalCheckSettings`.
+  - Tests: six `HookScriptTests` (report-only, Claude deny, Cursor deny plus Codex/Gemini/Qwen/Copilot
+    report-only, word-vs-substring matching table, tool rule and bare strings, every malformed shape
+    plus carried junk), `AgentPolicyTests` (every shape and cap, the drafting prompt), sightings and
+    guide tests; `SettingsHighlightInventoryTests` counts +2. `docs/ADR.md` §9 documents it and §6
+    says which "policy" is which; `docs/REGRESSIONS.md` entry 1 gains the v42 addendum.
+  - Not verified here: a live Cursor refusal (the shape follows Cursor's hook docs and the symmetry
+    of the `permission: allow` Kannu already sends) — that live check is the first thing to do with
+    a Cursor agent chat.
+
 ### 2026-09-16 - The pre-commit hook reads the index, the ledger gets its hashes back, and the docs match the code
 - **Developer label:** "please review the last few mr's that got merged, the ones after the last release" — findings L1, L14, L16, L17, the quality and docs items
 - **Agent label:** Follow-up 42, PR I — guards, docs, hygiene

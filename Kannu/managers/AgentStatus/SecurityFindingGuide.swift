@@ -41,6 +41,7 @@ struct SecurityFindingGuide: Equatable {
         case sensitiveFile
         case sensitiveFileChanged
         case mcpServerAdded
+        case policy
         case other
     }
 
@@ -67,6 +68,7 @@ struct SecurityFindingGuide: Equatable {
         if rule.hasPrefix(ADRSessionAnalysis.rulePrefix) { return .detection }
         if rule.hasPrefix(HiddenTextIncident.rulePrefix) { return .hiddenText }
         if rule.hasPrefix(SecretSighting.rulePrefix) { return .secret }
+        if rule.hasPrefix(PolicySighting.rulePrefix) { return .policy }
         if rule.hasPrefix(SensitivePathSighting.rulePrefix) {
             let category = SensitivePathSighting.Category(rawValue: String(rule.dropFirst(SensitivePathSighting.rulePrefix.count)))
             switch category {
@@ -112,6 +114,9 @@ struct SecurityFindingGuide: Equatable {
         case .sensitiveFileChanged:
             return (String(localized: "An agent changed a file that runs programs on its own or decides what agents may do."),
                     String(localized: "Review the change and undo anything that wasn't requested."))
+        case .policy:
+            return (String(localized: "Your agent policy (~/.kannu/agent-policy.json) names this command or tool. With blocking on, Kannu refused the call and told the agent why; with it off, the call ran and this is the report."),
+                    String(localized: "If the agent needs it, edit the policy or turn blocking off in Settings › Agents › Agent policy. If not, check what the agent was trying to do and why."))
         case .mcpServerAdded:
             return (String(localized: "A new MCP server was added to an AI tool's settings; it runs with that tool's access."),
                     String(localized: "Confirm it was added on purpose and comes from a trusted source; if not, remove it from the settings file."))

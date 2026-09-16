@@ -243,6 +243,124 @@ final class HookScriptTests: XCTestCase {
         XCTAssertNil(try readJSON("u3")?["unattended"])
     }
 
+    // MARK: - Agent policy (v42)
+
+    private func writePolicy(_ json: String) throws {
+        let dir = home.appendingPathComponent(".kannu")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data(json.utf8).write(to: dir.appendingPathComponent("agent-policy.json"))
+    }
+
+    private func policySightings(_ conversation: String, provider: String = "claude") throws -> [[String: Any]] {
+        (try readJSON(conversation, provider: provider)?["policy"] as? [[String: Any]]) ?? []
+    }
+
+    private static let samplePolicy = #"{"version": 1, "block": [{"command": "ssh", "reason": "Servers are off limits."}, {"command": "rm -rf /"}, {"tool": "WebFetch"}]}"#
+    private static let denyJSON = #"{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Kannu policy: \"ssh\" is blocked on this Mac by the user's agent policy. Servers are off limits. Ask the user before trying another way."}}"#
+
+    func testAPolicyMatchIsReportedAndRunsWhenBlockingIsOff() throws {
+        try writePolicy(Self.samplePolicy)
+        let out = try run(state: "executing", event: "PreToolUse", conversation: "pol1",
+                          extra: ["tool_input": ["command": "ssh prod-host uptime"], "tool_use_id": "t1"])
+        XCTAssertEqual(out, Self.allowJSON, "no marker: the call runs")
+        let entry = try XCTUnwrap(try policySightings("pol1").first)
+        XCTAssertEqual(entry["kind"] as? String, "command")
+        XCTAssertEqual(entry["matched"] as? String, "ssh")
+        XCTAssertEqual(entry["tool"] as? String, "Bash")
+        XCTAssertEqual(entry["blocked"] as? Bool, false)
+        XCTAssertEqual(try readState("pol1"), "executing", "the light still updates")
+    }
+
+    func testAPolicyMatchIsRefusedOnClaudeCodeWhenBlockingIsOn() throws {
+        try writePolicy(Self.samplePolicy)
+        try placeMarker(AgentPolicy.enforceMarker)
+        let out = try run(state: "executing", event: "PreToolUse", conversation: "pol2",
+                          extra: ["tool_input": ["command": "ssh prod-host uptime"], "tool_use_id": "t2"])
+        XCTAssertEqual(out, Self.denyJSON)
+        let entry = try XCTUnwrap(try policySightings("pol2").first)
+        XCTAssertEqual(entry["blocked"] as? Bool, true)
+        // A call the policy does not name is untouched, and a Stop never denies.
+        XCTAssertEqual(try run(state: "executing", event: "PreToolUse", conversation: "pol2",
+                               extra: ["tool_input": ["command": "git status"], "tool_use_id": "t3"]), Self.allowJSON)
+        XCTAssertEqual(try run(state: "stopped", event: "Stop", conversation: "pol2"), Self.allowJSON)
+        XCTAssertEqual(try policySightings("pol2").count, 1, "carried across the later writes")
+    }
+
+    func testAPolicyMatchIsRefusedOnCursorAndOnlyReportedElsewhere() throws {
+        try writePolicy(Self.samplePolicy)
+        try placeMarker(AgentPolicy.enforceMarker)
+        let cursor = try run(state: "executing", event: "beforeShellExecution", conversation: "pol3", provider: "cursor",
+                             extra: ["command": "sudo ssh prod-host"])
+        let cursorJSON = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(cursor.utf8)) as? [String: Any])
+        XCTAssertEqual(cursorJSON["permission"] as? String, "deny")
+        XCTAssertTrue((cursorJSON["agent_message"] as? String ?? "").contains("is blocked on this Mac"))
+        XCTAssertEqual(try policySightings("pol3", provider: "cursor").first?["blocked"] as? Bool, true)
+        // Cursor sends tool_input as JSON text on preToolUse.
+        let cursorPre = try run(state: "executing", event: "preToolUse", conversation: "pol3", provider: "cursor",
+                                extra: ["tool_input": #"{"command": "/usr/bin/ssh other"}"#])
+        XCTAssertTrue(cursorPre.contains(#""permission":"deny""#))
+        // Codex validates strictly and has no verified deny: empty stdout, sighting recorded.
+        let codex = try run(state: "executing", event: "PreToolUse", conversation: "pol4", provider: "codex",
+                            extra: ["tool_input": ["command": "ssh prod-host"]])
+        XCTAssertEqual(codex, "")
+        XCTAssertEqual(try policySightings("pol4", provider: "codex").first?["blocked"] as? Bool, false)
+        for provider in ["gemini", "qwen", "copilot"] {
+            let out = try run(state: "executing", event: "BeforeTool", conversation: "pol5-" + provider, provider: provider,
+                              extra: ["tool_input": ["command": "ssh prod-host"]])
+            XCTAssertEqual(out, "{}", provider)
+        }
+    }
+
+    func testPolicyCommandMatchingIsByWordNotBySubstring() throws {
+        try writePolicy(Self.samplePolicy)
+        func matched(_ command: String, _ id: String) throws -> String? {
+            try run(state: "executing", event: "PreToolUse", conversation: id, extra: ["tool_input": ["command": command]])
+            return try policySightings(id).first?["matched"] as? String
+        }
+        XCTAssertEqual(try matched("cd /tmp && ssh prod", "m1"), "ssh")
+        XCTAssertEqual(try matched("nohup /usr/bin/ssh prod &", "m2"), "ssh")
+        XCTAssertEqual(try matched("FOO=1 env ssh prod | tee log", "m3"), "ssh")
+        XCTAssertEqual(try matched(#"bash -c "ssh prod; ls""#, "m4"), "ssh", "a shell string is opened")
+        XCTAssertEqual(try matched("rm -rf / --no-preserve-root", "m5"), "rm -rf /", "a multi-word rule needs the words in order")
+        XCTAssertNil(try matched("sshd -t", "n1"), "a word, not a substring")
+        XCTAssertNil(try matched("sshpass -p x true", "n2"))
+        XCTAssertNil(try matched("echo ssh", "n3"))
+        XCTAssertNil(try matched("git push origin ssh-branch", "n4"))
+        XCTAssertNil(try matched("rm -rf ./build", "n5"))
+    }
+
+    func testAPolicyToolRuleAndABareStringAreHandled() throws {
+        try writePolicy(Self.samplePolicy)
+        try run(state: "executing", event: "PreToolUse", conversation: "tl1", toolName: "WebFetch",
+                extra: ["tool_input": ["url": "https://example.com"]])
+        XCTAssertEqual(try policySightings("tl1").first?["kind"] as? String, "tool")
+        XCTAssertEqual(try policySightings("tl1").first?["matched"] as? String, "WebFetch")
+        // A bare string is a command line only for a shell tool: a file path is not.
+        try run(state: "executing", event: "PreToolUse", conversation: "tl2", toolName: "Read", extra: ["tool_input": "/etc/ssh"])
+        XCTAssertTrue(try policySightings("tl2").isEmpty)
+    }
+
+    func testAMalformedPolicyMeansNoPolicyAndTheHookStillAnswers() throws {
+        try placeMarker(AgentPolicy.enforceMarker)
+        for (name, json) in [("not json", "{"), ("wrong version", #"{"version": 2, "block": [{"command": "ssh"}]}"#),
+                             ("bad rule", #"{"version": 1, "block": [{"nope": 1}]}"#),
+                             ("too many", #"{"version": 1, "block": [\#(Array(repeating: #"{"command": "ssh"}"#, count: 201).joined(separator: ","))]}"#),
+                             ("too large", #"{"version": 1, "block": [{"command": "ssh", "reason": "\#(String(repeating: "y", count: 70_000))"}]}"#)] {
+            try writePolicy(json)
+            let out = try run(state: "executing", event: "PreToolUse", conversation: "bad-" + name.replacingOccurrences(of: " ", with: ""),
+                              extra: ["tool_input": ["command": "ssh prod"]])
+            XCTAssertEqual(out, Self.allowJSON, name)
+        }
+        // And carried junk is dropped, not laundered.
+        try writeStatus("junk1", state: "thinking", event: "PreToolUse", tsMs: Self.nowMs,
+                        extra: ["policy": [["kind": "command", "matched": "ssh", "blocked": "yes", "first_ts": NSNumber(value: Self.nowMs)],
+                                           ["kind": "x", "matched": "y", "first_ts": NSNumber(value: Self.nowMs)]]])
+        try run(state: "executing", event: "PreToolUse", conversation: "junk1", extra: ["tool_input": ["command": "git status"]])
+        let kept = try policySightings("junk1")
+        XCTAssertEqual(kept.count, 1)
+        XCTAssertEqual(kept.first?["blocked"] as? Bool, false)
+    }
+
     func testAPayloadPastArgMaxStillWritesTheStatusAndPrintsTheAllowLine() throws {
         // Exported as an environment variable, a payload this size made execve fail before the
         // heredoc ran: no status file, no allow line, exit 0. It goes through a file now.
