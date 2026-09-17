@@ -938,6 +938,7 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .agentStatus, title: "Watch for agents touching sensitive files", keywords: ["sensitive", "ssh", "keychain", "credentials", "env", "launch agent", "zshrc", "browser", "password", "history"], highlightID: SettingsTab.agentStatus.highlightID(for: "Watch for agents touching sensitive files")),
             SettingsSearchEntry(tab: .agentStatus, title: "Notice new MCP servers", keywords: ["mcp", "server", "new", "added", "config", "supply chain", "tool"], highlightID: SettingsTab.agentStatus.highlightID(for: "Notice new MCP servers")),
             SettingsSearchEntry(tab: .agentStatus, title: "Policy rules", keywords: ["policy", "agent policy", "block", "ssh", "forbid", "deny", "command", "tool", "rules", "json"], highlightID: SettingsTab.agentStatus.highlightID(for: "Policy rules")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Get a policy", keywords: ["policy", "import", "draft", "prompt", "upload", "copy", "agent policy"], highlightID: SettingsTab.agentStatus.highlightID(for: "Get a policy")),
             SettingsSearchEntry(tab: .agentStatus, title: "Block matching tool calls", keywords: ["policy", "block", "deny", "enforce", "refuse", "ssh", "claude", "cursor"], highlightID: SettingsTab.agentStatus.highlightID(for: "Block matching tool calls")),
             SettingsSearchEntry(tab: .agentStatus, title: "Tell the agent when hidden text is found", keywords: ["hidden", "invisible", "unicode", "agent", "warn", "context", "note"], highlightID: SettingsTab.agentStatus.highlightID(for: "Tell the agent when hidden text is found")),
             SettingsSearchEntry(tab: .agentStatus, title: "Analyze chats with ADR Detection", keywords: ["adr", "detection", "analyze", "analysis", "session", "transcript", "malicious", "prompt injection"], highlightID: SettingsTab.agentStatus.highlightID(for: "Analyze chats with ADR Detection")),
@@ -7966,7 +7967,7 @@ struct AgentStatusSettings: View {
                         }
                     }
                 } label: {
-                    Text("Policy file")
+                    SettingsRowLabel("Policy file", description: "ADR's scan policy — approved, forbidden and tenant_domains lists for the MCP servers on this Mac. Not the agent policy below; that one names commands and tools to block.")
                 }
                 .settingsHighlight(id: highlightID("Policy file"))
                 if SecurityFindingsStore.policyFileIsMissing {
@@ -8027,17 +8028,26 @@ struct AgentStatusSettings: View {
     /// The user's own block list, enforced where a host's hook can refuse a call.
     private var agentPolicySection: some View {
         Section {
-            SettingsRow("Policy rules", description: "A JSON file you write — ~/.kannu/agent-policy.json — naming commands and tools an agent may not use. Kannu never writes it. Every match is reported as a finding; whether it is also blocked is the switch below.") {
-                SettingsStatusText(agentPolicyStatusText, isReady: agentPolicyIsReady)
+            SettingsRow("Policy rules", description: "A JSON file — ~/.kannu/agent-policy.json — naming commands and tools an agent may not use. Kannu never writes rules of its own; Import below copies a file you chose, byte for byte, after checking it. Every match is reported as a finding; whether it is also blocked is the switch below.") {
+                HStack(spacing: 8) {
+                    SettingsStatusText(agentPolicyStatusText, isReady: agentPolicyIsReady)
+                    SettingsMoreMenu {
+                        Button("Reveal in Finder") {
+                            NSWorkspace.shared.activateFileViewerSelecting([AgentPolicy.fileURL])
+                        }
+                        .disabled(!agentPolicyExists)
+                        Button("Check again") { findingsStore.checkAgentPolicy() }
+                    }
+                }
             }
             .settingsHighlight(id: highlightID("Policy rules"))
-            SettingsActionRow {
+            SettingsActionRow("Get a policy", description: "Have your agent draft one, or import a JSON file you already have. Kannu checks the file before it counts; a broken import never replaces a working policy.") {
+                Button("Import…") { importAgentPolicy() }
                 Button("Copy a prompt that drafts a policy") { findingsStore.copyPolicyDraftingPrompt() }
-                Button("Reveal in Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([AgentPolicy.fileURL])
-                }
-                .disabled(!agentPolicyExists)
-                Button("Check again") { findingsStore.checkAgentPolicy() }
+            }
+            .settingsHighlight(id: highlightID("Get a policy"))
+            if let importError = findingsStore.agentPolicyImportError {
+                SettingsErrorText(String(localized: "Not imported — \(importError)"))
             }
             SettingsRow("Block matching tool calls", description: "Off: every match is reported and the call runs. On: Claude Code and Cursor refuse the call and tell the agent why — their hooks can say no. Every other agent still only gets the finding.") {
                 Defaults.Toggle(key: .enforceAgentPolicy) {
@@ -8048,9 +8058,38 @@ struct AgentStatusSettings: View {
         } header: {
             SettingsSectionHeader("Agent policy")
         } footer: {
-            SettingsFooter("A command rule matches a command's first word (or its basename) in any segment joined by ;, &&, || or |, after sudo, env and nohup; a multi-word rule matches a segment that starts with it; a tool rule matches the tool's exact name. No regex. Copy the prompt to have your own agent draft the file.")
+            SettingsFooter("A command rule matches a command's first word (or its basename) in any segment joined by ;, &&, || or |, after sudo, env and nohup; a multi-word rule matches a segment that starts with it; a tool rule matches the tool's exact name. No regex. Not the ADR policy file above — that one is about MCP servers.")
         }
-        .onAppear { findingsStore.checkAgentPolicy() }
+        .onAppear {
+            findingsStore.agentPolicyImportError = nil
+            findingsStore.checkAgentPolicy()
+        }
+    }
+
+    /// The "Import…" button: pick a JSON file, validate it with the same parser the status row
+    /// uses, and only then copy it into place — with a confirm when a policy already exists.
+    private func importAgentPolicy() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.message = String(localized: "Choose the agent policy JSON to copy to ~/.kannu/agent-policy.json")
+        ModalPresenter.present(panel) { response in
+            guard response == .OK, let url = panel.url else { return }
+            let proceed = { findingsStore.importPolicyFile(from: url) }
+            if agentPolicyExists {
+                let alert = NSAlert()
+                alert.messageText = String(localized: "Replace the current policy?")
+                alert.informativeText = String(localized: "~/.kannu/agent-policy.json already exists. Importing replaces it with the chosen file.")
+                alert.addButton(withTitle: String(localized: "Replace"))
+                alert.addButton(withTitle: String(localized: "Cancel"))
+                ModalPresenter.present(alert) { answer in
+                    if answer == .alertFirstButtonReturn { proceed() }
+                }
+            } else {
+                proceed()
+            }
+        }
     }
 
     private var agentPolicyStatusText: String {

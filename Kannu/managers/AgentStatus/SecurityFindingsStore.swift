@@ -302,8 +302,34 @@ final class SecurityFindingsStore: ObservableObject {
         }
     }
 
-    /// Puts the drafting prompt on the clipboard for the user's own agent. Kannu never writes the
-    /// policy file itself.
+    /// Why the last Import… failed, shown under the "Get a policy" row. Cleared by the next
+    /// check, import or visit.
+    @Published var agentPolicyImportError: String?
+
+    /// Copies a user-picked policy file into `~/.kannu/agent-policy.json` after validating it —
+    /// the "Import…" button, and the only path on which Kannu writes that file. Runs off the
+    /// main actor like `checkAgentPolicy`; on success the status republishes, on failure the
+    /// existing file is untouched and the error is published instead.
+    func importPolicyFile(from url: URL) {
+        DispatchQueue.global(qos: .utility).async {
+            let result = AgentPolicy.importPolicy(from: url)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    switch result {
+                    case .success(let policy):
+                        self.agentPolicyImportError = nil
+                        self.agentPolicyStatus = .success(policy)
+                    case .failure(let error):
+                        self.agentPolicyImportError = error.message
+                    }
+                }
+            }
+        }
+    }
+
+    /// Puts the drafting prompt on the clipboard for the user's own agent. Kannu never writes
+    /// rules of its own; `importPolicyFile` copies a file the user chose, byte for byte, after
+    /// checking it.
     func copyPolicyDraftingPrompt() {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()

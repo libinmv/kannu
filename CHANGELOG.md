@@ -4,6 +4,34 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-17 - One agent-policy flow: import a policy file, or draft one, in the same place
+- **Developer label:** "policy file upload and prompt are now in different parts, makle that smooth"
+- **Agent label:** Follow-up 45, PR M — agent policy import + one guided section
+- **Changes:**
+  - **The Agent policy section is now the whole flow.** The "Policy rules" status row keeps its
+    ready dot and gains a "…" menu holding Reveal in Finder and Check again; a new "Get a policy"
+    action row puts **Import…** and **Copy a prompt that drafts a policy** side by side, with a
+    caption saying which to use when. A failed import shows a red "Not imported — …" line under
+    the row, with the parser's own reason.
+  - **Import… is the one write Kannu ever makes to `~/.kannu/agent-policy.json`**, and only a
+    click reaches it: the picked JSON is validated with the same parser the status row uses, a
+    replace is confirmed when a policy already exists, and the write is the picked bytes verbatim,
+    atomic, creating `~/.kannu` if needed. A file that would not count as a policy is never
+    written, so an import cannot break a working policy. `AgentPolicy.importPolicy(from:to:)` in
+    the logic target, `SecurityFindingsStore.importPolicyFile` off the main actor.
+  - The "Kannu never writes this file" wording (row copy, `AgentPolicy` doc, store doc,
+    `docs/ADR.md` §9) becomes "Kannu never writes rules of its own; Import copies a file you
+    chose, byte for byte, after checking it". Import never touches `enforceAgentPolicy` — the
+    blocking gates in `docs/REGRESSIONS.md` are unchanged.
+  - **The two policies stop masquerading as one.** The ADR Discovery "Policy file" row gains a
+    description saying it is ADR's scan policy (approved / forbidden / tenant_domains for MCP
+    servers), not the agent policy below; the Agent policy footer points back the other way.
+  - New search entry and highlight id for "Get a policy"; `SettingsHighlightInventoryTests`
+    counts move 202/253/247 → 203/254/248 as a deliberate edit. Tests: import copies byte-for-byte
+    and creates the folder; an invalid, missing, directory or oversize pick writes nothing and
+    keeps the existing file; a replace lands and re-loads; an unwritable destination reports its
+    own error (`LoadError.notWritten`) instead of blaming the picked file as unreadable.
+
 ### 2026-09-17 - Everything informational in Settings can be selected, and the rules are written down and guarded
 - **Developer label:** "many section in settings is not copy pastable, also set rules how sections are done"
 - **Agent label:** Follow-up 45, PR L — Settings selectability sweep + docs/SETTINGS.md + layout guard
