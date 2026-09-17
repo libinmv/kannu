@@ -428,15 +428,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 .environmentObject(viewModel)
                 //.moveToSky()
         )
-        // NSHostingView defaults to `.standardBounds`, which pushes SwiftUI's ideal size into
-        // the window from inside the window's own layout pass — that re-entrancy is what threw
-        // `_postWindowNeedsUpdateConstraints` and aborted the app. Every notch dimension already
-        // comes from `resizeWindows` / `calculateDynamicNotchSize`, so automatic sizing is pure
-        // liability here.
+        // Every notch dimension comes from `resizeWindows` / `calculateDynamicNotchSize`, so
+        // SwiftUI must never size this window. `sizingOptions = []` alone was not enough: as the
+        // window's content view the hosting view still gets a window-size bridge that clamps the
+        // frame on every layout, and fighting it threw `_postWindowNeedsUpdateConstraints`
+        // (docs/REGRESSIONS.md entry 17). `setHostedContent` nests it so the bridge never exists.
         if #available(macOS 13.0, *) {
             hostingView.sizingOptions = []
         }
-        window.contentView = hostingView
+        window.setHostedContent(hostingView)
 
         window.orderFrontRegardless()
         // Pin above every space (fullscreen included) only for "Never hide"; the

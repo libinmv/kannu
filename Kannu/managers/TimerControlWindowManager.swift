@@ -62,8 +62,8 @@ final class TimerControlWindowManager {
         hosting.frame = NSRect(origin: .zero, size: fittingSize)
 
         let window = ensureWindow(on: screen)
-        if window.contentView !== hosting {
-            window.contentView = hosting
+        if window.hostedContentView !== hosting {
+            window.setHostedContent(hosting)
         }
 
         let targetFrame = frame(for: fittingSize, viewModel: viewModel, screen: screen, metrics: metrics)

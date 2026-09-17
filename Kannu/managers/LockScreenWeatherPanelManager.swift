@@ -77,7 +77,7 @@ final class LockScreenWeatherPanelManager {
         let window = ensureWindow()
         window.setFrame(targetFrame, display: true)
         latestFrame = targetFrame
-        window.contentView = hostingView
+        window.setHostedContent(hostingView)
         lastSnapshot = snapshot
         lastContentSize = fittingSize
 

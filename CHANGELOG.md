@@ -4,6 +4,31 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-17 - The notch no longer crashes fighting SwiftUI over its own size
+- **Developer label:** "still local crashes or misbehaves in some way"
+- **Agent label:** Follow-up 47, PR N — hosting views nested out of the window-size bridge
+- **Changes:**
+  - **The crash:** `Kannu-2026-09-17-123317.ips` aborted the app on the notch window (690×175 on
+    the external display) with AppKit's "needing another Update Constraints in Window pass"
+    exception — the same signature as `Kannu-2026-08-29-234024.ips`, whose fix
+    (`sizingOptions = []`) was still in place. The system log showed 103 near-limit warnings for
+    that loop in the 13 hours before, peaking while agents were busiest, and macOS had filed a
+    CPU-resource report for the same main-thread layout churn.
+  - **The cause, proven on the running notch window:** as a window's `contentView`, an
+    `NSHostingView` gets SwiftUI's `WindowSizeBridge`, which clamps the window to the content's
+    min/max size on every `windowDidLayout` — independently of `sizingOptions`. Kannu sizes the
+    notch itself, so the two resized the window back and forth until AppKit's limit threw. A
+    reflection probe read the bridge as present on the notch host, and absent after the fix.
+  - **The fix:** new `NSWindow.setHostedContent(_:)` (`Kannu/helpers/HostedContent.swift`) nests
+    the hosting view in a plain `HostingContainerView`, so the bridge is never created. The notch
+    window and every borderless panel (HUDs, OSD, lock-screen panels and widgets, timer and music
+    controls, clipboard and screen-assistant panels, LocalSend picker, lyrics overlay) use it;
+    read-backs use `hostedContentView`. Titled windows keep the direct assignment on purpose.
+  - **Guarded:** `KannuTests/HostedContentRulesTests.swift` fails on any new direct hosting-view
+    assignment outside the pinned titled windows, and requires the notch window to use the helper.
+    `docs/REGRESSIONS.md` entry 17 records both crashes, the mechanism and the manual check, and a
+    Danger-zones row points window creation at it.
+
 ### 2026-09-17 - Everything informational in Settings can be selected, and the rules are written down and guarded
 - **Developer label:** "many section in settings is not copy pastable, also set rules how sections are done"
 - **Agent label:** Follow-up 45, PR L — Settings selectability sweep + docs/SETTINGS.md + layout guard

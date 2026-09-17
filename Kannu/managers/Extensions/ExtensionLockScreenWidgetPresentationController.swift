@@ -169,7 +169,7 @@ private final class ExtensionLockScreenWidgetWindowPool {
         hosting.wantsLayer = true
         hosting.layer?.masksToBounds = true
         hosting.layer?.cornerRadius = descriptor.cornerRadius
-        window.contentView = hosting
+        window.setHostedContent(hosting)
         window.setFrame(frame(for: descriptor, on: screen), display: true)
         window.alphaValue = 1
         window.orderFrontRegardless()

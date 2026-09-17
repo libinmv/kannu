@@ -737,6 +737,39 @@ and `AGENTS.md` legitimately mentions `@MainActor` twice.
 
 ---
 
+## 17. SwiftUI never sizes a panel Kannu sizes
+
+**Rule:** a borderless panel never takes an `NSHostingView` as its `contentView`. Install it with
+`NSWindow.setHostedContent(_:)` (`Kannu/helpers/HostedContent.swift`), which nests the hosting
+view in a plain `HostingContainerView`. Titled windows (Settings, onboarding) keep the direct
+assignment — there, content-driven sizing is the point.
+
+**Broken 2 times.** `Kannu-2026-08-29-234024.ips`: an uncaught `NSGenericException` from
+`-[NSWindow _postWindowNeedsUpdateConstraints]`, reached through
+`NSHostingView.invalidateSafeAreaCornerInsets`. The fix then — recorded in the 2026-08-29
+CHANGELOG entry, pre-reset history — set `sizingOptions = []` on every panel's hosting view.
+`Kannu-2026-09-17-123317.ips`: the same exception on the notch `KannuWindow` (690×175 on an
+external display) with `sizingOptions = []` in place, after 103 near-limit warnings in 13 h.
+
+**Why it keeps happening:** `sizingOptions` is not the switch. When a hosting view *is* the
+window's content view, `NSHostingView.updateRequiredBridges` attaches a `WindowSizeBridge`, and
+`windowDidLayout` asks it to clamp the window to the SwiftUI content's minimum and maximum size,
+resizing the window if it is outside them (`updateAnimatedWindowSize`). Kannu sizes these panels
+itself, so the two fight: Kannu sets a frame, the bridge sets another, the frame change
+invalidates the safe-area corner insets, layout runs again — 45 update-constraints passes in one
+cycle against AppKit's limit of 43, then the throw. Verified on the running notch window with a
+reflection probe: bridge present as the content view, absent as a subview. A simple repro without
+Kannu's content never builds the bridge, which is why the August fix looked sufficient.
+
+**Guard — exists.** `KannuTests/HostedContentRulesTests.swift` scans every Swift file under
+`Kannu/` for a hosting view assigned straight to `contentView`; the titled-window exceptions are
+pinned by file and count, the notch window is required to use the helper, and the scanner has
+self-tests for every shape it must catch and every cure it must leave alone. **Manual check** when
+touching window creation: `/usr/bin/log show --predicate 'category == "DisplayCycle" && eventMessage CONTAINS "Marking window"'`
+should stay empty for Kannu under agent load.
+
+---
+
 ## Danger zones
 
 Commit counts across all branches (`--follow`, so pre-rename history counts):
@@ -748,6 +781,7 @@ Commit counts across all branches (`--follow`, so pre-rename history counts):
 | `AgentHookInstaller.swift` | 17 | Embedded script + event table + install/uninstall/migration. Grows monotonically; every growth episode has broken `checkInstalled` or a migration (entries 1 and 6). |
 | `CursorAgentStatusMonitor.swift` (usage spawn) | — | The `/usage` fetch invocation. Two silent breakages in one day from added flags/env (entry 8). |
 | `ModalPresenter.swift` | 2 | The only place allowed to stop the main run loop. Every site in the app funnels through it, and the hang watchdog trusts it to declare a deliberate stall (entry 14). |
+| `KannuApp.swift` (`createKannuWindow`) and every panel manager | — | Window creation. A hosting view installed as a panel's content view gets SwiftUI's window-size bridge and fights Kannu's sizing until AppKit aborts (entry 17). Use `setHostedContent`. |
 | `BluetoothAudioManager.swift` | 19 | Battery collection. Spawns `system_profiler` and `pmset` and waits, on whatever thread calls it — moved off main four separate times: twice re-landing there in the same change that was meant to fix it, once leaving the connect path itself on main (entry 11, 2026-09-13 and 2026-09-16 addenda). |
 | `AGENTS.md` / `CLAUDE.md` | — | The instruction files every agent reads. One rule stated in both drifts silently; the split and the import are pinned by `ChangelogRuleDocsTests` (entry 16). |
 | `AgentSessionLogParser.swift` | 8 | `readTrailingLines` and the tail verdict. 4 of 8 commits touch the reader; **2 of those 4 fix the same failure mode** — the reader returning nil and silently sending callers down a wrong path (entry 4). |
