@@ -113,7 +113,7 @@ final class SettingsLayoutRulesTests: XCTestCase {
             }
         }
         // SettingsStatusText and SettingsRowLabel select through settingsDescriptionStyle().
-        for component in ["SettingsStatusText"] {
+        for component in ["SettingsStatusText", "SettingsRowLabel"] {
             let region = Self.region(of: component, in: text)
             XCTAssertNotNil(region)
             if let region {
@@ -167,6 +167,11 @@ final class SettingsLayoutRulesTests: XCTestCase {
         Text("info")
             .settingsDescriptionStyle()
         """).count, 0)
+        // The older spelling counts too.
+        XCTAssertEqual(Self.unselectableInformationalChains(in: """
+        Text("Inactive")
+            .foregroundColor(.secondary)
+        """).count, 1)
         // Primary text is not the rule's business.
         XCTAssertEqual(Self.unselectableInformationalChains(in: "Text(\"title\")").count, 0)
     }
@@ -249,6 +254,7 @@ final class SettingsLayoutRulesTests: XCTestCase {
             }
             let joined = chain.joined(separator: "\n")
             let informational = joined.contains(".foregroundStyle(.secondary)")
+                || joined.contains(".foregroundColor(.secondary)")
                 || joined.contains(".font(.caption")
                 || joined.contains(".font(.subheadline")
             if informational, !joined.contains(".textSelection"),

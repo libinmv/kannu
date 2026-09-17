@@ -3699,6 +3699,7 @@ struct LiveActivitiesSettings: View {
                         Spacer()
                         Text("Disabled")
                             .foregroundColor(.secondary)
+                            .textSelection(.enabled)
                     }
                 }
             } header: {
@@ -3758,6 +3759,7 @@ struct LiveActivitiesSettings: View {
                         } else {
                             Text("Inactive")
                                 .foregroundColor(.secondary)
+                                .textSelection(.enabled)
                         }
                     }
 
@@ -3775,6 +3777,7 @@ struct LiveActivitiesSettings: View {
                         } else {
                             Text("Inactive")
                                 .foregroundColor(.secondary)
+                                .textSelection(.enabled)
                         }
                     }
                 }
@@ -4917,6 +4920,7 @@ extension LockScreenSettings {
             Text("Only available when Material is set to Frosted Glass.")
                 .settingsDescriptionStyle()
         }
+        .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 

@@ -35,6 +35,11 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     `.githooks/pre-commit` runs a fast header/footer subset, reading the index.
   - No Defaults keys, highlight ids, side effects or control behaviour changed; the inventory
     counts are untouched.
+  - **From CodeRabbit's review of this PR:** the scanner now also recognises the older
+    `.foregroundColor(.secondary)` spelling, which surfaced three unselectable status values in
+    Live Activities ("Disabled", two "Inactive") — now selectable; the Lock Screen "Enable media
+    panel blur" unavailable row got the same container selection as its Media-tab twins; and the
+    component pin now covers `SettingsRowLabel` as well as `SettingsStatusText`.
 
 ### 2026-09-17 - Act on CodeRabbit's review of #39: queued alerts drain, and reports never keep the Mac's name
 - **Developer label:** "can you merge each mr one by one and see if there are code rabbit comments"
