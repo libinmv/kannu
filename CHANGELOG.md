@@ -4,6 +4,34 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-17 - The policy row's "…" menu works, and View rules shows the policy in a small box
+- **Developer label:** "the 3 dots near policy file is not working, and if there was a view rules button that will show the rules in a pretty way in a new smaller box it would be nice"
+- **Agent label:** Follow-up 49, PR P — policy row rebuilt, PolicyRulesView popover
+- **Changes:**
+  - **The dead "…" menu, root-caused:** `SettingsRow` applies `.labelsHidden()` to its whole
+    control slot — an environment modifier meant for the Toggle/Picker case. The Policy rules
+    row's `SettingsMoreMenu` inherited it: the ellipsis label collapsed and the items lost their
+    titles, so the menu read as dead. The A/B proof was in the same Form all along — the identical
+    menu works in `analysisRow` (raw `LabeledContent`) and `SecurityFindingRow` (plain HStack).
+    `labelsVisibility(.visible)` needs macOS 15 and the target is 14.6, so the fix is structural:
+    the row is rebuilt as a raw `LabeledContent` with a `SettingsRowLabel`, the `analysisRow`
+    shape. Same highlight id, same search entry.
+  - **View rules:** a button on the Policy rules row (shown when the policy parses) opens a small
+    popover — new `PolicyRulesView`: rule count and path as a selectable header, then one line per
+    rule with a `terminal`/`wrench.and.screwdriver` icon for command vs tool, the matched text in
+    monospace, and the reason underneath. Scrolls past ~300 pt, so a 200-rule policy stays a small
+    box. Data comes from the already-loaded `agentPolicyStatus`; nothing re-reads the file.
+    `AgentPolicy.Rule` gains `displayTitle`/`displayIconName` (tested), and a `policyRules` DEBUG
+    snapshot board renders the box with a fixture policy.
+  - **The trap is written down** so the next Menu doesn't die the same way: `SettingsRow`'s body
+    comment, `SettingsMoreMenu`'s doc, and a docs/SETTINGS.md rule all say which controls may sit
+    in a `SettingsRow` control slot and where a Menu goes instead.
+  - **Enforcement, verified live on this Mac while here** (the user's 7-rule imported policy):
+    with blocking off, `docker ps` ran clean and `ssh`/`yt-dlp` were recorded as matched-and-ran;
+    with the user flipping Block matching tool calls, `ssh -V` and `yt-dlp --version` were refused
+    by the hook with the policy's own reasons while `docker ps` still ran. The probes' findings in
+    Settings are the test's trace.
+
 ### 2026-09-17 - The closed notch stops re-rendering on every agent event
 - **Developer label:** "still local crashes or misbehaves in some way" — the CPU half, after #46 fixed the crash half
 - **Agent label:** Follow-up 48, PR O — narrow projection for the closed notch

@@ -7417,6 +7417,7 @@ struct AgentStatusSettings: View {
     @State private var adrOpenAIKeyText = ""
     @State private var adrAnthropicKeyText = ""
     @State private var showDetectionConsent = false
+    @State private var showPolicyRules = false
     /// Which ADR Detection keys the keychain holds; see `adrSecretRow`.
     @State private var storedADRSecrets: Set<SecureSecretKey> = []
     @Default(.enableAgentStatusFeature) var enableAgentStatusFeature
@@ -8032,9 +8033,19 @@ struct AgentStatusSettings: View {
     /// The user's own block list, enforced where a host's hook can refuse a call.
     private var agentPolicySection: some View {
         Section {
-            SettingsRow("Policy rules", description: "A JSON file — ~/.kannu/agent-policy.json — naming commands and tools an agent may not use. Kannu never writes rules of its own; Import below copies a file you chose, byte for byte, after checking it. Every match is reported as a finding; whether it is also blocked is the switch below.") {
+            // A raw LabeledContent, NOT SettingsRow: the row component applies `.labelsHidden()`
+            // to its whole control slot (meant for the Toggle/Picker case), and a Menu in that
+            // slot inherits it — the ellipsis collapsed and the "…" menu was dead. Same shape as
+            // `analysisRow`, the working SettingsMoreMenu site. See docs/SETTINGS.md.
+            LabeledContent {
                 HStack(spacing: 8) {
                     SettingsStatusText(agentPolicyStatusText, isReady: agentPolicyIsReady)
+                    if case .success(let policy) = findingsStore.agentPolicyStatus {
+                        Button(String(localized: "View rules")) { showPolicyRules = true }
+                        .popover(isPresented: $showPolicyRules, arrowEdge: .bottom) {
+                            PolicyRulesView(policy: policy)
+                        }
+                    }
                     SettingsMoreMenu {
                         Button("Reveal in Finder") {
                             NSWorkspace.shared.activateFileViewerSelecting([AgentPolicy.fileURL])
@@ -8043,6 +8054,9 @@ struct AgentStatusSettings: View {
                         Button("Check again") { findingsStore.checkAgentPolicy() }
                     }
                 }
+                .controlSize(.small)
+            } label: {
+                SettingsRowLabel("Policy rules", description: "A JSON file — ~/.kannu/agent-policy.json — naming commands and tools an agent may not use. Kannu never writes rules of its own; Import below copies a file you chose, byte for byte, after checking it. Every match is reported as a finding; whether it is also blocked is the switch below.")
             }
             .settingsHighlight(id: highlightID("Policy rules"))
             SettingsActionRow("Get a policy", description: "Have your agent draft one, or import a JSON file you already have. Kannu checks the file before it counts; a broken import never replaces a working policy.") {

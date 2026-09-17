@@ -47,6 +47,9 @@ enum DebugSnapshots {
         if request.tabs == nil || request.tabs?.contains("findings") == true {
             boards.append(("findings", AgentStatusSettings.snapshotFindingRows(DebugSnapshotFixtures.findings)))
         }
+        if request.tabs == nil || request.tabs?.contains("policyRules") == true {
+            boards.append(("policyRules", AnyView(PolicyRulesView(policy: DebugSnapshotFixtures.agentPolicy))))
+        }
         if request.tabs == nil || request.tabs?.contains("detection") == true {
             boards.append(("detection", AgentStatusSettings.snapshotDetectionRows()))
         }
@@ -266,6 +269,17 @@ enum DebugSnapshots {
 /// Findings for the snapshot board only — never ingested into the store, whose ingest prunes the
 /// shared acknowledgements.
 enum DebugSnapshotFixtures {
+    /// The user-shaped policy the View-rules board renders: commands with and without reasons,
+    /// a multi-word phrase, and a tool rule.
+    static let agentPolicy = AgentPolicy(rules: [
+        .init(command: "ssh", tool: nil, reason: "Prevent remote shell access"),
+        .init(command: "scp", tool: nil, reason: "Prevent remote file transfer"),
+        .init(command: "yt-dlp", tool: nil, reason: "Prevent YouTube access"),
+        .init(command: "rm -rf /", tool: nil, reason: "Prevent catastrophic filesystem deletion"),
+        .init(command: "curl | sh", tool: nil, reason: nil),
+        .init(command: nil, tool: "WebFetch", reason: "No web fetches from agents in this repo"),
+    ])
+
     /// Recent chats with and without a v39 turn: running for hours, ended, the pre-v39 fallback, a
     /// prompt, and a chat that stopped without a Stop (no time shown).
     static func recentChats(now: Date) -> [AgentSessionStatus] {

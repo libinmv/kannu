@@ -29,6 +29,11 @@ struct AgentPolicy: Equatable {
         var command: String?
         var tool: String?
         var reason: String?
+
+        /// What the rule matches, for display: the command phrase or the tool name.
+        var displayTitle: String { command ?? tool ?? "" }
+        /// `terminal` for a command rule, a wrench for a tool rule — the View-rules list's icon.
+        var displayIconName: String { command != nil ? "terminal" : "wrench.and.screwdriver" }
     }
 
     static var fileURL: URL {
