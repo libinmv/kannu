@@ -79,7 +79,7 @@ class ChatMessagesPanel: NSPanel {
         let hostingView = NSHostingView(rootView: contentView)
         hostingView.sizingOptions = []
         applyChatPanelCornerMask(hostingView, radius: 16)
-        self.contentView = hostingView
+        setHostedContent(hostingView)
         
         // Set size for chat messages panel (wider and taller)
         let preferredSize = CGSize(width: 600, height: 500)
@@ -165,7 +165,7 @@ class ChatInputPanel: NSPanel {
         let hostingView = NSHostingView(rootView: contentView)
         hostingView.sizingOptions = []
         applyChatPanelCornerMask(hostingView, radius: 16)
-        self.contentView = hostingView
+        setHostedContent(hostingView)
         
         // Set compact size for single-line input panel
         let preferredSize = CGSize(width: 500, height: 60)

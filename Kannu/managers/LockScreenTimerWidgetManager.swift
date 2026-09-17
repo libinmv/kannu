@@ -209,7 +209,7 @@ final class LockScreenTimerWidgetPanelManager {
     private func ensureWindow() -> NSWindow {
         if let window {
             if window.contentView == nil {
-                window.contentView = hostingView()
+                window.setHostedContent(hostingView())
             }
             return window
         }
@@ -230,7 +230,7 @@ final class LockScreenTimerWidgetPanelManager {
         newWindow.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         newWindow.ignoresMouseEvents = false
         newWindow.isMovable = false
-        newWindow.contentView = hostingView()
+        newWindow.setHostedContent(hostingView())
 
         ScreenCaptureVisibilityManager.shared.register(newWindow, scope: .entireInterface)
 

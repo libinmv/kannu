@@ -189,11 +189,11 @@ class LockScreenLiveActivityWindowManager {
             view.sizingOptions = []
             view.frame = CGRect(origin: .zero, size: targetFrame.size)
             hostingView = view
-            window.contentView = view
+            window.setHostedContent(view)
         }
 
-        if window.contentView !== hostingView {
-            window.contentView = hostingView
+        if let hostingView, window.hostedContentView !== hostingView {
+            window.setHostedContent(hostingView)
         }
 
         window.displayIfNeeded()

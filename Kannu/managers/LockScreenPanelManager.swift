@@ -156,7 +156,7 @@ class LockScreenPanelManager {
         hosting.sizingOptions = []
         hosting.frame = NSRect(origin: .zero, size: targetFrame.size)
         hosting.autoresizingMask = [.width, .height]
-        window.contentView = hosting
+        window.setHostedContent(hosting)
 
         // Ensure the underlying window content is clipped to rounded corners
         if let content = window.contentView {

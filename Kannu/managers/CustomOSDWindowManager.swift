@@ -155,7 +155,7 @@ final class CustomOSDWindowManager {
         window.level = .statusBar + 1
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         window.hasShadow = false
-        window.contentView = hostingView
+        window.setHostedContent(hostingView)
         window.alphaValue = 0
         
         // Delegate to SkyLight for proper rendering

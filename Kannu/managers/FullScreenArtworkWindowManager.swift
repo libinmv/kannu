@@ -1372,7 +1372,7 @@ final class FullScreenArtworkWindowManager: ObservableObject {
         let window: NSWindow
         let hostingView: NSHostingView<FullScreenLyricsOverlayContent>
         if let existingWindow = lyricsOverlayWindow,
-           let existingView = existingWindow.contentView as? NSHostingView<FullScreenLyricsOverlayContent> {
+           let existingView = existingWindow.hostedContentView as? NSHostingView<FullScreenLyricsOverlayContent> {
             window = existingWindow
             hostingView = existingView
         } else {
@@ -1395,7 +1395,7 @@ final class FullScreenArtworkWindowManager: ObservableObject {
             newHostingView.frame = NSRect(origin: .zero, size: frame.size)
             newHostingView.wantsLayer = true
             newHostingView.layer?.backgroundColor = NSColor.clear.cgColor
-            newWindow.contentView = newHostingView
+            newWindow.setHostedContent(newHostingView)
 
             ScreenCaptureVisibilityManager.shared.register(newWindow, scope: .entireInterface)
             lyricsOverlayWindow = newWindow
