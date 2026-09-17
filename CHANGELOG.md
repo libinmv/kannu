@@ -4,6 +4,29 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-17 - The closed notch stops re-rendering on every agent event
+- **Developer label:** "still local crashes or misbehaves in some way" — the CPU half, after #46 fixed the crash half
+- **Agent label:** Follow-up 48, PR O — narrow projection for the closed notch
+- **Changes:**
+  - **The measurement:** with #46's fix in, a 20-minute Release run under a busy Claude Code
+    session still averaged 38 % CPU (peak 59 %) — no layout warnings, all of it SwiftUI
+    re-render churn with the notch closed. A hook-firing agent drives the 50 ms quick-rescan path
+    at up to ~20 Hz, and `sessions` publishes on any change, turn counts included (deliberate,
+    entry 10).
+  - **The cause:** `ContentView` observed the whole monitor (`@ObservedObject`) while reading only
+    `shouldShowTrafficLight` and the pulse counter — every publish re-ran its ~3,300-line body for
+    values it never reads. The closed pill (`AgentTrafficLightLiveActivity`) also carried an
+    `@ObservedObject monitor` it never used at all: a second full re-render per publish, deleted.
+  - **The fix:** new `AgentTrafficLightProjection` — traffic-light state, visibility and the pulse
+    counter, written only by the monitor's own `didSet`s. `ContentView` observes the projection;
+    the pulse-latch verdict stays on the monitor with its single consumer (entry 10 untouched).
+    `AgentTrafficLightIndicator`, the open panel, the usage tab and the Settings preview keep
+    observing the monitor directly — they render session data, and the leaf shape is the point.
+  - **Guarded:** `KannuTests/ClosedNotchObservationTests.swift` pins the whole-monitor observer
+    allowlist (a new one fails the build with the reason), that only the monitor writes the
+    projection, and that the latch keeps one consume site; scanner self-tests included.
+    REGRESSIONS entry 10 gains the dated addendum with the numbers.
+
 ### 2026-09-17 - The notch no longer crashes fighting SwiftUI over its own size
 - **Developer label:** "still local crashes or misbehaves in some way"
 - **Agent label:** Follow-up 47, PR N — hosting views nested out of the window-size bridge
