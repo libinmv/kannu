@@ -36,6 +36,29 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
   - No Defaults keys, highlight ids, side effects or control behaviour changed; the inventory
     counts are untouched.
 
+### 2026-09-17 - Act on CodeRabbit's review of #39: queued alerts drain, and reports never keep the Mac's name
+- **Developer label:** "can you merge each mr one by one and see if there are code rabbit comments"
+- **Agent label:** Follow-up 44 — CodeRabbit's three findings on #39, which arrived 14 minutes before it merged and were missed
+- **Changes:**
+  - `ModalPresenter.runAppModal` never drained the alert queue, and four callers use it directly, so
+    an alert queued behind one of theirs waited for the next unrelated alert. It drains now — one
+    main-queue hop after returning, not in place as the review suggested, because a synchronous
+    drain would show the next alert before `present(_:)`'s completion had handled this one's answer.
+  - A Mac whose local name SystemConfiguration cannot read left the diagnostic's file name —
+    `Kannu_<date>_<host>.cpu_resource.diag`, shown to the user and put in the GitHub issue — unredacted.
+    `DiagnosticScrub.fileName` replaces the host component by position, needing no name at all, and
+    `CrashReport.parse` applies it after the host pass; `gethostname(2)` is the second, non-resolving
+    source of the name itself.
+  - `/Volumes/<label>` with a space kept the second word ("Davids MacBook" → "redacted MacBook").
+    A label followed by a path is taken whole now, bounded by the line; a bare volume root still uses
+    the old pattern.
+  - Tests: an unknown host still yields `…_this-mac…` in the name, body and URL; both file-name
+    shapes; spaced, bare and multi-line volume paths.
+  - From CodeRabbit's review of this PR: a bare spaced volume label that ended its line was only
+    half redacted (`/Volumes/redacted MacBook`). A bare label now runs to the end of its line: a
+    spaced label cannot be told apart from prose after it, and these strings go into public issue
+    bodies, so over-redacting the rest of the line is the deliberate trade.
+
 ### 2026-09-16 - An agent policy Kannu can enforce: block ssh (or anything) on Claude Code and Cursor
 - **Developer label:** "how do i set a policy, can i enforce a policy like no agents can use ssh … give a copy prompt for sample policy generation, actually give a block policy if it is possible"
 - **Agent label:** Follow-up 43, PR J — agent block policy (hook v42)

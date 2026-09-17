@@ -142,7 +142,15 @@ enum ModalPresenter {
         NSApp.activate(ignoringOtherApps: true)
         raiseAboveOwnWindows(alert)
         presentedCount += 1
-        defer { presentedCount -= 1 }
+        defer {
+            presentedCount -= 1
+            // Four callers use this directly, bypassing `present(_:)`'s drain, so an alert queued
+            // while one of theirs was up waited for the next unrelated alert. One hop, not a direct
+            // call: a synchronous drain here would show the next alert before `present(_:)`'s
+            // completion had handled this one's answer. `drainPendingAlerts` checks `isPresenting`,
+            // so this and `present(_:)`'s own drain cannot both show the same alert.
+            DispatchQueue.main.async { drainPendingAlerts() }
+        }
         // A dialog waiting for the user is a stopped main thread on purpose, so the hang watchdog
         // must not call it a freeze. This is the only place that has to say so.
         return HangWatchdog.shared.duringExpectedStall { alert.runModal() }

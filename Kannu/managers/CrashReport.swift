@@ -97,7 +97,9 @@ struct CrashReport: Equatable {
     /// Parses either shape macOS writes, and returns nil for anything it does not recognise — a
     /// truncated file, a format change, a report about another app.
     static func parse(fileName: String, contents: String, home: String, hostName: String) -> CrashReport? {
-        let name = DiagnosticScrub.hostName(hostName, in: fileName)
+        // The host pass first (it also catches the name elsewhere), then the pass that needs no
+        // host at all, so an unreadable host name cannot leave the file name unredacted.
+        let name = DiagnosticScrub.fileName(DiagnosticScrub.hostName(hostName, in: fileName))
         if fileName.hasSuffix(".ips") {
             return parseIPS(sourceName: name, contents: contents, home: home, hostName: hostName)
         }
