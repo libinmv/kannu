@@ -291,8 +291,17 @@ final class SecurityFindingsStore: ObservableObject {
     /// actor (docs/REGRESSIONS.md entry 11) on start, on appear and on "Check again".
     @Published private(set) var agentPolicyStatus: Result<AgentPolicy, AgentPolicy.LoadError> = .failure(.notFound)
 
+    /// Every policy read and write runs here, in order. Checks and imports used to run on the
+    /// shared utility pool, so an earlier import could write after a later one, or an earlier
+    /// check could publish a status the next import had already replaced. A serial queue keeps
+    /// the file operations ordered, and because each result hops to the main queue from this one
+    /// thread, the publications arrive in that same order.
+    private let agentPolicyQueue = DispatchQueue(label: "com.kannu.agent-policy", qos: .utility)
+
     func checkAgentPolicy() {
-        DispatchQueue.global(qos: .utility).async {
+        // A fresh check answers the question the import error was about.
+        if agentPolicyImportError != nil { agentPolicyImportError = nil }
+        agentPolicyQueue.async {
             let result = AgentPolicy.load()
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
@@ -308,10 +317,10 @@ final class SecurityFindingsStore: ObservableObject {
 
     /// Copies a user-picked policy file into `~/.kannu/agent-policy.json` after validating it —
     /// the "Import…" button, and the only path on which Kannu writes that file. Runs off the
-    /// main actor like `checkAgentPolicy`; on success the status republishes, on failure the
-    /// existing file is untouched and the error is published instead.
+    /// main actor on the same serial queue as `checkAgentPolicy`; on success the status
+    /// republishes, on failure the existing file is untouched and the error is published instead.
     func importPolicyFile(from url: URL) {
-        DispatchQueue.global(qos: .utility).async {
+        agentPolicyQueue.async {
             let result = AgentPolicy.importPolicy(from: url)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {

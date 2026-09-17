@@ -31,6 +31,10 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     and creates the folder; an invalid, missing, directory or oversize pick writes nothing and
     keeps the existing file; a replace lands and re-loads; an unwritable destination reports its
     own error (`LoadError.notWritten`) instead of blaming the picked file as unreadable.
+  - **From CodeRabbit's review of this PR:** checks and imports now share one serial queue, so a
+    slower earlier import can no longer write after a later one and a stale check can no longer
+    publish over a fresh import; "Check again" also clears a previous "Not imported" line, as the
+    property's own doc comment already promised.
 
 ### 2026-09-17 - Everything informational in Settings can be selected, and the rules are written down and guarded
 - **Developer label:** "many section in settings is not copy pastable, also set rules how sections are done"
