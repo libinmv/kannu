@@ -343,7 +343,7 @@ struct SettingsView: View {
                             }
                         } header: {
                             if let title = section.group.title {
-                                Text(title)
+                                SettingsSectionHeader(title)
                             }
                         }
                     }
@@ -1115,7 +1115,7 @@ struct GeneralSettings: View {
                 .disabled(!enableMinimalisticUI || !Defaults[.showMinimalisticBatteryIndicator])
                 .settingsHighlight(id: highlightID("Show battery percentage inside icon"))
             } header: {
-                Text("UI Mode")
+                SettingsSectionHeader("UI Mode")
             } footer: {
                 SettingsFooter("Minimalistic mode focuses on media controls and system HUDs, hiding all extra features for a clean, focused experience. Automatically enables simpler animations.")
             }
@@ -1184,7 +1184,7 @@ struct GeneralSettings: View {
                 }
                 .settingsHighlight(id: highlightID("Hide Kannu during screenshots & recordings"))
             } header: {
-                Text("System features")
+                SettingsSectionHeader("System features")
             }
 
             Section {
@@ -1245,7 +1245,7 @@ struct GeneralSettings: View {
                     }
                 }
             } header: {
-                Text("Notch Height")
+                SettingsSectionHeader("Notch Height")
             }
 
             NotchBehaviour()
@@ -1319,7 +1319,7 @@ struct GeneralSettings: View {
             }
         } header: {
             HStack {
-                Text("Gesture control")
+                SettingsSectionHeader("Gesture control")
                 customBadge(text: "Beta")
             }
         } footer: {
@@ -1353,6 +1353,7 @@ struct GeneralSettings: View {
                         Text("\(minimumHoverDuration, specifier: "%.1f")s")
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
                     }
                     .frame(width: 190)
                 }
@@ -1380,7 +1381,7 @@ struct GeneralSettings: View {
             }
             .settingsHighlight(id: highlightID("Always show on non-notch displays"))
         } header: {
-            Text("Notch behavior")
+            SettingsSectionHeader("Notch behavior")
         }
 
         perDisplayOverridesSection
@@ -1438,7 +1439,7 @@ struct GeneralSettings: View {
                 }
             } header: {
                 HStack(spacing: 6) {
-                    Text(verbatim: name)
+                    SettingsSectionHeader(name)
                     if display.isBuiltIn {
                         customBadge(text: String(localized: "Built-in"))
                     }
@@ -1555,7 +1556,7 @@ struct Charge: View {
                     }
                     .settingsHighlight(id: highlightID("Play low battery alert sound"))
                 } header: {
-                    Text("General")
+                    SettingsSectionHeader("General")
                 }
                 Section {
                     Defaults.Toggle(key: .showBatteryPercentage) {
@@ -1567,7 +1568,7 @@ struct Charge: View {
                     }
                     .settingsHighlight(id: highlightID("Show power status icons"))
                 } header: {
-                    Text("Battery Information")
+                    SettingsSectionHeader("Battery Information")
                 }
                 Section {
                     Defaults.Toggle(key: .showChargingBatteryHUD) {
@@ -1585,7 +1586,7 @@ struct Charge: View {
                     }
                     .settingsHighlight(id: highlightID("Fully charged HUD"))
                 } header: {
-                    Text("Battery HUDs")
+                    SettingsSectionHeader("Battery HUDs")
                 } footer: {
                     SettingsFooter("These temporary HUDs recreate the charging, low-battery, and full-battery notch alerts.")
                 }
@@ -1608,7 +1609,7 @@ struct Charge: View {
                     .disabled(!showPowerStatusNotifications || !showFullBatteryHUD)
                     .opacity(sectionOpacity(showPowerStatusNotifications && showFullBatteryHUD))
                 } header: {
-                    Text("HUD Duration")
+                    SettingsSectionHeader("HUD Duration")
                 }
                 Section {
                     testHUDRow(Label("Charging HUD", systemImage: "bolt.fill"),
@@ -1626,7 +1627,7 @@ struct Charge: View {
                     .disabled(!showPowerStatusNotifications || !showFullBatteryHUD)
                     .settingsHighlight(id: highlightID("Test full battery HUD"))
                 } header: {
-                    Text("HUD Tests")
+                    SettingsSectionHeader("HUD Tests")
                 } footer: {
                     SettingsFooter("Runs the real notch animation on the current target display. If an external screen is using Dynamic Island mode, the battery HUD is sent there first.")
                 }
@@ -1647,7 +1648,7 @@ struct Charge: View {
                                       valueText: Text("\(lowBatteryHUDThreshold)%"))
                     .settingsHighlight(id: highlightID("Low battery threshold"))
                 } header: {
-                    Text("Low Battery")
+                    SettingsSectionHeader("Low Battery")
                 }
                 .disabled(!showPowerStatusNotifications || !showLowBatteryHUD)
                 .opacity(sectionOpacity(showPowerStatusNotifications && showLowBatteryHUD))
@@ -1669,7 +1670,7 @@ struct Charge: View {
                                       valueText: Text("\(fullBatteryHUDThreshold)%"))
                     .settingsHighlight(id: highlightID("Full charge threshold"))
                 } header: {
-                    Text("Full Battery")
+                    SettingsSectionHeader("Full Battery")
                 }
                 .disabled(!showPowerStatusNotifications || !showFullBatteryHUD)
                 .opacity(sectionOpacity(showPowerStatusNotifications && showFullBatteryHUD))
@@ -1740,7 +1741,7 @@ struct Downloads: View {
                 }
                 .settingsHighlight(id: highlightID("Download indicator style"))
             } header: {
-                Text("Download Detection")
+                SettingsSectionHeader("Download Detection")
             } footer: {
                 SettingsFooter("Monitor your Downloads folder for Chromium-style downloads (.crdownload files) and show a live activity in the Dynamic Island while downloads are in progress.")
             }
@@ -2202,7 +2203,7 @@ private struct HUDAndOSDSettingsView: View {
                     }
                 )
             } header: {
-                Text("Accessibility")
+                SettingsSectionHeader("Accessibility")
             }
         }
 
@@ -2216,7 +2217,7 @@ private struct HUDAndOSDSettingsView: View {
                 }
                 .disabled(enableThirdPartyDDCIntegration)
             } header: {
-                Text("Controls")
+                SettingsSectionHeader("Controls")
             } footer: {
                 SettingsFooter("Choose which system controls should display HUD notifications.")
             }
@@ -2269,7 +2270,7 @@ private struct HUDAndOSDSettingsView: View {
                 }
             }
         } header: {
-            Text("Behavior & Style")
+            SettingsSectionHeader("Behavior & Style")
         }
 
         Section {
@@ -2281,7 +2282,7 @@ private struct HUDAndOSDSettingsView: View {
 
             dimensionSlider(Text("Screen Padding: \(Int(verticalHUDPadding))px"), value: $verticalHUDPadding, in: 0...100, step: 4)
         } header: {
-            Text("Position")
+            SettingsSectionHeader("Position")
         } footer: {
             SettingsFooter("Choose directly on which side of the screen the vertical bar appears.")
         }
@@ -2297,7 +2298,7 @@ private struct HUDAndOSDSettingsView: View {
                 }
             }
         } header: {
-            Text("Dimensions")
+            SettingsSectionHeader("Dimensions")
         }
     }
 
@@ -2317,7 +2318,7 @@ private struct HUDAndOSDSettingsView: View {
                 }
             }
         } header: {
-            Text("Style")
+            SettingsSectionHeader("Style")
         }
 
         Section {
@@ -2330,7 +2331,7 @@ private struct HUDAndOSDSettingsView: View {
                 }
             }
         } header: {
-            Text("Dimensions")
+            SettingsSectionHeader("Dimensions")
         }
     }
 
@@ -2444,7 +2445,7 @@ private struct ExternalDisplayIntegrationsSection: View {
                 .settingsHighlight(id: highlightID("Brightness fine step"))
                 .disabled(enableThirdPartyDDCIntegration)
         } header: {
-            Text("Step size")
+            SettingsSectionHeader("Step size")
         } footer: {
             VStack(alignment: .leading, spacing: 4) {
                 if enableExternalVolumeControlListener {
@@ -2522,6 +2523,7 @@ private struct ExternalDisplayIntegrationsSection: View {
                 Text("\(value.wrappedValue)%")
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
                 Stepper(value: value, in: 1...25) {
                     title
                 }
@@ -2647,7 +2649,7 @@ private struct DevicesSettingsView: View {
                 }
                 .settingsHighlight(id: highlightID("Use 3D Bluetooth HUD icon"))
             } header: {
-                Text("Bluetooth Audio Devices")
+                SettingsSectionHeader("Bluetooth Audio Devices")
             } footer: {
                 SettingsFooter("Displays a HUD notification when Bluetooth audio devices (headphones, AirPods, speakers) connect, showing device name and battery level.")
             }
@@ -2659,7 +2661,7 @@ private struct DevicesSettingsView: View {
                 .disabled(colorCodingDisabled)
                 .settingsHighlight(id: highlightID("Color-coded battery display"))
             } header: {
-                Text("Battery Indicator Styling")
+                SettingsSectionHeader("Battery Indicator Styling")
             } footer: {
                 if progressBarStyle == .segmented {
                     SettingsFooter("Color-coded fills are unavailable in Segmented mode. Switch to Hierarchical or Gradient inside Controls › Dynamic Island to adjust advanced options.")
@@ -2710,7 +2712,7 @@ struct HUD: View {
                     openSettingsAction: { accessibilityPermission.openSystemSettings() }
                 )
             } header: {
-                Text("Accessibility")
+                SettingsSectionHeader("Accessibility")
             }
         }
 
@@ -2726,7 +2728,7 @@ struct HUD: View {
                 }
                 .disabled(enableThirdPartyDDCIntegration)
             } header: {
-                Text("Controls")
+                SettingsSectionHeader("Controls")
             } footer: {
                 SettingsFooter("Choose which system controls should display HUD notifications.")
             }
@@ -2740,7 +2742,7 @@ struct HUD: View {
             }
             .settingsHighlight(id: highlightID("Play feedback when volume is changed"))
         } header: {
-            Text("Audio feedback")
+            SettingsSectionHeader("Audio feedback")
         } footer: {
             SettingsFooter("Requires Accessibility permission so Dynamic Island can intercept the hardware volume keys.")
         }
@@ -2764,7 +2766,7 @@ struct HUD: View {
             }
             .settingsHighlight(id: highlightID("Show percentages beside progress bars"))
         } header: {
-            Text("Dynamic Island Progress Bars")
+            SettingsSectionHeader("Dynamic Island Progress Bars")
         } footer: {
             if colorCodingDisabled {
                 SettingsFooter("Color-coded fills and smooth gradients are unavailable in Segmented mode. Switch to Hierarchical or Gradient to adjust these options.")
@@ -2809,7 +2811,7 @@ struct HUD: View {
             }
             .settingsHighlight(id: highlightID("Use accent color"))
         } header: {
-            Text("Appearance")
+            SettingsSectionHeader("Appearance")
         }
     }
 }
@@ -2869,7 +2871,7 @@ struct Media: View {
                 }
                 .settingsHighlight(id: highlightID("Music Source"))
             } header: {
-                Text("Media Source")
+                SettingsSectionHeader("Media Source")
             } footer: {
                 if MusicManager.shared.isNowPlayingDeprecated {
                     VStack(alignment: .leading, spacing: 2) {
@@ -2901,7 +2903,7 @@ struct Media: View {
                 .disabled(enableMinimalisticUI || !showStandardMediaControls)
                 .settingsHighlight(id: highlightID("Auto-hide inactive notch media player"))
             } header: {
-                Text("Dynamic Island Visibility")
+                SettingsSectionHeader("Dynamic Island Visibility")
             } footer: {
                 if enableMinimalisticUI {
                     SettingsFooter("Disable Minimalistic UI to configure the standard notch media controls.")
@@ -2928,7 +2930,7 @@ struct Media: View {
                     MusicSlotConfigurationView()
                 }
             } header: {
-                Text("Media controls")
+                SettingsSectionHeader("Media controls")
             } footer: {
                 if !showShuffleAndRepeat {
                     SettingsFooter("Turn on customizable controls to rearrange media buttons.")
@@ -2956,7 +2958,7 @@ struct Media: View {
                     }
                     .settingsHighlight(id: highlightID("Skip buttons"))
                 } header: {
-                    Text("Floating window panel skip behaviour")
+                    SettingsSectionHeader("Floating window panel skip behaviour")
                 }
             }
             Section {
@@ -2999,6 +3001,7 @@ struct Media: View {
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
                             .frame(minWidth: 32, alignment: .trailing)
+                            .textSelection(.enabled)
                     }
                     .frame(width: 220)
                 }
@@ -3018,6 +3021,7 @@ struct Media: View {
                         Text("\(waitInterval, specifier: "%.0f") seconds")
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
                         Stepper(value: $waitInterval, in: 0...10, step: 1) {
                             Text("Media inactivity timeout")
                         }
@@ -3031,7 +3035,7 @@ struct Media: View {
                 }
                 .settingsHighlight(id: highlightID("Show song title and artist in closed notch"))
             } header: {
-                Text("Media playback live activity")
+                SettingsSectionHeader("Media playback live activity")
             }
 
             Section {
@@ -3056,7 +3060,7 @@ struct Media: View {
                 
                 Toggle("Scrubbable real-time waveform", isOn: $enableWaveformScrubber)
             } header: {
-                Text("Music Visualizer")
+                SettingsSectionHeader("Music Visualizer")
             } footer: {
                 SettingsFooter("Shows a real-time audio spectrum synced to your music. Requires macOS 14.2 or later.")
             }
@@ -3119,7 +3123,7 @@ struct Media: View {
                 .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
                 .settingsHighlight(id: highlightID("Keep album art visible during fullscreen artwork"))
             } header: {
-                Text("Lock Screen Integration")
+                SettingsSectionHeader("Lock Screen Integration")
             } footer: {
                 SettingsFooter("These controls mirror the Lock Screen tab.")
             }
@@ -3142,7 +3146,7 @@ struct Media: View {
                 }
             } header: {
                 HStack {
-                    Text("Hide DynamicIsland Options")
+                    SettingsSectionHeader("Hide DynamicIsland Options")
                     customBadge(text: "Beta")
                 }
             }
@@ -3166,6 +3170,7 @@ struct Media: View {
             Text("Only applies when Material is set to Frosted Glass.")
                 .settingsDescriptionStyle()
         }
+        .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
     private var customLiquidBlurRow: some View {
@@ -3175,6 +3180,7 @@ struct Media: View {
             Text("Custom liquid glass already renders with Apple's liquid material, so this option is managed automatically.")
                 .settingsDescriptionStyle()
         }
+        .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -3216,7 +3222,7 @@ struct About: View {
                     }
                 }
             } header: {
-                Text("Version info")
+                SettingsSectionHeader("Version info")
             }
 
             Section {
@@ -3256,7 +3262,7 @@ struct About: View {
                     SettingsErrorText("macOS has written no report about Kannu on this Mac.")
                 }
             } header: {
-                Text("Diagnostics")
+                SettingsSectionHeader("Diagnostics")
             } footer: {
                 SettingsFooter("A freeze leaves no crash report, so without this there is nothing to look at afterwards. The check costs one wake every two seconds. Reporting opens a GitHub issue with the details filled in — no name, nothing identifying your Mac — for you to read and submit; Kannu sends nothing itself.")
             }
@@ -3469,7 +3475,7 @@ struct Shelf: View {
                         )
                     }
                 } header: {
-                    Text("Permissions")
+                    SettingsSectionHeader("Permissions")
                 }
             }
 
@@ -3501,7 +3507,7 @@ struct Shelf: View {
                 .settingsHighlight(id: highlightID("Remove from shelf after dragging"))
             } header: {
                 HStack {
-                    Text("General")
+                    SettingsSectionHeader("General")
                 }
             }
 
@@ -3521,7 +3527,7 @@ struct Shelf: View {
                 }
                 .settingsHighlight(id: highlightID("Quick Share Service"))
             } header: {
-                Text("Quick Share")
+                SettingsSectionHeader("Quick Share")
             } footer: {
                 SettingsFooter("Choose which service to use when sharing files from the shelf. Drag files onto the shelf or click the shelf button to pick files.")
             }
@@ -3566,7 +3572,7 @@ private struct LocalSendSettingsSection: View {
                 .pickerStyle(.menu)
             }
         } header: {
-            Text("LocalSend Device Picker")
+            SettingsSectionHeader("LocalSend Device Picker")
         } footer: {
             SettingsFooter("Customize the appearance of the LocalSend device selection popup that appears when you drop files.")
         }
@@ -3622,7 +3628,7 @@ struct LiveActivitiesSettings: View {
                     }
                 }
             } header: {
-                Text("Screen Recording")
+                SettingsSectionHeader("Screen Recording")
             } footer: {
                 SettingsFooter("Uses event-driven private API for real-time screen recording detection")
             }
@@ -3693,10 +3699,11 @@ struct LiveActivitiesSettings: View {
                         Spacer()
                         Text("Disabled")
                             .foregroundColor(.secondary)
+                            .textSelection(.enabled)
                     }
                 }
             } header: {
-                Text("Do Not Disturb")
+                SettingsSectionHeader("Do Not Disturb")
             } footer: {
                 SettingsFooter("Listens for Focus session changes via distributed notifications")
             }
@@ -3722,7 +3729,7 @@ struct LiveActivitiesSettings: View {
                 .disabled(!Defaults[.enableCapsLockIndicator])
                 .settingsHighlight(id: highlightID("Caps Lock color"))
             } header: {
-                Text("Caps Lock Indicator")
+                SettingsSectionHeader("Caps Lock Indicator")
             } footer: {
                 SettingsFooter("Adds a notch HUD when Caps Lock is enabled, with optional label and tint controls.")
             }
@@ -3752,6 +3759,7 @@ struct LiveActivitiesSettings: View {
                         } else {
                             Text("Inactive")
                                 .foregroundColor(.secondary)
+                                .textSelection(.enabled)
                         }
                     }
 
@@ -3769,11 +3777,12 @@ struct LiveActivitiesSettings: View {
                         } else {
                             Text("Inactive")
                                 .foregroundColor(.secondary)
+                                .textSelection(.enabled)
                         }
                     }
                 }
             } header: {
-                Text("Privacy Indicators")
+                SettingsSectionHeader("Privacy Indicators")
             } footer: {
                 SettingsFooter("Shows green camera icon and yellow microphone icon when in use. Uses event-driven CoreAudio and CoreMediaIO APIs.")
             }
@@ -3785,7 +3794,7 @@ struct LiveActivitiesSettings: View {
                 )
                 .settingsHighlight(id: highlightID("Enable music live activity"))
             } header: {
-                Text("Media Live Activity")
+                SettingsSectionHeader("Media Live Activity")
             } footer: {
                 SettingsFooter("Use the Media tab to configure sneak peek, lyrics, and floating media controls.")
             }
@@ -3899,7 +3908,7 @@ struct Appearance: View {
                 }
                 .settingsHighlight(id: highlightID("Use simpler close animation"))
             } header: {
-                Text("General")
+                SettingsSectionHeader("General")
             }
 
             // Show display style picker only on non-notch Macs (main screen has no physical notch)
@@ -3918,7 +3927,7 @@ struct Appearance: View {
                     }
                     .settingsHighlight(id: highlightID("Main screen style"))
                 } header: {
-                    Text("Display Style")
+                    SettingsSectionHeader("Display Style")
                 }
             }
 
@@ -3930,7 +3939,7 @@ struct Appearance: View {
                                        selection: $notchFillColor)
                     .settingsHighlight(id: highlightID("Notch fill color"))
             } header: {
-                Text("Notch appearance")
+                SettingsSectionHeader("Notch appearance")
             }
 
             Section {
@@ -3993,7 +4002,7 @@ struct Appearance: View {
                     }
                 }
             } header: {
-                Text("Lock Screen Glass")
+                SettingsSectionHeader("Lock Screen Glass")
             } footer: {
                 SettingsFooter("Configure lock screen materials from the Appearance tab. Custom Liquid unlocks variant sliders for both widgets whenever Liquid Glass is selected.")
             }
@@ -4017,7 +4026,7 @@ struct Appearance: View {
                 }
                 .settingsHighlight(id: highlightID("Slider color"))
             } header: {
-                Text("Media")
+                SettingsSectionHeader("Media")
             }
 
             Section {
@@ -4027,7 +4036,7 @@ struct Appearance: View {
                 .settingsHighlight(id: highlightID("Idle Animation"))
             } header: {
                 HStack {
-                    Text("Additional features")
+                    SettingsSectionHeader("Additional features")
                 }
             }
 
@@ -4102,13 +4111,14 @@ struct Appearance: View {
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
                             .frame(width: 44, alignment: .trailing)
+                            .textSelection(.enabled)
                     }
                     .frame(minWidth: 180)
                 }
                 .disabled(selectedNotchSkinID == nil)
                 .settingsHighlight(id: highlightID("Skin scrim opacity"))
             } header: {
-                Text("Notch skin")
+                SettingsSectionHeader("Notch skin")
             } footer: {
                 if let importError = notchSkinManager.importError {
                     SettingsFooter(importError)
@@ -4177,7 +4187,7 @@ struct Appearance: View {
                     .buttonStyle(.borderedProminent)
                 }
             } header: {
-                Text("App icon")
+                SettingsSectionHeader("App icon")
             } footer: {
                 if let iconImportError {
                     SettingsFooter(iconImportError)
@@ -4427,6 +4437,7 @@ struct Appearance: View {
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                         .frame(minWidth: 48, alignment: .trailing)
+                        .textSelection(.enabled)
                 }
                 .frame(minWidth: 200)
             }
@@ -4444,6 +4455,7 @@ struct Appearance: View {
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                         .frame(minWidth: 48, alignment: .trailing)
+                        .textSelection(.enabled)
                 }
                 .frame(minWidth: 200)
             }
@@ -4465,7 +4477,7 @@ struct Appearance: View {
             }
         } header: {
             HStack {
-                Text("Notch Width")
+                SettingsSectionHeader("Notch Width")
                 customBadge(text: "Beta")
             }
         } footer: {
@@ -4558,7 +4570,7 @@ struct LockScreenSettings: View {
                 }
                 .settingsHighlight(id: highlightID("Enable lock screen live activity"))
             } header: {
-                Text("Live Activity & Feedback")
+                SettingsSectionHeader("Live Activity & Feedback")
             } footer: {
                 SettingsFooter("Controls whether Kannu mirrors lock/unlock events with its own live activity.")
             }
@@ -4571,7 +4583,7 @@ struct LockScreenSettings: View {
                 }
                 .settingsHighlight(id: highlightID("Preview lock screen widgets"))
             } header: {
-                Text("Preview")
+                SettingsSectionHeader("Preview")
             } footer: {
                 SettingsFooter("Opens a transparent preview window with mock data that mirrors the current lock screen widget configuration.")
             }
@@ -4613,7 +4625,7 @@ struct LockScreenSettings: View {
                     .settingsHighlight(id: highlightID("Glass mode"))
                 }
             } header: {
-                Text("Lock Screen Glass")
+                SettingsSectionHeader("Lock Screen Glass")
             } footer: {
                 SettingsFooter("Choose the global material mode for lock screen widgets. Custom Liquid unlocks per-widget variant sliders while Standard sticks to the classic frosted/liquid options.")
             }
@@ -4684,7 +4696,7 @@ struct LockScreenSettings: View {
                 .disabled(!enableLockScreenMediaWidget || !lockScreenMusicFullscreenArtworkEnabled)
                 .settingsHighlight(id: highlightID("Keep album art visible during fullscreen artwork"))
             } header: {
-                Text("Media Panel")
+                SettingsSectionHeader("Media Panel")
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
                     if !showStandardMediaControls {
@@ -4754,7 +4766,7 @@ struct LockScreenSettings: View {
                     }
                 }
             } header: {
-                Text("Timer Widget")
+                SettingsSectionHeader("Timer Widget")
             } footer: {
                 SettingsFooter("Controls the optional timer widget that floats above the media panel, including its classic, frosted, or liquid glass surface independent of the global material setting.")
             }
@@ -4827,7 +4839,7 @@ struct LockScreenSettings: View {
                     .settingsHighlight(id: highlightID("Use colored gauges"))
                 }
             } header: {
-                Text("Weather Widget")
+                SettingsSectionHeader("Weather Widget")
             } footer: {
                 SettingsFooter("Enable the weather capsule and configure its layout, provider, units, and optional battery/AQI indicators.")
             }
@@ -4864,7 +4876,7 @@ struct LockScreenSettings: View {
                         .settingsHighlight(id: highlightID("Show Bluetooth battery"))
                     }
                 } header: {
-                    Text("Battery Widget")
+                    SettingsSectionHeader("Battery Widget")
                 } footer: {
                     SettingsFooter("Enable the battery capsule and configure its layout.")
                 }
@@ -4876,7 +4888,7 @@ struct LockScreenSettings: View {
                 }
                 .settingsHighlight(id: highlightID("Show focus widget"))
             } header: {
-                Text("Focus Widget")
+                SettingsSectionHeader("Focus Widget")
             } footer: {
                 SettingsFooter("Displays the current Focus state above the weather capsule whenever Focus detection is enabled.")
             }
@@ -4908,6 +4920,7 @@ extension LockScreenSettings {
             Text("Only available when Material is set to Frosted Glass.")
                 .settingsDescriptionStyle()
         }
+        .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -5062,7 +5075,7 @@ private struct LockScreenPositioningControls: View {
                 resetAction: resetMusicOffset
             )
         } header: {
-            Text("Lock Screen Positioning")
+            SettingsSectionHeader("Lock Screen Positioning")
         } footer: {
             SettingsFooter("Drag the previews to adjust vertical placement. Positive values lift the panel; negative values lower it. Use the width sliders below to narrow the media and timer widgets without exceeding their default size. Changes apply instantly while the widgets are visible.")
                 .textCase(nil)
@@ -5088,7 +5101,7 @@ private struct LockScreenPositioningControls: View {
                     .disabled(timerWidth == LockScreenTimerWidget.defaultWidth)
             }
         } header: {
-            Text("Widget Width")
+            SettingsSectionHeader("Widget Width")
         }
     }
 
@@ -5188,6 +5201,7 @@ private struct LockScreenPositioningControls: View {
                 Text("\(formattedPoints(value)) pt")
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
                 Button(resetTitle, action: resetAction)
                     .disabled(value == 0)
             }
@@ -5208,6 +5222,7 @@ private struct LockScreenPositioningControls: View {
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
                     .frame(minWidth: 52, alignment: .trailing)
+                    .textSelection(.enabled)
             }
             .frame(width: 200)
         } label: {
@@ -5466,7 +5481,7 @@ struct Shortcuts: View {
                 }
                 .settingsHighlight(id: highlightID("Enable global keyboard shortcuts"))
             } header: {
-                Text("General")
+                SettingsSectionHeader("General")
             } footer: {
                 SettingsFooter("Keyboard shortcuts are off by default. Enable this toggle to activate global hotkeys for notch controls.")
             }
@@ -5501,7 +5516,7 @@ struct Shortcuts: View {
                             : Text("Screen Assistant feature is disabled"),
                         isEnabled: Defaults[.enableScreenAssistant])
         } header: {
-            Text("Shortcuts")
+            SettingsSectionHeader("Shortcuts")
         }
     }
 
@@ -5553,6 +5568,7 @@ func variantSliderControl(value: Binding<Double>, current: Int, range: ClosedRan
             .monospacedDigit()
             .foregroundStyle(.secondary)
             .frame(minWidth: 32, alignment: .trailing)
+            .textSelection(.enabled)
     }
     .frame(width: 220)
 }
@@ -5579,22 +5595,6 @@ func alphaBadge() -> some View {
         )
 }
 
-func warningBadge(_ text: String, _ description: String) -> some View {
-    Section {
-        HStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 22))
-                .foregroundStyle(.yellow)
-            VStack(alignment: .leading) {
-                Text(text)
-                    .font(.headline)
-                Text(description)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-    }
-}
 
 struct TimerSettings: View {
     @ObservedObject private var coordinator = KannuViewCoordinator.shared
@@ -5707,7 +5707,7 @@ struct TimerSettings: View {
                 .settingsHighlight(id: highlightID("Timer controls appear as"))
             }
         } header: {
-            Text("Timer Feature")
+            SettingsSectionHeader("Timer Feature")
         } footer: {
             SettingsFooter("Control timer availability, live activity behaviour, and whether the app mirrors timers started from the macOS Clock app.")
         }
@@ -5794,7 +5794,7 @@ struct TimerSettings: View {
                 }
             }
         } header: {
-            Text("Lock Screen Integration")
+            SettingsSectionHeader("Lock Screen Integration")
         } footer: {
             SettingsFooter("Mirrors the toggle found under Lock Screen settings so timer-specific workflows can enable or disable the widget without switching tabs.")
         }
@@ -5813,7 +5813,7 @@ struct TimerSettings: View {
             TimerDurationStepperRow(title: String(localized: "Minutes"), value: $customMinutes, range: 0...59)
             TimerDurationStepperRow(title: String(localized: "Seconds"), value: $customSeconds, range: 0...59)
         } header: {
-            Text("Custom Timer")
+            SettingsSectionHeader("Custom Timer")
         } footer: {
             SettingsFooter("This duration powers the \"Custom\" option inside the timer popover for quick access.")
         }
@@ -5863,7 +5863,7 @@ struct TimerSettings: View {
             .disabled(!showsProgress)
             .settingsHighlight(id: highlightID("Progress style"))
         } header: {
-            Text("Appearance")
+            SettingsSectionHeader("Appearance")
         } footer: {
             SettingsFooter("Configure how the timer looks inside the closed notch. Progress can render as a ring around the icon or as horizontal bars.")
         }
@@ -5898,7 +5898,7 @@ struct TimerSettings: View {
                 }
             }
         } header: {
-            Text("Timer Presets")
+            SettingsSectionHeader("Timer Presets")
         } footer: {
             SettingsFooter("Presets show up inside the timer popover with the configured name, duration, and accent colour. Reorder them to change the display order.")
         }
@@ -5929,7 +5929,7 @@ struct TimerSettings: View {
                 }
             }
         } header: {
-            Text("Timer Sound")
+            SettingsSectionHeader("Timer Sound")
         } footer: {
             SettingsFooter("Select a custom sound to play when a timer ends. Supported formats include MP3, M4A, WAV, and AIFF.")
         }
@@ -6017,6 +6017,7 @@ private struct TimerDurationStepperRow: View {
                 Text("\(value)")
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
                 Stepper(value: $value, in: range) {
                     Text(title)
                 }
@@ -6137,6 +6138,7 @@ private struct TimerPresetEditorRow: View {
                 Text(preset.formattedDuration)
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
             }
 
             HStack(spacing: 16) {
@@ -6189,14 +6191,22 @@ private struct TimerPresetComponentControl: View {
     let range: ClosedRange<Int>
 
     var body: some View {
-        Stepper(value: $value, in: range) {
+        // The texts sit beside the stepper, not inside its label, so they stay selectable —
+        // a selectable Text inside a control label swallows the control's click.
+        HStack(alignment: .center, spacing: 6) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
                 Text("\(value)")
                     .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .textSelection(.enabled)
             }
+            Stepper(value: $value, in: range) {
+                Text(title)
+            }
+            .labelsHidden()
         }
         .frame(width: 110, alignment: .leading)
     }
@@ -6252,7 +6262,7 @@ struct StatsSettings: View {
                 }
 
             } header: {
-                Text("General")
+                SettingsSectionHeader("General")
             } footer: {
                 SettingsFooter("When enabled, the Stats tab will display real-time system performance graphs. This feature requires system permissions and may use additional battery.")
             }
@@ -6276,6 +6286,7 @@ struct StatsSettings: View {
                             Text(formattedUpdateInterval)
                                 .monospacedDigit()
                                 .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
                                 .frame(minWidth: 72, alignment: .trailing)
                         }
                         .frame(width: 240)
@@ -6291,10 +6302,11 @@ struct StatsSettings: View {
                         }
                         .font(.caption)
                         .foregroundStyle(.orange)
+                        .textSelection(.enabled)
                         .padding(.top, 4)
                     }
                 } header: {
-                    Text("Monitoring Behavior")
+                    SettingsSectionHeader("Monitoring Behavior")
                 } footer: {
                     SettingsFooter("Sampling can continue while the notch is closed when the timeout is disabled.")
                 }
@@ -6331,7 +6343,7 @@ struct StatsSettings: View {
                     }
                     .settingsHighlight(id: highlightID("Disk I/O"))
                 } header: {
-                    Text("Graph Visibility")
+                    SettingsSectionHeader("Graph Visibility")
                 } footer: {
                     if enabledGraphsCount >= 4 {
                         SettingsFooter("With \(enabledGraphsCount) graphs enabled, the Dynamic Island will expand horizontally to accommodate all graphs in a single row.")
@@ -6343,6 +6355,7 @@ struct StatsSettings: View {
                 Section {
                     HStack {
                         Text("Monitoring Status")
+                            .textSelection(.enabled)
                         Spacer()
                         HStack(spacing: 4) {
                             Circle()
@@ -6350,6 +6363,7 @@ struct StatsSettings: View {
                                 .frame(width: 8, height: 8)
                             Text(statsManager.isMonitoring ? "Active" : "Stopped")
                                 .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
                         }
                     }
 
@@ -6357,71 +6371,87 @@ struct StatsSettings: View {
                         if showCpuGraph {
                             HStack {
                                 Text("CPU Usage")
+                                    .textSelection(.enabled)
                                 Spacer()
                                 Text(statsManager.cpuUsageString)
                                     .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
                             }
                         }
 
                         if showMemoryGraph {
                             HStack {
                                 Text("Memory Usage")
+                                    .textSelection(.enabled)
                                 Spacer()
                                 Text(statsManager.memoryUsageString)
                                     .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
                             }
                         }
 
                         if showGpuGraph {
                             HStack {
                                 Text("GPU Usage")
+                                    .textSelection(.enabled)
                                 Spacer()
                                 Text(statsManager.gpuUsageString)
                                     .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
                             }
                         }
 
                         if showNetworkGraph {
                             HStack {
                                 Text("Network Download")
+                                    .textSelection(.enabled)
                                 Spacer()
                                 Text(String(format: "%.1f MB/s", statsManager.networkDownload))
                                     .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
                             }
 
                             HStack {
                                 Text("Network Upload")
+                                    .textSelection(.enabled)
                                 Spacer()
                                 Text(String(format: "%.1f MB/s", statsManager.networkUpload))
                                     .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
                             }
                         }
 
                         if showDiskGraph {
                             HStack {
                                 Text("Disk Read")
+                                    .textSelection(.enabled)
                                 Spacer()
                                 Text(String(format: "%.1f MB/s", statsManager.diskRead))
                                     .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
                             }
 
                             HStack {
                                 Text("Disk Write")
+                                    .textSelection(.enabled)
                                 Spacer()
                                 Text(String(format: "%.1f MB/s", statsManager.diskWrite))
                                     .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
                             }
                         }
 
                         HStack {
                             Text("Last Updated")
+                                .textSelection(.enabled)
                             Spacer()
                             Text(statsManager.lastUpdated, style: .relative)
                                 .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
                         }
                     }
                 } header: {
-                    Text("Live Performance Data")
+                    SettingsSectionHeader("Live Performance Data")
                 }
 
                 Section {
@@ -6440,7 +6470,7 @@ struct StatsSettings: View {
                         }
                     }
                 } header: {
-                    Text("Controls")
+                    SettingsSectionHeader("Controls")
                 }
             }
         }
@@ -6474,7 +6504,7 @@ struct ClipboardSettings: View {
                     }
                 }
             } header: {
-                Text("Clipboard Manager")
+                SettingsSectionHeader("Clipboard Manager")
             } footer: {
                 // The shortcut is the user's (default ⇧⌘C); the old text said Cmd+Shift+V.
                 SettingsFooter("Monitor clipboard changes and keep a history of recent copies. With global keyboard shortcuts on, \(shortcutDescription(for: .clipboardHistoryPanel)) opens the history.")
@@ -6517,7 +6547,7 @@ struct ClipboardSettings: View {
                             .foregroundColor(clipboardManager.isMonitoring ? .green : .secondary)
                     }
                 } header: {
-                    Text("Settings")
+                    SettingsSectionHeader("Settings")
                 } footer: {
                     switch clipboardDisplayMode {
                     case .popover:
@@ -6545,7 +6575,7 @@ struct ClipboardSettings: View {
                         .disabled(clipboardManager.clipboardHistory.isEmpty)
                     }
                 } header: {
-                    Text("Actions")
+                    SettingsSectionHeader("Actions")
                 } footer: {
                     SettingsFooter("Clear clipboard history removes recent copies. Clear pinned items removes your favorites. Both actions are permanent.")
                 }
@@ -6561,10 +6591,12 @@ struct ClipboardSettings: View {
                                     Text(item.type.displayName)
                                         .font(.caption)
                                         .foregroundColor(.secondary)
+                                        .textSelection(.enabled)
                                     Spacer()
                                     Text(timeAgoString(from: item.timestamp))
                                         .font(.caption2)
                                         .foregroundColor(.secondary)
+                                        .textSelection(.enabled)
                                 }
                                 Text(item.preview)
                                     .font(.system(.body, design: .monospaced))
@@ -6574,7 +6606,7 @@ struct ClipboardSettings: View {
                             .padding(.vertical, 2)
                         }
                     } header: {
-                        Text("Current History")
+                        SettingsSectionHeader("Current History")
                     }
                 }
             }
@@ -6626,7 +6658,7 @@ struct ScreenAssistantSettings: View {
                 }
                 .settingsHighlight(id: highlightID("Enable Screen Assistant"))
             } header: {
-                Text("AI Assistant")
+                SettingsSectionHeader("AI Assistant")
             } footer: {
                 SettingsFooter("AI-powered assistant that can analyze files, images, and provide conversational help. With global keyboard shortcuts on, \(shortcutDescription(for: .screenAssistantPanel)) opens the assistant.")
             }
@@ -6704,7 +6736,7 @@ struct ScreenAssistantSettings: View {
                             .foregroundColor(screenAssistantManager.isRecording ? .red : .secondary)
                     }
                 } header: {
-                    Text("Configuration")
+                    SettingsSectionHeader("Configuration")
                 } footer: {
                     switch screenAssistantDisplayMode {
                     case .popover:
@@ -6723,7 +6755,7 @@ struct ScreenAssistantSettings: View {
                         .disabled(screenAssistantManager.attachedFiles.isEmpty)
                     }
                 } header: {
-                    Text("Actions")
+                    SettingsSectionHeader("Actions")
                 } footer: {
                     SettingsFooter("Clear all files removes all attached files and audio recordings. This action is permanent.")
                 }
@@ -6739,10 +6771,12 @@ struct ScreenAssistantSettings: View {
                                     Text(file.type.displayName)
                                         .font(.caption)
                                         .foregroundColor(.secondary)
+                                        .textSelection(.enabled)
                                     Spacer()
                                     Text(timeAgoString(from: file.timestamp))
                                         .font(.caption2)
                                         .foregroundColor(.secondary)
+                                        .textSelection(.enabled)
                                 }
                                 Text(file.name)
                                     .font(.system(.body, design: .monospaced))
@@ -6751,7 +6785,7 @@ struct ScreenAssistantSettings: View {
                             .padding(.vertical, 2)
                         }
                     } header: {
-                        Text("Attached Files")
+                        SettingsSectionHeader("Attached Files")
                     }
                 }
             }
@@ -6906,7 +6940,7 @@ struct CustomOSDSettings: View {
                     openSettingsAction: { accessibilityPermission.openSystemSettings() }
                 )
             } header: {
-                Text("Accessibility")
+                SettingsSectionHeader("Accessibility")
             }
         }
 
@@ -6923,7 +6957,7 @@ struct CustomOSDSettings: View {
                 .settingsHighlight(id: highlightID("Keyboard Backlight OSD"))
                 .disabled(enableThirdPartyDDCIntegration)
             } header: {
-                Text("Controls")
+                SettingsSectionHeader("Controls")
             } footer: {
                 SettingsFooter("Choose which system controls should display custom OSD windows.")
             }
@@ -6973,7 +7007,7 @@ struct CustomOSDSettings: View {
                     previewValue = previewValue == 0.65 ? 0.651 : 0.65
                 }
             } header: {
-                Text("Appearance")
+                SettingsSectionHeader("Appearance")
             } footer: {
                 VStack(alignment: .leading, spacing: 2) {
                     SettingsFooter("Material Options:")
@@ -6992,6 +7026,7 @@ struct CustomOSDSettings: View {
                         Text("Live Preview")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
 
                         CustomOSDView(
                             type: .constant(previewType),
@@ -7025,7 +7060,7 @@ struct CustomOSDSettings: View {
                     Spacer()
                 }
             } header: {
-                Text("Preview")
+                SettingsSectionHeader("Preview")
             } footer: {
                 SettingsFooter("Adjust settings above to see changes in real-time. The actual OSD appears at the bottom center of your screen.")
             }
@@ -7069,7 +7104,7 @@ struct NotesSettingsView: View {
                     }
                 }
             } header: {
-                Text("General")
+                SettingsSectionHeader("General")
             } footer: {
                 SettingsFooter("Customize how you organize and create notes. Enabling color filtering and search helps manage large lists.")
             }
@@ -7116,7 +7151,7 @@ struct NotesSettingsView: View {
                         }
                     }
                 } header: {
-                    Text("Apple Notes")
+                    SettingsSectionHeader("Apple Notes")
                 } footer: {
                     SettingsFooter("Two-way sync with the macOS Notes app. Notes created in Kannu appear in the Kannu folder in Notes, and your existing Apple Notes are imported into the notch. Grant Automation permission for Notes when prompted.")
                 }
@@ -7187,6 +7222,7 @@ private struct SettingsColorPickerPopover: View {
                     .buttonStyle(.borderless)
                     Text("Custom color")
                         .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
                     Spacer()
                 }
                 .font(.caption)
@@ -7418,7 +7454,7 @@ struct AgentStatusSettings: View {
                 }
                 .settingsHighlight(id: highlightID("Enable Agent Monitoring"))
             } header: {
-                Text("Monitoring")
+                SettingsSectionHeader("Monitoring")
             } footer: {
                 SettingsFooter("Shows a traffic light in the notch while AI agents run in your editor: green while the agent is working, yellow when it needs your input, and red when it has stopped.")
             }
@@ -7427,7 +7463,7 @@ struct AgentStatusSettings: View {
                 Section {
                     detectedProvidersGrid
                 } header: {
-                    Text("Detected Editors")
+                    SettingsSectionHeader("Detected Editors")
                 } footer: {
                     SettingsFooter("Kannu watches these editors automatically. Install a hook below for richer status on editors marked as not detected.")
                 }
@@ -7452,7 +7488,7 @@ struct AgentStatusSettings: View {
                         )
                     }
                 } header: {
-                    Text("Click-through")
+                    SettingsSectionHeader("Click-through")
                 }
 
                 Section {
@@ -7500,7 +7536,7 @@ struct AgentStatusSettings: View {
                     }
                     .settingsHighlight(id: highlightID("Reset traffic light colors"))
                 } header: {
-                    Text("Traffic Light")
+                    SettingsSectionHeader("Traffic Light")
                 } footer: {
                     SettingsFooter("The yellow light is most reliable when hooks are installed.")
                 }
@@ -7513,7 +7549,7 @@ struct AgentStatusSettings: View {
                     }
                     .settingsHighlight(id: SettingsDeepLink.smartCaffeinateHighlightID)
                 } header: {
-                    Text("Caffeinate")
+                    SettingsSectionHeader("Caffeinate")
                 } footer: {
                     SettingsFooter("Only system sleep is prevented, so the display may still sleep while agents keep running. Closing the lid always sleeps the Mac.")
                 }
@@ -7564,7 +7600,7 @@ struct AgentStatusSettings: View {
                     .pickerStyle(.menu)
                     .settingsHighlight(id: highlightID("Consider agents inactive after"))
                 } header: {
-                    Text("Indicator")
+                    SettingsSectionHeader("Indicator")
                 } footer: {
                     SettingsFooter("After an agent stops, the red light stays visible for the chosen time, then all lights dim for the inactive duration, then the traffic light disappears entirely. While the red light is kept visible when idle, the hide and dim delays have no effect.")
                 }
@@ -7579,7 +7615,7 @@ struct AgentStatusSettings: View {
                         SettingsErrorText(error)
                     }
                 } header: {
-                    Text("Editor Hooks")
+                    SettingsSectionHeader("Editor Hooks")
                 } footer: {
                     SettingsFooter("Install hooks for Cursor, VS Code and Copilot CLI, Codex CLI, Claude Code, Antigravity, Gemini CLI, Qwen Code or opencode. Each hook writes agent status into ~/.kannu/agent-status for the notch traffic light and Recent chats list. Copilot CLI uses the VS Code hook; opencode gets a small plugin.")
                 }
@@ -7616,7 +7652,7 @@ struct AgentStatusSettings: View {
                 notificationDeliveryRows
             }
         } header: {
-            Text("Mobile Notifications")
+            SettingsSectionHeader("Mobile Notifications")
         } footer: {
             SettingsFooter("Optional push alerts when agent state changes. Uses ntfy (iPhone, Apple Watch, Android), Pushover (iPhone), or a custom webhook. Public ntfy topics can be read by anyone unless you self-host with authentication. Notifications are debounced by 2 seconds to avoid spam.")
         }
@@ -7729,7 +7765,7 @@ struct AgentStatusSettings: View {
             }
             .settingsHighlight(id: highlightID("Push when a usage limit is almost reached"))
         } header: {
-            Text("Notify about")
+            SettingsSectionHeader("Notify about")
         }
     }
 
@@ -7762,6 +7798,7 @@ struct AgentStatusSettings: View {
                         .font(.subheadline)
                         .foregroundStyle(editor.detected ? .primary : .secondary)
                         .lineLimit(1)
+                        .textSelection(.enabled)
                     Circle()
                         .fill(editor.detected ? Color.green : Color.secondary.opacity(0.4))
                         .frame(width: 6, height: 6)
@@ -7832,7 +7869,7 @@ struct AgentStatusSettings: View {
                 }
             }
         } header: {
-            Text("Security findings")
+            SettingsSectionHeader("Security findings")
                 .settingsHighlight(id: highlightID("Security findings"))
         } footer: {
             SettingsFooter("Kannu never changes your agent or MCP settings. Nothing leaves this Mac unless you turn on push notifications or session analysis. Details: docs/ADR.md in the Kannu repository.")
@@ -7941,7 +7978,7 @@ struct AgentStatusSettings: View {
                 }
             }
         } header: {
-            Text("ADR Discovery")
+            SettingsSectionHeader("ADR Discovery")
         } footer: {
             SettingsFooter("Findings come from ADR, Uber's open-source agent security toolkit (Apache-2.0). You install it; Kannu only reads its results.")
         }
@@ -7985,7 +8022,7 @@ struct AgentStatusSettings: View {
             }
             .settingsHighlight(id: highlightID("Notice new MCP servers"))
         } header: {
-            Text("Kannu's own checks")
+            SettingsSectionHeader("Kannu's own checks")
         } footer: {
             SettingsFooter("Kannu also flags sessions started with permission checks turned off; that check has no setting.")
         }
@@ -8013,7 +8050,7 @@ struct AgentStatusSettings: View {
             }
             .settingsHighlight(id: highlightID("Block matching tool calls"))
         } header: {
-            Text("Agent policy")
+            SettingsSectionHeader("Agent policy")
         } footer: {
             SettingsFooter("A command rule matches a command's first word (or its basename) in any segment joined by ;, &&, || or |, after sudo, env and nohup; a multi-word rule matches a segment that starts with it; a tool rule matches the tool's exact name. No regex. Copy the prompt to have your own agent draft the file.")
         }
@@ -8077,7 +8114,7 @@ struct AgentStatusSettings: View {
                 detectionCheckoutRows
             }
         } header: {
-            Text("Session analysis")
+            SettingsSectionHeader("Session analysis")
         }
 
         if adrDetectionEnabled {
@@ -8145,7 +8182,7 @@ struct AgentStatusSettings: View {
                 adrSecretRow(title: "OpenAI API key", key: .openaiAPIKey, text: $adrOpenAIKeyText)
             }
         } header: {
-            Text("Analysis models")
+            SettingsSectionHeader("Analysis models")
         }
 
         Section {
@@ -8167,7 +8204,7 @@ struct AgentStatusSettings: View {
             Toggle("Confirm before every analysis", isOn: $adrDetectionConfirmEachRun)
                 .settingsHighlight(id: highlightID("Confirm before every analysis"))
         } header: {
-            Text("Analysis context and limits")
+            SettingsSectionHeader("Analysis context and limits")
         } footer: {
             SettingsFooter("The three context options are ADR's local MCP context servers; they read bundled data and this Mac only.")
         }
@@ -8181,7 +8218,7 @@ struct AgentStatusSettings: View {
                     analysisRow(analysis)
                 }
             } header: {
-                Text("Recent analyses")
+                SettingsSectionHeader("Recent analyses")
             }
         }
     }
@@ -8228,6 +8265,7 @@ struct AgentStatusSettings: View {
             .disabled(text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             if storedADRSecrets.contains(key) {
                 Text("stored").font(.caption).foregroundStyle(.secondary)
+                    .textSelection(.enabled)
                 Button("Remove") {
                     SecureSecretsStore.removeValue(for: key)
                     refreshStoredADRSecrets()
@@ -8286,7 +8324,8 @@ struct AgentStatusSettings: View {
         } label: {
             VStack(alignment: .leading, spacing: 2) {
                 if tool == .sensor {
-                    Text("ADR Sensor") + Text(verbatim: " · ") + Text("Optional").foregroundStyle(.secondary)
+                    (Text("ADR Sensor") + Text(verbatim: " · ") + Text("Optional").foregroundStyle(.secondary))
+                        .textSelection(.enabled)
                 } else {
                     Text(tool.displayName)
                 }
@@ -8424,6 +8463,7 @@ struct AgentStatusSettings: View {
                 Text("Not found on this Mac")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
             }
             Button(installed ? "Remove" : "Install") {
                 if installed {
@@ -8597,7 +8637,7 @@ extension AgentStatusSettings {
     static func snapshotDetectionRows() -> AnyView {
         let settings = AgentStatusSettings()
         return AnyView(Form {
-            Section { settings.detectionCheckoutRows } header: { Text("Session analysis") }
+            Section { settings.detectionCheckoutRows } header: { SettingsSectionHeader("Session analysis") }
             settings.detectionSetupSections
         })
     }
@@ -8606,7 +8646,7 @@ extension AgentStatusSettings {
     static func snapshotNotificationRows() -> AnyView {
         let settings = AgentStatusSettings()
         return AnyView(Form {
-            Section { settings.notificationDeliveryRows } header: { Text("Mobile Notifications") }
+            Section { settings.notificationDeliveryRows } header: { SettingsSectionHeader("Mobile Notifications") }
             settings.notificationEventsSection
         })
     }
@@ -8620,7 +8660,7 @@ extension AgentStatusSettings {
                                        openChat: finding.sessionID == nil ? nil : {})
                 }
             } header: {
-                Text("Security findings")
+                SettingsSectionHeader("Security findings")
             }
         })
     }

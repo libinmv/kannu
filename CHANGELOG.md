@@ -4,6 +4,43 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-17 - Everything informational in Settings can be selected, and the rules are written down and guarded
+- **Developer label:** "many section in settings is not copy pastable, also set rules how sections are done"
+- **Agent label:** Follow-up 45, PR L — Settings selectability sweep + docs/SETTINGS.md + layout guard
+- **Changes:**
+  - **Every Section header is selectable.** New `SettingsSectionHeader` component (a `Text` with
+    `.textSelection(.enabled)` — a header is explanatory text, not a control label); all 122 raw
+    `header: { Text(…) }` sites across every tab now use it, including the titles inside the
+    badge-carrying HStack headers and the sidebar group header.
+  - **The informational sweep.** ~50 raw secondary/caption text sites gained selection: the whole
+    Extensions tab (empty state, permission legend, per-app status, granted/last-activity dates,
+    denied reason, rate-limit stats), the Stats live readouts (CPU/memory/GPU/network/disk, last
+    updated, monitoring status), slider and stepper readouts everywhere (`SettingsSliderRow`'s
+    value text is now selectable in one place), the animation editor and idle-animation copy, the
+    music-slot hints, the Spotify cookie steps and login status, the clipboard and screen-assistant
+    item rows, the disabled blur explanation rows, the OSD live-preview caption, the color-popover
+    label, the detected-editor names, and the hook-row "Not found on this Mac".
+  - **Two captions moved out of control labels** — the timer preset stepper and the animation
+    editor's expand toggle carried their caption inside the control's label, where a selectable
+    Text would swallow the control's click; the text now sits beside the control with the label
+    hidden. Deleted the dead `warningBadge` (zero callers).
+  - **The rules are written down: `docs/SETTINGS.md`** — the selectable/never-selectable law,
+    which component for what, header/footer/action-row rules, the search-entry pairing, and the
+    badge exceptions.
+  - **And guarded: `KannuTests/SettingsLayoutRulesTests.swift`** scans the Settings sources — raw
+    `Text` headers and footers fail; raw secondary/caption chains without `.textSelection` are
+    pinned per file (15 deliberate survivors: badges, tappable-card labels, container-covered
+    text) so a new one is a deliberate edit; the shared components are pinned to keep their
+    `.textSelection`; the scanners have planted-offender self-tests and an anti-vacuous check.
+    `.githooks/pre-commit` runs a fast header/footer subset, reading the index.
+  - No Defaults keys, highlight ids, side effects or control behaviour changed; the inventory
+    counts are untouched.
+  - **From CodeRabbit's review of this PR:** the scanner now also recognises the older
+    `.foregroundColor(.secondary)` spelling, which surfaced three unselectable status values in
+    Live Activities ("Disabled", two "Inactive") — now selectable; the Lock Screen "Enable media
+    panel blur" unavailable row got the same container selection as its Media-tab twins; and the
+    component pin now covers `SettingsRowLabel` as well as `SettingsStatusText`.
+
 ### 2026-09-17 - Act on CodeRabbit's review of #39: queued alerts drain, and reports never keep the Mac's name
 - **Developer label:** "can you merge each mr one by one and see if there are code rabbit comments"
 - **Agent label:** Follow-up 44 — CodeRabbit's three findings on #39, which arrived 14 minutes before it merged and were missed
@@ -23,9 +60,9 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
   - Tests: an unknown host still yields `…_this-mac…` in the name, body and URL; both file-name
     shapes; spaced, bare and multi-line volume paths.
   - From CodeRabbit's review of this PR: a bare spaced volume label that ended its line was only
-    half redacted (`/Volumes/redacted MacBook`). A third pass takes such a label to the line end;
-    mid-line, the first word still goes and the sentence survives, since a spaced label there is
-    indistinguishable from prose and redacting to the line end would over-redact.
+    half redacted (`/Volumes/redacted MacBook`). A bare label now runs to the end of its line: a
+    spaced label cannot be told apart from prose after it, and these strings go into public issue
+    bodies, so over-redacting the rest of the line is the deliberate trade.
 
 ### 2026-09-16 - An agent policy Kannu can enforce: block ssh (or anything) on Claude Code and Cursor
 - **Developer label:** "how do i set a policy, can i enforce a policy like no agents can use ssh … give a copy prompt for sample policy generation, actually give a block policy if it is possible"
