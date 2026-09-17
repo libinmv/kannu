@@ -45,13 +45,13 @@ enum DebugSnapshots {
         try? FileManager.default.createDirectory(at: request.directory, withIntermediateDirectories: true)
         var boards = SettingsView.snapshotTabs(filter: request.tabs)
         if request.tabs == nil || request.tabs?.contains("findings") == true {
-            boards.append(("findings", AgentStatusSettings.snapshotFindingRows(DebugSnapshotFixtures.findings)))
+            boards.append(("findings", AgentSecuritySettings.snapshotFindingRows(DebugSnapshotFixtures.findings)))
         }
         if request.tabs == nil || request.tabs?.contains("policyRules") == true {
             boards.append(("policyRules", AnyView(PolicyRulesView(policy: DebugSnapshotFixtures.agentPolicy))))
         }
         if request.tabs == nil || request.tabs?.contains("detection") == true {
-            boards.append(("detection", AgentStatusSettings.snapshotDetectionRows()))
+            boards.append(("detection", AgentSecuritySettings.snapshotDetectionRows()))
         }
         if request.tabs == nil || request.tabs?.contains("notifications") == true {
             boards.append(("notifications", AgentStatusSettings.snapshotNotificationRows()))

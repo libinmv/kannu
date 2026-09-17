@@ -65,6 +65,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
     case shortcuts
     case notes
     case agentStatus
+    case agentSecurity
     case llmUsage
     case about
 
@@ -80,7 +81,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .clipboard, .screenAssistant, .shelf,
              .downloads, .shortcuts:                                         return .utilities
         case .stats:                                              return .developer
-        case .agentStatus, .llmUsage:                                        return .agents
+        case .agentStatus, .agentSecurity, .llmUsage:                        return .agents
         case .extensions:                                                    return .integrations
         case .about:                                                         return .info
         }
@@ -106,6 +107,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .shortcuts: return String(localized: "Shortcuts")
         case .notes: return String(localized: "Notes")
         case .agentStatus: return String(localized: "Agents")
+        case .agentSecurity: return String(localized: "Agent Security")
         case .llmUsage: return String(localized: "Usage")
         case .about: return String(localized: "About")
         }
@@ -131,6 +133,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .shortcuts: return "keyboard"
         case .notes: return "note.text"
         case .agentStatus: return "light.beacon.max"
+        case .agentSecurity: return "shield.lefthalf.filled"
         case .llmUsage: return "gauge.with.dots.needle.bottom.50percent"
         case .about: return "info.circle"
         }
@@ -156,6 +159,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .shortcuts: return .orange
         case .notes: return Color(red: 0.979, green: 0.716, blue: 0.153, opacity: 1.000)
         case .agentStatus: return .yellow
+        case .agentSecurity: return .orange
         case .llmUsage: return .cyan
         case .about: return .secondary
         }
@@ -179,7 +183,7 @@ private struct SettingsSearchEntry: Identifiable {
 /// so the string can never drift from the row's own `.settingsHighlight(id:)` registration.
 enum SettingsDeepLink {
     static let smartCaffeinateHighlightID = SettingsTab.agentStatus.highlightID(for: "Smart caffeinate")
-    static let securityFindingsHighlightID = SettingsTab.agentStatus.highlightID(for: "Security findings")
+    static let securityFindingsHighlightID = SettingsTab.agentSecurity.highlightID(for: "Security findings")
 }
 
 final class SettingsHighlightCoordinator: ObservableObject {
@@ -205,12 +209,15 @@ final class SettingsHighlightCoordinator: ObservableObject {
         activateHighlight(id: highlightID)
     }
 
-    /// External entry point for deep-linking into the Agent Status tab. Deliberately typed
-    /// with a plain String rather than exposing `SettingsTab`/`SettingsSearchEntry` outward —
-    /// callers outside this file only ever need to name a highlight id, not construct one of
-    /// this file's private navigation types.
+    /// External entry point for deep-linking into a Settings row. Deliberately typed with a
+    /// plain String rather than exposing `SettingsTab`/`SettingsSearchEntry` outward — callers
+    /// outside this file only ever need to name a highlight id, not construct one of this
+    /// file's private navigation types. The tab comes from the id's own prefix
+    /// ("agentSecurity-Security findings" opens Agent Security), so a row can move between
+    /// tabs without every notch call site knowing.
     func requestAgentStatusNavigation(highlightID: String) {
-        pendingScrollRequest = ScrollRequest(id: highlightID, tab: .agentStatus)
+        let tab = SettingsTab.allCases.first { highlightID.hasPrefix($0.rawValue + "-") } ?? .agentStatus
+        pendingScrollRequest = ScrollRequest(id: highlightID, tab: tab)
         activateHighlight(id: highlightID)
     }
 
@@ -506,6 +513,7 @@ struct SettingsView: View {
         let ordered: [SettingsTab] = [
             // AI Agents — the product's core, so it leads.
             .agentStatus,
+            .agentSecurity,
             .llmUsage,
             // Core
             .general,
@@ -923,31 +931,31 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .agentStatus, title: "Show a red light when no agents are running", keywords: ["red", "light", "idle", "no agents", "stopped", "indicator", "always"], highlightID: SettingsTab.agentStatus.highlightID(for: "Show a red light when no agents are running")),
             SettingsSearchEntry(tab: .agentStatus, title: "Reset traffic light colors", keywords: ["reset", "color", "traffic", "light", "default"], highlightID: SettingsTab.agentStatus.highlightID(for: "Reset traffic light colors")),
             SettingsSearchEntry(tab: .agentStatus, title: "Editor Hooks", keywords: ["agent", "cursor", "vscode", "copilot", "copilot cli", "codex", "claude", "antigravity", "gemini", "gemini cli", "qwen", "opencode", "plugin", "hook", "install", "integration"], highlightID: SettingsTab.agentStatus.highlightID(for: "Cursor Hook")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Connect ADR", keywords: ["adr", "uber", "security", "discovery", "sensor", "connect", "install", "uv", "pipx"], highlightID: SettingsTab.agentStatus.highlightID(for: "Connect ADR")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Security findings", keywords: ["security", "finding", "mcp", "unpinned", "plaintext", "undeclared", "acknowledge", "snooze", "shield"], highlightID: SettingsTab.agentStatus.highlightID(for: "Security findings")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Snapshot folder", keywords: ["snapshot", "folder", "directory", "adr", "discovery", "output"], highlightID: SettingsTab.agentStatus.highlightID(for: "Snapshot folder")),
-            SettingsSearchEntry(tab: .agentStatus, title: "ADR tools folder", keywords: ["adr", "tools", "folder", "path", "uv", "pipx", "sensor", "discovery", "install", "not found"], highlightID: SettingsTab.agentStatus.highlightID(for: "ADR tools folder")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Let Kannu run scans", keywords: ["scan", "adr", "discovery", "automatic", "daily", "schedule"], highlightID: SettingsTab.agentStatus.highlightID(for: "Let Kannu run scans")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Scan now", keywords: ["scan", "adr", "discovery", "run", "now"], highlightID: SettingsTab.agentStatus.highlightID(for: "Scan now")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Policy file", keywords: ["policy", "tenant", "domains", "approved", "forbidden", "adr"], highlightID: SettingsTab.agentStatus.highlightID(for: "Policy file")),
-            SettingsSearchEntry(tab: .agentStatus, title: "High-severity alerts in the notch", keywords: ["alert", "notch", "pill", "shield", "security", "high", "acknowledge", "glyph"], highlightID: SettingsTab.agentStatus.highlightID(for: "High-severity alerts in the notch")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "Connect ADR", keywords: ["adr", "uber", "security", "discovery", "sensor", "connect", "install", "uv", "pipx"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Connect ADR")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "Security findings", keywords: ["security", "finding", "mcp", "unpinned", "plaintext", "undeclared", "acknowledge", "snooze", "shield"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Security findings")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "Snapshot folder", keywords: ["snapshot", "folder", "directory", "adr", "discovery", "output"], highlightID: SettingsTab.agentSecurity.highlightID(for: "ADR advanced")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "ADR tools folder", keywords: ["adr", "tools", "folder", "path", "uv", "pipx", "sensor", "discovery", "install", "not found"], highlightID: SettingsTab.agentSecurity.highlightID(for: "ADR advanced")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "Let Kannu run scans", keywords: ["scan", "adr", "discovery", "automatic", "daily", "schedule"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Let Kannu run scans")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "Scan now", keywords: ["scan", "adr", "discovery", "run", "now"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Scan now")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "ADR scan policy", keywords: ["policy", "tenant", "domains", "approved", "forbidden", "adr", "file"], highlightID: SettingsTab.agentSecurity.highlightID(for: "ADR advanced")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "High-severity alerts in the notch", keywords: ["alert", "notch", "pill", "shield", "security", "high", "acknowledge", "glyph"], highlightID: SettingsTab.agentSecurity.highlightID(for: "High-severity alerts in the notch")),
             SettingsSearchEntry(tab: .agentStatus, title: "Push high security findings", keywords: ["push", "security", "finding", "high", "mobile", "ntfy", "pushover", "webhook"], highlightID: SettingsTab.agentStatus.highlightID(for: "Push high security findings")),
             SettingsSearchEntry(tab: .agentStatus, title: "Push medium security findings", keywords: ["push", "security", "finding", "medium", "mobile"], highlightID: SettingsTab.agentStatus.highlightID(for: "Push medium security findings")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Look for hidden text in what agents read", keywords: ["hidden", "invisible", "unicode", "tag", "ascii smuggling", "zero-width", "bidi", "trojan source", "variation selector", "prompt injection"], highlightID: SettingsTab.agentStatus.highlightID(for: "Look for hidden text in what agents read")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Look for secrets in prompts and tool calls", keywords: ["secret", "api key", "token", "private key", "leak", "credential", "aws", "github"], highlightID: SettingsTab.agentStatus.highlightID(for: "Look for secrets in prompts and tool calls")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Watch for agents touching sensitive files", keywords: ["sensitive", "ssh", "keychain", "credentials", "env", "launch agent", "zshrc", "browser", "password", "history"], highlightID: SettingsTab.agentStatus.highlightID(for: "Watch for agents touching sensitive files")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Notice new MCP servers", keywords: ["mcp", "server", "new", "added", "config", "supply chain", "tool"], highlightID: SettingsTab.agentStatus.highlightID(for: "Notice new MCP servers")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Policy rules", keywords: ["policy", "agent policy", "block", "ssh", "forbid", "deny", "command", "tool", "rules", "json"], highlightID: SettingsTab.agentStatus.highlightID(for: "Policy rules")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Get a policy", keywords: ["policy", "import", "draft", "prompt", "upload", "copy", "agent policy"], highlightID: SettingsTab.agentStatus.highlightID(for: "Get a policy")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Block matching tool calls", keywords: ["policy", "block", "deny", "enforce", "refuse", "ssh", "claude", "cursor"], highlightID: SettingsTab.agentStatus.highlightID(for: "Block matching tool calls")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Tell the agent when hidden text is found", keywords: ["hidden", "invisible", "unicode", "agent", "warn", "context", "note"], highlightID: SettingsTab.agentStatus.highlightID(for: "Tell the agent when hidden text is found")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Analyze chats with ADR Detection", keywords: ["adr", "detection", "analyze", "analysis", "session", "transcript", "malicious", "prompt injection"], highlightID: SettingsTab.agentStatus.highlightID(for: "Analyze chats with ADR Detection")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Detection checkout", keywords: ["adr", "detection", "checkout", "uv", "clone"], highlightID: SettingsTab.agentStatus.highlightID(for: "Detection checkout")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Reasoning model", keywords: ["adr", "detection", "model", "claude", "sonnet"], highlightID: SettingsTab.agentStatus.highlightID(for: "Reasoning model")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Use an Anthropic API key", keywords: ["adr", "detection", "anthropic", "api key", "quota"], highlightID: SettingsTab.agentStatus.highlightID(for: "Use an Anthropic API key")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Triage with OpenAI first", keywords: ["adr", "detection", "openai", "triage", "gpt"], highlightID: SettingsTab.agentStatus.highlightID(for: "Triage with OpenAI first")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Messages sent", keywords: ["adr", "detection", "messages", "cap", "transcript"], highlightID: SettingsTab.agentStatus.highlightID(for: "Messages sent")),
-            SettingsSearchEntry(tab: .agentStatus, title: "Confirm before every analysis", keywords: ["adr", "detection", "confirm", "consent"], highlightID: SettingsTab.agentStatus.highlightID(for: "Confirm before every analysis")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "Look for hidden text in what agents read", keywords: ["hidden", "invisible", "unicode", "tag", "ascii smuggling", "zero-width", "bidi", "trojan source", "variation selector", "prompt injection"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Look for hidden text in what agents read")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "Look for secrets in prompts and tool calls", keywords: ["secret", "api key", "token", "private key", "leak", "credential", "aws", "github"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Look for secrets in prompts and tool calls")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "Watch for agents touching sensitive files", keywords: ["sensitive", "ssh", "keychain", "credentials", "env", "launch agent", "zshrc", "browser", "password", "history"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Watch for agents touching sensitive files")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "Notice new MCP servers", keywords: ["mcp", "server", "new", "added", "config", "supply chain", "tool"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Notice new MCP servers")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "Policy rules", keywords: ["policy", "agent policy", "block", "ssh", "forbid", "deny", "command", "tool", "rules", "json"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Policy rules")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "Get a policy", keywords: ["policy", "import", "draft", "prompt", "upload", "copy", "agent policy"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Get a policy")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "Block matching tool calls", keywords: ["policy", "block", "deny", "enforce", "refuse", "ssh", "claude", "cursor"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Block matching tool calls")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "Tell the agent when hidden text is found", keywords: ["hidden", "invisible", "unicode", "agent", "warn", "context", "note"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Tell the agent when hidden text is found")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "Analyze chats with ADR Detection", keywords: ["adr", "detection", "analyze", "analysis", "session", "transcript", "malicious", "prompt injection"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Analyze chats with ADR Detection")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "Detection checkout", keywords: ["adr", "detection", "checkout", "uv", "clone"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Detection checkout")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "Reasoning model", keywords: ["adr", "detection", "model", "claude", "sonnet"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Reasoning model")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "Use an Anthropic API key", keywords: ["adr", "detection", "anthropic", "api key", "quota"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Use an Anthropic API key")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "Triage with OpenAI first", keywords: ["adr", "detection", "openai", "triage", "gpt"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Triage with OpenAI first")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "Messages sent", keywords: ["adr", "detection", "messages", "cap", "transcript"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Messages sent")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "Confirm before every analysis", keywords: ["adr", "detection", "confirm", "consent"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Confirm before every analysis")),
             SettingsSearchEntry(tab: .agentStatus, title: "Mobile notifications", keywords: ["mobile", "push", "ntfy", "pushover", "webhook", "iphone", "android"], highlightID: SettingsTab.agentStatus.highlightID(for: "Mobile notifications")),
             SettingsSearchEntry(tab: .agentStatus, title: "Send test notification", keywords: ["test", "mobile", "push", "notification"], highlightID: SettingsTab.agentStatus.highlightID(for: "Send test notification")),
             SettingsSearchEntry(tab: .about, title: "Watch for freezes", keywords: ["freeze", "frozen", "hang", "stuck", "unresponsive", "beachball", "spinning", "crash", "report", "diagnostics", "developer"], highlightID: SettingsTab.about.highlightID(for: "Watch for freezes")),
@@ -1023,6 +1031,10 @@ struct SettingsView: View {
         case .agentStatus:
             SettingsForm(tab: .agentStatus) {
                 AgentStatusSettings()
+            }
+        case .agentSecurity:
+            SettingsForm(tab: .agentSecurity) {
+                AgentSecuritySettings()
             }
         case .downloads:
             SettingsForm(tab: .downloads) {
@@ -7393,33 +7405,6 @@ struct AgentStatusSettings: View {
     @ObservedObject private var accessibilityPermission = AccessibilityPermissionStore.shared
     @ObservedObject var hookInstaller = AgentHookInstaller.shared
     @ObservedObject private var notificationBridge = AgentStatusNotificationBridge.shared
-    @ObservedObject private var adr = ADRConnection.shared
-    @ObservedObject private var findingsStore = SecurityFindingsStore.shared
-    @Default(.adrSnapshotDirectory) var adrSnapshotDirectory
-    @Default(.adrToolDirectory) var adrToolDirectory
-    @Default(.adrHighAlertMode) var adrHighAlertMode
-    @Default(.adrPolicyFile) var adrPolicyFile
-    @Default(.adrRunScansEnabled) var adrRunScansEnabled
-    @Default(.adrDetectionEnabled) var adrDetectionEnabled
-    @Default(.detectHiddenText) var detectHiddenText
-    @Default(.adrDetectionConsentedAt) var adrDetectionConsentedAt
-    @Default(.adrDetectionCheckout) var adrDetectionCheckout
-    @Default(.adrDetectionConfirmEachRun) var adrDetectionConfirmEachRun
-    @Default(.adrDetectionTriageEnabled) var adrDetectionTriageEnabled
-    @Default(.adrDetectionTriageModel) var adrDetectionTriageModel
-    @Default(.adrDetectionReasoningModel) var adrDetectionReasoningModel
-    @Default(.adrDetectionUseAnthropicAPIKey) var adrDetectionUseAnthropicAPIKey
-    @Default(.adrDetectionContextThreatIntelligence) var adrDetectionContextThreatIntelligence
-    @Default(.adrDetectionContextSourceCode) var adrDetectionContextSourceCode
-    @Default(.adrDetectionContextPolicy) var adrDetectionContextPolicy
-    @Default(.adrDetectionTimeoutSeconds) var adrDetectionTimeoutSeconds
-    @Default(.adrDetectionMaxMessages) var adrDetectionMaxMessages
-    @State private var adrOpenAIKeyText = ""
-    @State private var adrAnthropicKeyText = ""
-    @State private var showDetectionConsent = false
-    @State private var showPolicyRules = false
-    /// Which ADR Detection keys the keychain holds; see `adrSecretRow`.
-    @State private var storedADRSecrets: Set<SecureSecretKey> = []
     @Default(.enableAgentStatusFeature) var enableAgentStatusFeature
     @Default(.agentStatusStaleMinutes) var agentStatusStaleMinutes
     @Default(.agentStoppedCollapseSeconds) var agentStoppedCollapseSeconds
@@ -7622,8 +7607,6 @@ struct AgentStatusSettings: View {
                     SettingsFooter("Install hooks for Cursor, VS Code and Copilot CLI, Codex CLI, Claude Code, Antigravity, Gemini CLI, Qwen Code or opencode. Each hook writes agent status into ~/.kannu/agent-status for the notch traffic light and Recent chats list. Copilot CLI uses the VS Code hook; opencode gets a small plugin.")
                 }
 
-                securitySections
-
                 mobileNotificationSections
             }
         }
@@ -7631,7 +7614,6 @@ struct AgentStatusSettings: View {
             pushoverUserKey = SecureSecretsStore.value(for: .pushoverUserKey)
             pushoverAppToken = SecureSecretsStore.value(for: .pushoverAppToken)
             webhookURL = SecureSecretsStore.value(for: .webhookURL)
-            refreshStoredADRSecrets()
             detectedEditors = Self.detectEditors()
             presentHookTools = Set(AgentHookProvider.allCases.filter { AgentHookInstaller.layout.toolIsPresent($0) })
             hookInstaller.refresh()
@@ -7812,694 +7794,6 @@ struct AgentStatusSettings: View {
         .padding(.vertical, 2)
     }
 
-    // MARK: - Security
-
-    /// Security in groups, most urgent first: what was found, where ADR's findings come from,
-    /// Kannu's own checks, and opt-in session analysis. ADR is a separate install (uv / pipx);
-    /// Kannu connects to it, never installs it.
-    @ViewBuilder
-    private var securitySections: some View {
-        securityFindingsSection
-        adrDiscoverySection
-        kannuChecksSection
-        agentPolicySection
-        sessionAnalysisSections
-    }
-
-    private var securityFindingsSection: some View {
-        Section {
-            if let error = findingsStore.snapshotError {
-                SettingsErrorText(error)
-            }
-
-            let ranking = findingsStore.ranking
-            if ranking.visible.isEmpty {
-                Text(findingsStore.lastScan == nil
-                     ? String(localized: "No findings yet.")
-                     : String(localized: "No open findings."))
-                    .settingsDescriptionStyle()
-            } else {
-                ForEach(ranking.visible) { finding in
-                    SecurityFindingRow(
-                        finding: finding,
-                        copyForAgent: { findingsStore.copyAgentPrompt(for: finding) },
-                        acknowledge: { findingsStore.acknowledge(finding.id) },
-                        snooze: { findingsStore.snooze(finding.id, for: 24 * 3600) },
-                        openChat: findingsStore.hasChat(for: finding)
-                            ? { if !findingsStore.openChat(for: finding) { NSSound.beep() } }
-                            : nil
-                    )
-                }
-            }
-            if !findingsStore.reviewQueue.isEmpty {
-                Text("Needs review: \(findingsStore.reviewQueue.count) uncatalogued AI tool(s) — see the snapshot for paths.")
-                    .settingsDescriptionStyle()
-            }
-
-            SettingsRow("High-severity alerts in the notch", description: adrHighAlertMode.description) {
-                Picker("High-severity alerts in the notch", selection: $adrHighAlertMode) {
-                    ForEach(ADRHighAlertMode.allCases) { mode in
-                        Text(mode.localizedName).tag(mode)
-                    }
-                }
-            }
-            .settingsHighlight(id: highlightID("High-severity alerts in the notch"))
-
-            if !findingsStore.acknowledgedIDs.isEmpty || !findingsStore.snoozes.isEmpty {
-                SettingsActionRow {
-                    Button("Show acknowledged and snoozed again") { findingsStore.clearAcknowledgements() }
-                }
-            }
-        } header: {
-            SettingsSectionHeader("Security findings")
-                .settingsHighlight(id: highlightID("Security findings"))
-        } footer: {
-            SettingsFooter("Kannu never changes your agent or MCP settings. Nothing leaves this Mac unless you turn on push notifications or session analysis. Details: docs/ADR.md in the Kannu repository.")
-        }
-        .onAppear {
-            if adr.discovery.state == .unchecked { adr.checkAgain() }
-            if adrDetectionEnabled, adr.detection.state == .unchecked { adr.checkDetection() }
-        }
-    }
-
-    private var adrDiscoverySection: some View {
-        Section {
-            adrToolRow(.discovery)
-                .settingsHighlight(id: highlightID("Connect ADR"))
-            if !adr.discovery.isFound && adr.discovery.state != .unchecked {
-                adrInstallGuidance(.discovery)
-            }
-            adrToolRow(.sensor)
-
-            LabeledContent {
-                HStack(spacing: 8) {
-                    SettingsValueText(adrToolDirectory.isEmpty
-                                      ? String(localized: "Standard places")
-                                      : adrToolDirectory.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
-                    Button("Choose…") { chooseToolDirectory() }
-                    if !adrToolDirectory.isEmpty {
-                        Button("Clear") {
-                            adrToolDirectory = ""
-                            adr.checkAgain()
-                            adr.checkDetection()
-                        }
-                    }
-                }
-            } label: {
-                SettingsRowLabel("ADR tools folder", description: "Only if the tools are somewhere else: Kannu already looks in ~/.local/bin, uv's tool folders, /opt/homebrew/bin and /usr/local/bin.")
-            }
-            .settingsHighlight(id: highlightID("ADR tools folder"))
-            if let protected = ADRToolFolder.protectedFolderName(for: adrToolDirectory, home: NSHomeDirectory()) {
-                SettingsErrorText(String(localized: "This folder is in \(protected). macOS asks for permission whenever Kannu looks for the tools there; a folder outside it avoids the prompt."))
-            }
-
-            LabeledContent {
-                HStack(spacing: 8) {
-                    SettingsValueText(SecurityFindingsStore.snapshotDirectory.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
-                    Button("Choose…") { chooseSnapshotDirectory() }
-                    Button("Reveal") {
-                        NSWorkspace.shared.activateFileViewerSelecting([SecurityFindingsStore.snapshotDirectory])
-                    }
-                }
-            } label: {
-                Text("Snapshot folder")
-            }
-            .settingsHighlight(id: highlightID("Snapshot folder"))
-
-            adrLastScanRow
-
-            if adr.discovery.isFound {
-                SettingsRow("Let Kannu run scans", description: "Kannu runs a scan once a day, and again whenever an AI tool's MCP servers change. With this off, it shows only the scans something else runs.") {
-                    Defaults.Toggle(key: .adrRunScansEnabled) {
-                        Text("Let Kannu run scans")
-                    }
-                }
-                .settingsHighlight(id: highlightID("Let Kannu run scans"))
-
-                LabeledContent {
-                    Button(findingsStore.isScanning ? "Scanning…" : "Scan now") {
-                        findingsStore.runScanNow(reason: "manual")
-                    }
-                    .disabled(findingsStore.isScanning)
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Scan this Mac")
-                        Group {
-                            if let at = findingsStore.lastKannuScanAt {
-                                Text("Last run by Kannu \(at.formatted(date: .abbreviated, time: .shortened))")
-                            } else {
-                                Text("Not run by Kannu yet")
-                            }
-                        }
-                        .settingsDescriptionStyle()
-                        if adrRunScansEnabled, findingsStore.automaticScansActive, !findingsStore.isScanning {
-                            Text(verbatim: nextAutomaticScanText)
-                                .settingsDescriptionStyle()
-                        }
-                    }
-                }
-                .settingsHighlight(id: highlightID("Scan now"))
-                if let error = findingsStore.lastScanError {
-                    SettingsErrorText(error)
-                }
-
-                LabeledContent {
-                    HStack(spacing: 8) {
-                        SettingsValueText(adrPolicyFile.isEmpty ? String(localized: "none") : adrPolicyFile.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
-                        Button("Choose…") { choosePolicyFile() }
-                        if !adrPolicyFile.isEmpty {
-                            Button("Clear") { adrPolicyFile = "" }
-                        }
-                    }
-                } label: {
-                    SettingsRowLabel("Policy file", description: "ADR's scan policy — approved, forbidden and tenant_domains lists for the MCP servers on this Mac. Not the agent policy below; that one names commands and tools to block.")
-                }
-                .settingsHighlight(id: highlightID("Policy file"))
-                if SecurityFindingsStore.policyFileIsMissing {
-                    SettingsErrorText(String(localized: "That policy file is not there any more, so scans run without it. Choose it again, or clear it."))
-                }
-            }
-        } header: {
-            SettingsSectionHeader("ADR Discovery")
-        } footer: {
-            SettingsFooter("Findings come from ADR, Uber's open-source agent security toolkit (Apache-2.0). You install it; Kannu only reads its results.")
-        }
-    }
-
-    private var kannuChecksSection: some View {
-        Section {
-            SettingsRow("Look for hidden text in what agents read", description: "Some characters are invisible to you but readable by the AI, and can hide instructions. Kannu checks prompts and tool results on this Mac. No AI model is used and nothing is sent anywhere.") {
-                Defaults.Toggle(key: .detectHiddenText) {
-                    Text("Look for hidden text in what agents read")
-                }
-            }
-            .settingsHighlight(id: highlightID("Look for hidden text in what agents read"))
-
-            SettingsRow("Tell the agent when hidden text is found", description: "Off by default. Adds one short, factual note to the agent's context saying hidden text was found and where — never the hidden text. Claude Code also shows you a one-line notice.") {
-                Defaults.Toggle(key: .warnAgentAboutHiddenText) {
-                    Text("Tell the agent when hidden text is found")
-                }
-            }
-            .disabled(!detectHiddenText)
-            .settingsHighlight(id: highlightID("Tell the agent when hidden text is found"))
-
-            SettingsRow("Look for secrets in prompts and tool calls", description: "Flags API keys and private keys in what you send an agent and in what an agent hands a tool. Kannu keeps only the kind of key, its first few letters, its length and a fingerprint — never the key itself.") {
-                Defaults.Toggle(key: .detectSecrets) {
-                    Text("Look for secrets in prompts and tool calls")
-                }
-            }
-            .settingsHighlight(id: highlightID("Look for secrets in prompts and tool calls"))
-
-            SettingsRow("Watch for agents touching sensitive files", description: "Flags when an agent reads keys, passwords, cloud or browser data, or changes files that run programs on their own or set what agents may do. Checked on this Mac. Nothing is sent anywhere.") {
-                Defaults.Toggle(key: .detectSensitivePaths) {
-                    Text("Watch for agents touching sensitive files")
-                }
-            }
-            .settingsHighlight(id: highlightID("Watch for agents touching sensitive files"))
-
-            SettingsRow("Notice new MCP servers", description: "Tells you when an MCP server is added to Claude Code, Claude Desktop, Cursor, VS Code, Codex, Gemini CLI, Qwen Code or opencode. The first look only learns what is already there. Project folders inside Desktop, Documents and Downloads are skipped, so macOS never asks for access.") {
-                Defaults.Toggle(key: .watchMCPServers) {
-                    Text("Notice new MCP servers")
-                }
-            }
-            .settingsHighlight(id: highlightID("Notice new MCP servers"))
-        } header: {
-            SettingsSectionHeader("Kannu's own checks")
-        } footer: {
-            SettingsFooter("Kannu also flags sessions started with permission checks turned off; that check has no setting.")
-        }
-    }
-
-    /// The user's own block list, enforced where a host's hook can refuse a call.
-    private var agentPolicySection: some View {
-        Section {
-            // A raw LabeledContent, NOT SettingsRow: the row component applies `.labelsHidden()`
-            // to its whole control slot (meant for the Toggle/Picker case), and a Menu in that
-            // slot inherits it — the ellipsis collapsed and the "…" menu was dead. Same shape as
-            // `analysisRow`, the working SettingsMoreMenu site. See docs/SETTINGS.md.
-            LabeledContent {
-                HStack(spacing: 8) {
-                    SettingsStatusText(agentPolicyStatusText, isReady: agentPolicyIsReady)
-                    if case .success(let policy) = findingsStore.agentPolicyStatus {
-                        Button(String(localized: "View rules")) { showPolicyRules = true }
-                        .popover(isPresented: $showPolicyRules, arrowEdge: .bottom) {
-                            PolicyRulesView(policy: policy)
-                        }
-                    }
-                    SettingsMoreMenu {
-                        Button("Reveal in Finder") {
-                            NSWorkspace.shared.activateFileViewerSelecting([AgentPolicy.fileURL])
-                        }
-                        .disabled(!agentPolicyExists)
-                        Button("Check again") { findingsStore.checkAgentPolicy() }
-                    }
-                }
-                .controlSize(.small)
-            } label: {
-                SettingsRowLabel("Policy rules", description: "A JSON file — ~/.kannu/agent-policy.json — naming commands and tools an agent may not use. Kannu never writes rules of its own; Import below copies a file you chose, byte for byte, after checking it. Every match is reported as a finding; whether it is also blocked is the switch below.")
-            }
-            .settingsHighlight(id: highlightID("Policy rules"))
-            SettingsActionRow("Get a policy", description: "Have your agent draft one, or import a JSON file you already have. Kannu checks the file before it counts; a broken import never replaces a working policy.") {
-                Button("Import…") { importAgentPolicy() }
-                Button("Copy a prompt that drafts a policy") { findingsStore.copyPolicyDraftingPrompt() }
-            }
-            .settingsHighlight(id: highlightID("Get a policy"))
-            if let importError = findingsStore.agentPolicyImportError {
-                SettingsErrorText(String(localized: "Not imported — \(importError)"))
-            }
-            SettingsRow("Block matching tool calls", description: "Off: every match is reported and the call runs. On: Claude Code and Cursor refuse the call and tell the agent why — their hooks can say no. Every other agent still only gets the finding.") {
-                Defaults.Toggle(key: .enforceAgentPolicy) {
-                    Text("Block matching tool calls")
-                }
-            }
-            .settingsHighlight(id: highlightID("Block matching tool calls"))
-        } header: {
-            SettingsSectionHeader("Agent policy")
-        } footer: {
-            SettingsFooter("A command rule matches a command's first word (or its basename) in any segment joined by ;, &&, || or |, after sudo, env and nohup; a multi-word rule matches a segment that starts with it; a tool rule matches the tool's exact name. No regex. Not the ADR policy file above — that one is about MCP servers.")
-        }
-        .onAppear {
-            findingsStore.agentPolicyImportError = nil
-            findingsStore.checkAgentPolicy()
-        }
-    }
-
-    /// The "Import…" button: pick a JSON file, validate it with the same parser the status row
-    /// uses, and only then copy it into place — with a confirm when a policy already exists.
-    private func importAgentPolicy() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.json]
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.message = String(localized: "Choose the agent policy JSON to copy to ~/.kannu/agent-policy.json")
-        ModalPresenter.present(panel) { response in
-            guard response == .OK, let url = panel.url else { return }
-            let proceed = { findingsStore.importPolicyFile(from: url) }
-            if agentPolicyExists {
-                let alert = NSAlert()
-                alert.messageText = String(localized: "Replace the current policy?")
-                alert.informativeText = String(localized: "~/.kannu/agent-policy.json already exists. Importing replaces it with the chosen file.")
-                alert.addButton(withTitle: String(localized: "Replace"))
-                alert.addButton(withTitle: String(localized: "Cancel"))
-                ModalPresenter.present(alert) { answer in
-                    if answer == .alertFirstButtonReturn { proceed() }
-                }
-            } else {
-                proceed()
-            }
-        }
-    }
-
-    private var agentPolicyStatusText: String {
-        switch findingsStore.agentPolicyStatus {
-        case .success(let policy):
-            return String(localized: "\(policy.rules.count) rules · ~/.kannu/agent-policy.json")
-        case .failure(let error):
-            return error.message
-        }
-    }
-
-    private var agentPolicyIsReady: Bool {
-        if case .success = findingsStore.agentPolicyStatus { return true }
-        return false
-    }
-
-    private var agentPolicyExists: Bool {
-        if case .failure(.notFound) = findingsStore.agentPolicyStatus { return false }
-        return true
-    }
-
-    /// ADR Detection — off by default, behind a consent alert, and every run is the user's click.
-    @ViewBuilder
-    private var sessionAnalysisSections: some View {
-        Section {
-            // Consent is asked through a SwiftUI alert, not a modal inside the binding setter: a
-            // nested run loop there fought the toggle's own state update and the switch fell back.
-            SettingsRow("Analyze chats with ADR Detection", description: "Opt-in, per chat. Right-click a finished Claude Code chat in the notch and choose \"Analyze with ADR Detection\". The transcript is sent to the model providers below under your own keys — nothing is ever sent automatically.") {
-                Toggle(isOn: Binding(
-                    get: { adrDetectionEnabled },
-                    set: { newValue in
-                        guard newValue else { adrDetectionEnabled = false; return }
-                        if adrDetectionConsentedAt == nil {
-                            showDetectionConsent = true
-                            return
-                        }
-                        adrDetectionEnabled = true
-                        adr.checkDetection()
-                    }
-                )) {
-                    Text("Analyze chats with ADR Detection")
-                }
-            }
-            .settingsHighlight(id: highlightID("Analyze chats with ADR Detection"))
-            .alert("Turn on ADR Detection session analysis?", isPresented: $showDetectionConsent) {
-                Button("Turn on") {
-                    adrDetectionConsentedAt = Date()
-                    adrDetectionEnabled = true
-                    adr.checkDetection()
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text(detectionConsentText)
-            }
-
-            if adrDetectionEnabled {
-                detectionCheckoutRows
-            }
-        } header: {
-            SettingsSectionHeader("Session analysis")
-        }
-
-        if adrDetectionEnabled {
-            detectionSetupSections
-        }
-    }
-
-    /// Where ADR Detection lives and whether it is ready; shown once analysis is on.
-    @ViewBuilder
-    private var detectionCheckoutRows: some View {
-        LabeledContent {
-            HStack(spacing: 8) {
-                SettingsValueText(adrDetectionCheckout.isEmpty ? String(localized: "none") : adrDetectionCheckout.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
-                Button("Choose…") { chooseDetectionCheckout() }
-                Button("Check") { adr.checkDetection() }
-            }
-        } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Detection checkout")
-                SettingsStatusText(adr.detection.caption, isReady: adr.detection.isReady)
-            }
-        }
-        .settingsHighlight(id: highlightID("Detection checkout"))
-
-        LabeledContent {
-            Button("Copy") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(ADRConnection.detectionCloneCommand, forType: .string)
-            }
-        } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(ADRConnection.detectionCloneCommand)
-                    .font(.caption.monospaced())
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-                Text("Needs uv and Python 3.10–3.12 (uv fetches one). ADR Detection is Uber's research tool (Apache-2.0); it runs an unattended Claude session on this Mac to reason about the chat, with file edits disallowed.")
-                    .settingsDescriptionStyle()
-            }
-        }
-    }
-
-    /// Models, keys, context and limits for ADR Detection, and the recent analyses.
-    @ViewBuilder
-    private var detectionSetupSections: some View {
-        Section {
-            TextField("Reasoning model (Claude)", text: $adrDetectionReasoningModel)
-                .settingsHighlight(id: highlightID("Reasoning model"))
-            SettingsRow("Use an Anthropic API key instead of your Claude Code login",
-                        description: adrDetectionUseAnthropicAPIKey
-                            ? String(localized: "Analyses are billed to the API key below.")
-                            : String(localized: "Analyses count against your Claude subscription's 5-hour and weekly limits.")) {
-                Toggle("Use an Anthropic API key instead of your Claude Code login", isOn: $adrDetectionUseAnthropicAPIKey)
-            }
-            .settingsHighlight(id: highlightID("Use an Anthropic API key"))
-            if adrDetectionUseAnthropicAPIKey {
-                adrSecretRow(title: "Anthropic API key", key: .claudeAPIKey, text: $adrAnthropicKeyText)
-            }
-
-            SettingsRow("Triage with OpenAI first", description: "Upstream's pipeline: a cheap gpt-4o pass decides whether the Claude reasoning agent runs at all. Off means Claude only — no OpenAI account needed.") {
-                Toggle("Triage with OpenAI first", isOn: $adrDetectionTriageEnabled)
-            }
-            .settingsHighlight(id: highlightID("Triage with OpenAI first"))
-            if adrDetectionTriageEnabled {
-                TextField("Triage model (OpenAI)", text: $adrDetectionTriageModel)
-                adrSecretRow(title: "OpenAI API key", key: .openaiAPIKey, text: $adrOpenAIKeyText)
-            }
-        } header: {
-            SettingsSectionHeader("Analysis models")
-        }
-
-        Section {
-            Toggle("Context: threat intelligence", isOn: $adrDetectionContextThreatIntelligence)
-            Toggle("Context: source code analyzer", isOn: $adrDetectionContextSourceCode)
-            Toggle("Context: policy store", isOn: $adrDetectionContextPolicy)
-            Picker("Reasoning timeout", selection: $adrDetectionTimeoutSeconds) {
-                Text("2 minutes").tag(120)
-                Text("5 minutes").tag(300)
-                Text("10 minutes").tag(600)
-            }
-            Picker("Messages sent (newest)", selection: $adrDetectionMaxMessages) {
-                Text("100").tag(100)
-                Text("200").tag(200)
-                Text("400").tag(400)
-                Text("800").tag(800)
-            }
-            .settingsHighlight(id: highlightID("Messages sent"))
-            Toggle("Confirm before every analysis", isOn: $adrDetectionConfirmEachRun)
-                .settingsHighlight(id: highlightID("Confirm before every analysis"))
-        } header: {
-            SettingsSectionHeader("Analysis context and limits")
-        } footer: {
-            SettingsFooter("The three context options are ADR's local MCP context servers; they read bundled data and this Mac only.")
-        }
-
-        if findingsStore.lastAnalysisError != nil || !findingsStore.analyses.isEmpty {
-            Section {
-                if let error = findingsStore.lastAnalysisError {
-                    SettingsErrorText(error)
-                }
-                ForEach(findingsStore.analyses.prefix(5)) { analysis in
-                    analysisRow(analysis)
-                }
-            } header: {
-                SettingsSectionHeader("Recent analyses")
-            }
-        }
-    }
-
-    private func analysisRow(_ analysis: ADRSessionAnalysis) -> some View {
-        let cost = analysis.costUSD.map { String(format: " · $%.3f", $0) } ?? ""
-        return LabeledContent {
-            HStack(spacing: 6) {
-                if analysis.isMalicious {
-                    CopyForAgentButton {
-                        if let finding = analysis.finding() { findingsStore.copyAgentPrompt(for: finding) }
-                    }
-                }
-                SettingsMoreMenu {
-                    if let path = analysis.reportPath {
-                        Button("Reveal Report in Finder") {
-                            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
-                        }
-                    }
-                    Button("Forget") { findingsStore.forgetAnalysis(for: analysis.conversationID) }
-                }
-            }
-            .controlSize(.small)
-        } label: {
-            SettingsRowLabel(
-                verbatim: analysis.chatName ?? analysis.conversationID,
-                description: "\(analysis.date.formatted(date: .abbreviated, time: .shortened)) · \(analysis.shortLabel)\(cost)"
-            )
-            .lineLimit(2)
-        }
-    }
-
-    /// `stored` comes from `storedADRSecrets`, read when the tab appears and updated by Save and
-    /// Remove — never a keychain read per render (the tab re-renders on every monitor publish).
-    @ViewBuilder
-    private func adrSecretRow(title: String, key: SecureSecretKey, text: Binding<String>) -> some View {
-        HStack {
-            SecureField(title, text: text)
-            Button("Save") {
-                SecureSecretsStore.set(text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines), for: key)
-                text.wrappedValue = ""
-                refreshStoredADRSecrets()
-            }
-            .disabled(text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            if storedADRSecrets.contains(key) {
-                Text("stored").font(.caption).foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                Button("Remove") {
-                    SecureSecretsStore.removeValue(for: key)
-                    refreshStoredADRSecrets()
-                }
-            }
-        }
-    }
-
-    private func refreshStoredADRSecrets() {
-        storedADRSecrets = Set([SecureSecretKey.claudeAPIKey, .openaiAPIKey].filter { !SecureSecretsStore.value(for: $0).isEmpty })
-    }
-
-    /// The one-time consent, in plain words: what leaves the Mac, where, and when.
-    private var detectionConsentText: String {
-        String(localized: """
-        Nothing is analysed automatically. When you right-click a finished chat and choose "Analyze with ADR Detection", that one chat's transcript is sent out:
-
-        • to Anthropic, through your Claude Code login (uses your Claude quota) or an API key you store;
-        • to OpenAI, only if you turn triage on.
-
-        By default Kannu asks before every run. ADR Detection is a research tool from Uber (Apache-2.0); it runs an unattended Claude session on this Mac with file edits disallowed.
-        """)
-    }
-
-    private func chooseDetectionCheckout() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = String(localized: "Use checkout")
-        panel.message = String(localized: "Choose the ADR/Detection folder you cloned and synced with uv")
-        ModalPresenter.present(panel) { response in
-            guard response == .OK, let url = panel.url else { return }
-            adrDetectionCheckout = url.path
-            adr.checkDetection()
-        }
-    }
-
-    /// An ADR tool: its name, and a status line with a dot (green when installed); Discovery also
-    /// gets "Check again".
-    private func adrToolRow(_ tool: ADRConnection.Tool) -> some View {
-        let status = tool == .discovery ? adr.discovery : adr.sensor
-        return LabeledContent {
-            HStack(spacing: 8) {
-                // Kannu never installs software: the command is copied for the user to run.
-                if tool == .sensor, status.state == .notFound {
-                    Button("Copy install command") {
-                        let pasteboard = NSPasteboard.general
-                        pasteboard.clearContents()
-                        pasteboard.setString(tool.installCommand, forType: .string)
-                    }
-                }
-                Button(adr.isChecking ? "Checking…" : "Check again") { adr.checkAgain() }
-                    .disabled(adr.isChecking)
-            }
-        } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                if tool == .sensor {
-                    (Text("ADR Sensor") + Text(verbatim: " · ") + Text("Optional").foregroundStyle(.secondary))
-                        .textSelection(.enabled)
-                } else {
-                    Text(tool.displayName)
-                }
-                SettingsStatusText(adrStatusCaption(status, optional: tool == .sensor), isReady: status.isFound)
-                if tool == .sensor {
-                    Text("Not needed for findings, and Kannu does not use it yet. It exports agent sessions for a security team's SIEM.")
-                        .settingsDescriptionStyle()
-                }
-            }
-        }
-    }
-
-    private func chooseToolDirectory() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = String(localized: "Use folder")
-        ModalPresenter.present(panel) { response in
-            guard response == .OK, let url = panel.url else { return }
-            adrToolDirectory = url.path
-            adr.checkAgain()
-            adr.checkDetection()
-        }
-    }
-
-    private func adrStatusCaption(_ status: ADRConnection.Status, optional: Bool = false) -> String {
-        switch status.state {
-        case .unchecked: return String(localized: "Not checked yet")
-        case .notFound: return optional ? String(localized: "Not installed — optional") : String(localized: "Not installed")
-        case .found(let executable, let version):
-            let shortPath = executable.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
-            return version.map { "\($0) · \(shortPath)" } ?? shortPath
-        }
-    }
-
-    @ViewBuilder
-    private func adrInstallGuidance(_ tool: ADRConnection.Tool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SettingsPermissionCallout(
-                title: String(localized: "Connect ADR"),
-                message: String(localized: "Install ADR Discovery once with uv (or pipx), then press Check again. Requires Python 3.11 or newer; uv brings its own."),
-                icon: "shield.lefthalf.filled",
-                iconColor: .blue,
-                requestButtonTitle: String(localized: "Copy install command"),
-                openSettingsButtonTitle: String(localized: "Open ADR on GitHub"),
-                requestAction: {
-                    let pasteboard = NSPasteboard.general
-                    pasteboard.clearContents()
-                    pasteboard.setString(tool.installCommand, forType: .string)
-                },
-                openSettingsAction: { NSWorkspace.shared.open(ADRConnection.projectURL) }
-            )
-            Text(tool.installCommand)
-                .font(.system(.caption, design: .monospaced))
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    /// "Next automatic scan Sep 12, 5:54 AM · the last scan failed" — the sooner-than-daily time
-    /// is the retry, so the line says why rather than naming the mechanism.
-    private var nextAutomaticScanText: String {
-        let when: String
-        if let next = findingsStore.nextAutomaticScanAt, next > Date().addingTimeInterval(60) {
-            when = String(localized: "Next automatic scan \(next.formatted(date: .abbreviated, time: .shortened))")
-        } else {
-            when = String(localized: "Next automatic scan within a minute")
-        }
-        guard findingsStore.consecutiveScanFailures > 0 else { return when }
-        return when + " · " + String(localized: "the last scan failed")
-    }
-
-    private var adrLastScanRow: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Last snapshot")
-            if let scan = findingsStore.lastScan {
-                let coverage = scan.coverageComplete
-                    ? String(localized: "full coverage")
-                    : String(localized: "partial coverage (\(scan.coverageGaps) gaps)")
-                Text("\(scan.date.formatted(date: .abbreviated, time: .shortened)) · \(scan.assetCount) assets · \(scan.findingCount) findings · \(coverage) · catalog \(scan.catalogVersion)")
-                    .font(.subheadline)
-                    .foregroundStyle(scan.coverageComplete ? Color.secondary : Color.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-            } else {
-                Text("none yet")
-                    .settingsDescriptionStyle()
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func choosePolicyFile() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.json]
-        panel.prompt = String(localized: "Use policy")
-        ModalPresenter.present(panel) { response in
-            guard response == .OK, let url = panel.url else { return }
-            adrPolicyFile = url.path
-        }
-    }
-
-    private func chooseSnapshotDirectory() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.canCreateDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.directoryURL = SecurityFindingsStore.snapshotDirectory
-        panel.prompt = String(localized: "Use folder")
-        ModalPresenter.present(panel) { response in
-            guard response == .OK, let url = panel.url else { return }
-            adrSnapshotDirectory = url.path
-            findingsStore.directoryChanged()
-        }
-    }
 
     @ViewBuilder
     private func hookRow(for provider: AgentHookProvider) -> some View {
@@ -8685,16 +7979,6 @@ extension GeneralSettings {
 }
 
 extension AgentStatusSettings {
-    /// DEBUG snapshot harness: the ADR Detection rows that only show once analysis is on, without
-    /// turning it on (the harness shares the user's Defaults).
-    static func snapshotDetectionRows() -> AnyView {
-        let settings = AgentStatusSettings()
-        return AnyView(Form {
-            Section { settings.detectionCheckoutRows } header: { SettingsSectionHeader("Session analysis") }
-            settings.detectionSetupSections
-        })
-    }
-
     /// DEBUG snapshot harness: the mobile-notification rows that only show once pushes are on.
     static func snapshotNotificationRows() -> AnyView {
         let settings = AgentStatusSettings()
@@ -8704,18 +7988,5 @@ extension AgentStatusSettings {
         })
     }
 
-    /// DEBUG snapshot harness: the findings rows as the Security findings section draws them.
-    static func snapshotFindingRows(_ findings: [AgentSecurityFinding]) -> AnyView {
-        AnyView(Form {
-            Section {
-                ForEach(findings) { finding in
-                    SecurityFindingRow(finding: finding, copyForAgent: {}, acknowledge: {}, snooze: {},
-                                       openChat: finding.sessionID == nil ? nil : {})
-                }
-            } header: {
-                SettingsSectionHeader("Security findings")
-            }
-        })
-    }
 }
 #endif

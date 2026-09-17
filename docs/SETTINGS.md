@@ -43,6 +43,10 @@ All in `Kannu/components/Settings/SettingsComponents.swift`. Never rebuild these
   `SettingsRowLabel` (the `analysisRow` shape) or a `SettingsActionRow`.
 
 - One concern per `Section`; separate concerns get separate Sections, never a `Divider` inside one.
+- A section that mixes everyday controls with rarely-needed ones may tuck the rare rows into one
+  `DisclosureGroup` labelled **Advanced** (collapsed by default), keeping the section glanceable.
+  Rows inside it carry no highlight ids; their search entries point at the disclosure's own id,
+  so search always lands on something visible (the ADR scans section is the model).
 - Every row with a `settingsSearchIndex` entry carries a `.settingsHighlight(id:)` whose id
   matches the entry exactly (`SettingsHighlightInventoryTests` pins the pairing and the counts;
   the counts move only as a deliberate edit).

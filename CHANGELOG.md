@@ -4,6 +4,32 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-17 - The Agents tab splits in two: behaviour stays, Agent Security gets its own tab
+- **Developer label:** "now i have a ux problem in the agents tab, now its too cluttered and also adr changes makes it super long, can we think of a better split … maybe improve a bit of ux there too"
+- **Agent label:** Follow-up 50, PR Q — Agent Security tab + glance-first ADR section
+- **Changes:**
+  - **New sidebar tab "Agent Security"** (shield icon, beside Agents): Security findings, Kannu's
+    own checks, the agent policy, ADR scans and session analysis move there — into a new
+    `AgentSecuritySettings.swift`, out of the 8,700-line `SettingsView.swift`. The Agents tab
+    keeps the behaviour controls: monitoring, detected editors, click-through, traffic light,
+    caffeinate, indicator, hooks, and mobile notifications (pushes are about agent state, so they
+    stay; their two finding-push rows stay with them).
+  - **The ADR area reads top-down now**: scanner status (one Check again), the scans toggle,
+    Scan this Mac with last/next times, then the newest scan result — and everything a first-time
+    user does not need (tools folder, snapshot folder, ADR's scan policy, the optional Sensor)
+    behind one collapsed **Advanced** disclosure. That also removes the duplicate Check again the
+    Sensor row put in the glance area, moves the result line below the controls that produce it,
+    renames "Policy file" to "ADR scan policy", and gives the section a plain-words footer.
+  - **Search and deep links survive the move.** Moved rows' search entries changed tab and id
+    prefix together; entries for the tucked-away rows point at the Advanced disclosure itself, so
+    search always lands on something visible (`docs/SETTINGS.md` records the pattern). The notch
+    shield's deep link now opens Agent Security: the coordinator derives the tab from the id's
+    own prefix, so call sites carry no tab knowledge.
+  - When agent monitoring is off, the new tab shows one line pointing at Agents › Monitoring
+    instead of an empty page.
+  - `SettingsHighlightInventoryTests` counts move 203/254/248 → 203/252/246 (three advanced-row
+    ids folded into one disclosure id) — a deliberate edit. No Defaults keys or behaviour change.
+
 ### 2026-09-17 - The policy row's "…" menu works, and View rules shows the policy in a small box
 - **Developer label:** "the 3 dots near policy file is not working, and if there was a view rules button that will show the rules in a pretty way in a new smaller box it would be nice"
 - **Agent label:** Follow-up 49, PR P — policy row rebuilt, PolicyRulesView popover
