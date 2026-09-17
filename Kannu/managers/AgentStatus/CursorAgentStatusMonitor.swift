@@ -5,12 +5,37 @@ import Darwin
 import Defaults
 import Foundation
 
+/// The closed notch's narrow window onto the monitor: the traffic-light verdict and the reveal
+/// pulse, nothing else. `ContentView` observes THIS, never the monitor itself — the monitor
+/// publishes `sessions` on every hook write (up to ~20 Hz under a busy agent), and observing the
+/// whole object re-ran ContentView's ~3,300-line body for values it never reads. Measured on a
+/// Release build under agent load: 38 % average CPU, all of it SwiftUI re-render churn
+/// (docs/REGRESSIONS.md entry 10 addendum).
+///
+/// A mirror, not a second truth: every value is written only by the monitor's own `didSet`s, and
+/// the pulse *verdict* stays `AgentActivityPulseLatch` with its single consumer. Views that need
+/// the session list (the open panel, `AgentTrafficLightIndicator`) observe the monitor directly,
+/// as leaves.
+@MainActor
+final class AgentTrafficLightProjection: ObservableObject {
+    @Published fileprivate(set) var trafficLightState: AgentTrafficLightState = .inactive
+    @Published fileprivate(set) var shouldShowTrafficLight = false
+    @Published fileprivate(set) var activityPulse = 0
+}
+
 @MainActor
 final class CursorAgentStatusMonitor: ObservableObject {
+    /// See `AgentTrafficLightProjection` — what the closed notch observes instead of this object.
+    let projection = AgentTrafficLightProjection()
+
     static let shared = CursorAgentStatusMonitor()
 
-    @Published private(set) var trafficLightState: AgentTrafficLightState = .inactive
-    @Published private(set) var shouldShowTrafficLight = false
+    @Published private(set) var trafficLightState: AgentTrafficLightState = .inactive {
+        didSet { projection.trafficLightState = trafficLightState }
+    }
+    @Published private(set) var shouldShowTrafficLight = false {
+        didSet { projection.shouldShowTrafficLight = shouldShowTrafficLight }
+    }
     @Published private(set) var sessions: [AgentSessionStatus] = []
     /// Latest server-reported Claude rate-limit usage, and the only cache of it: the statusline
     /// hook's `claude-usage.json`, falling back to the desktop app's own history. Refreshed on the
@@ -23,7 +48,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
     /// change to the session list. Views use it to drive time-boxed reveals; unlike
     /// `trafficLightState` it also fires on same-state activity (executing → executing), so a
     /// window keyed off it stays open for the whole of a long run rather than expiring mid-way.
-    @Published private(set) var activityPulse: Int = 0
+    @Published private(set) var activityPulse: Int = 0 {
+        didSet { projection.activityPulse = activityPulse }
+    }
     /// Whether every `activityPulse` bump since the reveal observer last consumed was the
     /// running-agent heartbeat. A "was the last bump a heartbeat" flag was wrong here: one
     /// `rescan()` publishes up to three bumps (session list, traffic light, then the heartbeat)

@@ -451,6 +451,17 @@ moves `updatedAt`), exactly as before. Guard: `RegressionGuardTests.testATurnOnl
 
 ---
 
+**Addendum (2026-09-17):** the *other* half of this cost surfaced on a Release build under a busy
+agent: `sessions` publishes on every hook write (up to ~20 Hz through the 50 ms quick-rescan
+path), and `ContentView` observed the whole monitor while reading none of it — 38 % average CPU,
+all SwiftUI re-render churn, notch closed. `ContentView` now observes
+`AgentTrafficLightProjection` (state, visibility, pulse counter), a **mirror written only by the
+monitor's own `didSet`s** — it must never bump or consume the latch, and the latch keeps exactly
+one consumer (`ContentView.noteAgentActivityPulse`, through the un-observed monitor reference).
+Views that render the session list observe the monitor directly, as leaves. Guard:
+`ClosedNotchObservationTests` pins the observer allowlist, the projection's single writer, and
+the single consume site.
+
 ## 11. A passive source never does its I/O on the main actor
 
 **What happened (2026-09-09).** `WarpAgentStore.sessions` opened `warp.sqlite` synchronously
