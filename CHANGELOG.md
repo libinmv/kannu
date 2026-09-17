@@ -28,6 +28,10 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     assignment outside the pinned titled windows, and requires the notch window to use the helper.
     `docs/REGRESSIONS.md` entry 17 records both crashes, the mechanism and the manual check, and a
     Danger-zones row points window creation at it.
+  - **From CodeRabbit's review of this PR:** the guard only recognised hosting views by name, so
+    `let view = NSHostingView(...); window.contentView = view` would have passed. It now collects,
+    per file, every identifier declared as or initialised from a hosting view and flags those too,
+    with self-tests for the alias shapes and for a plain view under the same kind of name.
 
 ### 2026-09-17 - One agent-policy flow: import a policy file, or draft one, in the same place
 - **Developer label:** "policy file upload and prompt are now in different parts, makle that smooth"

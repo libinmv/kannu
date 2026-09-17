@@ -76,6 +76,29 @@ final class HostedContentRulesTests: XCTestCase {
         XCTAssertEqual(Self.offenders(in: "window.contentView = hostingView()").count, 1)
     }
 
+    /// From CodeRabbit's review of #46: a hosting view under an unrelated name.
+    func testTheScannerFollowsAliases() {
+        XCTAssertEqual(Self.offenders(in: """
+        let view = NSHostingView(rootView: overlay)
+        view.sizingOptions = []
+        window.contentView = view
+        """), [3])
+        XCTAssertEqual(Self.offenders(in: """
+        private var panelHost: NSHostingView<PanelView>?
+        window.contentView = panelHost
+        """), [2])
+        XCTAssertEqual(Self.offenders(in: """
+        let content = FirstMouseHostingView(rootView: ContentView())
+        window.contentView = content
+        """), [2])
+        // A plain view under the same kind of name is not an alias.
+        XCTAssertEqual(Self.offenders(in: """
+        let view = WallpaperTransitionImageView(frame: rect)
+        window.contentView = view
+        """), [])
+        XCTAssertEqual(Self.hostingAliases(in: "let view = NSHostingView(rootView: X())"), ["view"])
+    }
+
     func testTheScannerLeavesTheCuresAndCommentsAlone() {
         XCTAssertEqual(Self.offenders(in: "window.setHostedContent(hostingView)").count, 0)
         XCTAssertEqual(Self.offenders(in: "window.contentView = nil").count, 0)
@@ -90,14 +113,49 @@ final class HostedContentRulesTests: XCTestCase {
     private static let pattern = try! NSRegularExpression(
         pattern: #"\bcontentView\s*=\s*(?:NSHostingView\b|\w*[Hh]osting\w*)"#)
 
-    /// 1-based lines that assign a hosting view straight to `contentView`, comments skipped.
+    /// `let view = NSHostingView(...)`, `var host: NSHostingView<X>`, `= FirstMouseHostingView(...)`:
+    /// a name that does not say "hosting" but holds a hosting view. Collected per file so
+    /// `window.contentView = view` is caught too.
+    private static let aliasPattern = try! NSRegularExpression(
+        pattern: #"\b(?:let|var)\s+(\w+)\s*(?::\s*\w*HostingView\b[^=\n]*)?=\s*\w*HostingView\s*[<(]|\b(?:let|var)\s+(\w+)\s*:\s*\w*HostingView\b"#)
+    private static let assignmentPattern = try! NSRegularExpression(
+        pattern: #"\bcontentView\s*=\s*(\w+)\s*$"#)
+
+    private static func isComment(_ line: Substring) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        return trimmed.hasPrefix("//") || trimmed.hasPrefix("*") || trimmed.hasPrefix("/*")
+    }
+
+    /// Identifiers in `text` that are declared as, or initialised from, a hosting view.
+    static func hostingAliases(in text: String) -> Set<String> {
+        var out: Set<String> = []
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) where !isComment(line) {
+            let string = String(line)
+            for match in aliasPattern.matches(in: string, range: NSRange(string.startIndex..., in: string)) {
+                for group in 1...2 {
+                    if let range = Range(match.range(at: group), in: string) { out.insert(String(string[range])) }
+                }
+            }
+        }
+        return out
+    }
+
+    /// 1-based lines that assign a hosting view straight to `contentView` — by name, by
+    /// constructor, or through an alias declared in the same file. Comments skipped.
     private static func offenders(in text: String) -> [Int] {
+        let aliases = hostingAliases(in: text)
         var out: [Int] = []
         for (index, line) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("//") || trimmed.hasPrefix("*") || trimmed.hasPrefix("/*") { continue }
+            if isComment(line) { continue }
             let string = String(line)
-            if pattern.firstMatch(in: string, range: NSRange(string.startIndex..., in: string)) != nil {
+            let range = NSRange(string.startIndex..., in: string)
+            if pattern.firstMatch(in: string, range: range) != nil {
+                out.append(index + 1)
+                continue
+            }
+            if let match = assignmentPattern.firstMatch(in: string, range: range),
+               let name = Range(match.range(at: 1), in: string).map({ String(string[$0]) }),
+               aliases.contains(name) {
                 out.append(index + 1)
             }
         }
