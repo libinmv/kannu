@@ -17,7 +17,10 @@ mirror_script="scripts/kannu-agent-status.sh"
 # than what is being committed (stage a drifted mirror, keep a matching copy unstaged, and the old
 # check passed). A file not in the index falls back to the working copy.
 committed() { git show ":$1" 2>/dev/null || cat "$1"; }
-if [[ -f "${installer_script}" && -f "${mirror_script}" ]]; then
+# Gate on the index as well: a drifted script staged and then deleted from the working tree (the
+# deletion unstaged) is still what gets committed, and a working-tree gate skipped every check.
+in_index() { git cat-file -e ":$1" 2>/dev/null; }
+if in_index "${installer_script}" && in_index "${mirror_script}"; then
   installer_version="$(committed "${installer_script}" | grep -o 'KANNU_HOOK_SCRIPT_VERSION=[0-9]*' | head -1 || true)"
   mirror_version="$(committed "${mirror_script}" | grep -o 'KANNU_HOOK_SCRIPT_VERSION=[0-9]*' | head -1 || true)"
   if [[ -n "${installer_version}" && "${installer_version}" != "${mirror_version}" ]]; then
@@ -40,7 +43,7 @@ fi
 # (after the embedded copy's 8-space indent), and the Python must contain no backslash: the
 # embedded copy is a plain Swift string literal, where "\n" becomes a newline and "\U" does not
 # compile. Build code points with chr(). See docs/REGRESSIONS.md entry 1.
-if [[ -f "${installer_script}" && -f "${mirror_script}" ]]; then
+if in_index "${installer_script}" && in_index "${mirror_script}"; then
   mirror_body="$(committed "${mirror_script}" | awk "/^python3 <<'PY'\$/{f=1;next} /^PY\$/{f=0} f")"
   if [[ "${mirror_body}" == *\\* ]]; then
     echo "ERROR: ${mirror_script} has a backslash in its Python body. The embedded Swift literal cannot carry one; use chr()."
@@ -63,9 +66,9 @@ fi
 # scripts/kannu-usage-status.sh mirrors it) and drifted unnoticed until v4 because only the
 # agent-status pair was checked. Same rule, same fix.
 usage_mirror_script="scripts/kannu-usage-status.sh"
-if [[ -f "${installer_script}" && -f "${usage_mirror_script}" ]]; then
-  usage_installer_version="$(grep -o 'KANNU_USAGE_SCRIPT_VERSION=[0-9]*' "${installer_script}" | head -1 || true)"
-  usage_mirror_version="$(grep -o 'KANNU_USAGE_SCRIPT_VERSION=[0-9]*' "${usage_mirror_script}" | head -1 || true)"
+if in_index "${installer_script}" && in_index "${usage_mirror_script}"; then
+  usage_installer_version="$(committed "${installer_script}" | grep -o 'KANNU_USAGE_SCRIPT_VERSION=[0-9]*' | head -1 || true)"
+  usage_mirror_version="$(committed "${usage_mirror_script}" | grep -o 'KANNU_USAGE_SCRIPT_VERSION=[0-9]*' | head -1 || true)"
   if [[ -n "${usage_installer_version}" && "${usage_installer_version}" != "${usage_mirror_version}" ]]; then
     cat <<EOF
 ERROR: Usage statusline script mirror is out of sync.

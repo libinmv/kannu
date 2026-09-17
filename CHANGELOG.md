@@ -339,6 +339,12 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     exists to close, and every other check in that hook already reads the index. It now uses
     `git cat-file -e ":${doc}"` and `git show ":${doc}"`. Verified against exactly that case: index broken,
     working tree clean, hook rejects.
+  - **From CodeRabbit's second review of this PR** (posted outside the diff, so it had no thread):
+    the hook-script mirror checks were gated on both files existing in the **working tree**. Stage a
+    drifted script, delete the working copy without staging the deletion, and every check was
+    skipped while the index still carried the drift. Both agent-status gates now ask the index
+    (`in_index`, i.e. `git cat-file -e ":path"`). The usage-statusline check had the same gate and
+    also read both files from disk; it now reads them from the index like its neighbours.
 
 ### 2026-09-13 - The documented clone flow works again
 - **Developer label:** "CONTRIBUTING.md still says cd AgentStatDynamicIsland — the pre-rename repo name"
