@@ -63,6 +63,34 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     `.githooks/pre-commit` runs a fast header/footer subset, reading the index.
   - No Defaults keys, highlight ids, side effects or control behaviour changed; the inventory
     counts are untouched.
+  - **From CodeRabbit's review of this PR:** the scanner now also recognises the older
+    `.foregroundColor(.secondary)` spelling, which surfaced three unselectable status values in
+    Live Activities ("Disabled", two "Inactive") — now selectable; the Lock Screen "Enable media
+    panel blur" unavailable row got the same container selection as its Media-tab twins; and the
+    component pin now covers `SettingsRowLabel` as well as `SettingsStatusText`.
+
+### 2026-09-17 - Act on CodeRabbit's review of #39: queued alerts drain, and reports never keep the Mac's name
+- **Developer label:** "can you merge each mr one by one and see if there are code rabbit comments"
+- **Agent label:** Follow-up 44 — CodeRabbit's three findings on #39, which arrived 14 minutes before it merged and were missed
+- **Changes:**
+  - `ModalPresenter.runAppModal` never drained the alert queue, and four callers use it directly, so
+    an alert queued behind one of theirs waited for the next unrelated alert. It drains now — one
+    main-queue hop after returning, not in place as the review suggested, because a synchronous
+    drain would show the next alert before `present(_:)`'s completion had handled this one's answer.
+  - A Mac whose local name SystemConfiguration cannot read left the diagnostic's file name —
+    `Kannu_<date>_<host>.cpu_resource.diag`, shown to the user and put in the GitHub issue — unredacted.
+    `DiagnosticScrub.fileName` replaces the host component by position, needing no name at all, and
+    `CrashReport.parse` applies it after the host pass; `gethostname(2)` is the second, non-resolving
+    source of the name itself.
+  - `/Volumes/<label>` with a space kept the second word ("Davids MacBook" → "redacted MacBook").
+    A label followed by a path is taken whole now, bounded by the line; a bare volume root still uses
+    the old pattern.
+  - Tests: an unknown host still yields `…_this-mac…` in the name, body and URL; both file-name
+    shapes; spaced, bare and multi-line volume paths.
+  - From CodeRabbit's review of this PR: a bare spaced volume label that ended its line was only
+    half redacted (`/Volumes/redacted MacBook`). A bare label now runs to the end of its line: a
+    spaced label cannot be told apart from prose after it, and these strings go into public issue
+    bodies, so over-redacting the rest of the line is the deliberate trade.
 
 ### 2026-09-16 - An agent policy Kannu can enforce: block ssh (or anything) on Claude Code and Cursor
 - **Developer label:** "how do i set a policy, can i enforce a policy like no agents can use ssh … give a copy prompt for sample policy generation, actually give a block policy if it is possible"
@@ -344,6 +372,67 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     in `createBluetoothAudioDevice` spawns anything now.
   - Not verified here: a real connect (17 devices paired, none connected on this Mac). The claim is
     the call chain, checked by reading; the `sample` check after a connect is still the manual guard.
+### 2026-09-13 - One instruction file every agent can read, and a guard so the copies stop drifting
+- **Developer label:** "libinmv/kannu has … no root AGENTS.md … worth confirming it landed"
+- **Agent label:** Follow-up 39 — it had never landed, and the search found a worse bug next door
+- **Changes:**
+  - **`AGENTS.md` is new and canonical.** It had never existed on any branch. It now carries the
+    vendor-neutral half of `CLAUDE.md` — product context, the architect persona, architecture
+    principles, build/test/run, house conventions, all eight known traps — so Codex, Cursor, Copilot,
+    Aider and Windsurf can read Kannu's standards at all. Until now they landed with no pointer past
+    `ReadMe.md`, while `.agents/skills/kannu-senior-contributor/SKILL.md` sat orphaned with nothing in
+    the repo discovering it.
+  - **`CLAUDE.md` keeps only Claude-Code machinery and imports the rest with `@AGENTS.md`** — the
+    bridge Anthropic documents, because Claude Code reads `CLAUDE.md` and not `AGENTS.md`. The ART
+    framework stays byte-identical and first; the import is the last line, which is what leaves the
+    "before the first tool call" contract where it needs to be. 143 lines became 82 + 156.
+  - **Proven, not assumed.** The sentence "Never claim code was tested…" now appears **zero** times in
+    `CLAUDE.md` and once in `AGENTS.md`, and a print-mode session with **tools stripped** still quotes
+    it — so it came from the import, not from a file read. The negative control (`--safe-mode`, which
+    disables `CLAUDE.md`) returns `NOT LOADED`, which is what makes the pass mean something. A nested
+    session also still produced its ART breakdown, so adherence survived the reordering.
+  - **The bug found next door, and it is the one worth reading about.** The CHANGELOG-entry rule lived
+    in **four prose copies plus one parser, with no guard**. `.cursor/rules/feature-changelog.mdc` —
+    `alwaysApply: true`, injected into every Cursor request — listed the three keys without their
+    literal formatting, so a Cursor agent following it wrote commits the hook rejects. That is the same
+    defect fixed in the `.agents/` skill earlier today, in a second file, live the whole time, and it
+    survived the first fix because nothing knew it was there.
+  - **The fix is a guard, not a fifth paragraph.** `KannuTests/ChangelogRuleDocsTests.swift` scrapes the
+    required keys from the hook's `grep` patterns — not from the hook's own error message, which is
+    itself a copy that can drift from the greps forty lines below it — and requires each key to start a
+    line *inside a fenced template*, de-indented, in every documenting file. A second test walks every
+    `*.md`/`*.mdc` and fails if a file describes the rule without carrying the shape, so copy #5 cannot
+    be born quietly. **Landed red against the live drift first**, naming the file and the fix, then made
+    green. The scanner has five self-tests, including that an email address is not a phantom import.
+  - **Deleting the copies would have been the wrong fix**, and this repo's own history says so: "CI runs
+    on `main` only" was a pointer-shaped claim that went stale, and entry 11's pointer was *narrower
+    than the rule it pointed at*, which is how that invariant got re-broken twice in a file it never
+    named. A copy pinned to the parser beats a pointer pinned to nothing. Unpinned copies: 4 → 0.
+  - `.githooks/pre-commit` gains a millisecond substring tripwire for the same rule, and `AGENTS.md`
+    and `CLAUDE.md` join its CHANGELOG trigger list — it already required an entry for a `.cursor/`
+    rule but not for the file every session reads, which is how the stale CI claim got in untracked.
+  - A guard for a trap that is live rather than theoretical: `AGENTS.md` mentions `@MainActor` twice,
+    and Claude Code parses a bare `@token` outside backticks as a file import. The test rejects one.
+  - **Two stale cross-references fixed in the same commit**, because leaving them would be self-parody:
+    `docs/REGRESSIONS.md` named `CLAUDE.md` as the home of the "first touches of protected resources"
+    trap and of the Danger-zones pointer, both of which moved.
+  - `CONTRIBUTING.md` gains a **Working with AI Agents** section — it asked for an "agent feature label"
+    while telling agents nothing about where to start — plus the TOC entry it was missing for
+    **Before Changing Agent Status Code**.
+  - `docs/REGRESSIONS.md` **entry 16**, added on the file's own stated criterion ("Add one when a bug
+    recurs") with the shape it requires, and a Danger-zones row for the two instruction files.
+  - **From the review of this PR:** the new doc-parity block in `.githooks/pre-commit` read each file from
+    the **working tree**. Staging a template with a key deleted and then restoring that key as an unstaged
+    edit would have passed the check while committing the broken file — the same shape of hole the guard
+    exists to close, and every other check in that hook already reads the index. It now uses
+    `git cat-file -e ":${doc}"` and `git show ":${doc}"`. Verified against exactly that case: index broken,
+    working tree clean, hook rejects.
+  - **From CodeRabbit's second review of this PR** (posted outside the diff, so it had no thread):
+    the hook-script mirror checks were gated on both files existing in the **working tree**. Stage a
+    drifted script, delete the working copy without staging the deletion, and every check was
+    skipped while the index still carried the drift. Both agent-status gates now ask the index
+    (`in_index`, i.e. `git cat-file -e ":path"`). The usage-statusline check had the same gate and
+    also read both files from disk; it now reads them from the index like its neighbours.
 
 ### 2026-09-13 - The documented clone flow works again
 - **Developer label:** "CONTRIBUTING.md still says cd AgentStatDynamicIsland — the pre-rename repo name"

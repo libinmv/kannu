@@ -113,6 +113,23 @@ final class HangReportTests: XCTestCase {
         // A mounted volume is usually named after its owner; an app run from one puts it in every frame.
         let volume = HangReport.scrub("4  Kannu  /Volumes/Davids-MacBook-Pro/Kannu.app/Contents/MacOS/Kannu", home: "/Users/someone")
         XCTAssertEqual(volume, "4  Kannu  /Volumes/redacted/Kannu.app/Contents/MacOS/Kannu")
+        // A label with a space was only half redacted; the rest of the line is untouched.
+        XCTAssertEqual(HangReport.scrub("4  Kannu  /Volumes/Davids MacBook/Kannu.app/Contents/MacOS/Kannu", home: "/Users/someone"),
+                       "4  Kannu  /Volumes/redacted/Kannu.app/Contents/MacOS/Kannu")
+        // A bare volume root, and two frames on two lines.
+        XCTAssertEqual(HangReport.scrub("loaded from /Volumes/Work", home: "/Users/someone"), "loaded from /Volumes/redacted")
+        XCTAssertEqual(HangReport.scrub("a /Volumes/One Disk/x\nb /usr/lib/y", home: "/Users/someone"),
+                       "a /Volumes/redacted/x\nb /usr/lib/y")
+        // A bare spaced label ending its line goes whole — "MacBook" used to survive — and the next
+        // line is untouched.
+        XCTAssertEqual(HangReport.scrub("mounted /Volumes/Davids MacBook\nnext frame", home: "/Users/someone"),
+                       "mounted /Volumes/redacted\nnext frame")
+        XCTAssertEqual(HangReport.scrub("mounted /Volumes/Davids MacBook", home: "/Users/someone"),
+                       "mounted /Volumes/redacted")
+        // Mid-line, a spaced bare label cannot be told apart from prose after it; the deliberate
+        // trade is to redact to the line end rather than leak half a label into an issue body.
+        XCTAssertEqual(HangReport.scrub("/Volumes/Work was slow. More text.\nnext line", home: "/Users/someone"),
+                       "/Volumes/redacted\nnext line")
     }
 
     func testScrubbingKeepsWhatTheReportIsFor() {
