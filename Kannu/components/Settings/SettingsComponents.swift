@@ -127,6 +127,11 @@ struct SettingsRow<Control: View>: View {
         LabeledContent {
             // A grouped Form draws a Toggle as a switch only when the Toggle is the row itself;
             // nested in LabeledContent it would fall back to a checkbox.
+            // `.labelsHidden()` is an ENVIRONMENT modifier: it reaches everything in the slot.
+            // Right for a Toggle/Picker/Stepper (the row draws the title itself); wrong for a
+            // Menu or a popover-anchoring button, whose label and item titles it erases — the
+            // "Policy rules" menu read as dead this way. Those controls go in a raw
+            // LabeledContent or a SettingsActionRow instead (docs/SETTINGS.md).
             control
                 .labelsHidden()
                 .toggleStyle(.switch)
@@ -259,7 +264,9 @@ struct SettingsActionRow<Buttons: View>: View {
     }
 }
 
-/// The "…" button that holds a row's less frequent actions.
+/// The "…" button that holds a row's less frequent actions. Never inside a `SettingsRow`
+/// control slot — the row's `.labelsHidden()` environment erases the menu's label and its
+/// items' titles; use a raw `LabeledContent` (the `analysisRow` shape) instead.
 struct SettingsMoreMenu<Items: View>: View {
     private let accessibilityLabel: Text
     private let items: Items

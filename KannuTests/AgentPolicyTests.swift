@@ -146,6 +146,15 @@ final class AgentPolicyTests: XCTestCase {
         XCTAssertEqual(try AgentPolicy.load(at: destination).get().rules, policy.rules)
     }
 
+    /// The View-rules box renders from these; a rule with both keys absent cannot exist past
+    /// the parser, so the fallbacks are belt and braces.
+    func testRuleDisplayHelpers() {
+        XCTAssertEqual(AgentPolicy.Rule(command: "rm -rf /", tool: nil, reason: nil).displayTitle, "rm -rf /")
+        XCTAssertEqual(AgentPolicy.Rule(command: "ssh", tool: nil, reason: nil).displayIconName, "terminal")
+        XCTAssertEqual(AgentPolicy.Rule(command: nil, tool: "WebFetch", reason: nil).displayTitle, "WebFetch")
+        XCTAssertEqual(AgentPolicy.Rule(command: nil, tool: "WebFetch", reason: nil).displayIconName, "wrench.and.screwdriver")
+    }
+
     func testTheDraftingPromptStatesTheFormatAndTheCaps() {
         let prompt = AgentPolicy.draftingPrompt
         XCTAssertTrue(prompt.contains("~/.kannu/agent-policy.json"))

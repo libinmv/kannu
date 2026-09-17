@@ -36,6 +36,12 @@ All in `Kannu/components/Settings/SettingsComponents.swift`. Never rebuild these
 
 ## Section rules
 
+- `SettingsRow`'s control slot is for controls whose own label the row replaces — Toggle, Picker,
+  Stepper. It applies `.labelsHidden()` to the whole slot, an environment modifier: a `Menu` or a
+  popover-anchoring button placed there loses its label and its items' titles and reads as dead
+  (the "Policy rules" "…" bug). Such controls go in a raw `LabeledContent` with a
+  `SettingsRowLabel` (the `analysisRow` shape) or a `SettingsActionRow`.
+
 - One concern per `Section`; separate concerns get separate Sections, never a `Divider` inside one.
 - Every row with a `settingsSearchIndex` entry carries a `.settingsHighlight(id:)` whose id
   matches the entry exactly (`SettingsHighlightInventoryTests` pins the pairing and the counts;
