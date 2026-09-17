@@ -202,7 +202,6 @@ struct AgentTrafficLightIndicator: View {
 
 struct AgentTrafficLightLiveActivity: View {
     @EnvironmentObject var vm: KannuViewModel
-    @ObservedObject private var monitor = CursorAgentStatusMonitor.shared
     @ObservedObject private var findingsStore = SecurityFindingsStore.shared
     @ObservedObject private var doNotDisturb = DoNotDisturbManager.shared
     @Default(.adrHighAlertMode) private var highAlertMode

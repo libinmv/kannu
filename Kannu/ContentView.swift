@@ -45,7 +45,12 @@ struct ContentView: View {
     @ObservedObject var notchSkinManager = NotchSkinManager.shared
     @ObservedObject var statsManager = StatsManager.shared
     @ObservedObject var recordingManager = ScreenRecordingManager.shared
-    @ObservedObject var agentStatusMonitor = CursorAgentStatusMonitor.shared
+    // NOT @ObservedObject: the monitor publishes `sessions` on every hook write (~20 Hz under a
+    // busy agent) and this view reads none of it — observing the whole object re-ran this body
+    // per write (38 % CPU, Release, measured). The closed notch observes the narrow projection
+    // below; the latch consume in `noteAgentActivityPulse` still goes through the monitor.
+    private let agentStatusMonitor = CursorAgentStatusMonitor.shared
+    @ObservedObject private var agentLight = CursorAgentStatusMonitor.shared.projection
     @ObservedObject private var securityFindings = SecurityFindingsStore.shared
     @Default(.adrHighAlertMode) private var adrHighAlertMode
     @ObservedObject var easterEggManager = EasterEggAnimationManager.shared
@@ -495,7 +500,7 @@ struct ContentView: View {
     }
 
     private var showAgentTrafficLight: Bool {
-        guard enableAgentStatusFeature, agentStatusMonitor.shouldShowTrafficLight || securityCueWanted else { return false }
+        guard enableAgentStatusFeature, agentLight.shouldShowTrafficLight || securityCueWanted else { return false }
         // Notched displays used to show the light for as long as a session existed; they now
         // share the same activity-refreshed window so the band collapses between events.
         guard hideUntilHoverAppliesHere || isPhysicalNotchScreen else { return true }
@@ -982,7 +987,7 @@ struct ContentView: View {
                 // unreliable); the window-cleanup path calls this before closing.
                 vm.onViewTeardown = { performViewTeardown() }
             }
-            .onChange(of: agentStatusMonitor.activityPulse) { _, _ in
+            .onChange(of: agentLight.activityPulse) { _, _ in
                 noteAgentActivityPulse()
                 syncHiddenEdgeHoverPolling()
             }
@@ -1547,7 +1552,7 @@ struct ContentView: View {
                 .contentShape(Rectangle())
                 .onHover { hovering in
                     guard enableAgentStatusFeature,
-                        agentStatusMonitor.shouldShowTrafficLight
+                        agentLight.shouldShowTrafficLight
                     else { return }
 
                     handleRegionHoverOpen(hovering, focus: .agentStatus)
@@ -2515,7 +2520,7 @@ struct ContentView: View {
                 coordinator.currentView = .timer
             }
         } else if enableAgentStatusFeature
-            && agentStatusMonitor.shouldShowTrafficLight
+            && agentLight.shouldShowTrafficLight
             && !isClosedMusicPairingEligible {
             // Previously gated to `currentView == .home` only, so hovering while on
             // Notes/Stats/etc. never surfaced active agent work. Requested change:
