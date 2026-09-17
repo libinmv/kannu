@@ -71,6 +71,81 @@ final class AgentPolicyTests: XCTestCase {
         XCTAssertEqual(try AgentPolicy.load(at: file).get().rules.count, 1)
     }
 
+    // MARK: - Import: the one write, validated first
+
+    private func makeTempDir() throws -> URL {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("kannu-import-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    func testImportCopiesAValidFileByteForByteAndCreatesTheFolder() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let source = dir.appendingPathComponent("picked.json")
+        // Odd spacing on purpose: the write is the picked bytes verbatim, never a re-serialisation.
+        let bytes = Data(#"{ "version": 1,  "block": [ {"command": "ssh"} ] }"#.utf8)
+        try bytes.write(to: source)
+        let destination = dir.appendingPathComponent("nested/deeper/agent-policy.json")
+        let policy = try AgentPolicy.importPolicy(from: source, to: destination).get()
+        XCTAssertEqual(policy.rules, [.init(command: "ssh", tool: nil, reason: nil)])
+        XCTAssertEqual(try Data(contentsOf: destination), bytes)
+    }
+
+    func testImportOfAnInvalidFileWritesNothingAndKeepsTheExistingPolicy() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let destination = dir.appendingPathComponent("agent-policy.json")
+        let existing = Data(#"{"version": 1, "block": [{"tool": "WebFetch"}]}"#.utf8)
+        try existing.write(to: destination)
+        let bad = dir.appendingPathComponent("bad.json")
+        try Data("not json".utf8).write(to: bad)
+        XCTAssertEqual(AgentPolicy.importPolicy(from: bad, to: destination), .failure(.notJSON))
+        XCTAssertEqual(try Data(contentsOf: destination), existing, "a failed import must not touch the existing file")
+        // A missing pick and a directory pick are refused the same way.
+        XCTAssertEqual(AgentPolicy.importPolicy(from: dir.appendingPathComponent("gone.json"), to: destination), .failure(.unreadable))
+        XCTAssertEqual(AgentPolicy.importPolicy(from: dir, to: destination), .failure(.unreadable))
+        XCTAssertEqual(try Data(contentsOf: destination), existing)
+    }
+
+    func testImportRefusesAnOversizeFileBySizeAlone() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let big = dir.appendingPathComponent("big.json")
+        try Data(repeating: UInt8(ascii: " "), count: AgentPolicy.maxBytes + 1).write(to: big)
+        let destination = dir.appendingPathComponent("agent-policy.json")
+        guard case .failure(.tooLarge) = AgentPolicy.importPolicy(from: big, to: destination) else {
+            return XCTFail("an oversize pick must be refused")
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
+    }
+
+    /// A valid pick whose destination cannot be written says so — not "could not be read", which
+    /// would blame the file the user chose.
+    func testAnUnwritableDestinationIsReportedAsSuch() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let source = dir.appendingPathComponent("good.json")
+        try Data(#"{"version": 1, "block": [{"command": "ssh"}]}"#.utf8).write(to: source)
+        // A regular file where the destination's folder should be: the write cannot succeed.
+        let blocker = dir.appendingPathComponent("blocker")
+        try Data().write(to: blocker)
+        let destination = blocker.appendingPathComponent("agent-policy.json")
+        XCTAssertEqual(AgentPolicy.importPolicy(from: source, to: destination), .failure(.notWritten))
+    }
+
+    func testImportReplacesAnExistingPolicy() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let destination = dir.appendingPathComponent("agent-policy.json")
+        try Data(#"{"version": 1, "block": [{"tool": "WebFetch"}]}"#.utf8).write(to: destination)
+        let source = dir.appendingPathComponent("new.json")
+        try Data(#"{"version": 1, "block": [{"command": "scp"}]}"#.utf8).write(to: source)
+        let policy = try AgentPolicy.importPolicy(from: source, to: destination).get()
+        XCTAssertEqual(policy.rules, [.init(command: "scp", tool: nil, reason: nil)])
+        XCTAssertEqual(try AgentPolicy.load(at: destination).get().rules, policy.rules)
+    }
+
     func testTheDraftingPromptStatesTheFormatAndTheCaps() {
         let prompt = AgentPolicy.draftingPrompt
         XCTAssertTrue(prompt.contains("~/.kannu/agent-policy.json"))
@@ -82,7 +157,7 @@ final class AgentPolicyTests: XCTestCase {
     }
 
     func testEveryLoadErrorHasWords() {
-        let errors: [AgentPolicy.LoadError] = [.notFound, .unreadable, .notJSON, .tooLarge(70_000), .notAnObject, .version,
+        let errors: [AgentPolicy.LoadError] = [.notFound, .unreadable, .notWritten, .notJSON, .tooLarge(70_000), .notAnObject, .version,
                                                .tooManyRules(201), .rule(3, "x")]
         for error in errors { XCTAssertFalse(error.message.isEmpty, "\(error)") }
         XCTAssertTrue(AgentPolicy.LoadError.rule(3, "x").message.contains("Rule 4"))

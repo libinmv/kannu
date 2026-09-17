@@ -227,9 +227,12 @@ A JSON file you write, `~/.kannu/agent-policy.json`, naming commands and tools a
   `version` not 1, a rule with neither key — means **no policy**; the hook never fails closed on
   its own configuration, and Settings → Agents → **Agent policy** says why.
 
-Kannu never writes this file. **Copy a prompt that drafts a policy** puts a prompt on the clipboard
-for your own agent — the format, the rules above, and "ask me which commands and tools" — the same
-way Copy install command and Copy for agent work.
+Kannu never writes rules of its own. **Import…** is the only way Kannu writes this file: it
+copies a JSON file you chose, byte for byte, after checking it with the same rules as above; a file
+that would not count is never written, so a bad import cannot replace a working policy.
+**Copy a prompt that drafts a policy** puts a prompt on the clipboard for your own agent — the
+format, the rules above, and "ask me which commands and tools" — the same way Copy install command
+and Copy for agent work. Both sit on the **Get a policy** row, next to the status of the file.
 
 Every match is recorded as a finding (`policy_command` / `policy_tool`) with the rule, the tool,
 and whether the call was refused or ran. **Block matching tool calls** (off by default) is what

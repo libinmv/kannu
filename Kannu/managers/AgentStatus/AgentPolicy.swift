@@ -19,8 +19,9 @@
 import Foundation
 
 /// The user's agent policy: `~/.kannu/agent-policy.json`, commands and tools an agent may not
-/// use. Kannu never writes it. The hook is the only matcher; this type reads and checks the file
-/// so Settings can say what it holds, or why the hook is ignoring it. The two agree on what is
+/// use. Kannu never writes rules of its own; the only write is `importPolicy`, which copies a
+/// file the user chose, byte for byte, after checking it. The hook is the only matcher; this
+/// type reads and checks the file so Settings can say what it holds, or why the hook is ignoring it. The two agree on what is
 /// *valid* — the caps and the shape below mirror the hook's `load_policy` — and never on what
 /// *matches*, so matching lives in one place and cannot drift (docs/REGRESSIONS.md entry 1).
 struct AgentPolicy: Equatable {
@@ -50,6 +51,8 @@ struct AgentPolicy: Equatable {
         case version
         case tooManyRules(Int)
         case rule(Int, String)
+        /// Import only: the picked file was valid but could not be written into place.
+        case notWritten
 
         /// Plain words for Settings; the hook ignores the file for the same reason.
         var message: String {
@@ -62,6 +65,7 @@ struct AgentPolicy: Equatable {
             case .version: return String(localized: "\"version\" must be 1.")
             case .tooManyRules(let count): return String(localized: "\(count) rules; the limit is \(maxRules).")
             case .rule(let index, let why): return String(localized: "Rule \(index + 1): \(why)")
+            case .notWritten: return String(localized: "The file is valid, but ~/.kannu/agent-policy.json could not be written.")
             }
         }
     }
@@ -109,6 +113,37 @@ struct AgentPolicy: Equatable {
             }
         }
         return .success(AgentPolicy(rules: rules))
+    }
+
+    /// Copies a policy file the user picked into place — the "Import…" button. The source is
+    /// validated with the same parser the status row uses; a file that would not count as a
+    /// policy is never written, so Import cannot break a working policy. The write is the copied
+    /// bytes verbatim (no re-serialisation), atomic, after creating `~/.kannu` if needed.
+    /// This is the one place Kannu writes the policy file, and only a user's click reaches it.
+    static func importPolicy(from source: URL, to destination: URL = fileURL) -> Result<AgentPolicy, LoadError> {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: source.path, isDirectory: &isDirectory),
+              !isDirectory.boolValue else { return .failure(.unreadable) }
+        // Size first, so a huge pick is refused without reading it whole.
+        if let size = (try? FileManager.default.attributesOfItem(atPath: source.path))?[.size] as? Int,
+           size > maxBytes {
+            return .failure(.tooLarge(size))
+        }
+        guard let data = try? Data(contentsOf: source) else { return .failure(.unreadable) }
+        switch parse(data) {
+        case .failure(let error):
+            return .failure(error)
+        case .success(let policy):
+            let directory = destination.deletingLastPathComponent()
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            do {
+                try data.write(to: destination, options: .atomic)
+            } catch {
+                // Not `.unreadable`: the pick was fine, the destination was not — say which.
+                return .failure(.notWritten)
+            }
+            return .success(policy)
+        }
     }
 
     /// Non-empty, capped, no control characters — the hook's `policy_text`.
