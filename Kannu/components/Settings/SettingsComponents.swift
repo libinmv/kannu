@@ -30,11 +30,38 @@ import SwiftUI
 // The full construction rules live in docs/SETTINGS.md, and SettingsLayoutRulesTests enforces
 // them against the sources — including that these components keep their .textSelection.
 
+/// The numbers every Settings row is built from. One place, so two rows in one section cannot
+/// disagree about how wide a slider is or how far a description sits under its title.
+///
+/// Read the content standard in docs/SETTINGS.md before adding one: a token earns its place by
+/// appearing in more than one component, not by naming a value used once.
+enum SettingsMetrics {
+    /// Title to description inside a row's label.
+    static let labelStack: CGFloat = 2
+    /// Between the pieces of a row's trailing content (slider and value, value and stepper, buttons).
+    static let rowContent: CGFloat = 8
+    /// Between lines of a multi-line footer.
+    static let footerStack: CGFloat = 6
+    /// The whole trailing control column of a slider or stepper row — the slider and its readout.
+    static let sliderWidth: CGFloat = 220
+    /// The readout at the trailing edge of that column. A `minWidth`, so a long value still fits.
+    static let valueColumn: CGFloat = 40
+    /// The ready/not-ready dot in a status line.
+    static let statusDot: CGFloat = 7
+    /// Inside a card (a callout, an expanded detail panel) — the one place padding belongs.
+    static let cardPadding: CGFloat = 12
+    static let cardCornerRadius: CGFloat = 12
+}
+
 extension View {
     /// Secondary explanatory text: wraps, and can be selected and copied.
-    func settingsDescriptionStyle() -> some View {
+    ///
+    /// Every secondary line in Settings goes through this — descriptions, footers, status lines,
+    /// errors. Pass a `tint` only when the colour carries meaning (red for an error, orange for a
+    /// partial result); the default secondary is what the rest of the surface uses.
+    func settingsDescriptionStyle(tint: Color? = nil) -> some View {
         font(.subheadline)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(tint.map { AnyShapeStyle($0) } ?? AnyShapeStyle(.secondary))
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
     }
@@ -44,6 +71,9 @@ extension View {
 struct SettingsRowLabel: View {
     private let title: Text
     private let description: Text?
+    /// Nil is the ordinary secondary description. A colour here means the colour carries meaning —
+    /// orange for a partial result, red for a failure — not decoration.
+    private var descriptionTint: Color?
 
     init(_ title: LocalizedStringKey) {
         self.title = Text(title)
@@ -53,6 +83,14 @@ struct SettingsRowLabel: View {
     init(_ title: LocalizedStringKey, description: LocalizedStringKey) {
         self.title = Text(title)
         self.description = Text(description)
+    }
+
+    /// The description in a colour that means something.
+    @_disfavoredOverload
+    init(_ title: LocalizedStringKey, description: String, tint: Color?) {
+        self.title = Text(title)
+        self.description = Text(verbatim: description)
+        descriptionTint = tint
     }
 
     /// For descriptions built at run time (already localised), such as a mode's explanation.
@@ -75,12 +113,55 @@ struct SettingsRowLabel: View {
         self.description = description
     }
 
+    /// For a title already built as a `Text` — a localised key with a value interpolated into it,
+    /// say — so the catalog key stays exactly as it is.
+    init(_ title: Text, description: Text? = nil) {
+        self.title = title
+        self.description = description
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: SettingsMetrics.labelStack) {
             title
             if let description {
-                description.settingsDescriptionStyle()
+                description.settingsDescriptionStyle(tint: descriptionTint)
             }
+        }
+    }
+}
+
+/// A row that only says something — a title with an explanation under it and no control, for a
+/// state the user cannot act on here ("Blur is managed automatically"). It is a row, not a loose
+/// `VStack`, so its leading edge lines up with the rows around it instead of running the full
+/// width of the section.
+struct SettingsNoteRow: View {
+    private let label: SettingsRowLabel
+
+    init(_ title: LocalizedStringKey, description: LocalizedStringKey) {
+        label = SettingsRowLabel(title, description: description)
+    }
+
+    @_disfavoredOverload
+    init(_ title: LocalizedStringKey, description: String) {
+        label = SettingsRowLabel(title, description: description)
+    }
+
+    /// The description in a colour that means something (orange for a partial result).
+    @_disfavoredOverload
+    init(_ title: LocalizedStringKey, description: String, tint: Color?) {
+        label = SettingsRowLabel(title, description: description, tint: tint)
+    }
+
+    @_disfavoredOverload
+    init(verbatim title: String, description: String? = nil) {
+        label = SettingsRowLabel(verbatim: title, description: description)
+    }
+
+    var body: some View {
+        LabeledContent {
+            EmptyView()
+        } label: {
+            label
         }
     }
 }
@@ -141,17 +222,56 @@ struct SettingsRow<Control: View>: View {
     }
 }
 
-/// A slider row: the title on the leading side, the slider and its current value trailing, at one
-/// width across Settings.
+/// A slider row: the title (and optional description) on the leading side, the slider and its
+/// current value trailing, at one width across Settings.
+///
+/// A row whose value already reads in its title passes `valueText: nil`; the readout column stays
+/// reserved, so the slider bar itself is the same length as every other slider on the surface.
 struct SettingsSliderRow<Value: BinaryFloatingPoint>: View where Value.Stride: BinaryFloatingPoint {
-    private let title: Text
-    private let valueText: Text
+    private let label: SettingsRowLabel
+    private let accessibilityTitle: Text
+    private let valueText: Text?
     @Binding private var value: Value
     private let range: ClosedRange<Value>
-    private let step: Value.Stride
+    private let step: Value.Stride?
 
-    init(_ title: LocalizedStringKey, value: Binding<Value>, in range: ClosedRange<Value>, step: Value.Stride, valueText: Text) {
-        self.title = Text(title)
+    init(_ title: LocalizedStringKey, value: Binding<Value>, in range: ClosedRange<Value>,
+         step: Value.Stride? = nil, valueText: Text?) {
+        label = SettingsRowLabel(title)
+        accessibilityTitle = Text(title)
+        self.valueText = valueText
+        _value = value
+        self.range = range
+        self.step = step
+    }
+
+    init(_ title: LocalizedStringKey, description: LocalizedStringKey, value: Binding<Value>,
+         in range: ClosedRange<Value>, step: Value.Stride? = nil, valueText: Text?) {
+        label = SettingsRowLabel(title, description: description)
+        accessibilityTitle = Text(title)
+        self.valueText = valueText
+        _value = value
+        self.range = range
+        self.step = step
+    }
+
+    /// For a title, or a description, built at run time — including a title that carries the value.
+    @_disfavoredOverload
+    init(verbatim title: String, description: String? = nil, value: Binding<Value>,
+         in range: ClosedRange<Value>, step: Value.Stride? = nil, valueText: Text?) {
+        label = SettingsRowLabel(verbatim: title, description: description)
+        accessibilityTitle = Text(verbatim: title)
+        self.valueText = valueText
+        _value = value
+        self.range = range
+        self.step = step
+    }
+
+    /// For a title built as a `Text` elsewhere (a localised key with the value interpolated in).
+    init(title: Text, value: Binding<Value>, in range: ClosedRange<Value>,
+         step: Value.Stride? = nil, valueText: Text?) {
+        label = SettingsRowLabel(title, description: nil)
+        accessibilityTitle = title
         self.valueText = valueText
         _value = value
         self.range = range
@@ -160,20 +280,104 @@ struct SettingsSliderRow<Value: BinaryFloatingPoint>: View where Value.Stride: B
 
     var body: some View {
         LabeledContent {
-            HStack(spacing: 8) {
-                Slider(value: $value, in: range, step: step) {
-                    title
+            HStack(spacing: SettingsMetrics.rowContent) {
+                slider
+                    .labelsHidden()
+                if let valueText {
+                    valueText
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .frame(minWidth: SettingsMetrics.valueColumn, alignment: .trailing)
+                } else {
+                    // The readout column stays reserved so every slider bar is the same length.
+                    Color.clear
+                        .frame(width: SettingsMetrics.valueColumn, height: 0)
+                        .accessibilityHidden(true)
                 }
-                .labelsHidden()
+            }
+            .frame(width: SettingsMetrics.sliderWidth)
+        } label: {
+            label
+        }
+    }
+
+    @ViewBuilder
+    private var slider: some View {
+        if let step {
+            Slider(value: $value, in: range, step: step) { accessibilityTitle }
+        } else {
+            Slider(value: $value, in: range) { accessibilityTitle }
+        }
+    }
+}
+
+/// A stepper row: the title (and optional description) on the leading side, the current value and
+/// the stepper trailing, in the same column a slider row uses.
+struct SettingsStepperRow<Value: Strideable>: View {
+    private let label: SettingsRowLabel
+    private let accessibilityTitle: Text
+    private let valueText: Text
+    @Binding private var value: Value
+    private let range: ClosedRange<Value>
+    private let step: Value.Stride
+
+    init(_ title: LocalizedStringKey, value: Binding<Value>, in range: ClosedRange<Value>,
+         step: Value.Stride = 1, valueText: Text) {
+        label = SettingsRowLabel(title)
+        accessibilityTitle = Text(title)
+        self.valueText = valueText
+        _value = value
+        self.range = range
+        self.step = step
+    }
+
+    init(_ title: LocalizedStringKey, description: LocalizedStringKey, value: Binding<Value>,
+         in range: ClosedRange<Value>, step: Value.Stride = 1, valueText: Text) {
+        label = SettingsRowLabel(title, description: description)
+        accessibilityTitle = Text(title)
+        self.valueText = valueText
+        _value = value
+        self.range = range
+        self.step = step
+    }
+
+    /// For a title, or a description, built at run time.
+    @_disfavoredOverload
+    init(verbatim title: String, description: String? = nil, value: Binding<Value>,
+         in range: ClosedRange<Value>, step: Value.Stride = 1, valueText: Text) {
+        label = SettingsRowLabel(verbatim: title, description: description)
+        accessibilityTitle = Text(verbatim: title)
+        self.valueText = valueText
+        _value = value
+        self.range = range
+        self.step = step
+    }
+
+    /// For a title built as a `Text` elsewhere.
+    init(title: Text, value: Binding<Value>, in range: ClosedRange<Value>,
+         step: Value.Stride = 1, valueText: Text) {
+        label = SettingsRowLabel(title, description: nil)
+        accessibilityTitle = title
+        self.valueText = valueText
+        _value = value
+        self.range = range
+        self.step = step
+    }
+
+    var body: some View {
+        LabeledContent {
+            HStack(spacing: SettingsMetrics.rowContent) {
                 valueText
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
-                    .frame(minWidth: 40, alignment: .trailing)
+                    .frame(minWidth: SettingsMetrics.valueColumn, alignment: .trailing)
+                Stepper(value: $value, in: range, step: step) { accessibilityTitle }
+                    .labelsHidden()
             }
-            .frame(width: 220)
         } label: {
-            title
+            label
         }
     }
 }
@@ -221,6 +425,23 @@ struct SettingsFooter: View {
     }
 }
 
+/// Several footer lines under one group, at one spacing. Wrap `SettingsFooter`s in it rather than
+/// hand-rolling a `VStack`, so two sections cannot space their footers differently.
+struct SettingsFooterStack<Content: View>: View {
+    private let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SettingsMetrics.footerStack) {
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 /// One or more buttons on the trailing side of a row, with an optional title and description on
 /// the leading side — never a lone button hanging on the left.
 struct SettingsActionRow<Buttons: View>: View {
@@ -251,12 +472,12 @@ struct SettingsActionRow<Buttons: View>: View {
     var body: some View {
         if let label {
             LabeledContent {
-                HStack(spacing: 8) { buttons }
+                HStack(spacing: SettingsMetrics.rowContent) { buttons }
             } label: {
                 label
             }
         } else {
-            HStack(spacing: 8) {
+            HStack(spacing: SettingsMetrics.rowContent) {
                 Spacer(minLength: 0)
                 buttons
             }
@@ -319,18 +540,21 @@ struct SettingsStatusText: View {
     }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
+        HStack(alignment: .firstTextBaseline, spacing: SettingsMetrics.footerStack) {
             Circle()
                 .fill(isReady ? Color.green : Color.secondary.opacity(0.5))
-                .frame(width: 7, height: 7)
+                .frame(width: SettingsMetrics.statusDot, height: SettingsMetrics.statusDot)
                 .accessibilityHidden(true)
             Text(verbatim: text)
                 .settingsDescriptionStyle()
+                .lineLimit(2)
+                .truncationMode(.middle)
         }
     }
 }
 
-/// An error line under a control: red, selectable.
+/// An error line under a control: red, selectable. Routed through the shared description style so
+/// it is the same size as every other secondary line and moves with them.
 struct SettingsErrorText: View {
     private let text: String
 
@@ -340,10 +564,7 @@ struct SettingsErrorText: View {
 
     var body: some View {
         Text(verbatim: text)
-            .font(.subheadline)
-            .foregroundStyle(.red)
-            .fixedSize(horizontal: false, vertical: true)
-            .textSelection(.enabled)
+            .settingsDescriptionStyle(tint: .red)
     }
 }
 

@@ -32,6 +32,9 @@ import XCTest
 ///    a row that quietly lost copyability.
 /// 4. The shared components themselves keep their `.textSelection`, so a refactor cannot strip
 ///    selectability from every user at once.
+/// 5. The content standard, pinned the same way: no ad-hoc font on row text, no hand-built
+///    `Slider`, no padding on a row. Each is a per-file count with a reason, so the survivors are
+///    a deliberate list (cards, chips, previews, popovers) and a new one is an edit here.
 final class SettingsLayoutRulesTests: XCTestCase {
 
     // MARK: - Rule 1: headers
@@ -67,8 +70,8 @@ final class SettingsLayoutRulesTests: XCTestCase {
         "IdleAnimationsSettingsSection.swift": 2,   // "Add" / "Add New" — labels of a tappable card
         "MusicSlotConfigurationView.swift": 1,      // palette item label — draggable/tappable chip
         "SecurityFindingRow.swift": 1,              // severity badge chip, accessibility-hidden
-        "SettingsView.swift": 10,                   // badges, tappable style cards, slider-label
-                                                    // readouts, container-selectable blur rows
+        "SettingsView.swift": 6,                    // badges and tappable style cards: a
+                                                    // selectable label swallows the card's click
     ]
 
     func testEveryInformationalTextIsSelectableOrPinned() {
@@ -98,13 +101,88 @@ final class SettingsLayoutRulesTests: XCTestCase {
         }
     }
 
+    // MARK: - Rule 5: the content standard
+
+    /// Lines carrying a caption-sized or pixel-sized font. Every survivor is a badge or chip, a
+    /// glyph, or text inside a card, popover or preview that has its own compact scale — never a
+    /// row's title or description, which use the Form's type and `settingsDescriptionStyle()`.
+    private static let pinnedAdHocFontCounts: [String: Int] = [
+        "AnimationEditorView.swift": 11,     // the animation editor sheet: its own dense scale
+        "ExtensionsSettings.swift": 1,       // the empty state's 48-pt glyph
+        "IdleAnimationsSettingsSection.swift": 9,  // animation cards, their chips, the URL sheet
+        "MusicSlotConfigurationView.swift": 7,     // the slot canvas and its draggable chips
+        "SecurityFindingRow.swift": 2,       // the severity badge chips
+        "SettingsView.swift": 33,            // sidebar chrome and search results, style and HUD
+                                             // cards, previews, the colour popover, the
+                                             // timer-preset editor, badge capsules
+        "SpotifyAuthSettingsSection.swift": 6,     // the sign-in card
+        "SpotifyLoginSheet.swift": 1,        // a sheet, not a Form
+    ]
+
+    func testRowTextUsesTheFormsTypeOrTheSharedStyle() {
+        assertPinnedCounts(Self.pinnedAdHocFontCounts, scanner: Self.adHocFontLines,
+                           rule: "a caption-sized or pixel-sized font",
+                           cure: "row text uses the Form's own type, and every secondary line goes through settingsDescriptionStyle()")
+    }
+
+    /// Lines building a `Slider` by hand. `SettingsSliderRow` is the only shape a Settings *row*
+    /// may use, so these are the ones that are not rows.
+    private static let pinnedInlineSliderCounts: [String: Int] = [
+        "AnimationEditorView.swift": 3,      // the animation editor sheet
+        "SettingsComponents.swift": 2,       // SettingsSliderRow itself, stepped and unstepped
+        "SettingsView.swift": 1,             // the OSD preview card's own level slider
+    ]
+
+    func testNoSliderIsBuiltByHandInARow() {
+        assertPinnedCounts(Self.pinnedInlineSliderCounts, scanner: Self.inlineSliderLines,
+                           rule: "a hand-built Slider",
+                           cure: "a slider row is SettingsSliderRow — one width, one readout column")
+    }
+
+    /// Lines adding padding. A grouped `Form` pads its own rows, so padding here belongs to a
+    /// card, a chip, a popover, a preview or an empty state — never to a row, which would make
+    /// that one row taller than its neighbours.
+    private static let pinnedRowPaddingCounts: [String: Int] = [
+        "AnimationEditorView.swift": 8,      // the editor sheet
+        "EditPanelView.swift": 1,            // a panel, not a Form
+        "ExtensionsSettings.swift": 5,       // the empty state and the expanded detail card
+        "IdleAnimationsSettingsSection.swift": 8,  // animation cards, chips, the URL sheet
+        "MusicSlotConfigurationView.swift": 5,     // the slot canvas
+        "PolicyRulesView.swift": 1,          // the popover
+        "SecurityFindingRow.swift": 3,       // the finding card and its badge
+        "SettingsView.swift": 42,            // sidebar chrome, badge capsules, style and HUD
+                                             // cards, previews, the colour popover
+        "SpotifyAuthSettingsSection.swift": 1,     // the sign-in card
+        "SpotifyLoginSheet.swift": 1,        // a sheet, not a Form
+    ]
+
+    func testNoRowPadsItself() {
+        assertPinnedCounts(Self.pinnedRowPaddingCounts, scanner: Self.paddingLines,
+                           rule: "a padding",
+                           cure: "a row in a grouped Form adds none — the Form pads it")
+    }
+
+    /// The tokens exist and something reads each of them, so a number cannot drift back into a
+    /// row and a token cannot linger after its last user is gone.
+    func testEveryMetricTokenIsDeclaredAndUsed() throws {
+        let sources = Self.settingsSources()
+        let components = try XCTUnwrap(sources["SettingsComponents.swift"],
+                                       "SettingsComponents.swift not found")
+        for token in ["labelStack", "rowContent", "footerStack", "sliderWidth", "valueColumn",
+                      "statusDot", "cardPadding"] {
+            XCTAssertTrue(components.contains("static let \(token)"),
+                          "SettingsMetrics.\(token) is gone — update docs/SETTINGS.md with it")
+            XCTAssertTrue(sources.values.contains { $0.contains("SettingsMetrics.\(token)") },
+                          "SettingsMetrics.\(token) is declared but nothing reads it")
+        }
+    }
+
     // MARK: - Rule 4: the components stay selectable
 
     func testTheSharedComponentsKeepTheirTextSelection() throws {
         let text = try XCTUnwrap(Self.settingsSources()["SettingsComponents.swift"],
                                  "SettingsComponents.swift not found")
-        for component in ["SettingsSectionHeader", "SettingsFooter", "SettingsValueText",
-                          "SettingsErrorText"] {
+        for component in ["SettingsSectionHeader", "SettingsFooter", "SettingsValueText"] {
             let region = Self.region(of: component, in: text)
             XCTAssertNotNil(region, "\(component) is gone — update this test and docs/SETTINGS.md")
             if let region {
@@ -112,12 +190,14 @@ final class SettingsLayoutRulesTests: XCTestCase {
                               "\(component) lost its .textSelection — every caller loses copyability at once")
             }
         }
-        // SettingsStatusText and SettingsRowLabel select through settingsDescriptionStyle().
-        for component in ["SettingsStatusText", "SettingsRowLabel"] {
+        // These select through settingsDescriptionStyle, which carries the .textSelection — and,
+        // for the tinted ones, keeps them the same size as every other secondary line.
+        for component in ["SettingsStatusText", "SettingsRowLabel", "SettingsErrorText"] {
             let region = Self.region(of: component, in: text)
-            XCTAssertNotNil(region)
+            XCTAssertNotNil(region, "\(component) is gone — update this test and docs/SETTINGS.md")
             if let region {
-                XCTAssertTrue(region.contains("settingsDescriptionStyle()"))
+                XCTAssertTrue(region.contains("settingsDescriptionStyle("),
+                              "\(component) stopped going through settingsDescriptionStyle — it loses selectability and drifts off the type scale")
             }
         }
         let style = Self.region(of: "View", in: text) ?? text
@@ -176,6 +256,24 @@ final class SettingsLayoutRulesTests: XCTestCase {
         XCTAssertEqual(Self.unselectableInformationalChains(in: "Text(\"title\")").count, 0)
     }
 
+    func testTheContentStandardScannersCatchPlantedOffenders() {
+        XCTAssertEqual(Self.adHocFontLines(in: "Text(\"x\").font(.caption)").count, 1)
+        XCTAssertEqual(Self.adHocFontLines(in: "Text(\"x\").font(.caption2)").count, 1)
+        XCTAssertEqual(Self.adHocFontLines(in: "Text(\"x\").font(.system(size: 11))").count, 1)
+        XCTAssertEqual(Self.adHocFontLines(in: "Text(\"x\").font(.system(.caption, design: .monospaced))").count, 1)
+        XCTAssertEqual(Self.adHocFontLines(in: "// .font(.caption) is banned on row text").count, 0)
+        XCTAssertEqual(Self.adHocFontLines(in: "Text(\"x\").settingsDescriptionStyle()").count, 0)
+        XCTAssertEqual(Self.adHocFontLines(in: "Text(\"x\").font(.subheadline)").count, 0)
+
+        XCTAssertEqual(Self.inlineSliderLines(in: "Slider(value: $x, in: 0...1)").count, 1)
+        XCTAssertEqual(Self.inlineSliderLines(in: "// Slider(value: $x, in: 0...1)").count, 0)
+        XCTAssertEqual(Self.inlineSliderLines(in: "SettingsSliderRow(\"T\", value: $x, in: 0...1, valueText: nil)").count, 0)
+
+        XCTAssertEqual(Self.paddingLines(in: ".padding(.vertical, 8)").count, 1)
+        XCTAssertEqual(Self.paddingLines(in: "// .padding(12)").count, 0)
+        XCTAssertEqual(Self.paddingLines(in: ".frame(width: 220)").count, 0)
+    }
+
     func testTheScanReadTheRealSources() {
         let sources = Self.settingsSources()
         XCTAssertGreaterThan(sources.count, 8, "the Settings directory moved — fix settingsSources()")
@@ -199,6 +297,59 @@ final class SettingsLayoutRulesTests: XCTestCase {
             out[name] = try? String(contentsOf: dir.appendingPathComponent(name), encoding: .utf8)
         }
         return out.compactMapValues { $0 }
+    }
+
+    /// The shared shape of every pinned-count rule: no file may exceed its pin, and no pin may
+    /// outlive the code it describes — a stale pin hides the next offender behind its slot.
+    private func assertPinnedCounts(_ pinned: [String: Int],
+                                    scanner: (String) -> [String],
+                                    rule: String,
+                                    cure: String,
+                                    file: StaticString = #filePath,
+                                    line: UInt = #line) {
+        var counts: [String: Int] = [:]
+        for (path, text) in Self.settingsSources() {
+            let found = scanner(text)
+            if !found.isEmpty { counts[path] = found.count }
+            let allowed = pinned[path] ?? 0
+            if found.count > allowed {
+                XCTFail("""
+                \(path): \(found.count) lines with \(rule) (pinned: \(allowed)). \(cure). Fix it, \
+                or pin it here with the reason it cannot follow the rule. \
+                First lines: \(found.prefix(6).joined(separator: " | "))
+                """, file: file, line: line)
+            }
+        }
+        for (path, allowed) in pinned {
+            let found = counts[path] ?? 0
+            XCTAssertEqual(allowed, found,
+                           "\(path): pinned \(allowed) lines with \(rule) but found \(found) — move the pin so it keeps meaning something",
+                           file: file, line: line)
+        }
+    }
+
+    /// Non-comment lines carrying a caption-sized or pixel-sized font.
+    private static func adHocFontLines(in text: String) -> [String] {
+        matchingLines(in: text) {
+            $0.contains(".font(.caption") || $0.contains(".font(.system(size:")
+                || $0.contains(".font(.system(.caption")
+        }
+    }
+
+    /// Non-comment lines building a `Slider` directly.
+    private static func inlineSliderLines(in text: String) -> [String] {
+        matchingLines(in: text) { $0.contains("Slider(value:") }
+    }
+
+    /// Non-comment lines adding padding.
+    private static func paddingLines(in text: String) -> [String] {
+        matchingLines(in: text) { $0.contains(".padding(") }
+    }
+
+    private static func matchingLines(in text: String, where predicate: (String) -> Bool) -> [String] {
+        text.split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { !isComment($0) && predicate(String($0)) }
+            .map { $0.trimmingCharacters(in: .whitespaces) }
     }
 
     private static func isComment(_ line: Substring) -> Bool {
