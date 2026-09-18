@@ -166,7 +166,7 @@ struct AgentSecuritySettings: View {
                     }
                     .disabled(findingsStore.isScanning)
                 } label: {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: SettingsMetrics.labelStack) {
                         Text("Scan this Mac")
                         Group {
                             if let at = findingsStore.lastKannuScanAt {
@@ -195,7 +195,7 @@ struct AgentSecuritySettings: View {
             // rows point at this disclosure's id (docs/SETTINGS.md).
             DisclosureGroup {
                 LabeledContent {
-                    HStack(spacing: 8) {
+                    HStack(spacing: SettingsMetrics.rowContent) {
                         SettingsValueText(adrToolDirectory.isEmpty
                                           ? String(localized: "Standard places")
                                           : adrToolDirectory.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
@@ -216,7 +216,7 @@ struct AgentSecuritySettings: View {
                 }
 
                 LabeledContent {
-                    HStack(spacing: 8) {
+                    HStack(spacing: SettingsMetrics.rowContent) {
                         SettingsValueText(SecurityFindingsStore.snapshotDirectory.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
                         Button("Choose…") { chooseSnapshotDirectory() }
                         Button("Reveal") {
@@ -229,7 +229,7 @@ struct AgentSecuritySettings: View {
 
                 if adr.discovery.isFound {
                     LabeledContent {
-                        HStack(spacing: 8) {
+                        HStack(spacing: SettingsMetrics.rowContent) {
                             SettingsValueText(adrPolicyFile.isEmpty ? String(localized: "none") : adrPolicyFile.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
                             Button("Choose…") { choosePolicyFile() }
                             if !adrPolicyFile.isEmpty {
@@ -308,7 +308,7 @@ struct AgentSecuritySettings: View {
             // slot inherits it — the ellipsis collapsed and the "…" menu was dead. Same shape as
             // `analysisRow`, the working SettingsMoreMenu site. See docs/SETTINGS.md.
             LabeledContent {
-                HStack(spacing: 8) {
+                HStack(spacing: SettingsMetrics.rowContent) {
                     SettingsStatusText(agentPolicyStatusText, isReady: agentPolicyIsReady)
                     if case .success(let policy) = findingsStore.agentPolicyStatus {
                         Button(String(localized: "View rules")) { showPolicyRules = true }
@@ -324,7 +324,6 @@ struct AgentSecuritySettings: View {
                         Button("Check again") { findingsStore.checkAgentPolicy() }
                     }
                 }
-                .controlSize(.small)
             } label: {
                 SettingsRowLabel("Policy rules", description: "A JSON file — ~/.kannu/agent-policy.json — naming commands and tools an agent may not use. Kannu never writes rules of its own; Import below copies a file you chose, byte for byte, after checking it. Every match is reported as a finding; whether it is also blocked is the switch below.")
             }
@@ -449,13 +448,13 @@ struct AgentSecuritySettings: View {
     @ViewBuilder
     private var detectionCheckoutRows: some View {
         LabeledContent {
-            HStack(spacing: 8) {
+            HStack(spacing: SettingsMetrics.rowContent) {
                 SettingsValueText(adrDetectionCheckout.isEmpty ? String(localized: "none") : adrDetectionCheckout.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
                 Button("Choose…") { chooseDetectionCheckout() }
                 Button("Check") { adr.checkDetection() }
             }
         } label: {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: SettingsMetrics.labelStack) {
                 Text("Detection checkout")
                 SettingsStatusText(adr.detection.caption, isReady: adr.detection.isReady)
             }
@@ -468,11 +467,10 @@ struct AgentSecuritySettings: View {
                 NSPasteboard.general.setString(ADRConnection.detectionCloneCommand, forType: .string)
             }
         } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(ADRConnection.detectionCloneCommand)
-                    .font(.caption.monospaced())
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
+            VStack(alignment: .leading, spacing: SettingsMetrics.labelStack) {
+                Text(verbatim: ADRConnection.detectionCloneCommand)
+                    .settingsDescriptionStyle()
+                    .monospaced()
                 Text("Needs uv and Python 3.10–3.12 (uv fetches one). ADR Detection is Uber's research tool (Apache-2.0); it runs an unattended Claude session on this Mac to reason about the chat, with file edits disallowed.")
                     .settingsDescriptionStyle()
             }
@@ -549,7 +547,7 @@ struct AgentSecuritySettings: View {
     private func analysisRow(_ analysis: ADRSessionAnalysis) -> some View {
         let cost = analysis.costUSD.map { String(format: " · $%.3f", $0) } ?? ""
         return LabeledContent {
-            HStack(spacing: 6) {
+            HStack(spacing: SettingsMetrics.rowContent) {
                 if analysis.isMalicious {
                     CopyForAgentButton {
                         if let finding = analysis.finding() { findingsStore.copyAgentPrompt(for: finding) }
@@ -564,7 +562,6 @@ struct AgentSecuritySettings: View {
                     Button("Forget") { findingsStore.forgetAnalysis(for: analysis.conversationID) }
                 }
             }
-            .controlSize(.small)
         } label: {
             SettingsRowLabel(
                 verbatim: analysis.chatName ?? analysis.conversationID,
@@ -578,7 +575,7 @@ struct AgentSecuritySettings: View {
     /// Remove — never a keychain read per render (the tab re-renders on every monitor publish).
     @ViewBuilder
     private func adrSecretRow(title: String, key: SecureSecretKey, text: Binding<String>) -> some View {
-        HStack {
+        HStack(spacing: SettingsMetrics.rowContent) {
             SecureField(title, text: text)
             Button("Save") {
                 SecureSecretsStore.set(text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines), for: key)
@@ -587,8 +584,8 @@ struct AgentSecuritySettings: View {
             }
             .disabled(text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             if storedADRSecrets.contains(key) {
-                Text("stored").font(.caption).foregroundStyle(.secondary)
-                    .textSelection(.enabled)
+                Text("stored")
+                    .settingsDescriptionStyle()
                 Button("Remove") {
                     SecureSecretsStore.removeValue(for: key)
                     refreshStoredADRSecrets()
@@ -632,7 +629,7 @@ struct AgentSecuritySettings: View {
     private func adrToolRow(_ tool: ADRConnection.Tool) -> some View {
         let status = tool == .discovery ? adr.discovery : adr.sensor
         return LabeledContent {
-            HStack(spacing: 8) {
+            HStack(spacing: SettingsMetrics.rowContent) {
                 // Kannu never installs software: the command is copied for the user to run.
                 if tool == .sensor, status.state == .notFound {
                     Button("Copy install command") {
@@ -645,7 +642,7 @@ struct AgentSecuritySettings: View {
                     .disabled(adr.isChecking)
             }
         } label: {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: SettingsMetrics.labelStack) {
                 if tool == .sensor {
                     (Text("ADR Sensor") + Text(verbatim: " · ") + Text("Optional").foregroundStyle(.secondary))
                         .textSelection(.enabled)
@@ -687,7 +684,7 @@ struct AgentSecuritySettings: View {
 
     @ViewBuilder
     private func adrInstallGuidance(_ tool: ADRConnection.Tool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: SettingsMetrics.footerStack) {
             SettingsPermissionCallout(
                 title: String(localized: "Connect ADR"),
                 message: String(localized: "Install ADR Discovery once with uv (or pipx), then press Check again. Requires Python 3.11 or newer; uv brings its own."),
@@ -702,11 +699,9 @@ struct AgentSecuritySettings: View {
                 },
                 openSettingsAction: { NSWorkspace.shared.open(ADRConnection.projectURL) }
             )
-            Text(tool.installCommand)
-                .font(.system(.caption, design: .monospaced))
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-                .foregroundStyle(.secondary)
+            Text(verbatim: tool.installCommand)
+                .settingsDescriptionStyle()
+                .monospaced()
         }
     }
 
@@ -723,24 +718,19 @@ struct AgentSecuritySettings: View {
         return when + " · " + String(localized: "the last scan failed")
     }
 
+    @ViewBuilder
     private var adrLastScanRow: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Newest scan result")
-            if let scan = findingsStore.lastScan {
-                let coverage = scan.coverageComplete
-                    ? String(localized: "full coverage")
-                    : String(localized: "partial coverage (\(scan.coverageGaps) gaps)")
-                Text("\(scan.date.formatted(date: .abbreviated, time: .shortened)) · \(scan.assetCount) assets · \(scan.findingCount) findings · \(coverage) · catalog \(scan.catalogVersion)")
-                    .font(.subheadline)
-                    .foregroundStyle(scan.coverageComplete ? Color.secondary : Color.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-            } else {
-                Text("No scans yet")
-                    .settingsDescriptionStyle()
-            }
+        if let scan = findingsStore.lastScan {
+            let coverage = scan.coverageComplete
+                ? String(localized: "full coverage")
+                : String(localized: "partial coverage (\(scan.coverageGaps) gaps)")
+            SettingsNoteRow(
+                "Newest scan result",
+                description: String(localized: "\(scan.date.formatted(date: .abbreviated, time: .shortened)) · \(scan.assetCount) assets · \(scan.findingCount) findings · \(coverage) · catalog \(scan.catalogVersion)"),
+                tint: scan.coverageComplete ? nil : .orange)
+        } else {
+            SettingsNoteRow("Newest scan result", description: String(localized: "No scans yet"))
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func choosePolicyFile() {

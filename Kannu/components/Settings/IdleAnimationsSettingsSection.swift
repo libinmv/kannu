@@ -123,10 +123,7 @@ struct IdleAnimationsSettingsSection: View {
                 .frame(height: 140)
             } else {
                 Text("Enable \"Idle Animation\" to customize animations")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 8)
-                    .textSelection(.enabled)
+                    .settingsDescriptionStyle()
             }
         } header: {
             HStack {
@@ -134,9 +131,7 @@ struct IdleAnimationsSettingsSection: View {
                 Spacer()
                 if showNotHumanFace {
                     Text("\(customIdleAnimations.count) animations")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
+                        .settingsDescriptionStyle()
                 }
             }
         } footer: {

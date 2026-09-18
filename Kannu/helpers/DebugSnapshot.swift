@@ -68,6 +68,9 @@ enum DebugSnapshots {
         if request.tabs == nil || request.tabs?.contains("components") == true {
             boards.append(("components", AnyView(componentsBoard)))
         }
+        if request.tabs == nil || request.tabs?.contains("extensionRows") == true {
+            boards.append(("extensionRows", ExtensionsSettingsView.snapshotEntryRows()))
+        }
         for (name, view) in boards {
             for dark in [false, true] {
                 let root = AnyView(view
@@ -134,12 +137,40 @@ enum DebugSnapshots {
                 SettingsFooter("Findings come from ADR, Uber's open-source agent security toolkit (Apache-2.0). You install it; Kannu only reads its results.")
             }
 
+            // The content standard: every row in this section is built from SettingsMetrics, so
+            // the label column, the slider bars and the readouts must line up down the whole
+            // section — that is what this board is for.
+            Section {
+                SettingsSliderRow(verbatim: "Minimum hover duration",
+                                  description: "How long the pointer must rest on the notch before it opens.",
+                                  value: .constant(1.0), in: 0...2, step: 0.1,
+                                  valueText: Text(verbatim: "1.0s"))
+                SettingsSliderRow(verbatim: "Closed notch / pill width", value: .constant(220.0),
+                                  in: 120...400, step: 5, valueText: Text(verbatim: "220 px"))
+                SettingsSliderRow(title: Text(verbatim: "Width: 36px"), value: .constant(36.0),
+                                  in: 24...80, step: 2, valueText: nil)
+                SettingsStepperRow(verbatim: "Volume step", value: .constant(6),
+                                   in: 1...25, valueText: Text(verbatim: "6%"))
+                SettingsNoteRow("Enable media panel blur",
+                                description: "Only applies when Material is set to Frosted Glass.")
+                SettingsNoteRow("Newest scan result",
+                                description: "Sep 12, 5:54 AM · 34 assets · 2 findings · partial coverage (1 gap) · catalog 3",
+                                tint: .orange)
+            } header: {
+                Text(verbatim: "Sliders, steppers and notes")
+            } footer: {
+                SettingsFooterStack {
+                    SettingsFooter("A footer stack keeps two lines at one spacing…")
+                    SettingsFooter("…so two sections cannot disagree about it.")
+                }
+            }
+
             Section {
                 SettingsActionRow("Scan now", description: "Last run by Kannu Sep 11, 2026 at 4:54 AM") {
                     Button(action: {}) { Text(verbatim: "Scan now") }
                 }
                 LabeledContent {
-                    HStack(spacing: 8) {
+                    HStack(spacing: SettingsMetrics.rowContent) {
                         SettingsValueText("~/.kannu/adr/discovery")
                         Button(action: {}) { Text(verbatim: "Choose…") }
                         Button(action: {}) { Text(verbatim: "Reveal") }

@@ -4,6 +4,46 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-18 - One content standard for Settings: spacing, indentation and type
+- **Developer label:** "spacing and intendation is till a issue in different section, please workout the content standard"
+- **Agent label:** Follow-up 51, PR R — SettingsMetrics tokens, kit additions, three pinned guards
+- **Changes:**
+  - **The numbers live in one place.** New `SettingsMetrics` in `SettingsComponents.swift` holds
+    the tokens every row is built from — label stack 2, row content 8, footer stack 6, slider
+    column 220, value column 40, status dot 7, card padding 12 — and the components read them
+    instead of repeating literals. Measured before: 11 different label-stack spacings, 13
+    hand-built sliders at 5 widths × 6 value widths, and 70 caption-sized plus 37 pixel-sized
+    fonts against 27 uses of the shared description style.
+  - **Every slider and stepper is a row now.** `SettingsSliderRow` gained descriptions, run-time
+    titles, and an optional readout (a row whose value reads in its own title reserves the column,
+    so the bar is the same length everywhere); the 13 hand-built sliders and 4 hand-built steppers
+    go through it and the new `SettingsStepperRow`. `variantSliderControl` becomes
+    `variantSliderRow`, so its 5 call sites stop wrapping a control in their own `LabeledContent`.
+  - **New kit pieces:** `SettingsNoteRow` for a line that only says something (the three
+    duplicated blur rows and the ADR scan-result row were bare full-width `VStack`s that broke
+    the grid), `SettingsFooterStack` for multi-line footers, and a `tint:` on the description
+    style for the one case where colour means something. `SettingsErrorText` now goes through
+    that style, so it can never drift away from the other secondary lines again.
+  - **Type and padding in rows:** the Extensions rows join the same grid (label column, control
+    column, no 32-pt icon well, no per-row padding) and its detail card gets one scale; the
+    clipboard and attached-file lists, the stats battery warning, the editor-hooks rows, the
+    permission callout and the ADR install guidance all move from caption/pixel sizes to the
+    shared description style. Control size is the Form's default in a row — `.small` only inside
+    a card — which was the mixed-size look in the agent-policy and session-analysis sections.
+  - **Three new pinned guards** in `SettingsLayoutRulesTests`, in the shape the selectability pin
+    already uses (bidirectional, per file, with the reason): no caption- or pixel-sized font on
+    row text, no hand-built `Slider`, no padding on a row. Every survivor is a card, chip,
+    popover, preview or sheet and is named. A fourth test pins that the tokens exist and that the
+    components read them. `docs/SETTINGS.md` gains the content standard itself.
+  - No Defaults keys, no behaviour, no highlight ids: the inventory counts stay 203/252/246.
+  - From CodeRabbit's review: `SettingsStepperRow` now takes the same 220-pt trailing column a
+    slider row uses, so a section holding both bounds its label column at one width and their
+    descriptions wrap the same way — the doc claimed that and the code did not. And the three new
+    scanners join a call's wrapped lines before matching, so a `Slider(` split across four lines
+    is caught exactly like a one-line one; a rule that reads one physical line at a time is one
+    reformat away from being switched off. Pinned counts are unchanged by the join, and four
+    planted multi-line offenders now sit in the self-tests.
+
 ### 2026-09-17 - The Agents tab splits in two: behaviour stays, Agent Security gets its own tab
 - **Developer label:** "now i have a ux problem in the agents tab, now its too cluttered and also adr changes makes it super long, can we think of a better split … maybe improve a bit of ux there too"
 - **Agent label:** Follow-up 50, PR Q — Agent Security tab + glance-first ADR section

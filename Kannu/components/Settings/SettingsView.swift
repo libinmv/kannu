@@ -1223,9 +1223,8 @@ struct GeneralSettings: View {
                         }
                         .settingsHighlight(id: highlightID("Notch display height"))
                 if notchHeightMode == .custom {
-                    Slider(value: $notchHeight, in: 15...45, step: 1) {
-                        Text("Custom notch size - \(notchHeight, specifier: "%.0f")")
-                    }
+                    SettingsSliderRow(title: Text("Custom notch size - \(notchHeight, specifier: "%.0f")"),
+                                      value: $notchHeight, in: 15...45, step: 1, valueText: nil)
                     .onChange(of: notchHeight) {
                         NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
                     }
@@ -1250,9 +1249,8 @@ struct GeneralSettings: View {
                     NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
                 }
                 if nonNotchHeightMode == .custom {
-                    Slider(value: $nonNotchHeight, in: 0...40, step: 1) {
-                        Text("Custom notch size - \(nonNotchHeight, specifier: "%.0f")")
-                    }
+                    SettingsSliderRow(title: Text("Custom notch size - \(nonNotchHeight, specifier: "%.0f")"),
+                                      value: $nonNotchHeight, in: 0...40, step: 1, valueText: nil)
                     .onChange(of: nonNotchHeight) {
                         NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
                     }
@@ -1316,14 +1314,8 @@ struct GeneralSettings: View {
                     Text("Close gesture")
                 }
                 .settingsHighlight(id: highlightID("Close gesture"))
-                Slider(value: $gestureSensitivity, in: 100...300, step: 100) {
-                    HStack {
-                        Text("Gesture sensitivity")
-                        Spacer()
-                        Text(Defaults[.gestureSensitivity] == 100 ? "High" : Defaults[.gestureSensitivity] == 200 ? "Medium" : "Low")
-                            .foregroundStyle(.secondary)
-                    }
-                }
+                SettingsSliderRow("Gesture sensitivity", value: $gestureSensitivity, in: 100...300, step: 100,
+                                  valueText: Text(gestureSensitivity == 100 ? "High" : gestureSensitivity == 200 ? "Medium" : "Low"))
 
                 Defaults.Toggle(key: .reverseScrollGestures) {
                     Text("Reverse open/close scroll gestures")
@@ -1358,18 +1350,10 @@ struct GeneralSettings: View {
             // Also shown with hover-to-open off when a display hides until hovered: the same
             // value is the dwell before the hidden island slides in.
             if openNotchOnHover || !alwaysShowOnNonNotchDisplays {
-                SettingsRow("Minimum hover duration", description: "How long the pointer must rest on the notch before it opens. On displays where Kannu hides until hovered, this is also how long the pointer must rest at the top edge before the island slides in.") {
-                    HStack(spacing: 8) {
-                        Slider(value: $minimumHoverDuration, in: 0...2, step: 0.1) {
-                            Text("Minimum hover duration")
-                        }
-                        Text("\(minimumHoverDuration, specifier: "%.1f")s")
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                    }
-                    .frame(width: 190)
-                }
+                SettingsSliderRow("Minimum hover duration",
+                                  description: "How long the pointer must rest on the notch before it opens. On displays where Kannu hides until hovered, this is also how long the pointer must rest at the top edge before the island slides in.",
+                                  value: $minimumHoverDuration, in: 0...2, step: 0.1,
+                                  valueText: Text("\(minimumHoverDuration, specifier: "%.1f")s"))
                 .onChange(of: minimumHoverDuration) {
                     NotificationCenter.default.post(name: Notification.Name.notchHeightChanged, object: nil)
                 }
@@ -2264,10 +2248,8 @@ private struct HUDAndOSDSettingsView: View {
                     }
 
                     if verticalHUDLiquidGlassCustomizationMode == .customLiquid {
-                        LabeledContent("Custom liquid variant") {
-                            variantSliderControl(value: verticalLiquidVariantBinding, current: verticalHUDLiquidGlassVariant.rawValue,
-                                                 range: liquidVariantRange, title: String(localized: "Custom liquid variant"))
-                        }
+                        variantSliderRow(value: verticalLiquidVariantBinding, current: verticalHUDLiquidGlassVariant.rawValue,
+                                         range: liquidVariantRange, title: String(localized: "Custom liquid variant"))
                     }
                 } else {
                     Text("Custom Liquid is available on macOS 26 or later.")
@@ -2349,18 +2331,11 @@ private struct HUDAndOSDSettingsView: View {
     }
 
     /// A size or position slider: the title (which carries the value, "Width: 36px") on the leading
-    /// side, the slider trailing.
+    /// side, the slider trailing. The readout column stays reserved, so the bar is the same length
+    /// as on a row whose value sits trailing.
     private func dimensionSlider<V: BinaryFloatingPoint>(_ title: Text, value: Binding<V>, in range: ClosedRange<V>,
                                                          step: V.Stride) -> some View where V.Stride: BinaryFloatingPoint {
-        LabeledContent {
-            Slider(value: value, in: range, step: step) {
-                title
-            }
-            .labelsHidden()
-            .frame(width: 220)
-        } label: {
-            title.monospacedDigit()
-        }
+        SettingsSliderRow(title: title.monospacedDigit(), value: value, in: range, step: step, valueText: nil)
     }
 }
 
@@ -2531,20 +2506,8 @@ private struct ExternalDisplayIntegrationsSection: View {
 
     /// A percent step: the title on the leading side, the value and a stepper trailing.
     private func stepRow(_ title: Text, value: Binding<Int>) -> some View {
-        LabeledContent {
-            HStack(spacing: 6) {
-                Text("\(value.wrappedValue)%")
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                Stepper(value: value, in: 1...25) {
-                    title
-                }
-                .labelsHidden()
-            }
-        } label: {
-            title
-        }
+        SettingsStepperRow(title: title, value: value, in: 1...25,
+                           valueText: Text("\(value.wrappedValue)%"))
     }
 }
 
@@ -3004,20 +2967,8 @@ struct Media: View {
                 .settingsHighlight(id: highlightID("Show live canvas in Dynamic Island"))
 
                 // How much the album art moves with the pointer.
-                LabeledContent("Parallax Effect Intensity") {
-                    HStack(spacing: 8) {
-                        Slider(value: $parallaxEffectIntensity, in: 0...12, step: 1.0) {
-                            Text("Parallax Effect Intensity")
-                        }
-                        .labelsHidden()
-                        Text("\(parallaxEffectIntensity, specifier: "%0.1f")")
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                            .frame(minWidth: 32, alignment: .trailing)
-                            .textSelection(.enabled)
-                    }
-                    .frame(width: 220)
-                }
+                SettingsSliderRow("Parallax Effect Intensity", value: $parallaxEffectIntensity, in: 0...12, step: 1.0,
+                                  valueText: Text("\(parallaxEffectIntensity, specifier: "%0.1f")"))
                 .settingsHighlight(id: highlightID("Enable album art parallax effect"))
 
 
@@ -3029,18 +2980,8 @@ struct Media: View {
                 .disabled(!enableSneakPeek)
                 .settingsHighlight(id: highlightID("Sneak Peek Style"))
 
-                LabeledContent("Media inactivity timeout") {
-                    HStack(spacing: 6) {
-                        Text("\(waitInterval, specifier: "%.0f") seconds")
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                        Stepper(value: $waitInterval, in: 0...10, step: 1) {
-                            Text("Media inactivity timeout")
-                        }
-                        .labelsHidden()
-                    }
-                }
+                SettingsStepperRow("Media inactivity timeout", value: $waitInterval, in: 0...10, step: 1,
+                                   valueText: Text("\(waitInterval, specifier: "%.0f") seconds"))
 
 
                 Defaults.Toggle(key: .showSongMetadataInClosedNotch) {
@@ -3177,24 +3118,13 @@ struct Media: View {
     }
 
     private var unavailableBlurRow: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Enable media panel blur")
-                .foregroundStyle(.secondary)
-            Text("Only applies when Material is set to Frosted Glass.")
-                .settingsDescriptionStyle()
-        }
-        .textSelection(.enabled)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        SettingsNoteRow("Enable media panel blur",
+                        description: "Only applies when Material is set to Frosted Glass.")
     }
+
     private var customLiquidBlurRow: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Enable media panel blur")
-                .foregroundStyle(.secondary)
-            Text("Custom liquid glass already renders with Apple's liquid material, so this option is managed automatically.")
-                .settingsDescriptionStyle()
-        }
-        .textSelection(.enabled)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        SettingsNoteRow("Enable media panel blur",
+                        description: "Custom liquid glass already renders with Apple's liquid material, so this option is managed automatically.")
     }
 }
 
@@ -3992,23 +3922,18 @@ struct Appearance: View {
                     .settingsHighlight(id: highlightID("Lock screen glass mode"))
 
                     if lockScreenGlassCustomizationMode == .customLiquid {
-                        VStack(alignment: .leading, spacing: 6) {
-                            LabeledContent("Music panel variant") {
-                                variantSliderControl(value: appearanceMusicVariantBinding, current: lockScreenMusicLiquidGlassVariant.rawValue,
-                                                     range: liquidVariantRange, title: String(localized: "Music panel variant"))
-                            }
+                        VStack(alignment: .leading, spacing: SettingsMetrics.footerStack) {
+                            variantSliderRow(value: appearanceMusicVariantBinding, current: lockScreenMusicLiquidGlassVariant.rawValue,
+                                             range: liquidVariantRange, title: String(localized: "Music panel variant"))
 
                             LockScreenGlassVariantPreviewCell(variant: $lockScreenMusicLiquidGlassVariant)
-                                .padding(.top, 6)
                         }
                         .settingsHighlight(id: highlightID("Music panel variant (appearance)"))
                         .disabled(!enableLockScreenMediaWidget)
                         .opacity(enableLockScreenMediaWidget ? 1 : 0.4)
 
-                        LabeledContent("Timer widget variant") {
-                            variantSliderControl(value: appearanceTimerVariantBinding, current: lockScreenTimerLiquidGlassVariant.rawValue,
-                                                 range: liquidVariantRange, title: String(localized: "Timer widget variant"))
-                        }
+                        variantSliderRow(value: appearanceTimerVariantBinding, current: lockScreenTimerLiquidGlassVariant.rawValue,
+                                         range: liquidVariantRange, title: String(localized: "Timer widget variant"))
                         .settingsHighlight(id: highlightID("Timer widget variant (appearance)"))
                         .disabled(!enableLockScreenTimerWidget)
                         .opacity(enableLockScreenTimerWidget ? 1 : 0.4)
@@ -4114,20 +4039,8 @@ struct Appearance: View {
                     .buttonStyle(.borderedProminent)
                 }
 
-                LabeledContent("Scrim opacity") {
-                    HStack(spacing: 8) {
-                        Slider(value: $notchSkinScrimOpacity, in: 0...0.6, step: 0.05) {
-                            Text("Scrim opacity")
-                        }
-                        .labelsHidden()
-                        Text("\(Int(notchSkinScrimOpacity * 100))%")
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                            .frame(width: 44, alignment: .trailing)
-                            .textSelection(.enabled)
-                    }
-                    .frame(minWidth: 180)
-                }
+                SettingsSliderRow("Scrim opacity", value: $notchSkinScrimOpacity, in: 0...0.6, step: 0.05,
+                                  valueText: Text("\(Int(notchSkinScrimOpacity * 100))%"))
                 .disabled(selectedNotchSkinID == nil)
                 .settingsHighlight(id: highlightID("Skin scrim opacity"))
             } header: {
@@ -4440,38 +4353,14 @@ struct Appearance: View {
             }
             .settingsHighlight(id: highlightID("Customize physical notch width"))
 
-            LabeledContent("Closed notch / pill width") {
-                HStack(spacing: 8) {
-                    Slider(value: closedWidthBinding, in: closedRange, step: 5) {
-                        Text("Closed notch / pill width")
-                    }
-                    .labelsHidden()
-                    Text("\(Int(closedNotchWidth)) px")
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                        .frame(minWidth: 48, alignment: .trailing)
-                        .textSelection(.enabled)
-                }
-                .frame(minWidth: 200)
-            }
+            SettingsSliderRow("Closed notch / pill width", value: closedWidthBinding, in: closedRange, step: 5,
+                              valueText: Text("\(Int(closedNotchWidth)) px"))
             .disabled(!customizePhysicalNotchWidth)
             .opacity(customizePhysicalNotchWidth ? 1 : 0.5)
             .settingsHighlight(id: highlightID("Closed notch / pill width"))
 
-            LabeledContent("Expanded notch width") {
-                HStack(spacing: 8) {
-                    Slider(value: widthBinding, in: dynamicRange, step: 10) {
-                        Text("Expanded notch width")
-                    }
-                    .labelsHidden()
-                    Text("\(Int(openNotchWidth)) px")
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                        .frame(minWidth: 48, alignment: .trailing)
-                        .textSelection(.enabled)
-                }
-                .frame(minWidth: 200)
-            }
+            SettingsSliderRow("Expanded notch width", value: widthBinding, in: dynamicRange, step: 10,
+                              valueText: Text("\(Int(openNotchWidth)) px"))
             .disabled(enableMinimalisticUI || !customizePhysicalNotchWidth)
             .opacity(customizePhysicalNotchWidth ? 1 : 0.5)
             .settingsHighlight(id: highlightID("Expanded notch width"))
@@ -4927,14 +4816,8 @@ extension LockScreenSettings {
     }
 
     private var blurSettingUnavailableRow: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Enable media panel blur")
-                .foregroundStyle(.secondary)
-            Text("Only available when Material is set to Frosted Glass.")
-                .settingsDescriptionStyle()
-        }
-        .textSelection(.enabled)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        SettingsNoteRow("Enable media panel blur",
+                        description: "Only available when Material is set to Frosted Glass.")
     }
 
     @ViewBuilder
@@ -4946,16 +4829,11 @@ extension LockScreenSettings {
         highlight: String,
         preview: AnyView? = nil
     ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            LabeledContent {
-                variantSliderControl(value: value, current: currentValue, range: liquidVariantRange, title: title)
-            } label: {
-                Text(title)
-            }
+        VStack(alignment: .leading, spacing: SettingsMetrics.footerStack) {
+            variantSliderRow(value: value, current: currentValue, range: liquidVariantRange, title: title)
 
             if let preview {
                 preview
-                    .padding(.top, 6)
             }
         }
         .settingsHighlight(id: highlight)
@@ -5225,22 +5103,8 @@ private struct LockScreenPositioningControls: View {
 
     /// One widget's width: title and what it changes on the leading side, slider and value trailing.
     private func widthRow(title: String, value: Binding<Double>, range: ClosedRange<Double>, helpText: String) -> some View {
-        LabeledContent {
-            HStack(spacing: 8) {
-                Slider(value: value, in: range) {
-                    Text(title)
-                }
-                .labelsHidden()
-                Text(formattedWidth(value.wrappedValue))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .frame(minWidth: 52, alignment: .trailing)
-                    .textSelection(.enabled)
-            }
-            .frame(width: 200)
-        } label: {
-            SettingsRowLabel(verbatim: title, description: helpText)
-        }
+        SettingsSliderRow(verbatim: title, description: helpText, value: value, in: range,
+                          valueText: Text(formattedWidth(value.wrappedValue)))
     }
 
     private func formattedPoints(_ value: Double) -> String {
@@ -5570,20 +5434,10 @@ func shortcutDescription(for name: KeyboardShortcuts.Name) -> String {
     KeyboardShortcuts.getShortcut(for: name)?.description ?? String(localized: "not set")
 }
 
-/// A liquid-glass variant slider with its value ("v11") beside it, sized like the other slider rows.
-func variantSliderControl(value: Binding<Double>, current: Int, range: ClosedRange<Double>, title: String) -> some View {
-    HStack(spacing: 8) {
-        Slider(value: value, in: range, step: 1) {
-            Text(title)
-        }
-        .labelsHidden()
-        Text("v\(current)")
-            .monospacedDigit()
-            .foregroundStyle(.secondary)
-            .frame(minWidth: 32, alignment: .trailing)
-            .textSelection(.enabled)
-    }
-    .frame(width: 220)
+/// A liquid-glass variant row: the title leading, the slider and its value ("v11") trailing, in the
+/// same column every other slider row uses.
+func variantSliderRow(value: Binding<Double>, current: Int, range: ClosedRange<Double>, title: String) -> some View {
+    SettingsSliderRow(verbatim: title, value: value, in: range, step: 1, valueText: Text("v\(current)"))
 }
 
 func customBadge(text: String) -> some View {
@@ -5796,10 +5650,8 @@ struct TimerSettings: View {
                     .settingsHighlight(id: highlightID("Timer liquid mode"))
 
                     if lockScreenTimerGlassCustomizationMode == .customLiquid {
-                        LabeledContent("Timer widget variant") {
-                            variantSliderControl(value: timerVariantBinding, current: lockScreenTimerLiquidGlassVariant.rawValue,
-                                                 range: liquidVariantRange, title: String(localized: "Timer widget variant"))
-                        }
+                        variantSliderRow(value: timerVariantBinding, current: lockScreenTimerLiquidGlassVariant.rawValue,
+                                         range: liquidVariantRange, title: String(localized: "Timer widget variant"))
                         .settingsHighlight(id: highlightID("Timer widget variant"))
                         .disabled(!enableLockScreenTimerWidget)
                         .opacity(enableLockScreenTimerWidget ? 1 : 0.4)
@@ -6025,20 +5877,7 @@ private struct TimerDurationStepperRow: View {
     let range: ClosedRange<Int>
 
     var body: some View {
-        LabeledContent {
-            HStack(spacing: 6) {
-                Text("\(value)")
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                Stepper(value: $value, in: range) {
-                    Text(title)
-                }
-                .labelsHidden()
-            }
-        } label: {
-            Text(title)
-        }
+        SettingsStepperRow(verbatim: title, value: $value, in: range, valueText: Text("\(value)"))
     }
 }
 
@@ -6289,23 +6128,10 @@ struct StatsSettings: View {
                     }
                     .settingsHighlight(id: highlightID("Stop monitoring after closing the notch"))
 
-                    LabeledContent {
-                        HStack(spacing: 8) {
-                            Slider(value: $statsUpdateInterval, in: 1...60, step: 1) {
-                                Text("Update interval")
-                            }
-                            .labelsHidden()
-                            .accessibilityLabel("Stats update interval")
-                            Text(formattedUpdateInterval)
-                                .monospacedDigit()
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                                .frame(minWidth: 72, alignment: .trailing)
-                        }
-                        .frame(width: 240)
-                    } label: {
-                        SettingsRowLabel("Update interval", description: "Controls how often system metrics refresh while monitoring is active.")
-                    }
+                    SettingsSliderRow("Update interval",
+                                      description: "Controls how often system metrics refresh while monitoring is active.",
+                                      value: $statsUpdateInterval, in: 1...60, step: 1,
+                                      valueText: Text(formattedUpdateInterval))
 
                     if shouldShowStatsBatteryWarning {
                         Label {
@@ -6313,10 +6139,9 @@ struct StatsSettings: View {
                         } icon: {
                             Image(systemName: "exclamationmark.triangle.fill")
                         }
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundStyle(.orange)
                         .textSelection(.enabled)
-                        .padding(.top, 4)
                     }
                 } header: {
                     SettingsSectionHeader("Monitoring Behavior")
@@ -6596,27 +6421,24 @@ struct ClipboardSettings: View {
                 if !clipboardManager.clipboardHistory.isEmpty {
                     Section {
                         ForEach(clipboardManager.clipboardHistory) { item in
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack {
+                            VStack(alignment: .leading, spacing: SettingsMetrics.labelStack) {
+                                HStack(spacing: SettingsMetrics.rowContent) {
                                     Image(systemName: item.type.icon)
                                         .foregroundColor(.blue)
                                         .frame(width: 16)
+                                        .accessibilityHidden(true)
                                     Text(item.type.displayName)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                        .textSelection(.enabled)
+                                        .settingsDescriptionStyle()
                                     Spacer()
-                                    Text(timeAgoString(from: item.timestamp))
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                        .textSelection(.enabled)
+                                    Text(verbatim: timeAgoString(from: item.timestamp))
+                                        .settingsDescriptionStyle()
                                 }
-                                Text(item.preview)
-                                    .font(.system(.body, design: .monospaced))
+                                Text(verbatim: item.preview)
+                                    .font(.body)
+                                    .monospaced()
                                     .lineLimit(2)
                                     .textSelection(.enabled)
                             }
-                            .padding(.vertical, 2)
                         }
                     } header: {
                         SettingsSectionHeader("Current History")
@@ -6776,26 +6598,24 @@ struct ScreenAssistantSettings: View {
                 if !screenAssistantManager.attachedFiles.isEmpty {
                     Section {
                         ForEach(screenAssistantManager.attachedFiles) { file in
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack {
+                            VStack(alignment: .leading, spacing: SettingsMetrics.labelStack) {
+                                HStack(spacing: SettingsMetrics.rowContent) {
                                     Image(systemName: file.type.iconName)
                                         .foregroundColor(.blue)
                                         .frame(width: 16)
+                                        .accessibilityHidden(true)
                                     Text(file.type.displayName)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                        .textSelection(.enabled)
+                                        .settingsDescriptionStyle()
                                     Spacer()
-                                    Text(timeAgoString(from: file.timestamp))
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                        .textSelection(.enabled)
+                                    Text(verbatim: timeAgoString(from: file.timestamp))
+                                        .settingsDescriptionStyle()
                                 }
-                                Text(file.name)
-                                    .font(.system(.body, design: .monospaced))
+                                Text(verbatim: file.name)
+                                    .font(.body)
+                                    .monospaced()
                                     .lineLimit(2)
+                                    .textSelection(.enabled)
                             }
-                            .padding(.vertical, 2)
                         }
                     } header: {
                         SettingsSectionHeader("Attached Files")
@@ -6860,18 +6680,15 @@ struct SettingsPermissionCallout: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SettingsMetrics.rowContent) {
             Label(title, systemImage: icon)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(iconColor)
 
-            Text(message)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
+            Text(verbatim: message)
+                .settingsDescriptionStyle()
 
-            HStack(spacing: 8) {
+            HStack(spacing: SettingsMetrics.rowContent) {
                 Button(requestButtonTitle) {
                     requestAction()
                 }
@@ -6885,9 +6702,9 @@ struct SettingsPermissionCallout: View {
             .controlSize(.small)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
+        .padding(SettingsMetrics.cardPadding)
         .background(Color.secondary.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: SettingsMetrics.cardCornerRadius, style: .continuous))
     }
 }
 
@@ -6999,10 +6816,8 @@ struct CustomOSDSettings: View {
                         }
 
                         if osdLiquidGlassCustomizationMode == .customLiquid {
-                            LabeledContent("Custom liquid variant") {
-                                variantSliderControl(value: osdLiquidVariantBinding, current: osdLiquidGlassVariant.rawValue,
-                                                     range: liquidVariantRange, title: String(localized: "Custom liquid variant"))
-                            }
+                            variantSliderRow(value: osdLiquidVariantBinding, current: osdLiquidGlassVariant.rawValue,
+                                             range: liquidVariantRange, title: String(localized: "Custom liquid variant"))
                         }
                     } else {
                         Text("Custom Liquid is available on macOS 26 or later.")
@@ -7028,7 +6843,6 @@ struct CustomOSDSettings: View {
                     SettingsFooter("• Liquid Glass: Modern glass effect (macOS 26+)")
                     SettingsFooter("• Solid Dark/Light/Auto: Opaque backgrounds")
                     SettingsFooter("Color options control the icon and progress bar appearance. Auto adapts to system theme.")
-                        .padding(.top, 6)
                 }
             }
 
@@ -7791,7 +7605,6 @@ struct AgentStatusSettings: View {
                 .accessibilityLabel(editor.detected ? Text("\(editor.name), detected") : Text("\(editor.name), not detected"))
             }
         }
-        .padding(.vertical, 2)
     }
 
 
@@ -7799,18 +7612,17 @@ struct AgentStatusSettings: View {
     private func hookRow(for provider: AgentHookProvider) -> some View {
         let installed = hookInstaller.isInstalled(provider)
         let present = presentHookTools.contains(provider)
-        HStack(spacing: 10) {
+        HStack(spacing: SettingsMetrics.rowContent) {
             Circle()
                 .fill(installed ? Color.green : Color.secondary.opacity(0.5))
-                .frame(width: 8, height: 8)
+                .frame(width: SettingsMetrics.statusDot, height: SettingsMetrics.statusDot)
+                .accessibilityHidden(true)
             AgentProviderIconView(source: .init(hookProvider: provider), size: 18)
             Text(provider.displayName)
             Spacer()
             if !installed && !present {
                 Text("Not found on this Mac")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
+                    .settingsDescriptionStyle()
             }
             Button(installed ? "Remove" : "Install") {
                 if installed {
