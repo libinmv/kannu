@@ -36,6 +36,13 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     popover, preview or sheet and is named. A fourth test pins that the tokens exist and that the
     components read them. `docs/SETTINGS.md` gains the content standard itself.
   - No Defaults keys, no behaviour, no highlight ids: the inventory counts stay 203/252/246.
+  - From CodeRabbit's review: `SettingsStepperRow` now takes the same 220-pt trailing column a
+    slider row uses, so a section holding both bounds its label column at one width and their
+    descriptions wrap the same way — the doc claimed that and the code did not. And the three new
+    scanners join a call's wrapped lines before matching, so a `Slider(` split across four lines
+    is caught exactly like a one-line one; a rule that reads one physical line at a time is one
+    reformat away from being switched off. Pinned counts are unchanged by the join, and four
+    planted multi-line offenders now sit in the self-tests.
 
 ### 2026-09-17 - The Agents tab splits in two: behaviour stays, Agent Security gets its own tab
 - **Developer label:** "now i have a ux problem in the agents tab, now its too cluttered and also adr changes makes it super long, can we think of a better split … maybe improve a bit of ux there too"

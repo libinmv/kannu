@@ -272,6 +272,31 @@ final class SettingsLayoutRulesTests: XCTestCase {
         XCTAssertEqual(Self.paddingLines(in: ".padding(.vertical, 8)").count, 1)
         XCTAssertEqual(Self.paddingLines(in: "// .padding(12)").count, 0)
         XCTAssertEqual(Self.paddingLines(in: ".frame(width: 220)").count, 0)
+
+        // The same offenders, wrapped the way a long call is usually written. A rule that only
+        // reads one physical line at a time is one reformat away from being switched off.
+        XCTAssertEqual(Self.inlineSliderLines(in: """
+        Slider(
+            value: $value,
+            in: range
+        )
+        """).count, 1)
+        XCTAssertEqual(Self.adHocFontLines(in: """
+        Text("x")
+            .font(.system(size: 13,
+                          weight: .semibold))
+        """).count, 1)
+        XCTAssertEqual(Self.paddingLines(in: """
+        Text("x")
+            .padding(
+                .vertical, 8)
+        """).count, 1)
+        // Joining lines must not join across a comment that sits inside the call.
+        XCTAssertEqual(Self.inlineSliderLines(in: """
+        Slider(
+            // value comes from the binding above
+            value: $value, in: range)
+        """).count, 1)
     }
 
     func testTheScanReadTheRealSources() {
@@ -347,9 +372,22 @@ final class SettingsLayoutRulesTests: XCTestCase {
     }
 
     private static func matchingLines(in text: String, where predicate: (String) -> Bool) -> [String] {
-        text.split(separator: "\n", omittingEmptySubsequences: false)
-            .filter { !isComment($0) && predicate(String($0)) }
+        joinedStatements(in: text).filter(predicate)
+    }
+
+    /// Comment lines dropped, then every line break that sits inside a call — after an opening
+    /// paren or a comma — joined up. Without this the rules would only see code as it happens to
+    /// be wrapped today: `Slider(value: $x, in: r)` would fail the guard while the same call
+    /// split across four lines would sail through it.
+    private static func joinedStatements(in text: String) -> [String] {
+        let code = text.split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { !isComment($0) }
+            .joined(separator: "\n")
+        let joined = code.replacingOccurrences(of: #"([(,])[ \t]*\n[ \t]*"#, with: "$1",
+                                               options: .regularExpression)
+        return joined.split(separator: "\n", omittingEmptySubsequences: false)
             .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
     }
 
     private static func isComment(_ line: Substring) -> Bool {

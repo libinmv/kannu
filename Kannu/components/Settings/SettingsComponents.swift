@@ -376,6 +376,9 @@ struct SettingsStepperRow<Value: Strideable>: View {
                 Stepper(value: $value, in: range, step: step) { accessibilityTitle }
                     .labelsHidden()
             }
+            // The same trailing column a slider row uses, so a section holding both bounds its
+            // label column at one width and their descriptions wrap the same way.
+            .frame(width: SettingsMetrics.sliderWidth, alignment: .trailing)
         } label: {
             label
         }
