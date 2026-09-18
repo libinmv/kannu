@@ -316,6 +316,10 @@ struct AgentSecuritySettings: View {
                             PolicyRulesView(policy: policy)
                         }
                     }
+                    // Offered for a broken file too: that is exactly when it needs fixing.
+                    if agentPolicyExists {
+                        Button(String(localized: "Open in Editor")) { openAgentPolicyInEditor() }
+                    }
                     SettingsMoreMenu {
                         Button("Reveal in Finder") {
                             NSWorkspace.shared.activateFileViewerSelecting([AgentPolicy.fileURL])
@@ -325,9 +329,14 @@ struct AgentSecuritySettings: View {
                     }
                 }
             } label: {
-                SettingsRowLabel("Policy rules", description: "A JSON file — ~/.kannu/agent-policy.json — naming commands and tools an agent may not use. Kannu never writes rules of its own; Import below copies a file you chose, byte for byte, after checking it. Every match is reported as a finding; whether it is also blocked is the switch below.")
+                SettingsRowLabel("Policy rules", description: "A JSON file — ~/.kannu/agent-policy.json — naming commands and tools an agent may not use. Kannu never writes rules of its own; Import below copies a file you chose, byte for byte, after checking it. Open in Editor to change it; Kannu re-checks it every time it is saved. Every match is reported as a finding; whether it is also blocked is the switch below.")
             }
             .settingsHighlight(id: highlightID("Policy rules"))
+            if case .failure(let error) = findingsStore.agentPolicyStatus, agentPolicyExists, error.hookIgnoresFile {
+                // The hook ignores a malformed file whole (docs/REGRESSIONS.md entry 1: it never
+                // fails closed), so say what that costs rather than only what is wrong.
+                SettingsErrorText(String(localized: "Until this is fixed, Kannu ignores the whole file: no rule is reported or blocked."))
+            }
             SettingsActionRow("Get a policy", description: "Have your agent draft one, or import a JSON file you already have. Kannu checks the file before it counts; a broken import never replaces a working policy.") {
                 Button("Import…") { importAgentPolicy() }
                 Button("Copy a prompt that drafts a policy") { findingsStore.copyPolicyDraftingPrompt() }
@@ -396,6 +405,15 @@ struct AgentSecuritySettings: View {
     private var agentPolicyExists: Bool {
         if case .failure(.notFound) = findingsStore.agentPolicyStatus { return false }
         return true
+    }
+
+    /// "Open in Editor": the user's own default app for JSON does the writing, so Kannu still
+    /// never writes rules of its own. The store's watcher re-checks on every save. If no app
+    /// claims JSON, show the file in Finder instead of doing nothing.
+    private func openAgentPolicyInEditor() {
+        if !NSWorkspace.shared.open(AgentPolicy.fileURL) {
+            NSWorkspace.shared.activateFileViewerSelecting([AgentPolicy.fileURL])
+        }
     }
 
     /// ADR Detection — off by default, behind a consent alert, and every run is the user's click.

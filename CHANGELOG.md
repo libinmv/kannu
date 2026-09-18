@@ -4,6 +4,34 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-19 - Edit the agent policy in your own editor, and never count rules the hook ignores
+- **Developer label:** "there is no option to edit or modify the uploaded policy file / rule, is that hard to give"
+- **Agent label:** Claude Code — Open in Editor, a save watcher, and Settings/hook parity on what counts as a valid policy
+- **Changes:**
+  - **Open in Editor** on the Policy rules row opens `~/.kannu/agent-policy.json` in the user's
+    default app for JSON, and falls back to Finder if nothing claims it. Offered for a broken file
+    too, since that is when it needs fixing. The user's editor does the writing, so "Kannu never
+    writes rules of its own" still holds and is unchanged.
+  - **The row re-checks on every save.** New `AgentPolicyWatcher` (Foundation-only, in the logic
+    target) watches `~/.kannu` and the file itself, so both atomic saves (a new inode) and in-place
+    writes are seen, debounced to one check per save. `SecurityFindingsStore` owns it and re-arms it
+    on each check. Before this, Settings only re-read the file on appear or Check again, so a hand
+    edit that broke the JSON switched blocking off while the row still showed the old rule count.
+  - **A broken file says what it costs**: a red line under the row, "Until this is fixed, Kannu
+    ignores the whole file: no rule is reported or blocked." Not shown for a duplicate key, the one
+    error the hook resolves (last one wins) rather than ignores.
+  - **Settings and the hook now agree on what a valid policy is.** Writing the watcher's test found
+    `AgentPolicy.parse` accepting files `load_policy` ignores: trailing commas, a UTF-8 BOM, UTF-16/32,
+    duplicate keys, `version` 1.5, a length cap counted in grapheme clusters, space-only whitespace
+    handling, and symlinks. Each fixed in Swift, with a new `LoadError` case and words where the
+    user needs to act (`notARegularFile`, `byteOrderMark`, `notUTF8`, `trailingComma`,
+    `duplicateKey`). An empty `reason` is now accepted as no reason, as the hook reads it. Import
+    goes through the same parser, so it can no longer copy in a file the hook would ignore.
+  - **Guard:** `HookScriptTests.testSettingsAndTheHookAgreeOnWhatIsAPolicy` feeds identical bytes to
+    `AgentPolicy.load` and the real hook. It fails 12 times against the previous parser. Recorded
+    under docs/REGRESSIONS.md entry 1. Also 8 new `AgentPolicyTests` and 9 `AgentPolicyWatcherTests`.
+  - Settings search finds the row for "edit", "editor" and "modify".
+
 ### 2026-09-18 - One content standard for Settings: spacing, indentation and type
 - **Developer label:** "spacing and intendation is till a issue in different section, please workout the content standard"
 - **Agent label:** Follow-up 51, PR R — SettingsMetrics tokens, kit additions, three pinned guards

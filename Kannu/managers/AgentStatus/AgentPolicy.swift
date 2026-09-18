@@ -58,12 +58,37 @@ struct AgentPolicy: Equatable {
         case rule(Int, String)
         /// Import only: the picked file was valid but could not be written into place.
         case notWritten
+        /// A symlink or special file. The hook `lstat`s the path and reads only a regular file.
+        case notARegularFile
+        /// A leading UTF-8 BOM. The hook opens the file as plain `utf-8`, and Python's `json`
+        /// refuses a BOM; `JSONSerialization` skips it.
+        case byteOrderMark
+        /// Not UTF-8, or has NUL bytes (UTF-16 and UTF-32 do). `JSONSerialization` detects those
+        /// encodings; the hook decodes UTF-8 only.
+        case notUTF8
+        /// A comma just before `]` or `}`. `JSONSerialization` accepts it; Python's `json` does not.
+        case trailingComma
+        /// A key given twice in one object. Python's `json` keeps the last, `JSONSerialization` the
+        /// first, so the two would read different rules. Refused here rather than guessed.
+        case duplicateKey(String)
+
+        /// Whether the hook, too, reads this file as no policy. True for everything but a
+        /// duplicate key, which the hook resolves (last one wins) and Settings refuses to guess at.
+        var hookIgnoresFile: Bool {
+            if case .duplicateKey = self { return false }
+            return true
+        }
 
         /// Plain words for Settings; the hook ignores the file for the same reason.
         var message: String {
             switch self {
             case .notFound: return String(localized: "No policy file yet.")
             case .unreadable: return String(localized: "The policy file could not be read.")
+            case .notARegularFile: return String(localized: "The policy is a symbolic link or special file. The hook reads only a regular file, so it ignores this one.")
+            case .byteOrderMark: return String(localized: "The policy file starts with a byte-order mark. Save it as UTF-8 without one.")
+            case .notUTF8: return String(localized: "The policy file must be saved as UTF-8.")
+            case .trailingComma: return String(localized: "The policy file has a comma just before a closing ] or }. JSON does not allow one there.")
+            case .duplicateKey(let key): return String(localized: "\"\(key)\" appears twice in one object. The hook uses the last one; keep just one so Settings shows what is in effect.")
             case .notJSON: return String(localized: "The policy file is not valid JSON.")
             case .tooLarge(let bytes): return String(localized: "The policy file is \(bytes) bytes; the limit is \(maxBytes).")
             case .notAnObject: return String(localized: "The policy file must be a JSON object with \"version\" and \"block\".")
@@ -79,40 +104,60 @@ struct AgentPolicy: Equatable {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else { return .failure(.notFound) }
         guard !isDirectory.boolValue else { return .failure(.unreadable) }
+        // The hook lstat()s the path and reads only a regular file, so a symlink (a dotfile
+        // manager's, say) is no policy there and must not count here.
+        var info = stat()
+        guard lstat(url.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else { return .failure(.notARegularFile) }
         guard let data = try? Data(contentsOf: url) else { return .failure(.unreadable) }
         return parse(data)
     }
 
+    /// Valid here exactly when the hook's `load_policy` would use the file. Every check below has
+    /// a twin there; `HookScriptTests` feeds both the same bytes to prove it
+    /// (`testSettingsAndTheHookAgreeOnWhatIsAPolicy`). `JSONSerialization` is more lenient than
+    /// Python's `json` in ways that matter (a BOM, other encodings, trailing commas, duplicate
+    /// keys), and each leniency meant Settings counting rules the hook was ignoring.
     static func parse(_ data: Data) -> Result<AgentPolicy, LoadError> {
         guard data.count <= maxBytes else { return .failure(.tooLarge(data.count)) }
+        guard !data.starts(with: [0xEF, 0xBB, 0xBF]) else { return .failure(.byteOrderMark) }
+        guard !data.contains(0), String(data: data, encoding: .utf8) != nil else { return .failure(.notUTF8) }
         guard let json = try? JSONSerialization.jsonObject(with: data) else { return .failure(.notJSON) }
+        if let problem = strictSyntaxProblem(in: data) { return .failure(problem) }
         guard let object = json as? [String: Any] else { return .failure(.notAnObject) }
-        // JSON `true` bridges to NSNumber too, and `is Bool` is true for the number 1: ask CoreFoundation.
+        // JSON `true` bridges to NSNumber too, and `is Bool` is true for the number 1: ask
+        // CoreFoundation. Compared as a double, as Python compares it: 1.0 is 1, 1.5 is not.
         guard let version = object["version"] as? NSNumber, CFGetTypeID(version) != CFBooleanGetTypeID(),
-              version.intValue == 1 else { return .failure(.version) }
+              version.doubleValue == 1 else { return .failure(.version) }
         guard let block = object["block"] as? [Any] else { return .failure(.notAnObject) }
         guard block.count <= maxRules else { return .failure(.tooManyRules(block.count)) }
         var rules: [Rule] = []
         for (index, item) in block.enumerated() {
             guard let rule = item as? [String: Any] else { return .failure(.rule(index, String(localized: "each rule is an object"))) }
+            // The hook treats "" as no reason, like null; only a non-empty reason has to be text.
             let reason = rule["reason"]
             if let reason, !(reason is NSNull) {
-                guard let text = reason as? String, isText(text) else {
+                guard let text = reason as? String, text.isEmpty || isText(text) else {
                     return .failure(.rule(index, String(localized: "\"reason\" must be text of at most \(maxLength) characters")))
                 }
             }
+            let reasonText = (reason as? String).flatMap { $0.isEmpty ? nil : $0 }
             let command = rule["command"], tool = rule["tool"]
             if let command, !(command is NSNull) {
                 guard tool == nil || tool is NSNull else { return .failure(.rule(index, String(localized: "use \"command\" or \"tool\", not both"))) }
-                guard let text = command as? String, isText(text), !text.split(separator: " ").isEmpty else {
+                // The hook's `command.split()`: any Unicode whitespace, not only a space.
+                guard let text = command as? String, isText(text),
+                      text.unicodeScalars.contains(where: { !$0.properties.isWhitespace }) else {
                     return .failure(.rule(index, String(localized: "\"command\" must be a word or phrase of at most \(maxLength) characters")))
                 }
-                rules.append(Rule(command: text, tool: nil, reason: reason as? String))
+                rules.append(Rule(command: text, tool: nil, reason: reasonText))
             } else if let tool, !(tool is NSNull) {
-                guard let text = tool as? String, isText(text), !text.contains(" "), text.trimmingCharacters(in: .whitespaces) == text else {
+                // The hook's `tool.strip() != tool`: no Unicode whitespace at either end.
+                guard let text = tool as? String, isText(text), !text.contains(" "),
+                      text.unicodeScalars.first?.properties.isWhitespace == false,
+                      text.unicodeScalars.last?.properties.isWhitespace == false else {
                     return .failure(.rule(index, String(localized: "\"tool\" must be one name of at most \(maxLength) characters")))
                 }
-                rules.append(Rule(command: nil, tool: text, reason: reason as? String))
+                rules.append(Rule(command: nil, tool: text, reason: reasonText))
             } else {
                 return .failure(.rule(index, String(localized: "needs \"command\" or \"tool\"")))
             }
@@ -151,9 +196,64 @@ struct AgentPolicy: Equatable {
         }
     }
 
-    /// Non-empty, capped, no control characters — the hook's `policy_text`.
+    /// Non-empty, capped, no control characters — the hook's `policy_text`. Counted in code points,
+    /// as Python's `len` counts: `String.count` counts grapheme clusters, so text heavy with
+    /// combining marks passed here at 150 and failed the hook's cap of 200.
     static func isText(_ text: String) -> Bool {
-        !text.isEmpty && text.count <= maxLength && text.unicodeScalars.allSatisfy { $0.value >= 32 }
+        !text.isEmpty && text.unicodeScalars.count <= maxLength && text.unicodeScalars.allSatisfy { $0.value >= 32 }
+    }
+
+    /// What `JSONSerialization` let through that Python's `json` refuses, found in a document that
+    /// has already parsed: a comma just before `]` or `}`, or a key repeated in one object. Keys
+    /// compare decoded, so `"block"` and `"block"` are the same key, as they are to the hook.
+    static func strictSyntaxProblem(in data: Data) -> LoadError? {
+        let bytes = [UInt8](data)
+        // One entry per open container: nil for an array, the keys seen so far for an object.
+        var containers: [Set<String>?] = []
+        var last: UInt8 = 0            // last significant byte outside a string; `"` ends a string
+        var inString = false, escaped = false, stringIsKey = false
+        var stringStart = 0
+        for (index, byte) in bytes.enumerated() {
+            if inString {
+                if escaped {
+                    escaped = false
+                } else if byte == UInt8(ascii: "\\") {
+                    escaped = true
+                } else if byte == UInt8(ascii: "\"") {
+                    inString = false
+                    last = byte
+                    if stringIsKey, var keys = containers.last ?? nil {
+                        let literal = Data(bytes[stringStart...index])
+                        let key = (try? JSONSerialization.jsonObject(with: literal, options: .fragmentsAllowed)) as? String ?? ""
+                        guard keys.insert(key).inserted else { return .duplicateKey(key) }
+                        containers[containers.count - 1] = keys
+                    }
+                }
+                continue
+            }
+            switch byte {
+            case UInt8(ascii: "\""):
+                inString = true
+                stringStart = index
+                // In an object, a string straight after `{` or `,` is a key.
+                stringIsKey = (containers.last ?? nil) != nil && (last == UInt8(ascii: "{") || last == UInt8(ascii: ","))
+            case UInt8(ascii: "{"):
+                containers.append([])
+                last = byte
+            case UInt8(ascii: "["):
+                containers.append(nil)
+                last = byte
+            case UInt8(ascii: "}"), UInt8(ascii: "]"):
+                if last == UInt8(ascii: ",") { return .trailingComma }
+                _ = containers.popLast()
+                last = byte
+            case UInt8(ascii: " "), UInt8(ascii: "\t"), UInt8(ascii: "\n"), UInt8(ascii: "\r"):
+                break
+            default:
+                last = byte
+            }
+        }
+        return nil
     }
 
     /// What "Copy a prompt that drafts a policy" puts on the pasteboard, for the user's own agent.

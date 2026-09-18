@@ -249,6 +249,7 @@ final class SecurityFindingsStore: ObservableObject {
         directorySource?.cancel()
         directorySource = nil
         watchedPath = nil
+        agentPolicyWatcher.stop()
         reloadTask?.cancel()
         reloadTask = nil
         cancellables.removeAll()
@@ -288,8 +289,18 @@ final class SecurityFindingsStore: ObservableObject {
     // MARK: - Agent policy (hook v42)
 
     /// What `~/.kannu/agent-policy.json` holds, or why the hook is ignoring it. Read off the main
-    /// actor (docs/REGRESSIONS.md entry 11) on start, on appear and on "Check again".
+    /// actor (docs/REGRESSIONS.md entry 11) on start, on appear, on "Check again", and whenever the
+    /// file is saved — so a hand edit that breaks the JSON shows here at once, instead of blocking
+    /// quietly stopping while the row still counts the old rules.
     @Published private(set) var agentPolicyStatus: Result<AgentPolicy, AgentPolicy.LoadError> = .failure(.notFound)
+
+    /// Re-checks the policy the moment it is saved, created, replaced or removed. Its callback
+    /// runs on the watcher's own queue; hop to the main actor before touching published state.
+    private lazy var agentPolicyWatcher = AgentPolicyWatcher { [weak self] in
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { self?.checkAgentPolicy() }
+        }
+    }
 
     /// Every policy read and write runs here, in order. Checks and imports used to run on the
     /// shared utility pool, so an earlier import could write after a later one, or an earlier
@@ -301,6 +312,8 @@ final class SecurityFindingsStore: ObservableObject {
     func checkAgentPolicy() {
         // A fresh check answers the question the import error was about.
         if agentPolicyImportError != nil { agentPolicyImportError = nil }
+        // Idempotent; re-arms if ~/.kannu appeared after launch or a save replaced the file.
+        agentPolicyWatcher.start()
         agentPolicyQueue.async {
             let result = AgentPolicy.load()
             DispatchQueue.main.async {
