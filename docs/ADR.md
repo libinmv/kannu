@@ -151,11 +151,24 @@ snapshot folder at wherever those snapshots land.
 
 ## 6. Tenant policy (optional)
 
-Discovery accepts `--policy policy.json` with `approved`, `forbidden` and `tenant_domains` lists;
-`tenant_domains` enables the *third-party destination* finding. See the upstream Discovery README
-for the format. Point Kannu at it with Settings → Agents → ADR Discovery → **Policy file**; Kannu passes
-it to every scan it runs. This is ADR's policy, about the MCP servers on the machine; it cannot
-name a command. The policy that can — and that Kannu can enforce — is the *agent policy* in §9.
+Discovery accepts `--policy policy.json`: a JSON object with up to three arrays of non-empty strings,
+`approved`, `forbidden` and `tenant_domains`. Any other key is ignored; a file ADR cannot read fails
+every scan ("cannot read policy"). The upstream README only shows the flag, so this is from
+adr-discovery 0.2.0's source (`judge/sanction.py`, `judge/findings.py`):
+
+- **`tenant_domains`** is the one list that affects MCP servers. A server declared with a `url`
+  whose host is not one of these domains, or a subdomain of one, raises the *third-party
+  destination* finding (Kannu: "MCP server reaches outside your domains"). No wildcards; servers that
+  run as a local command have no destination and are never checked.
+- **`approved`** and **`forbidden`** match ADR *catalog ids* of AI tools (`claude-code`, `cursor`, …),
+  setting an asset's `sanction` field. MCP servers never get a catalog id, so these lists cannot
+  touch one, and neither raises a finding.
+
+Point Kannu at the file with Settings → Agent Security → ADR scans → Advanced → **ADR scan policy**;
+Kannu passes it to every scan it runs, and never parses it itself. **Copy a prompt that drafts a
+policy** on the same row has your agent read your MCP configs, ask which domains are yours, and
+write `~/.kannu/adr/policy.json`. This is ADR's policy, about the MCP servers on the machine; it
+cannot name a command. The policy that can — and that Kannu can enforce — is the *agent policy* in §9.
 
 ## 7. ADR Sensor (optional, not used yet)
 

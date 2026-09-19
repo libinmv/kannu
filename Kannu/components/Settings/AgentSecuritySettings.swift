@@ -238,7 +238,11 @@ struct AgentSecuritySettings: View {
                             }
                         }
                     } label: {
-                        SettingsRowLabel("ADR scan policy", description: "ADR's own policy file — approved, forbidden and tenant_domains lists for the MCP servers on this Mac. Not the agent policy below; that one names commands and tools to block.")
+                        SettingsRowLabel("ADR scan policy", description: "Your organisation's domains. ADR flags any MCP server that connects to a host outside them.")
+                    }
+                    // Its own line, so Choose… and Clear do not crowd the caption.
+                    SettingsActionRow {
+                        Button("Copy a prompt that drafts a policy") { findingsStore.copyADRPolicyDraftingPrompt() }
                     }
                     if SecurityFindingsStore.policyFileIsMissing {
                         SettingsErrorText(String(localized: "That policy file is not there any more, so scans run without it. Choose it again, or clear it."))
@@ -310,7 +314,6 @@ struct AgentSecuritySettings: View {
             // `analysisRow`, the working SettingsMoreMenu site. See docs/SETTINGS.md.
             LabeledContent {
                 HStack(spacing: SettingsMetrics.rowContent) {
-                    SettingsStatusText(agentPolicyStatusText, isReady: agentPolicyIsReady)
                     if agentPolicyIsEditable {
                         // No file yet opens an empty editor; Save creates the file.
                         Button(String(localized: "Edit rules")) { openRuleEditor() }
@@ -331,7 +334,14 @@ struct AgentSecuritySettings: View {
                     }
                 }
             } label: {
-                SettingsRowLabel("Policy rules", description: "Commands and tools your agents may not use. Every match is flagged; the switch below decides whether it's also blocked.")
+                // Status under the title, as in `adrToolRow`: beside the buttons it squeezed the
+                // caption into a narrow column of four short lines.
+                VStack(alignment: .leading, spacing: SettingsMetrics.labelStack) {
+                    Text("Policy rules")
+                    SettingsStatusText(agentPolicyStatusText, isReady: agentPolicyIsReady)
+                    Text("Commands and tools your agents may not use.")
+                        .settingsDescriptionStyle()
+                }
             }
             .settingsHighlight(id: highlightID("Policy rules"))
             if case .failure(let error) = findingsStore.agentPolicyStatus, agentPolicyExists, error.hookIgnoresFile {
@@ -347,7 +357,7 @@ struct AgentSecuritySettings: View {
             if let importError = findingsStore.agentPolicyImportError {
                 SettingsErrorText(String(localized: "Not imported — \(importError)"))
             }
-            SettingsRow("Block matching tool calls", description: "Off: matches are only flagged. On: Claude Code and Cursor refuse the call and tell the agent why; other agents are still only flagged.") {
+            SettingsRow("Block matching tool calls", description: Text("Off: matches are only flagged.\nOn: Claude Code and Cursor refuse the call and tell the agent why.\nOther agents are only flagged either way.")) {
                 Defaults.Toggle(key: .enforceAgentPolicy) {
                     Text("Block matching tool calls")
                 }

@@ -385,6 +385,13 @@ final class SecurityFindingsStore: ObservableObject {
         }
     }
 
+    /// Puts the ADR scan policy's drafting prompt on the clipboard for the user's own agent.
+    func copyADRPolicyDraftingPrompt() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(ADRDiscoveryCommand.policyDraftingPrompt, forType: .string)
+    }
+
     /// Puts the drafting prompt on the clipboard for the user's own agent.
     func copyPolicyDraftingPrompt() {
         let pasteboard = NSPasteboard.general

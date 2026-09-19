@@ -4,6 +4,25 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-19 - Agent Security spacing, and a drafting prompt for ADR's scan policy
+- **Developer label:** "fix intendation … make better spacing … ADR's own policy file … this also needs a draft prompt"
+- **Agent label:** Claude Code — Policy rules status moved under its title; Block caption on three lines; ADR scan policy prompt and truthful caption
+- **Changes:**
+  - **Policy rules**: the status moves under the title, as on the ADR Discovery row, so the trailing
+    column holds only Edit rules and the "…" menu. The caption is one line, "Commands and tools
+    your agents may not use."; blocking is explained by the switch row directly below.
+  - **Block matching tool calls**: the caption is three lines, one idea each (Off, On, other
+    agents), instead of one paragraph that wrapped raggedly.
+  - **ADR scan policy**: the caption no longer claims approved/forbidden lists act on MCP servers.
+    In adr-discovery 0.2.0's source only `tenant_domains` does; the other two match catalog ids of
+    AI tools and raise no finding. New **Copy a prompt that drafts a policy** on its own line under
+    the row: the agent lists URL-based MCP servers' hosts (never tokens or headers), asks which
+    domains are yours, writes `~/.kannu/adr/policy.json` and checks it with `python3 -m json.tool`,
+    since a file ADR cannot read fails every scan.
+  - docs/ADR.md §6 rewritten from ADR's source, with the Settings path updated for the Agent
+    Security tab.
+  - Test: `ADRDiscoveryCommandTests.testThePolicyDraftingPromptStatesTheFormatAndItsLimits`.
+
 ### 2026-09-19 - README stops teaching users to strip quarantine from a notarized app
 - **Developer label:** "#31 (README tells users to bypass Gatekeeper): … this directly commit to dev and close issue"
 - **Agent label:** Claude Code — Gatekeeper section of ReadMe.md rewritten per issue #31

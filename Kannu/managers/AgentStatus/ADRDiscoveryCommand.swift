@@ -61,6 +61,28 @@ enum ADRDiscoveryCommand {
     static func producedSnapshot(exitStatus: Int32) -> Bool {
         exitStatus == exitOK || exitStatus == exitPartial
     }
+
+    /// Where the drafting prompt asks the agent to write ADR's policy. Neither ADR nor Kannu has a
+    /// default; this sits beside the snapshots' folder, not in it.
+    static let suggestedPolicyPath = "~/.kannu/adr/policy.json"
+
+    /// What "Copy a prompt that drafts a policy" on the ADR scan policy row puts on the
+    /// pasteboard. Written from adr-discovery 0.2.0's source (`judge/sanction.py`, `findings.py`):
+    /// only `tenant_domains` affects MCP servers. `approved` and `forbidden` match catalog ids of
+    /// AI tools, never an MCP server, and raise no finding, so the prompt leaves them out by default.
+    /// A file ADR cannot read fails every scan, hence the check at the end.
+    static let policyDraftingPrompt = """
+        Write \(suggestedPolicyPath) for ADR Discovery, the scanner Kannu runs to check the AI tools and MCP \
+        servers on this Mac. Format: JSON, {"tenant_domains": ["example.com"]}. Any MCP server that connects by \
+        URL to a host outside those domains is flagged; a subdomain of a listed domain counts as inside, and there \
+        are no wildcards. Servers that run as a local command are not checked. First read my MCP configs \
+        (~/.claude.json, ~/.cursor/mcp.json, any project .mcp.json) and list each URL-based server's name and \
+        host only, never tokens, headers or environment values. Ask me which of those domains are mine, then \
+        write the file with just those, create the folder if needed, and check it with python3 -m json.tool. \
+        ADR also reads "approved" and "forbidden" lists, but they take ADR catalog ids of AI tools (such as \
+        claude-code) and never flag an MCP server, so leave them out unless I ask. Finish by telling me to \
+        choose the file in Kannu: Settings, Agent Security, ADR scans, Advanced, ADR scan policy, Choose.
+        """
 }
 
 /// When Kannu runs its own Discovery scan: daily, or sooner after the MCP servers an agent's

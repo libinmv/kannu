@@ -59,4 +59,19 @@ final class ADRDiscoveryCommandTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(ADRDiscoveryCommand.timeout, 60)
         XCTAssertLessThanOrEqual(ADRDiscoveryCommand.timeout, 600)
     }
+
+    /// The prompt is the whole spec the user's agent gets, so pin what it must carry: where to
+    /// write, the one list that affects MCP servers, the check that keeps a bad file from failing
+    /// every scan, and the rule against copying secrets out of MCP configs.
+    func testThePolicyDraftingPromptStatesTheFormatAndItsLimits() {
+        let prompt = ADRDiscoveryCommand.policyDraftingPrompt
+        XCTAssertTrue(prompt.contains(ADRDiscoveryCommand.suggestedPolicyPath))
+        XCTAssertTrue(prompt.contains(#"{"tenant_domains": ["#))
+        XCTAssertTrue(prompt.contains("python3 -m json.tool"))
+        XCTAssertTrue(prompt.contains("never tokens, headers or environment values"))
+        XCTAssertTrue(prompt.contains("never flag an MCP server"), "approved/forbidden must not be sold as MCP controls")
+        XCTAssertTrue(prompt.contains("Ask me"))
+        // The suggested file is ADR's policy, never inside the snapshots folder Kannu watches.
+        XCTAssertFalse(ADRDiscoveryCommand.suggestedPolicyPath.contains("/discovery/"))
+    }
 }
