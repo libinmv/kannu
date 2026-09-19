@@ -1,6 +1,6 @@
 #!/bin/bash
 # Installed by Kannu: reports AI agent status for the notch traffic light.
-# KANNU_HOOK_SCRIPT_VERSION=42
+# KANNU_HOOK_SCRIPT_VERSION=43
 # Usage: kannu-agent-status.sh <state> <provider> [hook_event] [matcher_key]
 #        (hook JSON arrives on stdin)
 
@@ -612,6 +612,7 @@ SP_INPLACE_CMDS = {"sed", "gsed", "perl"}
 SP_NAME_ONLY_CMDS = {"ls", "stat", "file", "du", "cd", "pushd", "popd", "mkdir", "echo", "printf",
                      "which", "type", "realpath", "dirname", "basename", "readlink", "test", "[", "[["}
 SP_KEYCHAIN_READS = {"find-generic-password", "find-internet-password", "dump-keychain", "export"}
+SP_KEYCHAIN_LOOKUPS = {"find-generic-password", "find-internet-password"}
 SP_LAUNCHCTL_WRITES = {"load", "bootstrap", "enable", "submit"}
 SP_PATCH_MARKERS = ("*** Add File: ", "*** Update File: ", "*** Delete File: ", "*** Move to: ")
 SP_WRITE_ONLY = {"autorun", "shell_startup", "agent_config"}
@@ -674,7 +675,7 @@ SP_ANY_SUFFIXES = [("/.claude/settings.json", "agent_config"), ("/.claude/settin
                    ("/.qwen/settings.json", "agent_config"), ("/.vscode/settings.json", "agent_config"),
                    ("/.vscode/mcp.json", "agent_config"), ("/.codex/config.toml", "agent_config")]
 SP_CATEGORIES = ({c for c in SP_HOME_DIRS.values()} | {c for c in SP_HOME_FILES.values()}
-                 | {c for _, c in SP_HOME_PREFIXES} | {"env_file", "autorun", "keychain", "agent_config"})
+                 | {c for _, c in SP_HOME_PREFIXES} | {"env_file", "autorun", "keychain", "keychain_item", "agent_config"})
 
 def early_cwd(payload):
     roots = payload.get("workspace_roots") or payload.get("workspacePaths") or payload.get("workspace_paths")
@@ -745,9 +746,19 @@ def sp_simple_command(words):
     out = []
     operands = [a for a in args if not a.startswith("-") or "=" in a]
     if name == "security":
-        sub = operands[0] if operands else ""
+        # Global options come before the subcommand, and -p takes a value: skip it rather than
+        # read the value as the subcommand, which hid "security -p x find-generic-password -w".
+        rest = list(args)
+        while rest and rest[0].startswith("-"):
+            rest = rest[2:] if rest[0] == "-p" else rest[1:]
+        sub = rest[0] if rest else ""
         if sub in SP_KEYCHAIN_READS:
-            out.append(("security " + sub, "read", "keychain"))
+            # -w or -g hands back the secret. A find-* without either only says an item exists:
+            # a lookup, graded below a password read. Any doubt stays a read.
+            flags = [a[1:] for a in rest[1:] if a[:1] == "-" and a[1:2] != "-"]
+            reveals = any("w" in f or "g" in f for f in flags)
+            lookup = sub in SP_KEYCHAIN_LOOKUPS and not reveals
+            out.append(("security " + sub, "read", "keychain_item" if lookup else "keychain"))
     elif name == "crontab" and args and "-l" not in args:
         out.append(("crontab", "write", "autorun"))
     elif name == "launchctl" and args and args[0] in SP_LAUNCHCTL_WRITES:

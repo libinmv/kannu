@@ -841,6 +841,30 @@ final class HookScriptTests: XCTestCase {
         XCTAssertEqual(keychain["failed"] as? Bool, true, "a failed attempt is still worth knowing about")
     }
 
+    /// v43: a find-*-password with neither -w nor -g returns no secret, only whether an item
+    /// exists, so it is recorded as its own category and Swift grades it below a password read.
+    /// Anything that can hand back the secret, or any doubt, stays "keychain".
+    func testAKeychainLookupIsNotAPasswordRead() throws {
+        func category(_ command: String, _ id: String) throws -> String? {
+            try run(state: "thinking", event: "PostToolUse", conversation: id, extra: ["tool_input": ["command": command]])
+            return try sensitivePaths(id).first?["category"] as? String
+        }
+        XCTAssertEqual(try category("security find-generic-password -s svc -a acct >/dev/null 2>&1", "k1"), "keychain_item")
+        XCTAssertEqual(try category("security -v find-internet-password -s example.com", "k2"), "keychain_item")
+        for (index, command) in ["security find-generic-password -s svc -w", "security find-generic-password -g -s svc",
+                                 "security find-generic-password -gw -s svc", "security find-generic-password -wa acct",
+                                 "security find-internet-password -s example.com -w", "security dump-keychain",
+                                 "security export -k login.keychain -o out.p12"].enumerated() {
+            XCTAssertEqual(try category(command, "k3-\(index)"), "keychain", command)
+        }
+        // -p takes a value; it used to be read as the subcommand, and nothing was recorded at all.
+        XCTAssertEqual(try category("security -p prompt find-generic-password -s svc -w", "k4"), "keychain")
+        XCTAssertNil(try category("security list-keychains", "k5"), "listing keychain files reads no item")
+        // Carried across the session's next write, so the carry-over allow-list knows the category.
+        try run(state: "stopped", event: "Stop", conversation: "k1")
+        XCTAssertEqual(try sensitivePaths("k1").first?["category"] as? String, "keychain_item")
+    }
+
     func testEnvFilesButNotTheirExamples() throws {
         try run(state: "thinking", event: "PostToolUse", conversation: "p6", toolName: "Read",
                 extra: ["tool_input": ["file_path": ".env"], "cwd": "/work/app"])
