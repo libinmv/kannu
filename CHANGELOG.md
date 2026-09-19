@@ -4,6 +4,21 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-19 - Agent policy copy says what the feature does, not where the file lives
+- **Developer label:** "do we have to tell people about json file location and stuff, but rather give a quick idea about what this feature does, and also why do we keep on spoon feeding the user that we never write files for you but rather this byte by byte is read"
+- **Agent label:** Claude Code — plain-language rewrite of the Agent policy section, per docs/SETTINGS.md
+- **Changes:**
+  - Policy rules caption drops the file path and the "never writes rules / byte for byte"
+    reassurance: "Commands and tools your agents may not use. Every match is flagged; the switch
+    below decides whether it's also blocked." The rule count reads "12 rules", no path; Reveal in
+    Finder still finds the file.
+  - Get a policy, the Block switch, the footer, the broken-file line, the Import panel and the
+    Replace alert all shortened to what the user decides. The footer keeps one example ("ssh"
+    catches "ssh host", not "sshd"); the full matching grammar stays in the drafting prompt, where
+    the agent writing the file needs it.
+  - The new `LoadError` messages lose their jargon ("the hook", "regular file") and the
+    `notWritten` path.
+
 ### 2026-09-19 - Edit the agent policy in your own editor, and never count rules the hook ignores
 - **Developer label:** "there is no option to edit or modify the uploaded policy file / rule, is that hard to give"
 - **Agent label:** Claude Code — Open in Editor, a save watcher, and Settings/hook parity on what counts as a valid policy

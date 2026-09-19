@@ -329,15 +329,15 @@ struct AgentSecuritySettings: View {
                     }
                 }
             } label: {
-                SettingsRowLabel("Policy rules", description: "A JSON file — ~/.kannu/agent-policy.json — naming commands and tools an agent may not use. Kannu never writes rules of its own; Import below copies a file you chose, byte for byte, after checking it. Open in Editor to change it; Kannu re-checks it every time it is saved. Every match is reported as a finding; whether it is also blocked is the switch below.")
+                SettingsRowLabel("Policy rules", description: "Commands and tools your agents may not use. Every match is flagged; the switch below decides whether it's also blocked.")
             }
             .settingsHighlight(id: highlightID("Policy rules"))
             if case .failure(let error) = findingsStore.agentPolicyStatus, agentPolicyExists, error.hookIgnoresFile {
                 // The hook ignores a malformed file whole (docs/REGRESSIONS.md entry 1: it never
                 // fails closed), so say what that costs rather than only what is wrong.
-                SettingsErrorText(String(localized: "Until this is fixed, Kannu ignores the whole file: no rule is reported or blocked."))
+                SettingsErrorText(String(localized: "Until this is fixed, none of these rules apply."))
             }
-            SettingsActionRow("Get a policy", description: "Have your agent draft one, or import a JSON file you already have. Kannu checks the file before it counts; a broken import never replaces a working policy.") {
+            SettingsActionRow("Get a policy", description: "Have your agent write one for you, or import one you already have.") {
                 Button("Import…") { importAgentPolicy() }
                 Button("Copy a prompt that drafts a policy") { findingsStore.copyPolicyDraftingPrompt() }
             }
@@ -345,7 +345,7 @@ struct AgentSecuritySettings: View {
             if let importError = findingsStore.agentPolicyImportError {
                 SettingsErrorText(String(localized: "Not imported — \(importError)"))
             }
-            SettingsRow("Block matching tool calls", description: "Off: every match is reported and the call runs. On: Claude Code and Cursor refuse the call and tell the agent why — their hooks can say no. Every other agent still only gets the finding.") {
+            SettingsRow("Block matching tool calls", description: "Off: matches are only flagged. On: Claude Code and Cursor refuse the call and tell the agent why; other agents are still only flagged.") {
                 Defaults.Toggle(key: .enforceAgentPolicy) {
                     Text("Block matching tool calls")
                 }
@@ -354,7 +354,7 @@ struct AgentSecuritySettings: View {
         } header: {
             SettingsSectionHeader("Agent policy")
         } footer: {
-            SettingsFooter("A command rule matches a command's first word (or its basename) in any segment joined by ;, &&, || or |, after sudo, env and nohup; a multi-word rule matches a segment that starts with it; a tool rule matches the tool's exact name. No regex. Not the ADR policy file above — that one is about MCP servers.")
+            SettingsFooter("A command rule matches the command's first word, so \"ssh\" catches \"ssh host\" but not \"sshd\". A tool rule matches the tool's exact name.")
         }
         .onAppear {
             findingsStore.agentPolicyImportError = nil
@@ -369,14 +369,14 @@ struct AgentSecuritySettings: View {
         panel.allowedContentTypes = [.json]
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.message = String(localized: "Choose the agent policy JSON to copy to ~/.kannu/agent-policy.json")
+        panel.message = String(localized: "Choose a policy file to import")
         ModalPresenter.present(panel) { response in
             guard response == .OK, let url = panel.url else { return }
             let proceed = { findingsStore.importPolicyFile(from: url) }
             if agentPolicyExists {
                 let alert = NSAlert()
                 alert.messageText = String(localized: "Replace the current policy?")
-                alert.informativeText = String(localized: "~/.kannu/agent-policy.json already exists. Importing replaces it with the chosen file.")
+                alert.informativeText = String(localized: "Your current rules will be replaced by the ones in this file.")
                 alert.addButton(withTitle: String(localized: "Replace"))
                 alert.addButton(withTitle: String(localized: "Cancel"))
                 ModalPresenter.present(alert) { answer in
@@ -391,7 +391,7 @@ struct AgentSecuritySettings: View {
     private var agentPolicyStatusText: String {
         switch findingsStore.agentPolicyStatus {
         case .success(let policy):
-            return String(localized: "\(policy.rules.count) rules · ~/.kannu/agent-policy.json")
+            return String(localized: "\(policy.rules.count) rules")
         case .failure(let error):
             return error.message
         }

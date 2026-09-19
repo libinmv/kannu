@@ -84,18 +84,18 @@ struct AgentPolicy: Equatable {
             switch self {
             case .notFound: return String(localized: "No policy file yet.")
             case .unreadable: return String(localized: "The policy file could not be read.")
-            case .notARegularFile: return String(localized: "The policy is a symbolic link or special file. The hook reads only a regular file, so it ignores this one.")
+            case .notARegularFile: return String(localized: "The policy is a link to another file. Put the file itself here.")
             case .byteOrderMark: return String(localized: "The policy file starts with a byte-order mark. Save it as UTF-8 without one.")
             case .notUTF8: return String(localized: "The policy file must be saved as UTF-8.")
             case .trailingComma: return String(localized: "The policy file has a comma just before a closing ] or }. JSON does not allow one there.")
-            case .duplicateKey(let key): return String(localized: "\"\(key)\" appears twice in one object. The hook uses the last one; keep just one so Settings shows what is in effect.")
+            case .duplicateKey(let key): return String(localized: "\"\(key)\" appears twice. Keep just one.")
             case .notJSON: return String(localized: "The policy file is not valid JSON.")
             case .tooLarge(let bytes): return String(localized: "The policy file is \(bytes) bytes; the limit is \(maxBytes).")
             case .notAnObject: return String(localized: "The policy file must be a JSON object with \"version\" and \"block\".")
             case .version: return String(localized: "\"version\" must be 1.")
             case .tooManyRules(let count): return String(localized: "\(count) rules; the limit is \(maxRules).")
             case .rule(let index, let why): return String(localized: "Rule \(index + 1): \(why)")
-            case .notWritten: return String(localized: "The file is valid, but ~/.kannu/agent-policy.json could not be written.")
+            case .notWritten: return String(localized: "The file is valid, but it could not be saved.")
             }
         }
     }
