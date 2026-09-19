@@ -4,6 +4,18 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-19 - Say how to launch the settings snapshot so it cannot crash on TCC
+- **Developer label:** a crash report for com.kannu.app.dev: TCC abort, NSBluetoothAlwaysUsageDescription missing
+- **Agent label:** Claude Code — DebugSnapshot.swift header documents the `open` launch; comment only
+- **Changes:**
+  - The crash came from launching the Debug app's bare executable with `--kannu-snapshots` from an
+    agent's shell. That made the agent the responsible process, so TCC checked the agent's
+    Info.plist for a Bluetooth usage string and aborted. Kannu's own Info.plist has it; launched
+    with `open`, the snapshot runs fine.
+  - The header now gives the `open -n -W … --args` command and why. It also corrects "starts no
+    monitors": agent monitors and hooks are skipped, but `AppDelegate` singletons (including
+    `BluetoothAudioManager`) initialise before the early return. No behaviour change.
+
 ### 2026-09-19 - Agent Security spacing, and a drafting prompt for ADR's scan policy
 - **Developer label:** "fix intendation … make better spacing … ADR's own policy file … this also needs a draft prompt"
 - **Agent label:** Claude Code — Policy rules status moved under its title; Block caption on three lines; ADR scan policy prompt and truthful caption

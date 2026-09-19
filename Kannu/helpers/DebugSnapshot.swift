@@ -23,7 +23,17 @@ import SwiftUI
 /// DEBUG builds only. `--kannu-snapshots <dir>` renders every Settings tab and a few boards to PNG,
 /// in light and dark, then quits — so a host that cannot take screenshots can still see the UI
 /// before and after a change. Optional `--kannu-snapshot-tabs agentStatus,general` limits the tabs.
-/// Quit the running Kannu first: this instance starts no monitors, but it shares Defaults.
+///
+/// Launch it through `open`, never the bare executable:
+///
+///     open -n -W Kannu.app --args --kannu-snapshots <dir> --kannu-snapshot-tabs agentSecurity
+///
+/// The early return skips agent monitors and hooks, but `AppDelegate`'s singletons initialise
+/// before it, and `BluetoothAudioManager` among them asks for Bluetooth. Run as a child of a shell
+/// or an agent, macOS makes that parent the responsible process and checks *its* Info.plist for
+/// `NSBluetoothAlwaysUsageDescription`; finding none, TCC aborts the snapshot (SIGABRT, "Namespace
+/// TCC"). `open` makes Kannu its own responsible process. Quit the running Kannu first too: the two
+/// instances share Defaults.
 struct DebugSnapshotRequest {
     let directory: URL
     let tabs: Set<String>?
