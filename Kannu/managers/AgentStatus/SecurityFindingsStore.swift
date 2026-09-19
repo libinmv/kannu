@@ -249,6 +249,7 @@ final class SecurityFindingsStore: ObservableObject {
         directorySource?.cancel()
         directorySource = nil
         watchedPath = nil
+        agentPolicyWatcher.stop()
         reloadTask?.cancel()
         reloadTask = nil
         cancellables.removeAll()
@@ -288,8 +289,18 @@ final class SecurityFindingsStore: ObservableObject {
     // MARK: - Agent policy (hook v42)
 
     /// What `~/.kannu/agent-policy.json` holds, or why the hook is ignoring it. Read off the main
-    /// actor (docs/REGRESSIONS.md entry 11) on start, on appear and on "Check again".
+    /// actor (docs/REGRESSIONS.md entry 11) on start, on appear, on "Check again", and whenever the
+    /// file is saved — so a hand edit that breaks the JSON shows here at once, instead of blocking
+    /// quietly stopping while the row still counts the old rules.
     @Published private(set) var agentPolicyStatus: Result<AgentPolicy, AgentPolicy.LoadError> = .failure(.notFound)
+
+    /// Re-checks the policy the moment it is saved, created, replaced or removed. Its callback
+    /// runs on the watcher's own queue; hop to the main actor before touching published state.
+    private lazy var agentPolicyWatcher = AgentPolicyWatcher { [weak self] in
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { self?.checkAgentPolicy() }
+        }
+    }
 
     /// Every policy read and write runs here, in order. Checks and imports used to run on the
     /// shared utility pool, so an earlier import could write after a later one, or an earlier
@@ -301,6 +312,8 @@ final class SecurityFindingsStore: ObservableObject {
     func checkAgentPolicy() {
         // A fresh check answers the question the import error was about.
         if agentPolicyImportError != nil { agentPolicyImportError = nil }
+        // Idempotent; re-arms if ~/.kannu appeared after launch or a save replaced the file.
+        agentPolicyWatcher.start()
         agentPolicyQueue.async {
             let result = AgentPolicy.load()
             DispatchQueue.main.async {
@@ -316,7 +329,7 @@ final class SecurityFindingsStore: ObservableObject {
     @Published var agentPolicyImportError: String?
 
     /// Copies a user-picked policy file into `~/.kannu/agent-policy.json` after validating it —
-    /// the "Import…" button, and the only path on which Kannu writes that file. Runs off the
+    /// the "Import…" button; the rule editor's Save is the only other write. Runs off the
     /// main actor on the same serial queue as `checkAgentPolicy`; on success the status
     /// republishes, on failure the existing file is untouched and the error is published instead.
     func importPolicyFile(from url: URL) {
@@ -336,9 +349,43 @@ final class SecurityFindingsStore: ObservableObject {
         }
     }
 
-    /// Puts the drafting prompt on the clipboard for the user's own agent. Kannu never writes
-    /// rules of its own; `importPolicyFile` copies a file the user chose, byte for byte, after
-    /// checking it.
+    /// Reads the policy for the rule editor, off the main actor. The draft is empty when there is
+    /// no file yet, and nil when there is one that is not a policy: the editor must not save over
+    /// a file it could not read.
+    func openAgentPolicyDraft(_ completion: @escaping @MainActor (AgentPolicyDraft?) -> Void) {
+        agentPolicyQueue.async {
+            let url = AgentPolicy.fileURL
+            let exists = FileManager.default.fileExists(atPath: url.path)
+            let bytes = exists ? try? Data(contentsOf: url) : nil
+            // There but unreadable is not "no file": no draft, rather than an empty one.
+            let draft = (exists && bytes == nil) ? nil : AgentPolicyDraft(fileBytes: bytes)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { completion(draft) }
+            }
+        }
+    }
+
+    /// The rule editor's Save, on the same serial queue as every other policy read and write.
+    /// `replacingChanges` is the user's answer to "the rules changed while you were editing".
+    func saveAgentPolicy(_ draft: AgentPolicyDraft, replacingChanges: Bool,
+                         _ completion: @escaping @MainActor (AgentPolicy.SaveOutcome) -> Void) {
+        let data = draft.fileBytes()
+        let original = draft.original
+        agentPolicyQueue.async {
+            let outcome = AgentPolicy.save(data, expecting: original, ignoringChanges: replacingChanges)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    if case .saved(let policy) = outcome {
+                        self.agentPolicyImportError = nil
+                        self.agentPolicyStatus = .success(policy)
+                    }
+                    completion(outcome)
+                }
+            }
+        }
+    }
+
+    /// Puts the drafting prompt on the clipboard for the user's own agent.
     func copyPolicyDraftingPrompt() {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()

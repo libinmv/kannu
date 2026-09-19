@@ -117,6 +117,20 @@ configuration; the matched rule is recorded, never the command line. Guards: the
 `…MatchingIsByWordNotBySubstring`, `…MalformedPolicyMeansNoPolicyAndTheHookStillAnswers`),
 `AgentPolicyTests` for the file's shape. Widen `POLICY_DENY_EVENTS` only after a live check on that host.
 
+**v42 follow-up — "cannot drift" drifted, twice, on what counts as valid.** Matching lives only in
+the hook, but *validity* is checked on both sides, and Settings kept calling files valid that the
+hook ignored, so it showed "N rules" while nothing was reported or blocked. First a null reason
+(fixed in the hook; `testANullReasonIsAnAbsentReasonInTheHookToo`). Then, found when "Open in Editor"
+made hand edits the normal path, `JSONSerialization` and Swift strings were more lenient than the
+hook's Python in eight ways: trailing commas, a UTF-8 BOM, UTF-16/32 input, duplicate keys (Swift
+kept the first, Python keeps the last), `version` compared via `intValue` (1.5 passed), the length cap
+counted in grapheme clusters instead of code points, whitespace as a space instead of Unicode
+whitespace, and a symlinked file (the hook `lstat`s). All fixed on the Swift side: the hook is the
+authority and a danger zone. Rule: **whatever `AgentPolicy.parse` accepts, `load_policy` must
+use.** Where the hook is more lenient (NaN in an unused key, a duplicate key), Settings may only err
+toward "not in effect". Guard: `HookScriptTests.testSettingsAndTheHookAgreeOnWhatIsAPolicy` feeds the
+same bytes to both; it failed 12 times against the old parser. Add a case there for any new check.
+
 ---
 
 ## 2. The active-state staleness window must exceed the longest tool call

@@ -48,7 +48,7 @@ enum DebugSnapshots {
             boards.append(("findings", AgentSecuritySettings.snapshotFindingRows(DebugSnapshotFixtures.findings)))
         }
         if request.tabs == nil || request.tabs?.contains("policyRules") == true {
-            boards.append(("policyRules", AnyView(PolicyRulesView(policy: DebugSnapshotFixtures.agentPolicy))))
+            boards.append(("policyRules", AnyView(PolicyRulesEditor(draft: AgentPolicyDraft(previewing: DebugSnapshotFixtures.agentPolicy)))))
         }
         if request.tabs == nil || request.tabs?.contains("detection") == true {
             boards.append(("detection", AgentSecuritySettings.snapshotDetectionRows()))

@@ -80,6 +80,8 @@
 		AA100000000000000000009D /* UsageWindows.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000009C /* UsageWindows.swift */; };
 		AA100000000000000000009F /* AgentExecutionClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000009E /* AgentExecutionClock.swift */; };
 		AA10000000000000000000A8 /* PolicySighting.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000A7 /* PolicySighting.swift */; };
+		AA10000000000000000000AA /* AgentPolicyWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000A9 /* AgentPolicyWatcher.swift */; };
+		AA10000000000000000000AC /* AgentPolicyDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000AB /* AgentPolicyDraft.swift */; };
 		AA10000000000000000000A6 /* AgentPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000A5 /* AgentPolicy.swift */; };
 		AA10000000000000000000A4 /* ClaudeTurnTokenFollower.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000A3 /* ClaudeTurnTokenFollower.swift */; };
 		AA10000000000000000000A2 /* BoundedProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000A1 /* BoundedProcessRunner.swift */; };
@@ -166,6 +168,8 @@
 		AA100000000000000000009C /* UsageWindows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UsageWindows.swift; path = Kannu/managers/LLMUsage/UsageWindows.swift; sourceTree = SOURCE_ROOT; };
 		AA100000000000000000009E /* AgentExecutionClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentExecutionClock.swift; path = Kannu/managers/AgentStatus/AgentExecutionClock.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000A7 /* PolicySighting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PolicySighting.swift; path = Kannu/managers/AgentStatus/PolicySighting.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000A9 /* AgentPolicyWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentPolicyWatcher.swift; path = Kannu/managers/AgentStatus/AgentPolicyWatcher.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000AB /* AgentPolicyDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentPolicyDraft.swift; path = Kannu/managers/AgentStatus/AgentPolicyDraft.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000A5 /* AgentPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentPolicy.swift; path = Kannu/managers/AgentStatus/AgentPolicy.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000A3 /* ClaudeTurnTokenFollower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeTurnTokenFollower.swift; path = Kannu/managers/AgentStatus/ClaudeTurnTokenFollower.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000A1 /* BoundedProcessRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BoundedProcessRunner.swift; path = Kannu/managers/BoundedProcessRunner.swift; sourceTree = SOURCE_ROOT; };
@@ -600,6 +604,8 @@
 				AA100000000000000000009D /* UsageWindows.swift in Sources */,
 				AA100000000000000000009F /* AgentExecutionClock.swift in Sources */,
 				AA10000000000000000000A8 /* PolicySighting.swift in Sources */,
+				AA10000000000000000000AA /* AgentPolicyWatcher.swift in Sources */,
+				AA10000000000000000000AC /* AgentPolicyDraft.swift in Sources */,
 				AA10000000000000000000A6 /* AgentPolicy.swift in Sources */,
 				AA10000000000000000000A4 /* ClaudeTurnTokenFollower.swift in Sources */,
 				AA10000000000000000000A2 /* BoundedProcessRunner.swift in Sources */,

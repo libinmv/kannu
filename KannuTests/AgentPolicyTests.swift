@@ -167,8 +167,82 @@ final class AgentPolicyTests: XCTestCase {
 
     func testEveryLoadErrorHasWords() {
         let errors: [AgentPolicy.LoadError] = [.notFound, .unreadable, .notWritten, .notJSON, .tooLarge(70_000), .notAnObject, .version,
-                                               .tooManyRules(201), .rule(3, "x")]
+                                               .tooManyRules(201), .rule(3, "x"), .notARegularFile, .byteOrderMark, .notUTF8,
+                                               .trailingComma, .duplicateKey("block")]
         for error in errors { XCTAssertFalse(error.message.isEmpty, "\(error)") }
         XCTAssertTrue(AgentPolicy.LoadError.rule(3, "x").message.contains("Rule 4"))
+        XCTAssertTrue(AgentPolicy.LoadError.duplicateKey("block").message.contains("\"block\""))
+        // Only a duplicate key is a file the hook still reads; Settings must not say it is ignored.
+        XCTAssertEqual(errors.filter { !$0.hookIgnoresFile }, [.duplicateKey("block")])
+    }
+
+    // MARK: - Parity with the hook's load_policy
+    //
+    // Each case below is one way `JSONSerialization` or Swift's string handling was more lenient
+    // than the hook's Python, so Settings counted rules the hook was ignoring. The same bytes go
+    // through the real hook in HookScriptTests.testSettingsAndTheHookAgreeOnWhatIsAPolicy.
+
+    func testATrailingCommaIsRefusedAsTheHookRefusesIt() {
+        XCTAssertEqual(parse(#"{"version": 1, "block": [{"command": "ssh"},]}"#), .failure(.trailingComma))
+        XCTAssertEqual(parse(#"{"version": 1, "block": [{"command": "ssh"}],}"#), .failure(.trailingComma))
+        XCTAssertEqual(parse(#"{"version": 1, "block": [{"command": "ssh",}]}"#), .failure(.trailingComma))
+        XCTAssertEqual(parse("{\"version\": 1, \"block\": [{\"command\": \"ssh\"}\n,\n]}"), .failure(.trailingComma), "whitespace between")
+        // Inside a string a comma and a bracket are only text, escaped quote or not.
+        XCTAssertEqual(try parse(#"{"version": 1, "block": [{"command": "ssh", "reason": "no ,] here, \",} either"}]}"#).get().rules.count, 1)
+    }
+
+    func testARepeatedKeyIsRefusedRatherThanGuessedAt() {
+        XCTAssertEqual(parse(#"{"version": 1, "block": [{"command": "ssh"}], "block": []}"#), .failure(.duplicateKey("block")))
+        XCTAssertEqual(parse(#"{"version": 1, "block": [], "block": []}"#), .failure(.duplicateKey("block")), "compared decoded")
+        XCTAssertEqual(parse(#"{"version": 1, "block": [{"command": "ssh", "command": "scp"}]}"#), .failure(.duplicateKey("command")))
+        // The same key in two different objects is not a repeat.
+        XCTAssertEqual(try parse(#"{"version": 1, "block": [{"command": "ssh"}, {"command": "scp"}]}"#).get().rules.count, 2)
+    }
+
+    func testTheEncodingMustBePlainUTF8() {
+        let valid = #"{"version": 1, "block": [{"command": "ssh"}]}"#
+        XCTAssertEqual(AgentPolicy.parse(Data([0xEF, 0xBB, 0xBF]) + Data(valid.utf8)), .failure(.byteOrderMark))
+        XCTAssertEqual(AgentPolicy.parse(valid.data(using: .utf16)!), .failure(.notUTF8), "JSONSerialization reads UTF-16; the hook does not")
+        XCTAssertEqual(AgentPolicy.parse(valid.data(using: .utf32)!), .failure(.notUTF8))
+        XCTAssertEqual(AgentPolicy.parse(Data(valid.utf8.prefix(20)) + Data([0xFF]) + Data(valid.utf8.dropFirst(20))), .failure(.notUTF8))
+    }
+
+    func testTheVersionIsComparedAsANumberAsPythonComparesIt() {
+        XCTAssertNoThrow(try parse(#"{"version": 1.0, "block": []}"#).get())
+        XCTAssertEqual(parse(#"{"version": 1.5, "block": []}"#), .failure(.version), "intValue truncated this to 1")
+    }
+
+    func testAnEmptyReasonIsNoReason() throws {
+        let policy = try parse(#"{"version": 1, "block": [{"command": "ssh", "reason": ""}]}"#).get()
+        XCTAssertEqual(policy.rules, [.init(command: "ssh", tool: nil, reason: nil)])
+    }
+
+    func testTheLengthCapCountsCodePointsAsPythonCounts() {
+        // 150 characters on screen, 300 code points: each "é" is e + a combining accent.
+        let heavy = String(repeating: "e\u{301}", count: 150)
+        XCTAssertEqual(heavy.count, 150)
+        XCTAssertEqual(parse(#"{"version": 1, "block": [{"command": "ssh", "reason": "\#(heavy)"}]}"#),
+                       .failure(.rule(0, "\"reason\" must be text of at most \(AgentPolicy.maxLength) characters")))
+    }
+
+    func testWhitespaceMeansUnicodeWhitespaceAsItDoesToTheHook() {
+        XCTAssertEqual(parse(#"{"version": 1, "block": [{"command": " "}]}"#),
+                       .failure(.rule(0, "\"command\" must be a word or phrase of at most \(AgentPolicy.maxLength) characters")),
+                       "a no-break space alone is no word to Python's split()")
+        XCTAssertEqual(parse(#"{"version": 1, "block": [{"tool": "WebFetch "}]}"#),
+                       .failure(.rule(0, "\"tool\" must be one name of at most \(AgentPolicy.maxLength) characters")),
+                       "Python's strip() removes a line separator; CharacterSet.whitespaces does not")
+    }
+
+    func testASymlinkIsNoPolicyBecauseTheHookReadsOnlyARegularFile() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("AgentPolicyTests-link-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let real = dir.appendingPathComponent("dotfiles-policy.json")
+        try Data(#"{"version": 1, "block": [{"command": "ssh"}]}"#.utf8).write(to: real)
+        let link = dir.appendingPathComponent("agent-policy.json")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+        XCTAssertEqual(AgentPolicy.load(at: link), .failure(.notARegularFile))
+        XCTAssertEqual(try AgentPolicy.load(at: real).get().rules.count, 1)
     }
 }

@@ -4,6 +4,70 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-19 - Edit rules: change the agent policy inside Kannu, no JSON
+- **Developer label:** "IS INLINE APP NATIVE EDIT SCREEN, SIZE OR COMPLEXITY HEAVY"
+- **Agent label:** Claude Code — rule editor sheet on the Policy rules row, draft model, shared validated write
+- **Changes:**
+  - **Edit rules** replaces the read-only View rules popover (`PolicyRulesView.swift`, deleted). A
+    sheet with a row per rule: Command or Tool, the text, an optional reason, remove per row, and
+    Add rule. With no policy yet it opens empty and Save creates the file.
+  - Save is disabled while the draft would not be a policy, with the parser's own message under
+    the rows, numbered as the user sees them. A fully blank row is left out rather than blocking.
+  - New `AgentPolicyDraft` (Foundation-only, logic target) keeps every key the file already had:
+    a top-level "note", a rule's own extra keys. Its validity is `AgentPolicy.parse`, nothing else.
+  - Import and Save now share one validate-then-atomic-write (`AgentPolicy.write`). Save compares
+    the file with what the editor opened and, if someone saved it meanwhile, asks Replace or Reload
+    instead of writing.
+  - A broken file never opens in the editor (it would save over what it could not read); Open in
+    Editor is the visible button then, and otherwise sits in the "…" menu.
+  - docs/ADR.md and three code comments no longer say Kannu never writes rules; they say when it
+    does and what it checks first.
+  - Tests: 10 in `AgentPolicyDraftTests`; an editor-written file joins the Settings/hook
+    differential test. `SettingsLayoutRulesTests` pin moves from the popover to the sheet.
+
+### 2026-09-19 - Agent policy copy says what the feature does, not where the file lives
+- **Developer label:** "do we have to tell people about json file location and stuff, but rather give a quick idea about what this feature does, and also why do we keep on spoon feeding the user that we never write files for you but rather this byte by byte is read"
+- **Agent label:** Claude Code — plain-language rewrite of the Agent policy section, per docs/SETTINGS.md
+- **Changes:**
+  - Policy rules caption drops the file path and the "never writes rules / byte for byte"
+    reassurance: "Commands and tools your agents may not use. Every match is flagged; the switch
+    below decides whether it's also blocked." The rule count reads "12 rules", no path; Reveal in
+    Finder still finds the file.
+  - Get a policy, the Block switch, the footer, the broken-file line, the Import panel and the
+    Replace alert all shortened to what the user decides. The footer keeps one example ("ssh"
+    catches "ssh host", not "sshd"); the full matching grammar stays in the drafting prompt, where
+    the agent writing the file needs it.
+  - The new `LoadError` messages lose their jargon ("the hook", "regular file") and the
+    `notWritten` path.
+
+### 2026-09-19 - Edit the agent policy in your own editor, and never count rules the hook ignores
+- **Developer label:** "there is no option to edit or modify the uploaded policy file / rule, is that hard to give"
+- **Agent label:** Claude Code — Open in Editor, a save watcher, and Settings/hook parity on what counts as a valid policy
+- **Changes:**
+  - **Open in Editor** on the Policy rules row opens `~/.kannu/agent-policy.json` in the user's
+    default app for JSON, and falls back to Finder if nothing claims it. Offered for a broken file
+    too, since that is when it needs fixing. The user's editor does the writing, so "Kannu never
+    writes rules of its own" still holds and is unchanged.
+  - **The row re-checks on every save.** New `AgentPolicyWatcher` (Foundation-only, in the logic
+    target) watches `~/.kannu` and the file itself, so both atomic saves (a new inode) and in-place
+    writes are seen, debounced to one check per save. `SecurityFindingsStore` owns it and re-arms it
+    on each check. Before this, Settings only re-read the file on appear or Check again, so a hand
+    edit that broke the JSON switched blocking off while the row still showed the old rule count.
+  - **A broken file says what it costs**: a red line under the row, "Until this is fixed, Kannu
+    ignores the whole file: no rule is reported or blocked." Not shown for a duplicate key, the one
+    error the hook resolves (last one wins) rather than ignores.
+  - **Settings and the hook now agree on what a valid policy is.** Writing the watcher's test found
+    `AgentPolicy.parse` accepting files `load_policy` ignores: trailing commas, a UTF-8 BOM, UTF-16/32,
+    duplicate keys, `version` 1.5, a length cap counted in grapheme clusters, space-only whitespace
+    handling, and symlinks. Each fixed in Swift, with a new `LoadError` case and words where the
+    user needs to act (`notARegularFile`, `byteOrderMark`, `notUTF8`, `trailingComma`,
+    `duplicateKey`). An empty `reason` is now accepted as no reason, as the hook reads it. Import
+    goes through the same parser, so it can no longer copy in a file the hook would ignore.
+  - **Guard:** `HookScriptTests.testSettingsAndTheHookAgreeOnWhatIsAPolicy` feeds identical bytes to
+    `AgentPolicy.load` and the real hook. It fails 12 times against the previous parser. Recorded
+    under docs/REGRESSIONS.md entry 1. Also 8 new `AgentPolicyTests` and 9 `AgentPolicyWatcherTests`.
+  - Settings search finds the row for "edit", "editor" and "modify".
+
 ### 2026-09-18 - One content standard for Settings: spacing, indentation and type
 - **Developer label:** "spacing and intendation is till a issue in different section, please workout the content standard"
 - **Agent label:** Follow-up 51, PR R — SettingsMetrics tokens, kit additions, three pinned guards

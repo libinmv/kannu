@@ -373,6 +373,73 @@ final class HookScriptTests: XCTestCase {
         XCTAssertEqual(kept.first?["blocked"] as? Bool, false)
     }
 
+    /// Settings and the hook must agree on whether a file is a policy at all. The same bytes go to
+    /// `AgentPolicy.load` and to the real hook; every valid case blocks `ssh`, so the hook is using
+    /// the file exactly when an `ssh` call leaves a policy sighting. Broken twice: a null reason
+    /// (`testANullReasonIsAnAbsentReasonInTheHookToo`), then everything `JSONSerialization` and
+    /// Swift strings were more lenient about (docs/REGRESSIONS.md entry 1). Either way Settings
+    /// said "N rules" while nothing was reported or blocked.
+    func testSettingsAndTheHookAgreeOnWhatIsAPolicy() throws {
+        let valid = #"{"version": 1, "block": [{"command": "ssh"}]}"#
+        let heavy = String(repeating: "e\u{301}", count: 150)  // 150 characters, 300 code points
+        // `exact`: both must say the same. Otherwise the case is one where the hook is the more
+        // lenient, and Settings may only err toward "not in effect", never the other way.
+        let cases: [(name: String, bytes: Data, exact: Bool)] = [
+            ("plain", Data(valid.utf8), true),
+            // What the rule editor writes must be what the hook enforces.
+            ("written by the rule editor", {
+                var draft = AgentPolicyDraft(fileBytes: Data(#"{"version": 1, "note": "kept", "block": []}"#.utf8))!
+                draft.rows = [.init(text: "ssh", reason: "Servers are off limits."), .init(kind: .tool, text: "WebFetch"), .init()]
+                return draft.fileBytes()
+            }(), true),
+            ("trailing comma in array", Data(#"{"version": 1, "block": [{"command": "ssh"},]}"#.utf8), true),
+            ("trailing comma in object", Data(#"{"version": 1, "block": [{"command": "ssh"}],}"#.utf8), true),
+            ("trailing comma in rule", Data(#"{"version": 1, "block": [{"command": "ssh",}]}"#.utf8), true),
+            ("comma inside a string", Data(#"{"version": 1, "block": [{"command": "ssh", "reason": "no ,] here"}]}"#.utf8), true),
+            ("byte-order mark", Data([0xEF, 0xBB, 0xBF]) + Data(valid.utf8), true),
+            ("UTF-16", valid.data(using: .utf16)!, true),
+            ("version 1.0", Data(#"{"version": 1.0, "block": [{"command": "ssh"}]}"#.utf8), true),
+            ("version 1.5", Data(#"{"version": 1.5, "block": [{"command": "ssh"}]}"#.utf8), true),
+            ("empty reason", Data(#"{"version": 1, "block": [{"command": "ssh", "reason": ""}]}"#.utf8), true),
+            ("reason over the cap in code points", Data(#"{"version": 1, "block": [{"command": "ssh", "reason": "\#(heavy)"}]}"#.utf8), true),
+            ("no-break-space command", Data(#"{"version": 1, "block": [{"command": "ssh"}, {"command": " "}]}"#.utf8), true),
+            ("tool ending in a line separator", Data(#"{"version": 1, "block": [{"command": "ssh"}, {"tool": "WebFetch "}]}"#.utf8), true),
+            ("repeated key, the last one empty", Data(#"{"version": 1, "block": [{"command": "ssh"}], "block": []}"#.utf8), true),
+            // The hook takes the last "block"; Settings refuses to guess and says so, without
+            // claiming the file is ignored (LoadError.hookIgnoresFile).
+            ("repeated key, the last one blocking", Data(#"{"version": 1, "block": [], "block": [{"command": "ssh"}]}"#.utf8), false),
+            // Python's json reads NaN; JSONSerialization does not. Harmless where it is unused.
+            ("NaN in an unused key", Data(#"{"version": 1, "block": [{"command": "ssh"}], "note": NaN}"#.utf8), false),
+        ]
+        let dir = home.appendingPathComponent(".kannu")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let policy = dir.appendingPathComponent("agent-policy.json")
+
+        func check(_ name: String, exact: Bool, _ index: Int) throws {
+            let settingsSays = (try? AgentPolicy.load(at: policy).get()) != nil
+            let conversation = "agree-\(index)"
+            try run(state: "executing", event: "PreToolUse", conversation: conversation, extra: ["tool_input": ["command": "ssh prod"]])
+            let hookSays = !(try policySightings(conversation)).isEmpty
+            if exact {
+                XCTAssertEqual(settingsSays, hookSays, "\(name): Settings \(settingsSays ? "counts" : "refuses") it, the hook \(hookSays ? "uses" : "ignores") it")
+            } else {
+                XCTAssertFalse(settingsSays && !hookSays, "\(name): Settings counts rules the hook ignores")
+            }
+        }
+
+        for (index, item) in cases.enumerated() {
+            try? FileManager.default.removeItem(at: policy)  // never write through a symlink left by a case
+            try item.bytes.write(to: policy)
+            try check(item.name, exact: item.exact, index)
+        }
+        // A symlink to a valid file: the hook lstat()s and reads only a regular file.
+        try? FileManager.default.removeItem(at: policy)
+        let real = dir.appendingPathComponent("dotfiles-policy.json")
+        try Data(valid.utf8).write(to: real)
+        try FileManager.default.createSymbolicLink(at: policy, withDestinationURL: real)
+        try check("symlink", exact: true, cases.count)
+    }
+
     func testAPayloadPastArgMaxStillWritesTheStatusAndPrintsTheAllowLine() throws {
         // Exported as an environment variable, a payload this size made execve fail before the
         // heredoc ran: no status file, no allow line, exit 0. It goes through a file now.

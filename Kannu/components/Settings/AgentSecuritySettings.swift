@@ -50,7 +50,8 @@ struct AgentSecuritySettings: View {
     @State private var adrOpenAIKeyText = ""
     @State private var adrAnthropicKeyText = ""
     @State private var showDetectionConsent = false
-    @State private var showPolicyRules = false
+    /// The rule editor's draft while its sheet is open.
+    @State private var policyDraft: AgentPolicyDraft?
     /// Which ADR Detection keys the keychain holds; see `adrSecretRow`.
     @State private var storedADRSecrets: Set<SecureSecretKey> = []
 
@@ -310,13 +311,18 @@ struct AgentSecuritySettings: View {
             LabeledContent {
                 HStack(spacing: SettingsMetrics.rowContent) {
                     SettingsStatusText(agentPolicyStatusText, isReady: agentPolicyIsReady)
-                    if case .success(let policy) = findingsStore.agentPolicyStatus {
-                        Button(String(localized: "View rules")) { showPolicyRules = true }
-                        .popover(isPresented: $showPolicyRules, arrowEdge: .bottom) {
-                            PolicyRulesView(policy: policy)
-                        }
+                    if agentPolicyIsEditable {
+                        // No file yet opens an empty editor; Save creates the file.
+                        Button(String(localized: "Edit rules")) { openRuleEditor() }
+                    } else {
+                        // The editor cannot read a broken file, so the file's own editor is the way in.
+                        Button(String(localized: "Open in Editor")) { openAgentPolicyInEditor() }
                     }
                     SettingsMoreMenu {
+                        if agentPolicyIsEditable {
+                            Button("Open in Editor") { openAgentPolicyInEditor() }
+                                .disabled(!agentPolicyExists)
+                        }
                         Button("Reveal in Finder") {
                             NSWorkspace.shared.activateFileViewerSelecting([AgentPolicy.fileURL])
                         }
@@ -325,10 +331,15 @@ struct AgentSecuritySettings: View {
                     }
                 }
             } label: {
-                SettingsRowLabel("Policy rules", description: "A JSON file — ~/.kannu/agent-policy.json — naming commands and tools an agent may not use. Kannu never writes rules of its own; Import below copies a file you chose, byte for byte, after checking it. Every match is reported as a finding; whether it is also blocked is the switch below.")
+                SettingsRowLabel("Policy rules", description: "Commands and tools your agents may not use. Every match is flagged; the switch below decides whether it's also blocked.")
             }
             .settingsHighlight(id: highlightID("Policy rules"))
-            SettingsActionRow("Get a policy", description: "Have your agent draft one, or import a JSON file you already have. Kannu checks the file before it counts; a broken import never replaces a working policy.") {
+            if case .failure(let error) = findingsStore.agentPolicyStatus, agentPolicyExists, error.hookIgnoresFile {
+                // The hook ignores a malformed file whole (docs/REGRESSIONS.md entry 1: it never
+                // fails closed), so say what that costs rather than only what is wrong.
+                SettingsErrorText(String(localized: "Until this is fixed, none of these rules apply."))
+            }
+            SettingsActionRow("Get a policy", description: "Write rules yourself with Edit rules, have your agent draft them, or import a file.") {
                 Button("Import…") { importAgentPolicy() }
                 Button("Copy a prompt that drafts a policy") { findingsStore.copyPolicyDraftingPrompt() }
             }
@@ -336,7 +347,7 @@ struct AgentSecuritySettings: View {
             if let importError = findingsStore.agentPolicyImportError {
                 SettingsErrorText(String(localized: "Not imported — \(importError)"))
             }
-            SettingsRow("Block matching tool calls", description: "Off: every match is reported and the call runs. On: Claude Code and Cursor refuse the call and tell the agent why — their hooks can say no. Every other agent still only gets the finding.") {
+            SettingsRow("Block matching tool calls", description: "Off: matches are only flagged. On: Claude Code and Cursor refuse the call and tell the agent why; other agents are still only flagged.") {
                 Defaults.Toggle(key: .enforceAgentPolicy) {
                     Text("Block matching tool calls")
                 }
@@ -345,11 +356,14 @@ struct AgentSecuritySettings: View {
         } header: {
             SettingsSectionHeader("Agent policy")
         } footer: {
-            SettingsFooter("A command rule matches a command's first word (or its basename) in any segment joined by ;, &&, || or |, after sudo, env and nohup; a multi-word rule matches a segment that starts with it; a tool rule matches the tool's exact name. No regex. Not the ADR policy file above — that one is about MCP servers.")
+            SettingsFooter("A command rule matches the command's first word, so \"ssh\" catches \"ssh host\" but not \"sshd\". A tool rule matches the tool's exact name.")
         }
         .onAppear {
             findingsStore.agentPolicyImportError = nil
             findingsStore.checkAgentPolicy()
+        }
+        .sheet(item: $policyDraft) { draft in
+            PolicyRulesEditor(draft: draft)
         }
     }
 
@@ -360,14 +374,14 @@ struct AgentSecuritySettings: View {
         panel.allowedContentTypes = [.json]
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.message = String(localized: "Choose the agent policy JSON to copy to ~/.kannu/agent-policy.json")
+        panel.message = String(localized: "Choose a policy file to import")
         ModalPresenter.present(panel) { response in
             guard response == .OK, let url = panel.url else { return }
             let proceed = { findingsStore.importPolicyFile(from: url) }
             if agentPolicyExists {
                 let alert = NSAlert()
                 alert.messageText = String(localized: "Replace the current policy?")
-                alert.informativeText = String(localized: "~/.kannu/agent-policy.json already exists. Importing replaces it with the chosen file.")
+                alert.informativeText = String(localized: "Your current rules will be replaced by the ones in this file.")
                 alert.addButton(withTitle: String(localized: "Replace"))
                 alert.addButton(withTitle: String(localized: "Cancel"))
                 ModalPresenter.present(alert) { answer in
@@ -382,7 +396,7 @@ struct AgentSecuritySettings: View {
     private var agentPolicyStatusText: String {
         switch findingsStore.agentPolicyStatus {
         case .success(let policy):
-            return String(localized: "\(policy.rules.count) rules · ~/.kannu/agent-policy.json")
+            return String(localized: "\(policy.rules.count) rules")
         case .failure(let error):
             return error.message
         }
@@ -396,6 +410,25 @@ struct AgentSecuritySettings: View {
     private var agentPolicyExists: Bool {
         if case .failure(.notFound) = findingsStore.agentPolicyStatus { return false }
         return true
+    }
+
+    /// Edit rules is offered when there is a policy the editor can read, or none yet. A broken
+    /// file is not: the editor would have to save over something it could not read.
+    private var agentPolicyIsEditable: Bool { agentPolicyIsReady || !agentPolicyExists }
+
+    private func openRuleEditor() {
+        findingsStore.openAgentPolicyDraft { draft in
+            if let draft { policyDraft = draft } else { findingsStore.checkAgentPolicy() }
+        }
+    }
+
+    /// "Open in Editor": the file in the user's default app for JSON, for anyone who would rather
+    /// edit it there. The store's watcher re-checks on every save. If no app claims JSON, show the
+    /// file in Finder instead of doing nothing.
+    private func openAgentPolicyInEditor() {
+        if !NSWorkspace.shared.open(AgentPolicy.fileURL) {
+            NSWorkspace.shared.activateFileViewerSelecting([AgentPolicy.fileURL])
+        }
     }
 
     /// ADR Detection — off by default, behind a consent alert, and every run is the user's click.
