@@ -32,6 +32,9 @@ struct SensitivePathSighting: HookSighting {
         case gpgKey = "gpg_key"
         case passwordStore = "password_store"
         case keychain
+        /// `security find-*-password` without `-w` or `-g`: asks whether an item exists, returns no
+        /// secret (hook v43). Older hooks recorded these as `keychain`, and those stay as they were.
+        case keychainItem = "keychain_item"
         case browserData = "browser_data"
         case envFile = "env_file"
         case shellHistory = "shell_history"
@@ -103,7 +106,7 @@ struct SensitivePathSighting: HookSighting {
     /// is a key, a password, a way to act as you, or a way to run code later.
     var severity: AgentSecurityFinding.Severity {
         switch category {
-        case .envFile, .shellHistory:
+        case .envFile, .shellHistory, .keychainItem:
             return .medium
         case .agentConfig:
             return path.hasSuffix(".vscode/settings.json") ? .medium : .high
@@ -125,6 +128,7 @@ struct SensitivePathSighting: HookSighting {
         case .gpgKey: return String(localized: "a GPG private key")
         case .passwordStore: return String(localized: "a password store")
         case .keychain: return String(localized: "the keychain")
+        case .keychainItem: return String(localized: "a keychain item")
         case .browserData: return String(localized: "browser data")
         case .envFile: return String(localized: "a .env file")
         case .shellHistory: return String(localized: "shell history")
@@ -135,6 +139,10 @@ struct SensitivePathSighting: HookSighting {
     }
 
     var title: String {
+        // A lookup returns no secret, so "read" would overstate it.
+        if category == .keychainItem {
+            return failed ? String(localized: "The agent tried to look up \(object)") : String(localized: "The agent looked up \(object)")
+        }
         switch (access, failed) {
         case (.read, false): return String(localized: "The agent read \(object)")
         case (.read, true): return String(localized: "The agent tried to read \(object)")
@@ -153,6 +161,7 @@ struct SensitivePathSighting: HookSighting {
         case .gpgKey: return String(localized: "A GPG private key signs and decrypts in your name.")
         case .passwordStore: return String(localized: "This is a password manager's data.")
         case .keychain: return String(localized: "macOS keeps your saved passwords in the keychain.")
+        case .keychainItem: return String(localized: "It asked whether a saved password exists, without reading the password.")
         case .browserData: return String(localized: "Browser profiles hold cookies, saved passwords and history.")
         case .envFile: return String(localized: ".env files usually hold API keys and passwords.")
         case .shellHistory: return String(localized: "Shell history often holds tokens typed on the command line.")
@@ -172,6 +181,7 @@ struct SensitivePathSighting: HookSighting {
     func evidence(provider: String) -> [String] {
         var how = access == .read ? String(localized: "Read") : String(localized: "Changed")
         if let tool { how = access == .read ? String(localized: "Read with \(tool)") : String(localized: "Changed with \(tool)") }
+        if category == .keychainItem { how = tool.map { String(localized: "Looked up with \($0)") } ?? String(localized: "Looked up") }
         how += " · \(AgentSessionStatus.providerLabel(for: provider))"
         if failed { how += " · " + String(localized: "the call failed") }
         let seen = Date(timeIntervalSince1970: TimeInterval(firstSeenMs) / 1000)
