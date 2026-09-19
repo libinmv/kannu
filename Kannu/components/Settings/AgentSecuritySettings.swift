@@ -50,7 +50,8 @@ struct AgentSecuritySettings: View {
     @State private var adrOpenAIKeyText = ""
     @State private var adrAnthropicKeyText = ""
     @State private var showDetectionConsent = false
-    @State private var showPolicyRules = false
+    /// The rule editor's draft while its sheet is open.
+    @State private var policyDraft: AgentPolicyDraft?
     /// Which ADR Detection keys the keychain holds; see `adrSecretRow`.
     @State private var storedADRSecrets: Set<SecureSecretKey> = []
 
@@ -310,17 +311,18 @@ struct AgentSecuritySettings: View {
             LabeledContent {
                 HStack(spacing: SettingsMetrics.rowContent) {
                     SettingsStatusText(agentPolicyStatusText, isReady: agentPolicyIsReady)
-                    if case .success(let policy) = findingsStore.agentPolicyStatus {
-                        Button(String(localized: "View rules")) { showPolicyRules = true }
-                        .popover(isPresented: $showPolicyRules, arrowEdge: .bottom) {
-                            PolicyRulesView(policy: policy)
-                        }
-                    }
-                    // Offered for a broken file too: that is exactly when it needs fixing.
-                    if agentPolicyExists {
+                    if agentPolicyIsEditable {
+                        // No file yet opens an empty editor; Save creates the file.
+                        Button(String(localized: "Edit rules")) { openRuleEditor() }
+                    } else {
+                        // The editor cannot read a broken file, so the file's own editor is the way in.
                         Button(String(localized: "Open in Editor")) { openAgentPolicyInEditor() }
                     }
                     SettingsMoreMenu {
+                        if agentPolicyIsEditable {
+                            Button("Open in Editor") { openAgentPolicyInEditor() }
+                                .disabled(!agentPolicyExists)
+                        }
                         Button("Reveal in Finder") {
                             NSWorkspace.shared.activateFileViewerSelecting([AgentPolicy.fileURL])
                         }
@@ -337,7 +339,7 @@ struct AgentSecuritySettings: View {
                 // fails closed), so say what that costs rather than only what is wrong.
                 SettingsErrorText(String(localized: "Until this is fixed, none of these rules apply."))
             }
-            SettingsActionRow("Get a policy", description: "Have your agent write one for you, or import one you already have.") {
+            SettingsActionRow("Get a policy", description: "Write rules yourself with Edit rules, have your agent draft them, or import a file.") {
                 Button("Import…") { importAgentPolicy() }
                 Button("Copy a prompt that drafts a policy") { findingsStore.copyPolicyDraftingPrompt() }
             }
@@ -359,6 +361,9 @@ struct AgentSecuritySettings: View {
         .onAppear {
             findingsStore.agentPolicyImportError = nil
             findingsStore.checkAgentPolicy()
+        }
+        .sheet(item: $policyDraft) { draft in
+            PolicyRulesEditor(draft: draft)
         }
     }
 
@@ -407,9 +412,19 @@ struct AgentSecuritySettings: View {
         return true
     }
 
-    /// "Open in Editor": the user's own default app for JSON does the writing, so Kannu still
-    /// never writes rules of its own. The store's watcher re-checks on every save. If no app
-    /// claims JSON, show the file in Finder instead of doing nothing.
+    /// Edit rules is offered when there is a policy the editor can read, or none yet. A broken
+    /// file is not: the editor would have to save over something it could not read.
+    private var agentPolicyIsEditable: Bool { agentPolicyIsReady || !agentPolicyExists }
+
+    private func openRuleEditor() {
+        findingsStore.openAgentPolicyDraft { draft in
+            if let draft { policyDraft = draft } else { findingsStore.checkAgentPolicy() }
+        }
+    }
+
+    /// "Open in Editor": the file in the user's default app for JSON, for anyone who would rather
+    /// edit it there. The store's watcher re-checks on every save. If no app claims JSON, show the
+    /// file in Finder instead of doing nothing.
     private func openAgentPolicyInEditor() {
         if !NSWorkspace.shared.open(AgentPolicy.fileURL) {
             NSWorkspace.shared.activateFileViewerSelecting([AgentPolicy.fileURL])

@@ -386,6 +386,12 @@ final class HookScriptTests: XCTestCase {
         // lenient, and Settings may only err toward "not in effect", never the other way.
         let cases: [(name: String, bytes: Data, exact: Bool)] = [
             ("plain", Data(valid.utf8), true),
+            // What the rule editor writes must be what the hook enforces.
+            ("written by the rule editor", {
+                var draft = AgentPolicyDraft(fileBytes: Data(#"{"version": 1, "note": "kept", "block": []}"#.utf8))!
+                draft.rows = [.init(text: "ssh", reason: "Servers are off limits."), .init(kind: .tool, text: "WebFetch"), .init()]
+                return draft.fileBytes()
+            }(), true),
             ("trailing comma in array", Data(#"{"version": 1, "block": [{"command": "ssh"},]}"#.utf8), true),
             ("trailing comma in object", Data(#"{"version": 1, "block": [{"command": "ssh"}],}"#.utf8), true),
             ("trailing comma in rule", Data(#"{"version": 1, "block": [{"command": "ssh",}]}"#.utf8), true),

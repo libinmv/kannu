@@ -19,8 +19,8 @@
 import Foundation
 
 /// The user's agent policy: `~/.kannu/agent-policy.json`, commands and tools an agent may not
-/// use. Kannu never writes rules of its own; the only write is `importPolicy`, which copies a
-/// file the user chose, byte for byte, after checking it. The hook is the only matcher; this
+/// use. Kannu writes it only at the user's click, Import… or the rule editor's Save, and only
+/// after checking the bytes with `parse` (see `write`). The hook is the only matcher; this
 /// type reads and checks the file so Settings can say what it holds, or why the hook is ignoring it. The two agree on what is
 /// *valid* — the caps and the shape below mirror the hook's `load_policy` — and never on what
 /// *matches*, so matching lives in one place and cannot drift (docs/REGRESSIONS.md entry 1).
@@ -168,8 +168,7 @@ struct AgentPolicy: Equatable {
     /// Copies a policy file the user picked into place — the "Import…" button. The source is
     /// validated with the same parser the status row uses; a file that would not count as a
     /// policy is never written, so Import cannot break a working policy. The write is the copied
-    /// bytes verbatim (no re-serialisation), atomic, after creating `~/.kannu` if needed.
-    /// This is the one place Kannu writes the policy file, and only a user's click reaches it.
+    /// bytes verbatim (no re-serialisation).
     static func importPolicy(from source: URL, to destination: URL = fileURL) -> Result<AgentPolicy, LoadError> {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: source.path, isDirectory: &isDirectory),
@@ -180,6 +179,33 @@ struct AgentPolicy: Equatable {
             return .failure(.tooLarge(size))
         }
         guard let data = try? Data(contentsOf: source) else { return .failure(.unreadable) }
+        return write(data, to: destination)
+    }
+
+    /// What Save in the rule editor did.
+    enum SaveOutcome: Equatable {
+        case saved(AgentPolicy)
+        /// The file is no longer what the editor opened: someone saved it meanwhile. Nothing written.
+        case changedOnDisk
+        case failed(LoadError)
+    }
+
+    /// The rule editor's Save. `expected` is the file as the editor opened it (nil: there was
+    /// none); if the file has changed since, nothing is written unless `ignoringChanges` — the
+    /// user chose Replace. Validated and written exactly as Import is.
+    static func save(_ data: Data, expecting expected: Data?, ignoringChanges: Bool = false,
+                     to destination: URL = fileURL) -> SaveOutcome {
+        if !ignoringChanges, (try? Data(contentsOf: destination)) != expected { return .changedOnDisk }
+        switch write(data, to: destination) {
+        case .success(let policy): return .saved(policy)
+        case .failure(let error): return .failed(error)
+        }
+    }
+
+    /// The only two ways Kannu writes the policy, Import and Save, both land here: the bytes are
+    /// checked with `parse` (so nothing the hook would ignore is ever written), then written
+    /// atomically, after creating `~/.kannu` if needed. Only a user's click reaches it.
+    private static func write(_ data: Data, to destination: URL) -> Result<AgentPolicy, LoadError> {
         switch parse(data) {
         case .failure(let error):
             return .failure(error)
@@ -189,7 +215,7 @@ struct AgentPolicy: Equatable {
             do {
                 try data.write(to: destination, options: .atomic)
             } catch {
-                // Not `.unreadable`: the pick was fine, the destination was not — say which.
+                // Not `.unreadable`: the input was fine, the destination was not — say which.
                 return .failure(.notWritten)
             }
             return .success(policy)

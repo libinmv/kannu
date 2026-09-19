@@ -4,6 +4,27 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-19 - Edit rules: change the agent policy inside Kannu, no JSON
+- **Developer label:** "IS INLINE APP NATIVE EDIT SCREEN, SIZE OR COMPLEXITY HEAVY"
+- **Agent label:** Claude Code — rule editor sheet on the Policy rules row, draft model, shared validated write
+- **Changes:**
+  - **Edit rules** replaces the read-only View rules popover (`PolicyRulesView.swift`, deleted). A
+    sheet with a row per rule: Command or Tool, the text, an optional reason, remove per row, and
+    Add rule. With no policy yet it opens empty and Save creates the file.
+  - Save is disabled while the draft would not be a policy, with the parser's own message under
+    the rows, numbered as the user sees them. A fully blank row is left out rather than blocking.
+  - New `AgentPolicyDraft` (Foundation-only, logic target) keeps every key the file already had:
+    a top-level "note", a rule's own extra keys. Its validity is `AgentPolicy.parse`, nothing else.
+  - Import and Save now share one validate-then-atomic-write (`AgentPolicy.write`). Save compares
+    the file with what the editor opened and, if someone saved it meanwhile, asks Replace or Reload
+    instead of writing.
+  - A broken file never opens in the editor (it would save over what it could not read); Open in
+    Editor is the visible button then, and otherwise sits in the "…" menu.
+  - docs/ADR.md and three code comments no longer say Kannu never writes rules; they say when it
+    does and what it checks first.
+  - Tests: 10 in `AgentPolicyDraftTests`; an editor-written file joins the Settings/hook
+    differential test. `SettingsLayoutRulesTests` pin moves from the popover to the sheet.
+
 ### 2026-09-19 - Agent policy copy says what the feature does, not where the file lives
 - **Developer label:** "do we have to tell people about json file location and stuff, but rather give a quick idea about what this feature does, and also why do we keep on spoon feeding the user that we never write files for you but rather this byte by byte is read"
 - **Agent label:** Claude Code — plain-language rewrite of the Agent policy section, per docs/SETTINGS.md

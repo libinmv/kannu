@@ -148,7 +148,7 @@ final class SettingsLayoutRulesTests: XCTestCase {
         "ExtensionsSettings.swift": 5,       // the empty state and the expanded detail card
         "IdleAnimationsSettingsSection.swift": 8,  // animation cards, chips, the URL sheet
         "MusicSlotConfigurationView.swift": 5,     // the slot canvas
-        "PolicyRulesView.swift": 1,          // the popover
+        "PolicyRulesEditor.swift": 1,        // the Edit rules sheet: a sheet pads its own content
         "SecurityFindingRow.swift": 3,       // the finding card and its badge
         "SettingsView.swift": 42,            // sidebar chrome, badge capsules, style and HUD
                                              // cards, previews, the colour popover
