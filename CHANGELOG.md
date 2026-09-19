@@ -4,6 +4,20 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-19 - README stops teaching users to strip quarantine from a notarized app
+- **Developer label:** "#31 (README tells users to bypass Gatekeeper): … this directly commit to dev and close issue"
+- **Agent label:** Claude Code — Gatekeeper section of ReadMe.md rewritten per issue #31
+- **Changes:**
+  - The `xattr -dr com.apple.quarantine` advice is gone. Releases are signed and notarized (the
+    v1.2.0 DMG's staple validates and its app reports `source=Notarized Developer ID`), so a normal
+    user never needs it.
+  - The first-launch "downloaded from the internet" confirmation is named as the ordinary prompt it
+    is, separate from a real Gatekeeper block.
+  - The bypass steps are scoped to builds that did not come from the Releases page (a
+    `scripts/create-dmg.sh` DMG without a Developer ID, or one passed around directly).
+  - Removes a contradiction: the section said self-built apps warn and then that they do not. An
+    app built and run from Xcode is never quarantined, so it does not.
+
 ### 2026-09-19 - Edit rules: change the agent policy inside Kannu, no JSON
 - **Developer label:** "IS INLINE APP NATIVE EDIT SCREEN, SIZE OR COMPLEXITY HEAVY"
 - **Agent label:** Claude Code — rule editor sheet on the Policy rules row, draft model, shared validated write

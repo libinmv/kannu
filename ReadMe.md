@@ -59,20 +59,19 @@ For detailed prompts and one-click setup actions, open **Settings** in Kannu. Co
 
 ### "Kannu can't be opened" (Gatekeeper)
 
-Releases on the Releases page are signed with a Developer ID and notarized by Apple, so a DMG
-downloaded from there opens without a warning. A build you made yourself, or a DMG somebody
-handed you outside the Releases page, is not — macOS then shows a warning on first launch, which
-you can bypass once (macOS remembers your choice):
+Releases on the Releases page are signed with a Developer ID and notarized by Apple. The first time
+you open one, macOS asks you to confirm an app downloaded from the internet: click **Open**. That is
+the ordinary prompt for any download, not a block, and nothing else is needed.
+
+A real Gatekeeper block ("Apple could not verify Kannu is free of malware") only appears for a
+build that did not come from the Releases page: a DMG made by `scripts/create-dmg.sh` without a
+Developer ID identity, or one somebody passed you directly. If you trust where it came from:
 
 - **Right-click (or Control-click)** `Kannu.app` **in Applications and choose "Open"**, then click **Open** in the dialog. On macOS 15 (Sequoia) and later, the option may only appear the *second* time you right-click → Open.
 - If there is no Open button: go to **System Settings → Privacy & Security**, scroll down to the message about Kannu being blocked, and click **Open Anyway**.
-- Terminal alternative — remove the quarantine flag directly:
-  ```bash
-  xattr -dr com.apple.quarantine /Applications/Kannu.app
-  ```
 
-If you prefer, you can always build from source instead — Gatekeeper does not
-warn for apps you build yourself.
+An app you build and run from Xcode on your own Mac is never quarantined, so Gatekeeper does not
+stop it.
 
 ## Build from Source
 
