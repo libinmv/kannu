@@ -862,7 +862,7 @@ final class AgentHookInstaller: ObservableObject {
         SP_NAME_ONLY_CMDS = {"ls", "stat", "file", "du", "cd", "pushd", "popd", "mkdir", "echo", "printf",
                              "which", "type", "realpath", "dirname", "basename", "readlink", "test", "[", "[["}
         SP_KEYCHAIN_READS = {"find-generic-password", "find-internet-password", "dump-keychain", "export"}
-SP_KEYCHAIN_LOOKUPS = {"find-generic-password", "find-internet-password"}
+        SP_KEYCHAIN_LOOKUPS = {"find-generic-password", "find-internet-password"}
         SP_LAUNCHCTL_WRITES = {"load", "bootstrap", "enable", "submit"}
         SP_PATCH_MARKERS = ("*** Add File: ", "*** Update File: ", "*** Delete File: ", "*** Move to: ")
         SP_WRITE_ONLY = {"autorun", "shell_startup", "agent_config"}

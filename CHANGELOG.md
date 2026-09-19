@@ -19,6 +19,9 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     `security -p x find-generic-password -w` recorded nothing. Global options are now skipped.
   - Tests: `HookScriptTests.testAKeychainLookupIsNotAPasswordRead` (fails 4 times against v42) and
     `SensitivePathSightingTests`; docs/REGRESSIONS.md entry 1, v43 addendum.
+  - Build fix: the embedded copy's new `SP_KEYCHAIN_LOOKUPS` line lacked the string literal's
+    8-space indent, so the app did not compile. The tests run the mirror and never compile the
+    embedded copy, and the mirror check compares after stripping indentation, so neither caught it.
 
 ### 2026-09-19 - Say how to launch the settings snapshot so it cannot crash on TCC
 - **Developer label:** a crash report for com.kannu.app.dev: TCC abort, NSBluetoothAlwaysUsageDescription missing
