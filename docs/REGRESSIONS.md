@@ -131,6 +131,18 @@ use.** Where the hook is more lenient (NaN in an unused key, a duplicate key), S
 toward "not in effect". Guard: `HookScriptTests.testSettingsAndTheHookAgreeOnWhatIsAPolicy` feeds the
 same bytes to both; it failed 12 times against the old parser. Add a case there for any new check.
 
+**v43 addendum — a keychain lookup is not a password read.** Every `security find-*-password` used
+to be recorded as `keychain` and shown as "The agent read the keychain" at High, even without `-w`
+or `-g`, when the command returns no secret, only whether an item exists. v43 records that shape as
+`keychain_item`, which Swift grades Medium with its own wording; `-w`/`-g`, `dump-keychain` and
+`export` stay `keychain`, and any doubt (`-sgithub`, `-a -w`) stays `keychain`. The same change
+closes a gap: `security`'s global `-p` takes a value, which was read as the subcommand, so
+`security -p x find-generic-password -w` recorded nothing at all. Rules: a new category goes into
+`SP_CATEGORIES` too, or `carried_paths` drops it on the session's next write; records written by
+older hooks keep their category and wording, never re-graded after the fact. Guards:
+`HookScriptTests.testAKeychainLookupIsNotAPasswordRead` (fails 4 times against v42),
+`SensitivePathSightingTests`.
+
 ---
 
 ## 2. The active-state staleness window must exceed the longest tool call

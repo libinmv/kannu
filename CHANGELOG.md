@@ -23,6 +23,25 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
   - docs/REGRESSIONS.md entry 18; `NotchInteractionTests` (the rect, and a source scan against a
     global mouse-down monitor, which fails twice on the previous code).
 
+### 2026-09-19 - Hook v43: a keychain lookup is graded below a password read
+- **Developer label:** "was this avoidable, and also is this a correct catch" (a High "The agent read the keychain" finding for a lookup that returned no secret)
+- **Agent label:** Claude Code — hook v43 `keychain_item` category, Swift grading and wording, `security -p` gap closed
+- **Changes:**
+  - Hook v43 (mirror + embedded, no backslash): `security find-generic-password` /
+    `find-internet-password` without `-w` or `-g` is recorded as `keychain_item`. It returns no
+    secret, only whether an item exists. With either flag, `dump-keychain`, `export`, or any doubt,
+    it stays `keychain`. `keychain_item` joins `SP_CATEGORIES` so the sighting is carried.
+  - Swift: `keychainItem` is Medium, titled "The agent looked up a keychain item", with "It asked
+    whether a saved password exists, without reading the password." and "Looked up with …".
+    `keychain` keeps its High grade and wording, so records from older hooks are not re-graded.
+  - Closes a gap: `security`'s global `-p <prompt>` value was read as the subcommand, so
+    `security -p x find-generic-password -w` recorded nothing. Global options are now skipped.
+  - Tests: `HookScriptTests.testAKeychainLookupIsNotAPasswordRead` (fails 4 times against v42) and
+    `SensitivePathSightingTests`; docs/REGRESSIONS.md entry 1, v43 addendum.
+  - Build fix: the embedded copy's new `SP_KEYCHAIN_LOOKUPS` line lacked the string literal's
+    8-space indent, so the app did not compile. The tests run the mirror and never compile the
+    embedded copy, and the mirror check compares after stripping indentation, so neither caught it.
+
 ### 2026-09-19 - Say how to launch the settings snapshot so it cannot crash on TCC
 - **Developer label:** a crash report for com.kannu.app.dev: TCC abort, NSBluetoothAlwaysUsageDescription missing
 - **Agent label:** Claude Code — DebugSnapshot.swift header documents the `open` launch; comment only
