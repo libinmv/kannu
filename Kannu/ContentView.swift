@@ -213,8 +213,9 @@ struct ContentView: View {
     @State private var hoverTask: Task<Void, Never>?
     @State private var isHovering: Bool = false
     @State private var lastHapticTime: Date = Date()
-    @State private var hoverClickMonitor: Any?
     @State private var hoverClickLocalMonitor: Any?
+    /// While the panel is open on a notched screen: a click in another app closes it.
+    @State private var outsideClickMonitor: Any?
     @State private var hiddenEdgeHoverPollingTask: Task<Void, Never>?
     /// Identifies the poll that owns the handle above, so a finishing task never clears its
     /// successor's.
@@ -868,6 +869,8 @@ struct ContentView: View {
                     )
                 }
 
+                if newState == .open { startOutsideClickMonitor() } else { stopOutsideClickMonitor() }
+
                 // Reset hover state when notch state changes
                 if newState == .closed && isHovering {
                     withAnimation {
@@ -1069,13 +1072,14 @@ struct ContentView: View {
                 if locked {
                     // `interactionsEnabled` removes the .onHover modifier and the windows are
                     // ordered out, so no hover-exit will ever arrive for a pointer that was on
-                    // the notch at lock time. Drop the hover state here, or the global
-                    // leftMouseDown monitor (guarded on isHovering) opens the notch on every
-                    // click anywhere after unlock. Not via handleHover(false): that arms a
-                    // reveal linger and a close-debounce that could vm.close() during lock.
+                    // the notch at lock time. Drop the hover state here, or a stale isHovering
+                    // outlives the lock (it once let a global click monitor open the notch on
+                    // every click after unlock). Not via handleHover(false): that arms a reveal
+                    // linger and a close-debounce that could vm.close() during lock.
                     hoverTask?.cancel()
                     agentHoverTask?.cancel()
                     stopHoverClickMonitor()
+                    stopOutsideClickMonitor()
                     isHovering = false
                     isHoveringClosedMusicWaveformControl = false
                 }
@@ -2213,6 +2217,13 @@ struct ContentView: View {
               !isSneakPeekVisibleOnCurrentScreen,
               Defaults[.openNotchOnHover] else { return }
 
+        if isPhysicalNotchScreen {
+            // A wing or the agent band sits over menu-bar items and window toolbars: hovering it
+            // must not open anything, but sliding from it onto the notch and resting there should.
+            agentHoverTask = physicalNotchDwellTask { self.openNotch(focus: focus) }
+            return
+        }
+
         agentHoverTask = Task {
             try? await Task.sleep(for: .seconds(Defaults[.minimumHoverDuration]))
             guard !Task.isCancelled else { return }
@@ -2393,6 +2404,7 @@ struct ContentView: View {
     private func performViewTeardown() {
         hoverTask?.cancel()
         stopHoverClickMonitor()
+        stopOutsideClickMonitor()
         stopHiddenEdgeHoverPolling()
         cancelMusicControlWindowSync()
         hideMusicControlWindow()
@@ -2467,7 +2479,7 @@ struct ContentView: View {
 
     private func startHoverClickMonitor() {
         guard Defaults[.openNotchOnHover] else { return }
-        guard hoverClickMonitor == nil else { return }
+        guard hoverClickLocalMonitor == nil else { return }
 
         let handleClick: @Sendable () -> Void = { [weak vm, weak lockScreenManager] in
             Task { @MainActor in
@@ -2483,16 +2495,12 @@ struct ContentView: View {
             }
         }
 
-        // Global monitor catches clicks outside the app window (e.g. when
-        // the cursor is at the very top screen edge and the click goes to
-        // the system rather than our panel).
-        hoverClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown]) { _ in
-            handleClick()
-        }
-
-        // Local monitor catches clicks that DO hit our window — at the
-        // screen edge SwiftUI's .onTapGesture may not fire reliably, but
-        // the NSEvent local monitor will.
+        // Local only: it sees just the clicks that hit Kannu's own window, i.e. the notch. There
+        // was a global monitor here too, and a global monitor cannot consume a click, so a click
+        // meant for a menu item or a tab beside the notch reached that app *and* opened the panel
+        // over it (and, before 2026-09-04, every click after unlock did). Never add it back:
+        // docs/REGRESSIONS.md entry 18, guarded by RegressionGuardTests. At the screen edge
+        // SwiftUI's .onTapGesture may not fire reliably, which this local monitor covers.
         hoverClickLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { event in
             handleClick()
             return event
@@ -2500,13 +2508,71 @@ struct ContentView: View {
     }
 
     private func stopHoverClickMonitor() {
-        if let hoverClickMonitor {
-            NSEvent.removeMonitor(hoverClickMonitor)
-            self.hoverClickMonitor = nil
-        }
         if let hoverClickLocalMonitor {
             NSEvent.removeMonitor(hoverClickLocalMonitor)
             self.hoverClickLocalMonitor = nil
+        }
+    }
+
+    // MARK: - Notched screens: open only from the notch, close on a click elsewhere
+
+    /// The hardware notch on this view's screen, in screen coordinates; nil off a notched screen.
+    /// Resolved on demand (hover-in and the dwell's checks), never per mouse move.
+    private func physicalNotchRect() -> CGRect? {
+        guard let screen = NSScreen.screens.first(where: { $0.localizedName == currentScreenName }) else { return nil }
+        return NotchInteractionGeometry.physicalNotchRect(
+            screenFrame: screen.frame,
+            leftAreaWidth: screen.auxiliaryTopLeftArea?.width ?? 0,
+            rightAreaWidth: screen.auxiliaryTopRightArea?.width ?? 0,
+            topInset: screen.safeAreaInsets.top)
+    }
+
+    /// Hover-open on a notched screen: open only once the pointer has rested on the hardware notch
+    /// itself for the hover delay. The hover area also covers the +8 pt growth, the music and
+    /// agent wings (over menu-bar items) and the agent band (over toolbars and tabs), and passing
+    /// over any of those must not open a panel. `HoverDwell` requires continuous presence, and
+    /// this runs only while the pointer is on the notch area: it ends on hover-out (the task is
+    /// cancelled), on open, or when the notch is no longer closed.
+    private func physicalNotchDwellTask(_ open: @escaping @MainActor () -> Void) -> Task<Void, Never> {
+        Task { @MainActor in
+            guard let notch = physicalNotchRect() else { return }
+            var dwell = HoverDwell()
+            while !Task.isCancelled, isHovering, vm.notchState == .closed {
+                let now = Date()
+                if NotchInteractionGeometry.isOnPhysicalNotch(NSEvent.mouseLocation, notch: notch) {
+                    dwell.noteInside(at: now)
+                } else {
+                    dwell.noteOutside()
+                }
+                if dwell.isSatisfied(at: now, minimum: Defaults[.minimumHoverDuration]) {
+                    guard !isSneakPeekVisibleOnCurrentScreen else { return }
+                    open()
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+    }
+
+    /// While the panel is open on a notched screen, a click in another app closes it, so the panel
+    /// never sits over what the user went on to click. Mouse-up, not mouse-down: dragging a file
+    /// from Finder into the open shelf ends with its mouse-up on Kannu's window, which a global
+    /// monitor never sees, so that drag keeps the panel open. Installed on open, removed on close.
+    private func startOutsideClickMonitor() {
+        guard isPhysicalNotchScreen, outsideClickMonitor == nil else { return }
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp]) { [weak vm, weak lockScreenManager] _ in
+            Task { @MainActor in
+                guard let vm, let lockScreenManager else { return }
+                guard !lockScreenManager.isLocked, vm.notchState == .open, !self.shouldPreventAutoClose() else { return }
+                vm.close()
+            }
+        }
+    }
+
+    private func stopOutsideClickMonitor() {
+        if let outsideClickMonitor {
+            NSEvent.removeMonitor(outsideClickMonitor)
+            self.outsideClickMonitor = nil
         }
     }
 
@@ -2575,6 +2641,13 @@ struct ContentView: View {
                 // Synchronous, so a racing .onHover / region hover (both cancel hoverTask)
                 // cannot restart a wait the poll already served.
                 completeHoverOpen(shouldFocusTimerTab: shouldFocusTimerTab)
+                return
+            }
+
+            if isPhysicalNotchScreen {
+                hoverTask = physicalNotchDwellTask {
+                    self.completeHoverOpen(shouldFocusTimerTab: shouldFocusTimerTab)
+                }
                 return
             }
 
