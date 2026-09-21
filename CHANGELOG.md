@@ -4,6 +4,25 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-21 - On a notched MacBook, the notch no longer gets in the way of a click
+- **Developer label:** "we need a better ux for the hover to reveal notch in laptop displays, the idea is it to not obstruct the click underneath"
+- **Agent label:** Claude Code — smarter hover-to-open on notched screens: no global click-to-open, physical-notch dwell, click elsewhere closes
+- **Changes:**
+  - **A click in another app never opens the notch.** The global `leftMouseDown` monitor in
+    `startHoverClickMonitor` is gone: it could not consume the click, so a click on a menu item or
+    tab beside the notch landed there *and* opened the panel over it. The local monitor (clicks on
+    Kannu's own window) and `.onTapGesture` still open it on a click on the notch.
+  - **Hover opens only from the notch itself.** On notched screens, hover-open waits until the
+    pointer has rested on the hardware notch for the hover delay (`HoverDwell` against the new
+    `NotchInteractionGeometry.physicalNotchRect`). Passing over it, or resting on the +8 pt growth,
+    a music or agent wing (over menu-bar items) or the agent band (over tabs), no longer opens it.
+    Sliding from a wing onto the notch and resting does.
+  - **A click elsewhere closes the open panel** on notched screens (global `leftMouseUp`, honouring
+    `shouldPreventAutoClose()` and the lock). Mouse-up so a Finder drag into the shelf keeps it open.
+  - Non-notch displays (hide-until-hover, its poll and `HoverDwell`) are unchanged.
+  - docs/REGRESSIONS.md entry 18; `NotchInteractionTests` (the rect, and a source scan against a
+    global mouse-down monitor, which fails twice on the previous code).
+
 ### 2026-09-19 - Hook v43: a keychain lookup is graded below a password read
 - **Developer label:** "was this avoidable, and also is this a correct catch" (a High "The agent read the keychain" finding for a lookup that returned no secret)
 - **Agent label:** Claude Code — hook v43 `keychain_item` category, Swift grading and wording, `security -p` gap closed

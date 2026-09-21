@@ -807,6 +807,35 @@ should stay empty for Kannu under agent load.
 
 ---
 
+## 18. Another app's click never opens the notch
+
+**Rule:** On a notched MacBook, only a click that hits Kannu's own window may open the notch, and
+hover opens it only after the pointer has rested on the hardware notch itself for
+`minimumHoverDuration`. Never watch clicks with a *global* `leftMouseDown` monitor in the notch view:
+a global monitor cannot consume the event, so a click meant for a menu item or a tab beside the notch
+lands in that app *and* opens the panel over it.
+
+**Broken twice.** The monitor came from upstream (`startHoverClickMonitor`, "catches clicks outside
+the app window"). First break: a stale `isHovering` across a screen lock made it open the notch on
+every click after unlock (CHANGELOG 2026-09-04, patched by dropping hover state on lock). Second: any
+click beside the notch while hovering the +8 pt growth, a music or agent wing, or the agent band
+opened the panel over the thing clicked (2026-09-21). The global monitor was removed; the local one,
+which sees only clicks on Kannu's window, stays.
+
+**Why it keeps happening:** a global monitor looks like a harmless way to "catch clicks the view
+misses", but on a menu-bar overlay every missed click belongs to someone else.
+
+**Related, same change:** on notched screens hover-open goes through `physicalNotchDwellTask`
+(`HoverDwell` against `NotchInteractionGeometry.physicalNotchRect`), so wings and the band do not
+open on hover, and while open a global `leftMouseUp` monitor closes the panel on a click in another
+app. That one is mouse-*up* so a Finder drag into the shelf, whose mouse-up lands on Kannu's window,
+does not close it.
+
+**Guards:** `NotchInteractionTests` (the rect, and a source scan that fails on a global
+`leftMouseDown` monitor in `ContentView.swift`).
+
+---
+
 ## Danger zones
 
 Commit counts across all branches (`--follow`, so pre-rename history counts):
