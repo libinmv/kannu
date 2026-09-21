@@ -48,6 +48,8 @@ final class SensitivePathSightingTests: XCTestCase {
     func testSeverity() {
         XCTAssertEqual(sighting(.sshKey).severity, .high)
         XCTAssertEqual(sighting(.keychain).severity, .high)
+        XCTAssertEqual(sighting(.keychainItem, path: "security find-generic-password").severity, .medium,
+                       "a lookup returns no secret; a password read stays high")
         XCTAssertEqual(sighting(.autorun, .write).severity, .high)
         XCTAssertEqual(sighting(.envFile, path: "/p/.env").severity, .medium)
         XCTAssertEqual(sighting(.shellHistory, path: "~/.zsh_history").severity, .medium)
@@ -70,6 +72,14 @@ final class SensitivePathSightingTests: XCTestCase {
         XCTAssertTrue(sighting().summary(chatName: "Chat").contains("~/.ssh/id_ed25519"))
         XCTAssertTrue(sighting(events: 2).summary(chatName: "Chat").hasSuffix("Seen 2 times."))
         XCTAssertTrue(sighting(failed: true).evidence(provider: "codex").contains { $0.contains("the call failed") })
+        let lookup = sighting(.keychainItem, path: "security find-generic-password")
+        XCTAssertEqual(lookup.title, "The agent looked up a keychain item")
+        XCTAssertEqual(sighting(.keychainItem, path: "security find-generic-password", failed: true).title,
+                       "The agent tried to look up a keychain item")
+        XCTAssertTrue(lookup.evidence(provider: "claude").contains { $0.hasPrefix("Looked up with Bash") })
+        XCTAssertFalse(lookup.evidence(provider: "claude").contains { $0.hasPrefix("Read") }, "no \"read\" for a lookup")
+        // Records written by hook v42 and earlier say "keychain" for every lookup; their wording is unchanged.
+        XCTAssertEqual(sighting(.keychain, path: "security find-generic-password").title, "The agent read the keychain")
     }
 
     func testOneFindingPerPathAndAccess() {
