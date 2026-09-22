@@ -20,10 +20,10 @@
 ,
     {
       "id": "anthropic/claude-opus-4",
-      "name": "Anthropic: Claude Opus 4",
+      "name": "",
       "pricing": {
-        "prompt": "0.000015",
-        "completion": "0.000075"
+        "prompt": "",
+        "completion": ""
       }
     }
 ,
@@ -117,5 +117,5 @@
       }
     }
   ],
-  "last_updated": "2026-09-21T02:09:05Z"
+  "last_updated": "2026-09-22T02:14:39Z"
 }
