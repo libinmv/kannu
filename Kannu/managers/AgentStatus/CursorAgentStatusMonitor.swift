@@ -368,11 +368,19 @@ final class CursorAgentStatusMonitor: ObservableObject {
             )
         }
 
+        // Enrichment runs on the HOOK sessions, before the merge: transcript sessions already
+        // carry these verdicts from their builder, and a merged record can wear a Cursor
+        // identity over a Claude-won state (`adoptingIdentity`) — running the Cursor-only
+        // enrichment after the merge let stale composer approval evidence rewrite that fresh
+        // Claude `.executing` into a false yellow.
         let mergedSessions = collapseSubagentSessions(
             applyExecutionRunState(
-                to: enrichHookSessionsWithTranscripts(
-                    mergeSessions(hookSessions: hookSessions, transcriptSessions: transcriptSessions),
-                    analysisBySession: transcriptAnalysis
+                to: mergeSessions(
+                    hookSessions: enrichHookSessionsWithTranscripts(
+                        hookSessions,
+                        analysisBySession: transcriptAnalysis
+                    ),
+                    transcriptSessions: transcriptSessions
                 ),
                 previousStateByConversationID: previousStateByConversationID,
                 now: now
@@ -751,7 +759,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
             winner = existing
             loser = incoming
         }
-        return AgentSessionStatus(
+        let merged = AgentSessionStatus(
             id: winner.id,
             provider: winner.provider,
             conversationID: winner.conversationID,
@@ -765,6 +773,14 @@ final class CursorAgentStatusMonitor: ObservableObject {
             cwd: winner.cwd ?? loser.cwd,
             hostPID: winner.hostPID ?? loser.hostPID
         ).carryingExtras(from: winner).carryingExtras(from: loser)
+        // Same conversation reported by a host and the engine it embeds: the state stays the
+        // winner's, but the host names the card — otherwise the provider, icon and row id
+        // flap with whichever record was fresher this rescan.
+        if let identity = AgentTrafficLightMapper.hostIdentitySession(existing, incoming),
+           identity.provider.lowercased() != winner.provider.lowercased() {
+            return merged.adoptingIdentity(of: identity)
+        }
+        return merged
     }
 
     /// Hook state is authoritative while it is fresh: transcript `hasPendingToolApproval`
@@ -801,7 +817,10 @@ final class CursorAgentStatusMonitor: ObservableObject {
         var rolledUp: [String: AgentSessionStatus] = [:]
 
         for session in sessions {
-            let parentID = subagentParents[session.conversationID]
+            // The map is built from Cursor's own transcripts; another provider's session
+            // sharing a uuid with a Cursor subagent must not be re-keyed onto its parent.
+            let parentID = session.provider.lowercased() == "cursor"
+                ? subagentParents[session.conversationID] : nil
             let targetID = parentID ?? session.conversationID
 
             let candidate: AgentSessionStatus
@@ -1144,8 +1163,14 @@ final class CursorAgentStatusMonitor: ObservableObject {
             // brand-new session (no JSONL yet), a >30-min approval wait (quiet transcript),
             // or the per-scan session cap all destroyed hook files written seconds earlier.
             // Their freshness is already enforced by the staleMs check above.
+            // A fresh hook file is its own proof of a live chat, and the backing lookup is
+            // one query against a multi-gigabyte state.vscdb Cursor holds open — a single
+            // slow or contended read must never delete a live card (the Cursor card used to
+            // blink out of the notch on every miss). Only an unbacked file past the grace is
+            // dropped; the stale cap above still reaps everything eventually.
             if allowBackingDelete,
                providerKey == "cursor",
+               AgentTrafficLightMapper.shouldDropUnbackedCursorHookFile(tsMs: tsMs, nowMs: nowMs),
                !hasHookSessionBacking(
                 conversationID: conversationID,
                 provider: provider,
