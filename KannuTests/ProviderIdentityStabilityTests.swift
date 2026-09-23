@@ -117,6 +117,26 @@ final class ProviderIdentityStabilityTests: XCTestCase {
             tsMs: now - AgentTrafficLightMapper.unbackedCursorHookGraceMs, nowMs: now))
     }
 
+    // MARK: - Enrichment order
+
+    /// The Cursor-only transcript enrichment must run on the hook sessions BEFORE the merge:
+    /// a merged record can wear a Cursor identity over a Claude-won state
+    /// (`adoptingIdentity`), and running the enrichment after the merge let stale composer
+    /// approval evidence rewrite that fresh Claude `.executing` into a false yellow. The
+    /// call lives in a `@MainActor` monitor this target does not compile, so the order is
+    /// pinned against the source, the way the modal and settings rules are.
+    func testEnrichmentRunsOnHookSessionsBeforeTheMerge() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Kannu/managers/AgentStatus/CursorAgentStatusMonitor.swift")
+        let text = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(
+            text.contains("hookSessions: enrichHookSessionsWithTranscripts("),
+            "enrichHookSessionsWithTranscripts no longer wraps the hook side of mergeSessions — " +
+            "post-merge enrichment lets Cursor approval evidence repaint an adopted-identity Claude state")
+    }
+
     func testStaleUnbackedCursorHookFileIsDropped() {
         let now: Int64 = 1_000_000_000_000
         XCTAssertTrue(AgentTrafficLightMapper.shouldDropUnbackedCursorHookFile(

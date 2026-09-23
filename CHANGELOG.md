@@ -28,8 +28,15 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     session sharing a uuid with a Cursor subagent transcript cannot be folded onto its parent.
   - The reconciler tail deliberately still suppresses a passive Claude session whose id matches
     any hook id: for a same-id pair that is what prevents a duplicate card.
+  - From CodeRabbit's review: the Cursor-only transcript enrichment now runs on the hook
+    sessions before the merge. It used to run on the merge output — where a record wearing the
+    adopted Cursor identity over a Claude-won state passed its provider guard, and stale
+    composer approval evidence could rewrite a fresh Claude `.executing` into a false yellow.
+    Transcript-built sessions already carry those verdicts from their builder, so the pass only
+    ever belonged on hook sessions; a source pin keeps the order.
   - Tests: `ProviderIdentityStabilityTests` — identity stable across alternating freshness and
-    argument orders, boundary table, extras ride the adoption, fresh-vs-stale grace pins.
+    argument orders, boundary table, extras ride the adoption, fresh-vs-stale grace pins, and
+    the enrichment-order source pin.
 
 ### 2026-09-23 - An unsent draft in a chat bar no longer lights the chat as thinking
 - **Developer label:** "just because something was pasted on the chat bar here, a chat was shown as active and thinking how does that happen"

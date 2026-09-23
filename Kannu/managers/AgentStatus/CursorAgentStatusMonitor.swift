@@ -368,11 +368,19 @@ final class CursorAgentStatusMonitor: ObservableObject {
             )
         }
 
+        // Enrichment runs on the HOOK sessions, before the merge: transcript sessions already
+        // carry these verdicts from their builder, and a merged record can wear a Cursor
+        // identity over a Claude-won state (`adoptingIdentity`) — running the Cursor-only
+        // enrichment after the merge let stale composer approval evidence rewrite that fresh
+        // Claude `.executing` into a false yellow.
         let mergedSessions = collapseSubagentSessions(
             applyExecutionRunState(
-                to: enrichHookSessionsWithTranscripts(
-                    mergeSessions(hookSessions: hookSessions, transcriptSessions: transcriptSessions),
-                    analysisBySession: transcriptAnalysis
+                to: mergeSessions(
+                    hookSessions: enrichHookSessionsWithTranscripts(
+                        hookSessions,
+                        analysisBySession: transcriptAnalysis
+                    ),
+                    transcriptSessions: transcriptSessions
                 ),
                 previousStateByConversationID: previousStateByConversationID,
                 now: now
