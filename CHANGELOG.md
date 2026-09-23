@@ -22,6 +22,40 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
   - No unit surface (AppKit status item); verified manually: click opens the notch under the
     pointer's display, right-click menus, toggle removes and restores the item.
 
+### 2026-09-23 - A Cursor chat stops flapping into a Claude label
+- **Developer label:** "once cursor chat also is misrepresented as claude, that continously changes and messes up"
+- **Agent label:** Follow-up 54, PR B — host identity names the card; a backing miss stops deleting live files
+- **Changes:**
+  - When Cursor's composer drives an embedded Claude Code engine, both hook sets fire with one
+    conversation id — and every merge site was provider-blind, re-picking the whole winning
+    record each rescan, so the row's provider, icon and id alternated Cursor ↔ Claude with
+    whichever record was momentarily fresher (and the identity churn made the list reorder).
+  - New rule, pure and pinned: a same-conversation pair that crosses a host/engine boundary
+    (hosts: cursor, antigravity, vscode, copilot; engines: claude, codex) keeps the **host's**
+    identity — id, provider, and its real title — while the state still comes from whichever
+    record wins by the existing freshness/urgency rules. Applied in the monitor's merge and in
+    the view-level dedupe (`AgentTrafficLightMapper.hostIdentitySession`,
+    `AgentSessionStatus.adoptingIdentity(of:)`, extras carried per REGRESSIONS entry 7).
+  - The Cursor-only delete-on-no-backing gains a 10-minute grace: the backing lookup is one
+    query against a multi-gigabyte `state.vscdb` Cursor holds open, and a single slow or
+    contended read used to delete a hook file written seconds earlier — the Cursor card blinked
+    out of the notch. A fresh file is its own proof of life; the 30-minute stale cap still
+    reaps everything. The freshness gate also runs before the SQLite read, so fresh files skip
+    the expensive query entirely.
+  - The Cursor subagent parent map now re-keys only Cursor sessions, so another provider's
+    session sharing a uuid with a Cursor subagent transcript cannot be folded onto its parent.
+  - The reconciler tail deliberately still suppresses a passive Claude session whose id matches
+    any hook id: for a same-id pair that is what prevents a duplicate card.
+  - From CodeRabbit's review: the Cursor-only transcript enrichment now runs on the hook
+    sessions before the merge. It used to run on the merge output — where a record wearing the
+    adopted Cursor identity over a Claude-won state passed its provider guard, and stale
+    composer approval evidence could rewrite a fresh Claude `.executing` into a false yellow.
+    Transcript-built sessions already carry those verdicts from their builder, so the pass only
+    ever belonged on hook sessions; a source pin keeps the order.
+  - Tests: `ProviderIdentityStabilityTests` — identity stable across alternating freshness and
+    argument orders, boundary table, extras ride the adoption, fresh-vs-stale grace pins, and
+    the enrichment-order source pin.
+
 ### 2026-09-23 - An unsent draft in a chat bar no longer lights the chat as thinking
 - **Developer label:** "just because something was pasted on the chat bar here, a chat was shown as active and thinking how does that happen"
 - **Agent label:** Follow-up 54, PR A — bookkeeping mtime is not evidence of activity
