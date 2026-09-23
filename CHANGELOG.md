@@ -4,6 +4,27 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-23 - An unsent draft in a chat bar no longer lights the chat as thinking
+- **Developer label:** "just because something was pasted on the chat bar here, a chat was shown as active and thinking how does that happen"
+- **Agent label:** Follow-up 54, PR A — bookkeeping mtime is not evidence of activity
+- **Changes:**
+  - Typing or pasting into a Claude Code input bar saves the draft as a `last-prompt` record in
+    the transcript, bumping the file's mtime. The passive detector's `.working` arm counted any
+    fresh mtime as a life sign for the owed response, so an idle chat relit as "thinking" for as
+    long as the user typed — reproduced on disk by a transcript whose final record is a draft
+    written six hours after its last conversational record.
+  - The tail parser now reports whether the newest record in the file was itself the deciding
+    conversational record (`ClaudeTailResult.newestRecordIsConversational`); a skipped trailer —
+    a draft, a title, an attachment, a torn concurrent write — means mtime no longer vouches
+    for it, and `passiveClaudeState` ages the verdict from the record's own timestamp, exactly
+    as `.turnFinished` always has. Mid-turn interim writes still count: their newest record is
+    conversational, and a fresh deciding record holds the light on regardless.
+  - The escalating tail-read windows gain a fourth, 4 MiB step, so one giant pasted record can
+    no longer push every conversational record out of reach and fail open to visible thinking.
+  - Tests: the two pins that encoded the old rule are rewritten to the new one, plus parser
+    fixtures for the draft and attachment trailers and the dim-card outcome for the reproduced
+    six-hour case.
+
 ### 2026-09-21 - On a notched MacBook, the notch no longer gets in the way of a click
 - **Developer label:** "we need a better ux for the hover to reveal notch in laptop displays, the idea is it to not obstruct the click underneath"
 - **Agent label:** Claude Code — smarter hover-to-open on notched screens: no global click-to-open, physical-notch dwell, click elsewhere closes
