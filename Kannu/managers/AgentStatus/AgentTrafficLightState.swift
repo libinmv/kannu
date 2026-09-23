@@ -143,6 +143,27 @@ struct AgentSessionStatus: Identifiable, Equatable {
         ).carryingExtras(from: self)
     }
 
+    /// The same session named by another record's identity — id, provider, and (when that
+    /// side has a real title) its chat name. Used when a host provider and the engine it
+    /// embeds report the same conversation: the host names the card, whichever side's state
+    /// won, so the row's identity cannot flap per rescan.
+    func adoptingIdentity(of identity: AgentSessionStatus) -> AgentSessionStatus {
+        AgentSessionStatus(
+            id: identity.id,
+            provider: identity.provider,
+            conversationID: conversationID,
+            chatName: AgentTrafficLightMapper.hasReliableChatName(identity.chatName) ? identity.chatName : chatName,
+            projectName: projectName ?? identity.projectName,
+            rawState: rawState,
+            displayState: displayState,
+            updatedAt: updatedAt,
+            isVisible: isVisible,
+            executionStartedAt: executionStartedAt,
+            cwd: cwd ?? identity.cwd,
+            hostPID: hostPID ?? identity.hostPID
+        ).carryingExtras(from: self).carryingExtras(from: identity)
+    }
+
     var providerLabel: String { Self.providerLabel(for: provider) }
 
     static func providerLabel(for provider: String) -> String {
@@ -716,16 +737,50 @@ enum AgentTrafficLightMapper {
         return order.compactMap { latestByConversationID[$0] }
     }
 
+    /// Providers that host another agent engine inside their own chat surface, and the
+    /// engines they embed. When one conversation id arrives from both sides (Cursor's
+    /// composer driving Claude Code fires both hook sets with one uuid), the host's identity
+    /// names the merged card — otherwise the winner alternates by freshness and the row's
+    /// provider, icon and id flap every rescan.
+    private static let hostProviders: Set<String> = ["cursor", "antigravity", "vscode", "copilot"]
+    private static let embeddedEngineProviders: Set<String> = ["claude", "codex"]
+
+    /// The side whose provider should *name* a same-conversation cross-provider pair, or nil
+    /// when the pair does not cross a host/engine boundary (same provider, two hosts, two
+    /// engines) — the caller then keeps its winner's identity as before.
+    /// A Cursor hook file with no backing (no transcript, no composer row) belongs to an
+    /// abandoned chat and may be reaped — but only once it is old enough that a missed
+    /// lookup cannot be the reason. Ten minutes: far past any read hiccup, well inside the
+    /// 30-minute stale cap that reaps everything regardless.
+    static let unbackedCursorHookGraceMs: Int64 = 10 * 60 * 1000
+
+    static func shouldDropUnbackedCursorHookFile(tsMs: Int64, nowMs: Int64) -> Bool {
+        nowMs - tsMs > unbackedCursorHookGraceMs
+    }
+
+    static func hostIdentitySession(_ a: AgentSessionStatus, _ b: AgentSessionStatus) -> AgentSessionStatus? {
+        let pa = a.provider.lowercased()
+        let pb = b.provider.lowercased()
+        guard pa != pb else { return nil }
+        if hostProviders.contains(pa), embeddedEngineProviders.contains(pb) { return a }
+        if hostProviders.contains(pb), embeddedEngineProviders.contains(pa) { return b }
+        return nil
+    }
+
     static func preferredSession(existing: AgentSessionStatus, incoming: AgentSessionStatus) -> AgentSessionStatus {
+        let winner: AgentSessionStatus
         if existing.displayState != incoming.displayState {
-            return existing.displayState > incoming.displayState ? existing : incoming
+            winner = existing.displayState > incoming.displayState ? existing : incoming
+        } else if hasReliableChatName(existing.chatName) != hasReliableChatName(incoming.chatName) {
+            winner = hasReliableChatName(incoming.chatName) ? incoming : existing
+        } else {
+            winner = incoming.updatedAt >= existing.updatedAt ? incoming : existing
         }
-        let existingHasReliableTitle = hasReliableChatName(existing.chatName)
-        let incomingHasReliableTitle = hasReliableChatName(incoming.chatName)
-        if existingHasReliableTitle != incomingHasReliableTitle {
-            return incomingHasReliableTitle ? incoming : existing
+        if let identity = hostIdentitySession(existing, incoming),
+           identity.provider.lowercased() != winner.provider.lowercased() {
+            return winner.adoptingIdentity(of: identity)
         }
-        return incoming.updatedAt >= existing.updatedAt ? incoming : existing
+        return winner
     }
 
     static func primarySession(from sessions: [AgentSessionStatus]) -> AgentSessionStatus? {
@@ -756,7 +811,7 @@ enum AgentTrafficLightMapper {
         return false
     }
 
-    private static func hasReliableChatName(_ value: String?) -> Bool {
+    static func hasReliableChatName(_ value: String?) -> Bool {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !trimmed.isEmpty else { return false }
         return !AgentApprovalGatedTools.looksLikeToolName(trimmed)
