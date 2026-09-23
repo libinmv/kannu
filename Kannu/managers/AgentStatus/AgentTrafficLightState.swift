@@ -684,9 +684,17 @@ enum AgentTrafficLightMapper {
             // A tool may legitimately run for many minutes with zero writes — never age out.
             return ("executing", .executing, true, fallbackTsMs)
         case .working:
-            // A response has been owed since the deciding record; newer file writes count
-            // as life signs too. No evidence at all stays green — conservative.
-            let evidence = [tail.recordTimestamp, jsonlMtime].compactMap { $0 }.max()
+            // A response has been owed since the deciding record. Newer file writes count as
+            // life signs only while the newest record is itself conversational: a saved draft
+            // (`last-prompt`), a title or an attachment trailer bumps mtime without the agent
+            // doing anything, and counting that kept an idle chat "thinking" for as long as
+            // the user typed in its input bar. No evidence at all stays green — conservative.
+            let evidence: Date?
+            if tail.newestRecordIsConversational {
+                evidence = [tail.recordTimestamp, jsonlMtime].compactMap { $0 }.max()
+            } else {
+                evidence = tail.recordTimestamp
+            }
             if let evidence, now.timeIntervalSince(evidence) > workingStaleSeconds {
                 return ("idle", .inactive, true, fallbackTsMs)
             }

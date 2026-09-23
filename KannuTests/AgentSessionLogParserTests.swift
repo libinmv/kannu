@@ -12,6 +12,28 @@ final class AgentSessionLogParserTests: XCTestCase {
         let result = AgentSessionLogParser.claudeTailState(fromTailText: text)
         XCTAssertEqual(result.state, .working)
         XCTAssertNotNil(result.recordTimestamp)
+        XCTAssertTrue(result.newestRecordIsConversational)
+    }
+
+    func testDraftTrailerMarksTheTailNonConversational() {
+        // An unsent paste appends a `last-prompt` record after the conversation stopped. The
+        // verdict still comes from the older user record, but the tail says the newest write
+        // was bookkeeping — so mtime must not count as a life sign for it.
+        let text = line(#"{"type":"user","timestamp":"2026-08-21T10:00:00.123Z","message":{"role":"user","content":"fix the bug"}}"#)
+            + line(#"{"type":"last-prompt","lastPrompt":"draft tex","leafUuid":"abc"}"#)
+        let result = AgentSessionLogParser.claudeTailState(fromTailText: text)
+        XCTAssertEqual(result.state, .working)
+        XCTAssertFalse(result.newestRecordIsConversational)
+    }
+
+    func testAttachmentTrailerAfterFreshUserRecordIsNonConversationalToo() {
+        // Mid-turn shape: user tool_result then an attachment milliseconds later. The flag is
+        // false either way — freshness then rides on the record's own timestamp.
+        let text = line(#"{"type":"user","timestamp":"2026-08-21T10:00:00.123Z","message":{"role":"user","content":[{"type":"tool_result","content":"ok"}]}}"#)
+            + line(#"{"type":"attachment","attachment":{"kind":"x"}}"#)
+        let result = AgentSessionLogParser.claudeTailState(fromTailText: text)
+        XCTAssertEqual(result.state, .working)
+        XCTAssertFalse(result.newestRecordIsConversational)
     }
 
     func testTimestampWithoutFractionalSecondsParses() {
