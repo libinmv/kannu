@@ -36,16 +36,46 @@ final class PassiveClaudeStateTests: XCTestCase {
         XCTAssertTrue(result.visible)
     }
 
-    func testStaleWorkingWithFreshMtimeStaysThinking() {
-        // Bookkeeping or interim writes count as life signs for an owed response.
-        let tail = Tail(state: .working, recordTimestamp: now.addingTimeInterval(-660))
+    func testStaleWorkingWithFreshConversationalMtimeStaysThinking() {
+        // Interim writes whose newest record is conversational are life signs for an owed
+        // response — mid-turn tool results keep the light on between records.
+        let tail = Tail(state: .working, recordTimestamp: now.addingTimeInterval(-660),
+                        newestRecordIsConversational: true)
         let result = resolve(tail: tail, jsonlMtime: now.addingTimeInterval(-30))
         XCTAssertEqual(result.state, .thinking)
+    }
+
+    func testDraftTrailerDoesNotRelightAStaleWorkingSession() {
+        // The paste bug: an unsent draft appends a `last-prompt` trailer, bumping mtime hours
+        // after the last conversational record. Bookkeeping mtime is not evidence — the chat
+        // ages out on the deciding record's own clock and shows as a dim card.
+        let tail = Tail(state: .working, recordTimestamp: now.addingTimeInterval(-660),
+                        newestRecordIsConversational: false)
+        let result = resolve(tail: tail, jsonlMtime: now.addingTimeInterval(-5))
+        XCTAssertEqual(result.state, .inactive)
+        XCTAssertEqual(result.rawState, "idle")
+        XCTAssertTrue(result.visible)
+    }
+
+    func testFreshWorkingWithBookkeepingTrailerStaysThinking() {
+        // Mid-turn, an attachment lands milliseconds after the user record. The deciding
+        // record itself is fresh, so the light holds without needing the mtime term.
+        let tail = Tail(state: .working, recordTimestamp: now.addingTimeInterval(-20),
+                        newestRecordIsConversational: false)
+        XCTAssertEqual(resolve(tail: tail, jsonlMtime: now).state, .thinking)
     }
 
     func testWorkingWithNoEvidenceStaysThinking() {
         let tail = Tail(state: .working, recordTimestamp: nil)
         XCTAssertEqual(resolve(tail: tail, jsonlMtime: nil).state, .thinking)
+    }
+
+    func testDraftTrailerWithNoRecordTimestampStaysThinking() {
+        // Conservatism holds even with a bookkeeping trailer: no deciding timestamp at all
+        // never ages out — same rule as testWorkingWithNoEvidenceStaysThinking.
+        let tail = Tail(state: .working, recordTimestamp: nil,
+                        newestRecordIsConversational: false)
+        XCTAssertEqual(resolve(tail: tail, jsonlMtime: now).state, .thinking)
     }
 
     func testLongToolRunStaysExecuting() {
