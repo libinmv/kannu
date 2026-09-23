@@ -1134,8 +1134,10 @@ struct GeneralSettings: View {
             }
 
             Section {
-                Defaults.Toggle(key: .menubarIcon) {
-                    Text("Menubar icon")
+                SettingsRow("Menubar icon", description: "The eye in the menu bar. Click it to open the notch on the display you are on; right-click for Settings, updates, restart and quit.") {
+                    Defaults.Toggle(key: .menubarIcon) {
+                        Text("Menubar icon")
+                    }
                 }
                 .settingsHighlight(id: highlightID("Menubar icon"))
                 if isRunningFromApplicationsFolder {
