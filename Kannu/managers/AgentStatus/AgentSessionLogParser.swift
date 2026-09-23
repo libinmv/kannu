@@ -24,7 +24,7 @@ enum AgentSessionLogParser {
     private static let pathListCacheTTL: TimeInterval = 2.0
     /// Escalating tail-read windows for `claudeTailState(at:)` — single records can exceed
     /// the first window, and a truncated tail must widen rather than report `.unknown`.
-    private static let tailWindowLimits = [16_000, 262_144, 1_048_576]
+    private static let tailWindowLimits = [16_000, 262_144, 1_048_576, 4_194_304]
     private static var tailResultCache: [String: (mtime: Date, size: Int, result: ClaudeTailResult)] = [:]
 
     private static var cachedPaths: [AgentSessionLogProvider: [URL]] = [:]
@@ -416,6 +416,11 @@ enum AgentSessionLogParser {
         /// Set only with `.turnFinished`, when the newest conversational record is the API error
         /// that ended the turn.
         var runError: RunError? = nil
+        /// False when the newest record in the tail was bookkeeping (a saved draft, a title,
+        /// an attachment) written after the deciding record: file mtime is then not evidence
+        /// that the agent did anything. An unsent paste writes a `last-prompt` trailer, and
+        /// treating its mtime as a life sign relit idle chats as "thinking".
+        var newestRecordIsConversational: Bool = true
 
         static let unknown = ClaudeTailResult(state: .unknown, recordTimestamp: nil)
     }
@@ -522,7 +527,12 @@ enum AgentSessionLogParser {
 
     /// Pure core of `claudeTailState(at:)` — classifies the newest conversational record.
     static func claudeTailState(fromTailText text: String) -> ClaudeTailResult {
+        // Whether the deciding record is also the newest line in the file. A skipped line,
+        // bookkeeping or a torn concurrent write, means mtime no longer vouches for the
+        // deciding record; a torn write completes and reclassifies within one rescan.
+        var isNewestLine = true
         for line in text.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
+            defer { isNewestLine = false }
             guard let data = line.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let type = json["type"] as? String else { continue }
@@ -549,7 +559,8 @@ enum AgentSessionLogParser {
                 // value — end_turn, stop_sequence, max_tokens, refusal, future additions —
                 // is terminal: nothing is running.
                 if stopReason == nil || stopReason == "tool_use" || stopReason == "pause_turn" {
-                    return ClaudeTailResult(state: .working, recordTimestamp: timestamp)
+                    return ClaudeTailResult(state: .working, recordTimestamp: timestamp,
+                                            newestRecordIsConversational: isNewestLine)
                 }
                 return ClaudeTailResult(state: .turnFinished, recordTimestamp: timestamp)
             case "user":
@@ -559,7 +570,8 @@ enum AgentSessionLogParser {
                     // user record reads as "owes a response" and the light stays green forever.
                     return ClaudeTailResult(state: .turnFinished, recordTimestamp: timestamp)
                 }
-                return ClaudeTailResult(state: .working, recordTimestamp: timestamp)
+                return ClaudeTailResult(state: .working, recordTimestamp: timestamp,
+                                        newestRecordIsConversational: isNewestLine)
             default:
                 // attachment, queue-operation, last-prompt, ai-title, custom-title, mode,
                 // system, pr-link — bookkeeping that says nothing about run state.
