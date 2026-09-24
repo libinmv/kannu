@@ -4,6 +4,24 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-23 - The menu bar shows Kannu's eye, and clicking it opens the notch
+- **Developer label:** "clicking on kannu icon in top bar also should show kannu notch , also is that the same icon atoll uses if so please change it to some eye like thing"
+- **Agent label:** Follow-up 54, PR C — NSStatusItem with a click action, eye.fill symbol
+- **Changes:**
+  - The menu bar item was a SwiftUI `MenuBarExtra` with the `mountain.2.fill` symbol inherited
+    from the Atoll fork's root commit, and a left click could only drop a menu. It is now an
+    AppDelegate-owned `NSStatusItem` showing `eye.fill` — Kannu is Malayalam for "eye", and the
+    app icon is already the eyes — whose left click opens (or closes) the notch on the display
+    the pointer is on, reusing the toggle-notch shortcut's exact logic, now extracted as
+    `AppDelegate.toggleNotch()` and shared by both. Right-click or option-click shows the same
+    four-item menu as before (Settings, Check for Updates when Sparkle is enabled, Restart,
+    Quit).
+  - The `menubarIcon` setting still shows and hides it (observed, created and removed live);
+    the Settings row gains a description saying what clicking does. Same key, same highlight
+    id — inventory counts unchanged.
+  - No unit surface (AppKit status item); verified manually: click opens the notch under the
+    pointer's display, right-click menus, toggle removes and restores the item.
+
 ### 2026-09-23 - A Cursor chat stops flapping into a Claude label
 - **Developer label:** "once cursor chat also is misrepresented as claude, that continously changes and messes up"
 - **Agent label:** Follow-up 54, PR B — host identity names the card; a backing miss stops deleting live files

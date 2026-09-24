@@ -30,7 +30,6 @@ import SkyLightWindow
 @main
 struct KannuApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @Default(.menubarIcon) var showMenuBarIcon
     @Environment(\.openWindow) var openWindow
 
     init() {
@@ -38,36 +37,12 @@ struct KannuApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra("Kannu", systemImage: "mountain.2.fill", isInserted: $showMenuBarIcon) {
-            Button("Settings") {
-                SettingsWindowController.shared.showWindow()
-            }
-            if SparkleUpdaterController.shared.isEnabled {
-                Button("Check for Updates…") {
-                    SparkleUpdaterController.shared.checkForUpdates(nil)
-                }
-            }
-            Divider()
-            Button("Restart Kannu") {
-                guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return }
-
-                let workspace = NSWorkspace.shared
-
-                if let appURL = workspace.urlForApplication(withBundleIdentifier: bundleIdentifier)
-                {
-
-                    let configuration = NSWorkspace.OpenConfiguration()
-                    configuration.createsNewApplicationInstance = true
-
-                    workspace.openApplication(at: appURL, configuration: configuration)
-                }
-
-                NSApplication.shared.terminate(self)
-            }
-            Button("Quit", role: .destructive) {
-                NSApplication.shared.terminate(self)
-            }
-            .keyboardShortcut(KeyEquivalent("Q"), modifiers: .command)
+        // The menu bar item is an AppDelegate-owned NSStatusItem now: SwiftUI's MenuBarExtra
+        // cannot give the button a click action, and the item's left click opens the notch
+        // (right click keeps the menu). A Scene body cannot be empty, so a never-inserted
+        // extra stands in.
+        MenuBarExtra("Kannu", isInserted: .constant(false)) {
+            EmptyView()
         }
     }
 
@@ -680,6 +655,123 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.setFrame(targetFrame, display: false)
     }
 
+    // MARK: - Menu bar status item
+
+    /// Opens (or closes) the notch on the display the pointer is on — the shortcut's exact
+    /// behaviour, shared with the menu bar item's left click. Opening from outside arms a 3 s
+    /// auto-close so a notch nobody hovers does not stay open forever.
+    func toggleNotch() {
+        let mouseLocation = NSEvent.mouseLocation
+
+        var viewModel = self.vm
+
+        if Defaults[.displayPlacement].usesOneWindowPerDisplay {
+            for screen in NSScreen.screens where screen.frame.contains(mouseLocation) {
+                if let id = DisplayPlacementRuntime.displayID(for: screen),
+                   let screenViewModel = self.viewModels[id] {
+                    viewModel = screenViewModel
+                    break
+                }
+            }
+        }
+
+        closeNotchWorkItem?.cancel()
+        closeNotchWorkItem = nil
+
+        switch viewModel.notchState {
+        case .closed:
+            viewModel.open()
+
+            let workItem = DispatchWorkItem { [weak viewModel] in
+                viewModel?.close()
+            }
+            closeNotchWorkItem = workItem
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: workItem)
+        case .open:
+            viewModel.close()
+        }
+    }
+
+    /// Creates or removes the status item to match `Defaults[.menubarIcon]`. The eye is the
+    /// brand (Kannu is Malayalam for "eye"; the app icon is the same pair of eyes) — the
+    /// mountain the fork inherited from Atoll is gone. Left click toggles the notch;
+    /// right-click or option-click shows the menu.
+    func syncStatusItem(visible: Bool) {
+        if !visible {
+            if let statusItem {
+                NSStatusBar.system.removeStatusItem(statusItem)
+            }
+            statusItem = nil
+            return
+        }
+        guard statusItem == nil else { return }
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        if let button = item.button {
+            button.image = NSImage(systemSymbolName: "eye.fill",
+                                   accessibilityDescription: String(localized: "Kannu"))
+            button.target = self
+            button.action = #selector(statusItemClicked(_:))
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        }
+        statusItem = item
+    }
+
+    @objc private func statusItemClicked(_ sender: Any?) {
+        let event = NSApp.currentEvent
+        let wantsMenu = event?.type == .rightMouseUp
+            || event?.modifierFlags.contains(.control) == true
+            || event?.modifierFlags.contains(.option) == true
+        if wantsMenu, let statusItem {
+            // Assigning the menu and re-clicking pops it; clearing it afterwards keeps the
+            // plain left click on the toggle action instead of the menu.
+            statusItem.menu = statusItemMenu()
+            statusItem.button?.performClick(nil)
+            statusItem.menu = nil
+        } else {
+            toggleNotch()
+        }
+    }
+
+    private func statusItemMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.addItem(withTitle: String(localized: "Settings"),
+                     action: #selector(statusMenuOpenSettings), keyEquivalent: "").target = self
+        if SparkleUpdaterController.shared.isEnabled {
+            menu.addItem(withTitle: String(localized: "Check for Updates…"),
+                         action: #selector(statusMenuCheckForUpdates), keyEquivalent: "").target = self
+        }
+        menu.addItem(.separator())
+        menu.addItem(withTitle: String(localized: "Restart Kannu"),
+                     action: #selector(statusMenuRestart), keyEquivalent: "").target = self
+        menu.addItem(withTitle: String(localized: "Quit"),
+                     action: #selector(statusMenuQuit), keyEquivalent: "q").target = self
+        return menu
+    }
+
+    @objc private func statusMenuOpenSettings() {
+        SettingsWindowController.shared.showWindow()
+    }
+
+    @objc private func statusMenuCheckForUpdates() {
+        SparkleUpdaterController.shared.checkForUpdates(nil)
+    }
+
+    @objc private func statusMenuRestart() {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return }
+        let workspace = NSWorkspace.shared
+        if let appURL = workspace.urlForApplication(withBundleIdentifier: bundleIdentifier) {
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.createsNewApplicationInstance = true
+            workspace.openApplication(at: appURL, configuration: configuration)
+        }
+        NSApplication.shared.terminate(self)
+    }
+
+    @objc private func statusMenuQuit() {
+        NSApplication.shared.terminate(self)
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         #if DEBUG
         // `--kannu-snapshots <dir>`: render Settings to PNG and quit, before anything else starts.
@@ -703,6 +795,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         autoEnableLaunchAtLoginIfNeeded()
         repairLoginItemIfStale()
+
+        syncStatusItem(visible: Defaults[.menubarIcon])
+        Defaults.publisher(.menubarIcon, options: [])
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] change in
+                self?.syncStatusItem(visible: change.newValue)
+            }
+            .store(in: &cancellables)
 
         // A force-quit or a crash runs no teardown, so a now-playing helper from a previous run can
         // still be streaming. Off the main thread: it walks the process table and reads argv for each
@@ -1034,37 +1134,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         KeyboardShortcuts.onKeyDown(for: .toggleNotchOpen) { [weak self] in
             guard let self = self else { return }
             guard Defaults[.enableShortcuts] else { return }
-
-            let mouseLocation = NSEvent.mouseLocation
-
-            var viewModel = self.vm
-
-            if Defaults[.displayPlacement].usesOneWindowPerDisplay {
-                for screen in NSScreen.screens where screen.frame.contains(mouseLocation) {
-                    if let id = DisplayPlacementRuntime.displayID(for: screen),
-                       let screenViewModel = self.viewModels[id] {
-                        viewModel = screenViewModel
-                        break
-                    }
-                }
-            }
-
-            self.closeNotchWorkItem?.cancel()
-            self.closeNotchWorkItem = nil
-
-            switch viewModel.notchState {
-            case .closed:
-                viewModel.open()
-
-                let workItem = DispatchWorkItem { [weak viewModel] in
-                    viewModel?.close()
-                }
-                self.closeNotchWorkItem = workItem
-
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: workItem)
-            case .open:
-                viewModel.close()
-            }
+            self.toggleNotch()
         }
 
         KeyboardShortcuts.isEnabled = Defaults[.enableShortcuts]
