@@ -700,6 +700,10 @@ final class SecurityFindingsStore: ObservableObject {
         let checkout: URL
         let report: URL
         let timeout: TimeInterval
+        /// Transcript size at plan time; stored with the verdict so an unchanged chat can be
+        /// recognised instead of re-spending a full reasoning run on the same bytes.
+        let transcriptBytes: Int?
+        let unchangedSinceLastVerdict: Bool
     }
 
     static func analysisOptions() -> ADRDetectionCommand.Options {
@@ -712,7 +716,10 @@ final class SecurityFindingsStore: ObservableObject {
             policy: Defaults[.adrDetectionContextPolicy],
             timeoutSeconds: max(60, Defaults[.adrDetectionTimeoutSeconds]),
             maxTurns: 60,
-            maxMessages: max(20, Defaults[.adrDetectionMaxMessages])
+            maxMessages: max(20, Defaults[.adrDetectionMaxMessages]),
+            // 0 means unlimited (the adapter's convention); otherwise floored so a garbage
+            // value cannot send a near-empty transcript to the detector.
+            maxCharacters: Defaults[.adrDetectionMaxCharacters] > 0 ? max(20_000, Defaults[.adrDetectionMaxCharacters]) : 0
         )
     }
 
@@ -750,9 +757,12 @@ final class SecurityFindingsStore: ObservableObject {
         if Defaults[.adrDetectionUseAnthropicAPIKey], environment["ANTHROPIC_API_KEY"] == nil {
             return .failure(AnalysisFailure(String(localized: "\"Use an Anthropic API key\" is on but no key is stored.")))
         }
+        let transcriptBytes = ((try? FileManager.default.attributesOfItem(atPath: transcript.path))?[.size] as? NSNumber)?.intValue
+        let unchanged = transcriptBytes != nil && transcriptBytes == analysis(for: session.conversationID)?.transcriptBytes
         return .success(AnalysisPlan(conversationID: session.conversationID, chatName: session.chatName, transcript: transcript,
                                      arguments: arguments, environment: environment, uv: uv, checkout: checkout, report: report,
-                                     timeout: ADRDetectionCommand.processTimeout(forReasoningTimeout: options.timeoutSeconds)))
+                                     timeout: ADRDetectionCommand.processTimeout(forReasoningTimeout: options.timeoutSeconds),
+                                     transcriptBytes: transcriptBytes, unchangedSinceLastVerdict: unchanged))
     }
 
     /// Runs one analysis. The adapter is (re)written first so the copy on disk is always this
@@ -791,7 +801,8 @@ final class SecurityFindingsStore: ObservableObject {
                 .split(separator: "\n", omittingEmptySubsequences: true).last.map(String.init) ?? ""
             do {
                 let analysis = try ADRSessionAnalysis.parse(Data(lastLine.utf8), conversationID: plan.conversationID,
-                                                            chatName: plan.chatName, reportPath: plan.report.path)
+                                                            chatName: plan.chatName, reportPath: plan.report.path,
+                                                            transcriptBytes: plan.transcriptBytes)
                 self.finishAnalysis(plan, outcome: .success(analysis))
             } catch ADRSessionAnalysis.ParseError.adapterError(let reason) {
                 self.finishAnalysis(plan, outcome: .failure(AnalysisFailure(reason)))

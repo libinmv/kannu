@@ -1295,6 +1295,7 @@ extension Defaults.Keys {
     static let adrDetectionContextPolicy = Key<Bool>("adrDetectionContextPolicy", default: true)
     static let adrDetectionTimeoutSeconds = Key<Int>("adrDetectionTimeoutSeconds", default: 300)
     static let adrDetectionMaxMessages = Key<Int>("adrDetectionMaxMessages", default: 400)
+    static let adrDetectionMaxCharacters = Key<Int>("adrDetectionMaxCharacters", default: 150_000)
     static let adrSessionAnalyses = Key<[ADRSessionAnalysis]>("adrSessionAnalyses", default: [])
 
     /// The profiles picked during onboarding, recorded so later code can tell what kind of user

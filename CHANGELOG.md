@@ -4,6 +4,36 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-25 - ADR Detection trims tool results head+tail under a transcript budget
+- **Developer label:** "structure output and input to llm and get more faster answer" — the input half: cut what one analysis sends without hiding evidence
+- **Agent label:** Jev research follow-up — adapter v4 input budget, measured on this Mac's 323 transcripts (−40 % mean input)
+- **Changes:**
+  - The adapter (`ADRDetectionCommand.adapterSource` == `scripts/adr-analyze-session.py`, now
+    `KANNU_ADR_ADAPTER_VERSION=4`) trims every long tool result to 1,500 chars keeping **head and
+    tail** with a visible `[...trimmed...]` marker. The old cap was 4,000 chars head-only, which
+    made the *end* of every long fetched page invisible — the classic injected-payload placement;
+    25.1 % of tool results actually sent sat at that cap. A new `--max-chars` total budget
+    (default 150,000; 0 = unlimited, mirroring `--max-messages`) stubs the *oldest* tool-result
+    bodies as `[TOOL_RESULT elided: N chars]` once the whole conversion exceeds it; user text,
+    assistant text and `[TOOL_USE: …]` tags are never dropped. Measured over all 323 transcripts
+    on this Mac: mean input −40.3 % (p50 109,760 → 65,739 chars), worst case bounded 411,095 →
+    149,897, message counts identical on 323/323.
+  - The verdict now reports `analysis_seconds`, `messages_analyzed` and `input_characters`, and
+    `ADRSessionAnalysis` persists them plus the transcript's byte size — all Optional, so the 50
+    cached verdicts from earlier builds still decode (pinned by a test).
+  - Re-analysing a chat whose transcript has not grown always confirms first, even with per-chat
+    confirmation off: the consent alert says the chat is unchanged and names the previous verdict,
+    instead of silently re-spending a full reasoning run on the same bytes.
+  - Settings: a "Transcript budget" picker (60k/150k/400k/no limit) beside "Messages sent", both
+    it and the three Context toggles now searchable and highlightable; the footer and
+    `docs/ADR.md` §8 say what the trimming actually does. Highlight inventory counts bumped
+    deliberately (205 entries / 254 registrations / 248 ids).
+  - Tests: the argument vector pins `--max-chars` (REGRESSIONS entry 8); a new recall test proves
+    an instruction injected at the end of a 40,000-char tool result now survives conversion —
+    against v3 the same input drops it (verified: v3 blind, v4 sees it); budget-eviction,
+    both-ends and zero-budget tests; decode-compat test for the cached verdicts. Full suite: 769
+    tests, 0 failures.
+
 ### 2026-09-23 - The menu bar shows Kannu's eye, and clicking it opens the notch
 - **Developer label:** "clicking on kannu icon in top bar also should show kannu notch , also is that the same icon atoll uses if so please change it to some eye like thing"
 - **Agent label:** Follow-up 54, PR C — NSStatusItem with a click action, eye.fill symbol

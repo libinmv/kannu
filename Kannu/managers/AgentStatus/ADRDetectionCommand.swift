@@ -28,7 +28,7 @@ import Foundation
 /// to OpenAI. Off by default; Kannu runs it on explicit request only.
 enum ADRDetectionCommand {
     static let adapterFileName = "adr-analyze-session.py"
-    static let adapterVersionMarker = "KANNU_ADR_ADAPTER_VERSION=3"
+    static let adapterVersionMarker = "KANNU_ADR_ADAPTER_VERSION=4"
     /// Placeholder the adapter sets itself when triage is off; listed here so the environment
     /// builder never has to hand a real key to a run that will not use it.
     static let triageDisabledPlaceholder = "kannu-triage-disabled"
@@ -47,6 +47,7 @@ enum ADRDetectionCommand {
         var timeoutSeconds = 300
         var maxTurns = 60
         var maxMessages = 400
+        var maxCharacters = 150_000
 
         var contextList: String {
             [threatIntelligence ? "threat_intelligence" : nil,
@@ -68,7 +69,8 @@ enum ADRDetectionCommand {
             "--context", options.contextList,
             "--timeout", String(options.timeoutSeconds),
             "--max-turns", String(options.maxTurns),
-            "--max-messages", String(options.maxMessages)
+            "--max-messages", String(options.maxMessages),
+            "--max-chars", String(options.maxCharacters)
         ]
     }
 
@@ -110,7 +112,7 @@ enum ADRDetectionCommand {
     /// closing delimiter.
     static let adapterSource = #"""
 #!/usr/bin/env python3
-# KANNU_ADR_ADAPTER_VERSION=3
+# KANNU_ADR_ADAPTER_VERSION=4
 #
 # Kannu (കണ്ണ്) — Copyright (C) 2024-2026 Kannu Contributors — GPL-3.0-or-later.
 #
@@ -129,8 +131,10 @@ import sys
 import time
 from pathlib import Path
 
-TOOL_RESULT_CAP = 4000
+TOOL_RESULT_CAP = 1500
 TEXT_CAP = 20000
+TOTAL_CHAR_BUDGET = 150000
+TRIM_MARKER = "\n[...trimmed...]\n"
 
 
 def _text_of(content):
@@ -150,10 +154,23 @@ def _text_of(content):
     return "\n".join(p for p in parts if p)
 
 
-def load_transcript(path, max_messages):
-    """Claude Code JSONL -> the message list ADRBaseline.analyze_conversation expects,
-    mirroring main_detector._convert_conversation_to_messages: user text -> user, assistant
-    text -> assistant with [TOOL_USE: name (id: id)] tags appended, tool results -> role tool."""
+def _clip(text, cap):
+    """Head+tail with a visible marker, never head-only: an injected payload sits at the end of
+    long tool output at least as often as at the start, and a head-only cap hid every such tail.
+    Measured on this repo's corpus, the interior this drops is build logs and file listings."""
+    if cap <= 0 or len(text) <= cap:
+        return text
+    keep = (cap - len(TRIM_MARKER)) // 2
+    return text[:keep] + TRIM_MARKER + text[-keep:]
+
+
+def load_transcript(path, max_messages, max_chars):
+    """Claude Code JSONL -> the message list ADRBaseline.analyze_conversation expects, the same
+    shapes as main_detector._convert_conversation_to_messages: user text -> user, assistant
+    text -> assistant with [TOOL_USE: name (id: id)] tags appended, tool results -> role tool.
+    The trimming is Kannu's own: every per-message cap keeps head and tail, and max_chars is a
+    total budget enforced by stubbing the oldest tool-result bodies — user text, assistant text
+    and tool_use tags are never dropped, because they are what a verdict is grounded in."""
     messages = []
     with open(path, "r", encoding="utf-8", errors="replace") as handle:
         for line in handle:
@@ -176,12 +193,12 @@ def load_transcript(path, max_messages):
                 text = _text_of([b for b in blocks if not (isinstance(b, dict) and b.get("type") == "tool_result")]
                                 if blocks else content)
                 for result in results:
-                    messages.append({"role": "tool", "content": _text_of(result.get("content"))[:TOOL_RESULT_CAP]})
+                    messages.append({"role": "tool", "content": _clip(_text_of(result.get("content")), TOOL_RESULT_CAP)})
                 if text:
-                    messages.append({"role": "user", "content": text[:TEXT_CAP]})
+                    messages.append({"role": "user", "content": _clip(text, TEXT_CAP)})
             elif kind == "assistant":
                 blocks = content if isinstance(content, list) else []
-                text = _text_of(content)[:TEXT_CAP]
+                text = _clip(_text_of(content), TEXT_CAP)
                 tags = []
                 for block in blocks:
                     if isinstance(block, dict) and block.get("type") == "tool_use":
@@ -191,6 +208,17 @@ def load_transcript(path, max_messages):
                     messages.append({"role": "assistant", "content": combined})
     if max_messages > 0 and len(messages) > max_messages:
         messages = messages[-max_messages:]
+    if max_chars > 0:
+        spent = sum(len(m["content"]) for m in messages)
+        for message in messages:  # oldest first: the newest evidence stays verbatim
+            if spent <= max_chars:
+                break
+            if message["role"] != "tool":
+                continue
+            stub = "[TOOL_RESULT elided: %d chars]" % len(message["content"])
+            if len(stub) < len(message["content"]):
+                spent -= len(message["content"]) - len(stub)
+                message["content"] = stub
     return messages
 
 
@@ -212,6 +240,7 @@ def main():
     parser.add_argument("--timeout", type=int, default=300)
     parser.add_argument("--max-turns", type=int, default=60)
     parser.add_argument("--max-messages", type=int, default=400)
+    parser.add_argument("--max-chars", type=int, default=TOTAL_CHAR_BUDGET)
     parser.add_argument("--convert-only", action="store_true")
     args = parser.parse_args()
 
@@ -231,9 +260,10 @@ def main():
             print(json.dumps({"schema": 1, "error": "the report must be written under ~/.kannu"}))
             return 2
 
-    messages = load_transcript(transcript, args.max_messages)
+    messages = load_transcript(transcript, args.max_messages, args.max_chars)
+    input_characters = sum(len(m["content"]) for m in messages)
     if args.convert_only:
-        print(json.dumps({"schema": 1, "messages": messages}))
+        print(json.dumps({"schema": 1, "messages": messages, "input_characters": input_characters}))
         return 0
     if not messages:
         print(json.dumps({"schema": 1, "error": "transcript holds no conversational records"}))
@@ -301,6 +331,7 @@ def main():
         "analysis_seconds": round(time.time() - started, 1),
         "triage": args.triage,
         "messages_analyzed": len(messages),
+        "input_characters": input_characters,
     }
     if report is not None:
         try:

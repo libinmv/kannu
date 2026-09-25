@@ -196,9 +196,11 @@ Then Settings → Agents → Session analysis → **Analyze chats with ADR Detec
 alert names what leaves the Mac), choose the `Detection` folder, and optionally store keys:
 an OpenAI key if you turn **Triage with OpenAI first** on (off = Claude only), an Anthropic API
 key if you would rather spend API credits than your subscription's 5-hour/weekly quota.
-Model names, the three context servers, the reasoning timeout and the message cap (newest N
-messages, because upstream sends the whole transcript and a long one exceeds the model's
-context) are all editable.
+Model names, the three context servers, the reasoning timeout, the message cap (newest N
+messages) and the transcript budget are all editable. Long tool results are trimmed keeping
+head **and** tail — an injected payload hides at the end of fetched content at least as often
+as at the start — and past the budget the oldest tool results are stubbed, so one analysis
+cannot exceed the model's context however long the chat ran.
 
 Run one: right-click a finished Claude Code chat in the notch → **Analyze with ADR Detection…**.
 By default a confirmation names the transcript and the providers every time. The verdict shows

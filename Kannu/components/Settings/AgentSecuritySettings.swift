@@ -46,6 +46,7 @@ struct AgentSecuritySettings: View {
     @Default(.adrDetectionContextPolicy) var adrDetectionContextPolicy
     @Default(.adrDetectionTimeoutSeconds) var adrDetectionTimeoutSeconds
     @Default(.adrDetectionMaxMessages) var adrDetectionMaxMessages
+    @Default(.adrDetectionMaxCharacters) var adrDetectionMaxCharacters
     @Default(.enableAgentStatusFeature) var enableAgentStatusFeature
     @State private var adrOpenAIKeyText = ""
     @State private var adrAnthropicKeyText = ""
@@ -551,6 +552,7 @@ struct AgentSecuritySettings: View {
 
         Section {
             Toggle("Context: threat intelligence", isOn: $adrDetectionContextThreatIntelligence)
+                .settingsHighlight(id: highlightID("Context servers"))
             Toggle("Context: source code analyzer", isOn: $adrDetectionContextSourceCode)
             Toggle("Context: policy store", isOn: $adrDetectionContextPolicy)
             Picker("Reasoning timeout", selection: $adrDetectionTimeoutSeconds) {
@@ -565,12 +567,19 @@ struct AgentSecuritySettings: View {
                 Text("800").tag(800)
             }
             .settingsHighlight(id: highlightID("Messages sent"))
+            Picker("Transcript budget", selection: $adrDetectionMaxCharacters) {
+                Text("60k characters").tag(60_000)
+                Text("150k characters").tag(150_000)
+                Text("400k characters").tag(400_000)
+                Text("No limit").tag(0)
+            }
+            .settingsHighlight(id: highlightID("Transcript budget"))
             Toggle("Confirm before every analysis", isOn: $adrDetectionConfirmEachRun)
                 .settingsHighlight(id: highlightID("Confirm before every analysis"))
         } header: {
             SettingsSectionHeader("Analysis context and limits")
         } footer: {
-            SettingsFooter("The three context options are ADR's local MCP context servers; they read bundled data and this Mac only.")
+            SettingsFooter("The three context options are ADR's local MCP context servers; they read bundled data and this Mac only. Long tool results are trimmed keeping head and tail, and the transcript budget caps what one analysis sends.")
         }
 
         if findingsStore.lastAnalysisError != nil || !findingsStore.analyses.isEmpty {
