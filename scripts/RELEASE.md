@@ -95,13 +95,19 @@ Manual releases do **not** notarize automatically; use CI for notarized builds.
 ## Codenames
 
 Each feature release carries a watcher's name — Kannu watches your agents — shown in Settings › About
-and in the GitHub release title (`Kannu 1.2.0 — Argus`). The list, in order:
+and in the GitHub release title (`Kannu 1.3.0 — Heimdall`). The list, in order:
 
 | Version | Codename |
 |---|---|
 | 1.2.0 | Argus |
-| next | Heimdall |
-| then | Horus, Vigil, Sentinel |
+| 1.3.0 | Heimdall |
+| next | Horus |
+| then | Vigil, Sentinel |
+
+Pick the next name for what the release actually does, not just for its turn in the list — the list
+is the shortlist, not a queue. Argus, all eyes, suited a release that only watched; Heimdall, who
+keeps watch at Bifröst and refuses passage, suited the one that added the agent policy. If a release
+does not fit the next name on the list, take one further down or add a watcher to it.
 
 The name lives in one place: `ReleaseInfo.codename` in `Kannu/models/Constants.swift`. Both release
 paths grep that line for the title, so bump it there and nowhere else. 1.0.0 shipped as "Fiji", the

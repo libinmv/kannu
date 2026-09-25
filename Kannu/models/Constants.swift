@@ -1621,11 +1621,16 @@ extension Defaults.Keys {
 /// Release codename, shown in Settings › About and used for the GitHub release title
 /// (`scripts/manual-release.sh` and `.github/workflows/release.yml` grep the `static let codename` declaration, so keep its
 /// shape). Kannu names releases after watchers — the app's job is to watch your
-/// agents — one per feature release: Argus (1.2.0), then Heimdall, Horus, Vigil, Sentinel. 1.0.0
-/// shipped as "Fiji", the tail of the Atoll island chain this fork inherited; that was not a scheme
-/// choice and is not continued.
+/// agents — one per feature release: Argus (1.2.0), Heimdall (1.3.0), then Horus, Vigil, Sentinel.
+/// 1.0.0 shipped as "Fiji", the tail of the Atoll island chain this fork inherited; that was not a
+/// scheme choice and is not continued.
+///
+/// The name is picked for what the release does, not just for its turn in the list. Argus was many
+/// eyes — 1.2.0 only watched. Heimdall keeps watch at Bifröst *and refuses passage*, which is the
+/// two halves of 1.3.0: the local security checks that detect, and the agent policy that can deny a
+/// tool call on Claude Code and Cursor. Detect and respond.
 enum ReleaseInfo {
-    static let codename = "Argus"
+    static let codename = "Heimdall"
 
     /// `owner/repo`, used to build the prefilled issue a user can send after a freeze or a crash.
     /// Kannu never posts anything itself — the link opens their browser with the fields filled in.

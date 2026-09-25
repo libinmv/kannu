@@ -4,6 +4,46 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-25 - Nothing unreleased yet - 1.3.0 just shipped
+- **Developer label:** release bookkeeping, not a feature
+- **Agent label:** Follow-up 55 - placeholder so the section is not empty
+- **Changes:**
+  - 1.3.0 shipped on 2026-09-25; everything it contains is under `## [1.3.0]` below. Replace this
+    placeholder with the next real entry rather than adding one above it. It exists only because
+    `.githooks/pre-commit` rejects a commit whose `[Unreleased]` section is empty, so the section
+    states why it is empty instead of saying nothing.
+
+## [1.3.0] - 2026-09-25 - Heimdall
+
+### 2026-09-25 - Ship 1.3.0 "Heimdall"
+- **Developer label:** "plan for release will existings users get auto update"
+- **Agent label:** Follow-up 55 - 1.3.0 release mechanics, and the build number that decides whether anyone gets it
+- **Changes:**
+  - `CURRENT_PROJECT_VERSION` 2 -> 3 in **both** configurations, and `MARKETING_VERSION` 1.2.0 ->
+    1.3.0. The build number is the one that matters: Sparkle compares the installed `CFBundleVersion`
+    against the feed's `sparkle:version` as integers and ignores `MARKETING_VERSION` entirely, so
+    with the build left at 2 CI would have built, signed, notarized and published `Kannu.1.3.0.dmg`
+    and regenerated an appcast still advertising build 2 - a release that looks perfect from the
+    outside while every existing user is told they are up to date. Nothing in the pipeline
+    cross-checks the tag against either version field, so the release checklist now does.
+  - `ReleaseInfo.codename` Argus -> **Heimdall**, and its doc comment now says why rather than only
+    listing the scheme. Argus was all eyes, and 1.2.0 only watched; Heimdall keeps watch at Bifrost
+    *and refuses passage*, which is the two halves of this release - the local checks that detect and
+    the agent policy that can deny a tool call. `scripts/RELEASE.md` records the rule that the name
+    is chosen for what a release does, not for its turn in the list.
+  - Curated release notes at `docs/release-notes/1.3.0.md`, and the publish step resolves
+    `docs/release-notes/<version>.md` from the tag instead of asking GitHub to generate a commit
+    list. Generated notes would have been wrong here anyway: the `v1.2.0` tag was orphaned by the
+    2026-09-03 history reset, so it is an ancestor of nothing and the diff has no sane base. The
+    path is derived rather than hardcoded so the next tag cannot publish this release's notes.
+  - The changelog is cut into `## [1.3.0]` and `## [1.2.0]` sections. `## [Unreleased]` had never
+    been cut for any release and held 205 entries going back to 2026-07-09; diffing
+    `v1.2.0:CHANGELOG.md` (105 entries) against this file puts the boundary beyond doubt - exactly
+    **100 entries are new**, the oldest being "Sign the release DMG", and the first pre-existing one
+    is "Name releases after watchers; 1.2.0 is Argus". Relabelling the whole section would have
+    claimed July's work as new. `[Unreleased]` carries a placeholder entry rather than nothing,
+    because `.githooks/pre-commit` rejects a commit whose `[Unreleased]` section is empty.
+
 ### 2026-09-23 - The menu bar shows Kannu's eye, and clicking it opens the notch
 - **Developer label:** "clicking on kannu icon in top bar also should show kannu notch , also is that the same icon atoll uses if so please change it to some eye like thing"
 - **Agent label:** Follow-up 54, PR C — NSStatusItem with a click action, eye.fill symbol
@@ -2661,6 +2701,8 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
   - `docs/REGRESSIONS.md` says up front that the commit hashes it cites predate the 2026-09-03
     history reset and no longer resolve in a fresh clone. The rules and guards are unaffected; only
     the provenance links are dead.
+
+## [1.2.0] - 2026-09-03 - Argus
 
 ### 2026-09-03 - Name releases after watchers; 1.2.0 is Argus
 - **Developer label:** avoid atoll style naming and do something else we made first version fiji mistakenly
