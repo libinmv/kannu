@@ -4,6 +4,17 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-25 - Nothing unreleased yet - 1.3.0 just shipped
+- **Developer label:** release bookkeeping, not a feature
+- **Agent label:** Follow-up 55 - placeholder so the section is not empty
+- **Changes:**
+  - 1.3.0 shipped on 2026-09-25; everything it contains is under `## [1.3.0]` below. Replace this
+    placeholder with the next real entry rather than adding one above it. It exists only because
+    `.githooks/pre-commit` rejects a commit whose `[Unreleased]` section is empty, so the section
+    states why it is empty instead of saying nothing.
+
+## [1.3.0] - 2026-09-25 - Heimdall
+
 ### 2026-09-25 - Ship 1.3.0 "Heimdall"
 - **Developer label:** "plan for release will existings users get auto update"
 - **Agent label:** Follow-up 55 - 1.3.0 release mechanics, and the build number that decides whether anyone gets it
@@ -30,10 +41,8 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     `v1.2.0:CHANGELOG.md` (105 entries) against this file puts the boundary beyond doubt - exactly
     **100 entries are new**, the oldest being "Sign the release DMG", and the first pre-existing one
     is "Name releases after watchers; 1.2.0 is Argus". Relabelling the whole section would have
-    claimed July's work as new. `[Unreleased]` keeps this entry because `.githooks/pre-commit`
-    rejects a commit whose `[Unreleased]` section is empty.
-
-## [1.3.0] - 2026-09-25 - Heimdall
+    claimed July's work as new. `[Unreleased]` carries a placeholder entry rather than nothing,
+    because `.githooks/pre-commit` rejects a commit whose `[Unreleased]` section is empty.
 
 ### 2026-09-23 - The menu bar shows Kannu's eye, and clicking it opens the notch
 - **Developer label:** "clicking on kannu icon in top bar also should show kannu notch , also is that the same icon atoll uses if so please change it to some eye like thing"
