@@ -67,39 +67,31 @@ struct ExtensionsSettingsView: View {
             if Defaults[.enableThirdPartyExtensions] {
                 Defaults.Toggle(String(localized:"Allow extension live activities"), key: .enableExtensionLiveActivities)
                     .settingsHighlight(id: highlightID("Allow extension live activities"))
-                
-                                Defaults.Toggle(String(localized:"Allow extension lock screen widgets"), key: .enableExtensionLockScreenWidgets)
+
+
+                Defaults.Toggle(String(localized:"Allow extension lock screen widgets"), key: .enableExtensionLockScreenWidgets)
                     .settingsHighlight(id: highlightID("Allow extension lock screen widgets"))
 
-                                                Defaults.Toggle(String(localized:"Allow extension notch experiences"), key: .enableExtensionNotchExperiences)
+                Defaults.Toggle(String(localized:"Allow extension notch experiences"), key: .enableExtensionNotchExperiences)
                     .settingsHighlight(id: highlightID("Allow extension notch experiences"))
 
                 if Defaults[.enableExtensionNotchExperiences] {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Defaults.Toggle(String(localized:"Show extension tabs"), key: .enableExtensionNotchTabs)
-                            .tint(.accentColor)
-                        Defaults.Toggle(String(localized:"Allow minimalistic overrides"), key: .enableExtensionNotchMinimalisticOverrides)
-                            .tint(.accentColor)
-                        Defaults.Toggle(String(localized:"Allow interactive web content"), key: .enableExtensionNotchInteractiveWebViews)
-                            .tint(.accentColor)
-                    }
-                    .padding(.leading, 4)
+                    // One row each; they used to share a single packed row.
+                    Defaults.Toggle(String(localized:"Show extension tabs"), key: .enableExtensionNotchTabs)
+                    Defaults.Toggle(String(localized:"Allow minimalistic overrides"), key: .enableExtensionNotchMinimalisticOverrides)
+                    Defaults.Toggle(String(localized:"Allow interactive web content"), key: .enableExtensionNotchInteractiveWebViews)
                 }
                 
                 Defaults.Toggle(String(localized:"Enable extension diagnostics logging"), key: .extensionDiagnosticsLoggingEnabled)
                     .settingsHighlight(id: highlightID("Enable extension diagnostics logging"))
             }
         } header: {
-            Text("Global Settings")
+            SettingsSectionHeader("Global Settings")
         } footer: {
             if Defaults[.enableThirdPartyExtensions] {
-                Text("Third-party apps using Extension Kit can display live activities, lock screen widgets, and dedicated notch experiences. Toggle features above or manage individual app permissions below.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                SettingsFooter("Third-party apps using Extension Kit can display live activities, lock screen widgets, and dedicated notch experiences. Toggle features above or manage individual app permissions below.")
             } else {
-                Text("Enable extensions to allow third-party apps to display live activities and lock screen widgets in Kannu.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                SettingsFooter("Enable extensions to allow third-party apps to display live activities and lock screen widgets in Kannu.")
             }
         }
     }
@@ -107,18 +99,21 @@ struct ExtensionsSettingsView: View {
     private var authorizedAppsSection: some View {
         Section {
             if authManager.entries.isEmpty {
-                VStack(alignment: .center, spacing: 12) {
+                // An empty state is a card, not a row: it is the one place in this section that
+                // may pad and centre itself.
+                VStack(alignment: .center, spacing: SettingsMetrics.cardPadding) {
                     Image(systemName: "puzzlepiece.extension")
                         .font(.system(size: 48))
                         .foregroundStyle(.secondary.opacity(0.5))
-                    
+                        .accessibilityHidden(true)
+
                     Text("No extensions yet")
                         .font(.headline)
                         .foregroundStyle(.secondary)
-                    
+                        .textSelection(.enabled)
+
                     Text("Apps using Extension Kit will appear here once they request permission")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .settingsDescriptionStyle()
                         .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity)
@@ -138,21 +133,20 @@ struct ExtensionsSettingsView: View {
             }
         } header: {
             HStack {
-                Text("App Permissions")
+                SettingsSectionHeader("App Permissions")
                 Spacer()
                 if !authManager.entries.isEmpty {
                     Text("\(authManager.entries.count) \(authManager.entries.count == 1 ? "app" : "apps")")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .settingsDescriptionStyle()
                 }
             }
             .settingsHighlight(id: highlightID("App permissions list"))
         } footer: {
             if !authManager.entries.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
+                SettingsFooterStack {
                     Text("Permission States:")
-                        .font(.caption.weight(.semibold))
-                    
+                        .font(.subheadline.weight(.semibold))
+
                     HStack(spacing: 16) {
                         Label("Authorized", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
@@ -161,9 +155,10 @@ struct ExtensionsSettingsView: View {
                         Label("Denied/Revoked", systemImage: "xmark.circle.fill")
                             .foregroundStyle(.red)
                     }
-                    .font(.caption2)
+                    .font(.subheadline)
                 }
                 .foregroundStyle(.secondary)
+                .textSelection(.enabled)
             }
         }
     }
@@ -177,39 +172,36 @@ private struct ExtensionEntryRow: View {
     @ObservedObject private var notchExperienceManager = ExtensionNotchExperienceManager.shared
     let entry: ExtensionAuthorizationEntry
     let onRemove: () -> Void
-    
-    @State private var isExpanded = false
+
+    @State private var isExpanded: Bool
+
+    init(entry: ExtensionAuthorizationEntry, onRemove: @escaping () -> Void, initiallyExpanded: Bool = false) {
+        self.entry = entry
+        self.onRemove = onRemove
+        _isExpanded = State(initialValue: initiallyExpanded)
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Main row
-            HStack(spacing: 12) {
-                // Status indicator
-                statusIndicator
-                
-                // App info
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(entry.appName)
-                        .font(.system(size: 13, weight: .medium))
-                    Text(entry.bundleIdentifier)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-                
-                Spacer()
-                
-                // Expand button
+            // The row proper: the app's name and bundle id in the label column, the disclosure
+            // chevron in the control column, so it lines up with every other Settings row.
+            LabeledContent {
                 Button {
                     withAnimation(.snappy(duration: 0.2)) {
                         isExpanded.toggle()
                     }
                 } label: {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(isExpanded ? Text("Hide details") : Text("Show details"))
+            } label: {
+                HStack(spacing: SettingsMetrics.rowContent) {
+                    statusIndicator
+                    SettingsRowLabel(verbatim: entry.appName, description: entry.bundleIdentifier)
+                }
             }
             .contentShape(Rectangle())
             .onTapGesture {
@@ -217,27 +209,27 @@ private struct ExtensionEntryRow: View {
                     isExpanded.toggle()
                 }
             }
-            
+
             // Expanded details
             if isExpanded {
                 expandedDetails
-                    .padding(.top, 12)
+                    .padding(.top, SettingsMetrics.cardPadding)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .padding(.vertical, 8)
     }
-    
+
     private var statusIndicator: some View {
         ZStack {
             Circle()
                 .fill(statusColor.opacity(0.15))
-                .frame(width: 32, height: 32)
-            
+                .frame(width: 22, height: 22)
+
             Image(systemName: statusIcon)
-                .font(.system(size: 14, weight: .semibold))
+                .imageScale(.small)
                 .foregroundStyle(statusColor)
         }
+        .accessibilityLabel(Text(entry.status.rawValue))
     }
     
     private var statusColor: Color {
@@ -257,15 +249,17 @@ private struct ExtensionEntryRow: View {
     }
     
     private var expandedDetails: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: SettingsMetrics.cardPadding) {
             // Status info
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
+            VStack(alignment: .leading, spacing: SettingsMetrics.footerStack) {
+                HStack(spacing: SettingsMetrics.rowContent) {
                     Text("Status:")
-                        .font(.caption.weight(.semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
                     Text(entry.status.rawValue.capitalized)
-                        .font(.caption)
+                        .font(.subheadline)
+                        .textSelection(.enabled)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
                         .background(statusColor.opacity(0.15))
@@ -282,13 +276,12 @@ private struct ExtensionEntryRow: View {
                 }
                 
                 if let deniedReason = entry.lastDeniedReason {
-                    VStack(alignment: .leading, spacing: 3) {
+                    VStack(alignment: .leading, spacing: SettingsMetrics.labelStack) {
                         Text("Last Denied Reason:")
-                            .font(.caption.weight(.semibold))
+                            .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.secondary)
-                        Text(deniedReason)
-                            .font(.caption)
-                            .foregroundStyle(.red.opacity(0.9))
+                            .textSelection(.enabled)
+                        SettingsErrorText(deniedReason)
                     }
                 }
             }
@@ -311,16 +304,17 @@ private struct ExtensionEntryRow: View {
             // Actions
             actionButtons
         }
-        .padding(12)
+        .padding(SettingsMetrics.cardPadding)
         .background(Color.secondary.opacity(0.05))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
     
     private var scopeToggles: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SettingsMetrics.rowContent) {
             Text("Allowed Features")
-                .font(.caption.weight(.semibold))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
+                .textSelection(.enabled)
             
             Toggle("Live Activities", isOn: Binding(
                 get: { entry.allowedScopes.contains(.liveActivities) },
@@ -334,7 +328,6 @@ private struct ExtensionEntryRow: View {
                     authManager.updateAllowedScopes(bundleIdentifier: entry.bundleIdentifier, allowedScopes: newScopes)
                 }
             ))
-            .font(.caption)
             .disabled(!authManager.areLiveActivitiesEnabled)
             
             Toggle("Lock Screen Widgets", isOn: Binding(
@@ -349,7 +342,6 @@ private struct ExtensionEntryRow: View {
                     authManager.updateAllowedScopes(bundleIdentifier: entry.bundleIdentifier, allowedScopes: newScopes)
                 }
             ))
-            .font(.caption)
             .disabled(!authManager.areLockScreenWidgetsEnabled)
 
             Toggle("Notch Experiences", isOn: Binding(
@@ -364,45 +356,45 @@ private struct ExtensionEntryRow: View {
                     authManager.updateAllowedScopes(bundleIdentifier: entry.bundleIdentifier, allowedScopes: newScopes)
                 }
             ))
-            .font(.caption)
             .disabled(!authManager.areNotchExperiencesEnabled)
         }
     }
     
     private func rateLimitInfo(record: ExtensionRateLimitRecord) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: SettingsMetrics.rowContent) {
             Text("Recent Activity (last 5 minutes)")
-                .font(.caption.weight(.semibold))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
+                .textSelection(.enabled)
             
             HStack(spacing: 20) {
                 if !record.activityTimestamps.isEmpty {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: SettingsMetrics.labelStack) {
                         Text("Live Activities")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .settingsDescriptionStyle()
                         Text("\(record.activityTimestamps.count)")
-                            .font(.caption.monospacedDigit())
+                            .font(.subheadline.monospacedDigit())
+                            .textSelection(.enabled)
                     }
                 }
                 
                 if !record.widgetTimestamps.isEmpty {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: SettingsMetrics.labelStack) {
                         Text("Widget Updates")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .settingsDescriptionStyle()
                         Text("\(record.widgetTimestamps.count)")
-                            .font(.caption.monospacedDigit())
+                            .font(.subheadline.monospacedDigit())
+                            .textSelection(.enabled)
                     }
                 }
 
                 if !record.notchExperienceTimestamps.isEmpty {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: SettingsMetrics.labelStack) {
                         Text("Notch Experiences")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .settingsDescriptionStyle()
                         Text("\(record.notchExperienceTimestamps.count)")
-                            .font(.caption.monospacedDigit())
+                            .font(.subheadline.monospacedDigit())
+                            .textSelection(.enabled)
                     }
                 }
             }
@@ -410,14 +402,13 @@ private struct ExtensionEntryRow: View {
             Button("Reset Rate Limits") {
                 authManager.resetRateLimits(for: entry.bundleIdentifier)
             }
-            .font(.caption)
             .buttonStyle(.bordered)
             .controlSize(.small)
         }
     }
     
     private var actionButtons: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: SettingsMetrics.rowContent) {
             switch entry.status {
             case .pending:
                 Button("Authorize") {
@@ -497,12 +488,12 @@ private struct ExtensionEntryRow: View {
     }
     
     private func infoRow(label: String, value: String) -> some View {
-        HStack {
+        HStack(spacing: SettingsMetrics.rowContent) {
             Text("\(label):")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.caption)
+                .settingsDescriptionStyle()
+            Text(verbatim: value)
+                .font(.subheadline)
+                .textSelection(.enabled)
         }
     }
     
@@ -516,3 +507,32 @@ private struct ExtensionEntryRow: View {
 #Preview {
     ExtensionsSettingsView()
 }
+
+#if DEBUG
+extension ExtensionsSettingsView {
+    /// DEBUG snapshot harness: the app rows, collapsed and expanded, without needing a real
+    /// authorized extension on this Mac — the rows are the ones that must sit on the same grid as
+    /// every other Settings row.
+    static func snapshotEntryRows() -> AnyView {
+        let granted = Date(timeIntervalSince1970: 1_757_600_000)
+        let entries = [
+            ExtensionAuthorizationEntry(bundleIdentifier: "com.example.weatherbar", appName: "WeatherBar",
+                                        status: .authorized, grantedAt: granted, lastActivityAt: granted),
+            ExtensionAuthorizationEntry(bundleIdentifier: "com.example.buildwatch", appName: "BuildWatch",
+                                        status: .pending),
+            ExtensionAuthorizationEntry(bundleIdentifier: "com.example.noisy", appName: "Noisy Widget Co.",
+                                        status: .denied, grantedAt: granted,
+                                        lastDeniedReason: "Asked for lock screen widgets 40 times in five minutes."),
+        ]
+        return AnyView(Form {
+            Section {
+                ForEach(entries) { entry in
+                    ExtensionEntryRow(entry: entry, onRemove: {}, initiallyExpanded: entry.status == .denied)
+                }
+            } header: {
+                SettingsSectionHeader("App Permissions")
+            }
+        })
+    }
+}
+#endif

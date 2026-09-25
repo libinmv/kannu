@@ -120,7 +120,7 @@ final class CircularHUDWindowManager {
         win.level = .screenSaver
         win.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         win.hasShadow = false
-        win.contentView = hostingView
+        win.setHostedContent(hostingView)
         win.alphaValue = 0
         
         SkyLightOperator.shared.delegateWindow(win)

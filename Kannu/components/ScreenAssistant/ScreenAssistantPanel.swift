@@ -195,14 +195,10 @@ struct AddFilesButton: View {
         panel.canChooseFiles = true
         panel.allowedContentTypes = [.data, .image, .movie, .audio, .text, .pdf]
         
-        if let window = NSApp.keyWindow ?? NSApp.mainWindow {
-            panel.beginSheetModal(for: window) { response in
-                if response == .OK {
-                    screenAssistantManager.addFiles(panel.urls)
-                }
-            }
-        } else {
-            if panel.runModal() == .OK {
+        // The only windows that can become key here are the borderless, non-activating chat
+        // panels, so `NSApp.keyWindow` is the wrong anchor and `runModal()` was the freeze.
+        ModalPresenter.present(panel) { response in
+            if response == .OK {
                 screenAssistantManager.addFiles(panel.urls)
             }
         }

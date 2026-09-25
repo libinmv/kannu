@@ -24,7 +24,7 @@ enum AgentSessionLogParser {
     private static let pathListCacheTTL: TimeInterval = 2.0
     /// Escalating tail-read windows for `claudeTailState(at:)` — single records can exceed
     /// the first window, and a truncated tail must widen rather than report `.unknown`.
-    private static let tailWindowLimits = [16_000, 262_144, 1_048_576]
+    private static let tailWindowLimits = [16_000, 262_144, 1_048_576, 4_194_304]
     private static var tailResultCache: [String: (mtime: Date, size: Int, result: ClaudeTailResult)] = [:]
 
     private static var cachedPaths: [AgentSessionLogProvider: [URL]] = [:]
@@ -128,29 +128,22 @@ enum AgentSessionLogParser {
     }
 
     static func displayChatName(from path: URL, provider: AgentSessionLogProvider) -> String? {
+        // A quiet Claude session whose name is already known — a title record, the first prompt,
+        // or nothing yet — costs a stat, not a 32 KB read. The double optional is the point:
+        // `.some(nil)` is a memoised "nothing to show yet". The title-only cache below could not
+        // express that (nil meant "no entry" and "no title" alike), and it never covered the
+        // prompt-derived fallback, so every titleless transcript was re-read on every rescan.
+        if provider == .claude, let cached = freshCachedDisplayName(at: path) { return cached }
+        leadingReadCount &+= 1
         guard let text = readLeadingLines(at: path) else { return nil }
         let lines = text.split(separator: "\n", omittingEmptySubsequences: true)
 
-        // Claude Code writes ai-title records with a clean model-generated title — prefer those.
-        // Search both leading and trailing bytes since the record may appear late in long sessions.
+        // Claude Code keeps two title records, rewritten every turn: `custom-title` is what the
+        // desktop app and `/resume` display (user-renamable), `ai-title` the model's own name.
+        // Read both from the leading and trailing bytes — they land late in long sessions —
+        // and let custom win, or Kannu names a chat differently from Claude itself.
         if provider == .claude {
-            let searchChunks: [Substring.SubSequence] = {
-                var chunks = lines
-                if let tail = readTrailingLines(at: path) {
-                    chunks += tail.split(separator: "\n", omittingEmptySubsequences: true)
-                }
-                return chunks
-            }()
-            var lastAiTitle: String? = nil
-            for line in searchChunks {
-                guard let data = line.data(using: .utf8),
-                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      (json["type"] as? String) == "ai-title",
-                      let title = json["aiTitle"] as? String,
-                      !title.isEmpty else { continue }
-                lastAiTitle = String(title.prefix(72))
-            }
-            if let title = lastAiTitle { return title }
+            if let title = cachedClaudeTitle(at: path, leadingText: text) { return rememberDisplayName(title, at: path) }
         }
 
         for line in lines {
@@ -160,9 +153,109 @@ enum AgentSessionLogParser {
                   let title = normalizedChatTitle(fromUserText: raw) else {
                 continue
             }
-            return title
+            return provider == .claude ? rememberDisplayName(title, at: path) : title
         }
-        return nil
+        return provider == .claude ? rememberDisplayName(nil, at: path) : nil
+    }
+
+    private static var titleCache: [String: (mtime: Date, size: Int, title: String?)] = [:]
+    /// The name `displayChatName` last resolved per Claude transcript, against the file version it
+    /// was read from — whichever of the three sources it came from, nil included.
+    private static var displayNameCache: [String: (mtime: Date, size: Int, name: String?)] = [:]
+    /// Test hook: leading-window reads made by `displayChatName`. A fresh cache entry, name or
+    /// not, must not add one.
+    static private(set) var leadingReadCount = 0
+    /// The newest title a tail window found per transcript. A long turn can push the title record
+    /// past the last window (1 MiB) — seen on an 89 MB session — and the name then fell back to an
+    /// older title or the first prompt; it now keeps the last one found instead.
+    private static var lastTailTitleByPath: [String: String] = [:]
+
+    /// `nil`: no fresh entry. `.some(name)`: a fresh entry, whose name may itself be nil.
+    private static func freshCachedDisplayName(at url: URL) -> String?? {
+        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        guard let mtime = values?.contentModificationDate, let size = values?.fileSize,
+              let cached = displayNameCache[url.path], cached.mtime == mtime, cached.size == size else { return nil }
+        return .some(cached.name)
+    }
+
+    @discardableResult
+    private static func rememberDisplayName(_ name: String?, at url: URL) -> String? {
+        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        if let mtime = values?.contentModificationDate, let size = values?.fileSize {
+            if displayNameCache.count > 2 * maxSessionsPerScan { displayNameCache.removeAll() }
+            displayNameCache[url.path] = (mtime, size, name)
+        }
+        return name
+    }
+
+    /// Tail first (the newest copy), then the last title a tail showed, then the head (a session too
+    /// short to reach the tail window). Pure so the precedence is testable.
+    static func resolvedClaudeTitle(tail: String?, lastKnownTail: String?, head: String?) -> String? {
+        tail ?? lastKnownTail ?? head
+    }
+
+    /// Title records are rewritten each turn, but a turn's last records are often large tool
+    /// results, so the newest copy can sit hundreds of KB before EOF. Escalate through the same
+    /// windows as the tail-state reader until a tail chunk carries a title record, then remember
+    /// the verdict against (mtime, size) so quiet sessions cost a stat, not a megabyte read.
+    private static func cachedClaudeTitle(at url: URL, leadingText: String) -> String? {
+        let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        if let mtime = values?.contentModificationDate, let size = values?.fileSize,
+           let cached = titleCache[url.path], cached.mtime == mtime, cached.size == size {
+            return cached.title
+        }
+
+        var tailTitle: String?
+        for limit in tailWindowLimits {
+            guard let tail = readTrailingLines(at: url, limit: limit) else { continue }
+            if let title = claudeTitle(fromRecordText: tail) {
+                tailTitle = title
+                break
+            }
+            if let size = values?.fileSize, limit >= size { break }
+        }
+        if let tailTitle {
+            if lastTailTitleByPath.count > 4 * maxSessionsPerScan { lastTailTitleByPath.removeAll() }
+            lastTailTitleByPath[url.path] = tailTitle
+        }
+        let title = resolvedClaudeTitle(tail: tailTitle, lastKnownTail: lastTailTitleByPath[url.path],
+                                        head: tailTitle == nil ? claudeTitle(fromRecordText: leadingText) : nil)
+
+        if let mtime = values?.contentModificationDate, let size = values?.fileSize {
+            if titleCache.count > 2 * maxSessionsPerScan { titleCache.removeAll() }
+            titleCache[url.path] = (mtime, size, title)
+        }
+        return title
+    }
+
+    /// The title Claude shows for a session, from its bookkeeping records: the last
+    /// `custom-title` wins, else the last `ai-title`. Nil when neither is present, so callers fall
+    /// back to a prompt-derived name. Pure so the precedence is testable.
+    static func claudeTitle(fromRecordText text: String) -> String? {
+        var customTitle: String?
+        var aiTitle: String?
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            // Both record types contain "-title"; skip parsing the megabytes of other records.
+            guard line.contains("-title"),
+                  let data = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let type = json["type"] as? String else { continue }
+            switch type {
+            case "custom-title":
+                if let title = cleanTitle(json["customTitle"]) { customTitle = title }
+            case "ai-title":
+                if let title = cleanTitle(json["aiTitle"]) { aiTitle = title }
+            default:
+                continue
+            }
+        }
+        return customTitle ?? aiTitle
+    }
+
+    private static func cleanTitle(_ value: Any?) -> String? {
+        guard let raw = value as? String else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : String(trimmed.prefix(72))
     }
 
     static func displayChatNamesBySessionID(
@@ -178,7 +271,16 @@ enum AgentSessionLogParser {
         return results
     }
 
+    /// Snippets from the transcript's first 32 KB, remembered against (mtime, size): every rescan
+    /// asks for all recent transcripts, and re-reading and parsing each head was most of a rescan.
+    private static var snippetCache: [String: (mtime: Date, size: Int, snippets: [String])] = [:]
+
     static func assistantSnippets(from path: URL, provider: AgentSessionLogProvider) -> [String] {
+        let values = try? path.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+        if let mtime = values?.contentModificationDate, let size = values?.fileSize,
+           let cached = snippetCache[path.path], cached.mtime == mtime, cached.size == size {
+            return cached.snippets
+        }
         guard let text = readLeadingLines(at: path) else { return [] }
         var snippets: [String] = []
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
@@ -189,6 +291,10 @@ enum AgentSessionLogParser {
                 continue
             }
             snippets.append(snippet)
+        }
+        if let mtime = values?.contentModificationDate, let size = values?.fileSize {
+            if snippetCache.count > 2 * maxSessionsPerScan { snippetCache.removeAll() }
+            snippetCache[path.path] = (mtime, size, snippets)
         }
         return snippets
     }
@@ -307,6 +413,14 @@ enum AgentSessionLogParser {
     struct ClaudeTailResult: Equatable {
         let state: ClaudeTailState
         let recordTimestamp: Date?
+        /// Set only with `.turnFinished`, when the newest conversational record is the API error
+        /// that ended the turn.
+        var runError: RunError? = nil
+        /// False when the newest record in the tail was bookkeeping (a saved draft, a title,
+        /// an attachment) written after the deciding record: file mtime is then not evidence
+        /// that the agent did anything. An unsent paste writes a `last-prompt` trailer, and
+        /// treating its mtime as a life sign relit idle chats as "thinking".
+        var newestRecordIsConversational: Bool = true
 
         static let unknown = ClaudeTailResult(state: .unknown, recordTimestamp: nil)
     }
@@ -328,7 +442,7 @@ enum AgentSessionLogParser {
         return formatter
     }()
 
-    private static func recordTimestamp(from json: [String: Any]) -> Date? {
+    static func recordTimestamp(from json: [String: Any]) -> Date? {
         guard let raw = json["timestamp"] as? String else { return nil }
         return recordTimestampFormatter.date(from: raw)
             ?? recordTimestampFallbackFormatter.date(from: raw)
@@ -373,7 +487,8 @@ enum AgentSessionLogParser {
     ///
     /// Deliberately never reports "awaiting approval" — a pending `tool_use` looks the same
     /// whether the tool is running or a permission card is open, and guessing there is what
-    /// produced permanent false yellow. Yellow comes from hooks only.
+    /// produced permanent false yellow. Yellow originates from hooks only; `.toolInFlight` on a
+    /// live process may *corroborate* a hook's yellow (`holdsAwaitingInput`), never claim one.
     ///
     /// Records can exceed the first read window (real transcript lines reach hundreds of KB),
     /// which used to truncate the tail into `.unknown`; the window now escalates until it
@@ -412,7 +527,12 @@ enum AgentSessionLogParser {
 
     /// Pure core of `claudeTailState(at:)` — classifies the newest conversational record.
     static func claudeTailState(fromTailText text: String) -> ClaudeTailResult {
+        // Whether the deciding record is also the newest line in the file. A skipped line,
+        // bookkeeping or a torn concurrent write, means mtime no longer vouches for the
+        // deciding record; a torn write completes and reclassifies within one rescan.
+        var isNewestLine = true
         for line in text.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
+            defer { isNewestLine = false }
             guard let data = line.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let type = json["type"] as? String else { continue }
@@ -422,6 +542,15 @@ enum AgentSessionLogParser {
                 let message = json["message"] as? [String: Any]
                 let content = message?["content"] as? [[String: Any]] ?? []
                 let timestamp = recordTimestamp(from: json)
+                // The turn died on the API — rate limit, overload, auth, a too-long prompt. The
+                // record is synthesised (`stop_reason` "stop_sequence"), so decide it first, and
+                // only on a literal `true`: `isApiErrorMessage: false` is written too. The
+                // `system`/`api_error` records that precede it are retries and stay bookkeeping.
+                if (json["isApiErrorMessage"] as? Bool) == true {
+                    let status = (json["apiErrorStatus"] as? NSNumber)?.intValue
+                    return ClaudeTailResult(state: .turnFinished, recordTimestamp: timestamp,
+                                            runError: .apiError(status: status))
+                }
                 if content.contains(where: { ($0["type"] as? String) == "tool_use" }) {
                     return ClaudeTailResult(state: .toolInFlight, recordTimestamp: timestamp)
                 }
@@ -430,7 +559,8 @@ enum AgentSessionLogParser {
                 // value — end_turn, stop_sequence, max_tokens, refusal, future additions —
                 // is terminal: nothing is running.
                 if stopReason == nil || stopReason == "tool_use" || stopReason == "pause_turn" {
-                    return ClaudeTailResult(state: .working, recordTimestamp: timestamp)
+                    return ClaudeTailResult(state: .working, recordTimestamp: timestamp,
+                                            newestRecordIsConversational: isNewestLine)
                 }
                 return ClaudeTailResult(state: .turnFinished, recordTimestamp: timestamp)
             case "user":
@@ -440,7 +570,8 @@ enum AgentSessionLogParser {
                     // user record reads as "owes a response" and the light stays green forever.
                     return ClaudeTailResult(state: .turnFinished, recordTimestamp: timestamp)
                 }
-                return ClaudeTailResult(state: .working, recordTimestamp: timestamp)
+                return ClaudeTailResult(state: .working, recordTimestamp: timestamp,
+                                        newestRecordIsConversational: isNewestLine)
             default:
                 // attachment, queue-operation, last-prompt, ai-title, custom-title, mode,
                 // system, pr-link — bookkeeping that says nothing about run state.
@@ -450,7 +581,7 @@ enum AgentSessionLogParser {
         return .unknown
     }
 
-    private static func readLeadingLines(at url: URL) -> String? {
+    static func readLeadingLines(at url: URL) -> String? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
 
@@ -466,7 +597,7 @@ enum AgentSessionLogParser {
         return String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
     }
 
-    private static func readTrailingLines(at url: URL, limit: Int = trailingByteLimit) -> String? {
+    static func readTrailingLines(at url: URL, limit: Int = trailingByteLimit) -> String? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         guard let fileSize = try? handle.seekToEnd() else { return nil }

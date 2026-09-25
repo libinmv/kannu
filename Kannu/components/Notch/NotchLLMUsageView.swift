@@ -21,6 +21,7 @@ import Defaults
 
 struct NotchLLMUsageView: View {
     @ObservedObject private var agentMonitor = CursorAgentStatusMonitor.shared
+    @ObservedObject private var usageAlerts = UsageAlertManager.shared
     @ObservedObject private var manager = LLMUsageManager.shared
 
     // Live only while the tab is visible. Fires faster than the manager's refresh floor so a
@@ -168,7 +169,8 @@ struct NotchLLMUsageView: View {
                     let now = context.date
                     let liveExtras = snap.extraLimits.filter { Self.isLive($0.limit, now: now) }
                     if let limit = snap.sessionLimit, Self.isLive(limit, now: now) {
-                        quotaSection(title: String(localized: "5 hour"), reset: limit.resetsAt, bars: [.init(limit)], now: now)
+                        quotaSection(title: String(localized: "5 hour"), reset: limit.resetsAt,
+                                     bars: [.init(limit, windowID: Self.windowID(provider, slot: "session"))], now: now)
                     } else {
                         localSessionRow(snap)
                     }
@@ -179,15 +181,15 @@ struct NotchLLMUsageView: View {
                         quotaSection(
                             title: String(localized: "Weekly"),
                             reset: week.resetsAt,
-                            bars: [.init(week, label: String(localized: "All models"))]
-                                + liveExtras.map { .init($0.limit, label: $0.label ?? Self.extraLimitLabel($0)) },
+                            bars: [.init(week, label: String(localized: "All models"), windowID: Self.windowID(provider, slot: "week"))]
+                                + liveExtras.map { .init($0.limit, label: $0.label ?? Self.extraLimitLabel($0), windowID: Self.windowID(provider, slot: $0.key)) },
                             now: now
                         )
                     } else if !liveExtras.isEmpty {
                         quotaSection(
                             title: String(localized: "Weekly"),
                             reset: liveExtras.first?.limit.resetsAt,
-                            bars: liveExtras.map { .init($0.limit, label: $0.label ?? Self.extraLimitLabel($0)) },
+                            bars: liveExtras.map { .init($0.limit, label: $0.label ?? Self.extraLimitLabel($0), windowID: Self.windowID(provider, slot: $0.key)) },
                             now: now
                         )
                     }
@@ -330,13 +332,30 @@ struct NotchLLMUsageView: View {
         let fraction: Double
         let percent: Int
         let tint: Color
+        /// `UsageWindowReading.id` of this bar, for its forecast line.
+        let windowID: String?
+        let resetsAt: Date?
 
-        init(_ limit: UsageLimit, label: String? = nil) {
+        init(_ limit: UsageLimit, label: String? = nil, windowID: String? = nil) {
             self.label = label
             self.fraction = limit.fraction
             self.percent = Int(limit.used.rounded())
             self.tint = NotchLLMUsageView.accent(severity: limit.severity, fraction: limit.fraction)
+            self.windowID = windowID
+            self.resetsAt = limit.resetsAt
         }
+    }
+
+    /// The reading id a bar's forecast is kept under: Claude's bars carry the server's window keys,
+    /// Codex and Cursor report a session and a week slot.
+    static func windowID(_ provider: ProviderID, slot: String) -> String {
+        let key: String
+        switch (provider, slot) {
+        case (.claude, "session"): key = ClaudeUsageSnapshot.fiveHourKey
+        case (.claude, "week"): key = ClaudeUsageSnapshot.sevenDayKey
+        default: key = slot
+        }
+        return UsageWindowReading.id(provider: provider.rawValue, key: key)
     }
 
     /// Re-reads the usage the Claude card displays. It cannot fetch the per-model weekly window
@@ -394,12 +413,12 @@ struct NotchLLMUsageView: View {
                     Text(resets).font(.caption2).foregroundStyle(.secondary).monospacedDigit()
                 }
             }
-            ForEach(bars) { bar in quotaBar(bar) }
+            ForEach(bars) { bar in quotaBar(bar, now: now) }
         }
     }
 
     @ViewBuilder
-    private func quotaBar(_ bar: QuotaBar) -> some View {
+    private func quotaBar(_ bar: QuotaBar, now: Date) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -416,6 +435,13 @@ struct NotchLLMUsageView: View {
                 Spacer(minLength: 0)
                 Text("\(bar.percent)%").font(.caption2.weight(.medium)).monospacedDigit()
                     .foregroundStyle(bar.tint == .accentColor ? Color.primary : bar.tint)
+            }
+            if let windowID = bar.windowID, let outlook = usageAlerts.outlooks[windowID],
+               let caption = UsageForecast.caption(outlook, resetsAt: bar.resetsAt, now: now) {
+                Text(caption.text)
+                    .font(.caption2)
+                    .foregroundStyle(caption.isWarning ? Color.orange : Color.secondary)
+                    .lineLimit(1)
             }
         }
     }

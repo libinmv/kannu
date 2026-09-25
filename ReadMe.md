@@ -24,10 +24,10 @@ Calendar, terminal, and color picker features from the Atoll/Boring.Notch lineag
 
 ## Requirements
 
-- macOS 14.0 or later (optimised for macOS 15+).
+- macOS 14.6 or later (optimised for macOS 15+).
 - MacBook with a notch, or a non-notch Mac using floating Dynamic Island pill mode.
 - Apple silicon or Intel — the app builds universal.
-- Xcode 15+ to build from source.
+- Xcode 16+ to build from source (the source needs Swift 6.1).
 - Permissions as needed: Accessibility, Screen Recording, Music.
 
 
@@ -51,7 +51,7 @@ For detailed prompts and one-click setup actions, open **Settings** in Kannu. Co
 
 ## Install (Pre-built DMG)
 
-1. Download the latest `Kannu.dmg` from the [Releases page](https://github.com/libinmv/kannu/releases).
+1. Download the latest `Kannu.<version>.dmg` (for example `Kannu.1.2.0.dmg`) from the [Releases page](https://github.com/libinmv/kannu/releases).
 2. Open the DMG and drag **Kannu** into the **Applications** folder.
 3. Launch Kannu from Applications.
 
@@ -59,19 +59,19 @@ For detailed prompts and one-click setup actions, open **Settings** in Kannu. Co
 
 ### "Kannu can't be opened" (Gatekeeper)
 
-Release builds are ad-hoc signed and not notarized by Apple, so macOS shows a
-warning on first launch. This is expected for free open-source apps — you can
-bypass it once and macOS remembers your choice:
+Releases on the Releases page are signed with a Developer ID and notarized by Apple. The first time
+you open one, macOS asks you to confirm an app downloaded from the internet: click **Open**. That is
+the ordinary prompt for any download, not a block, and nothing else is needed.
+
+A real Gatekeeper block ("Apple could not verify Kannu is free of malware") only appears for a
+build that did not come from the Releases page: a DMG made by `scripts/create-dmg.sh` without a
+Developer ID identity, or one somebody passed you directly. If you trust where it came from:
 
 - **Right-click (or Control-click)** `Kannu.app` **in Applications and choose "Open"**, then click **Open** in the dialog. On macOS 15 (Sequoia) and later, the option may only appear the *second* time you right-click → Open.
 - If there is no Open button: go to **System Settings → Privacy & Security**, scroll down to the message about Kannu being blocked, and click **Open Anyway**.
-- Terminal alternative — remove the quarantine flag directly:
-  ```bash
-  xattr -dr com.apple.quarantine /Applications/Kannu.app
-  ```
 
-If you prefer, you can always build from source instead — Gatekeeper does not
-warn for apps you build yourself.
+An app you build and run from Xcode on your own Mac is never quarantined, so Gatekeeper does not
+stop it.
 
 ## Build from Source
 
@@ -88,7 +88,7 @@ Application support data is stored under `~/Library/Application Support/Kannu/`.
 ## Quick Start
 
 1. Launch Kannu and complete onboarding.
-2. Open **Settings → Agent Status** and install editor hooks for Cursor (recommended).
+2. Open **Settings → Agents** and install editor hooks for Cursor (recommended).
 3. Run an AI agent in Cursor — the notch shows the traffic-light status when collapsed.
 4. Optionally upload a notch skin under **Settings → Appearance → Notch skin**.
 
@@ -96,7 +96,7 @@ Application support data is stored under `~/Library/Application Support/Kannu/`.
 
 ## Mobile Notifications Setup
 
-1. Open **Settings → Agent Status → Mobile Notifications**.
+1. Open **Settings → Agents → Mobile Notifications**.
 2. Enable mobile notifications and choose a provider:
   - **ntfy** — create a topic at [ntfy.sh](https://ntfy.sh) or self-host. Install the ntfy app on iPhone or Android and subscribe to your topic.
   - **Pushover** — use your user key and app token from [pushover.net](https://pushover.net).

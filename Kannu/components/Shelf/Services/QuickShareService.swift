@@ -200,12 +200,9 @@ class QuickShareService: ObservableObject {
             }
         }
 
-        if let window = view?.window {
-            panel.beginSheetModal(for: window, completionHandler: completion)
-        } else {
-            let response = panel.runModal()
-            completion(response)
-        }
+        // `view?.window` is the notch panel at `.mainMenu + 3`, and it is nil for at least one
+        // main-queue hop after the shelf first lays out, so neither branch was safe.
+        ModalPresenter.present(panel, completion: completion)
     }
     
     // MARK: - Sharing

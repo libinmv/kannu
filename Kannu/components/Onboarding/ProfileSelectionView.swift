@@ -201,6 +201,10 @@ struct ProfileCard: View {
 // MARK: - Profile Settings Configuration
 
 func applyProfileSettings(_ profiles: Set<String>) {
+    // Record the choice itself, not only the settings it implies: this used to flip feature keys
+    // and forget who asked for them, so nothing later could tell a developer from anyone else.
+    Defaults[.userProfiles] = profiles.sorted()
+
     // Clipboard is ALWAYS enabled (per user request)
     Defaults[.enableClipboardManager] = true
     
@@ -212,6 +216,8 @@ func applyProfileSettings(_ profiles: Set<String>) {
         Defaults[.enableTimerFeature] = true
         Defaults[.enableScreenAssistant] = true
         Defaults[.enableMinimalisticUI] = false
+        // Developers and testers are who can act on a freeze report, and who accept the tick.
+        Defaults[.hangWatchdogEnabled] = true
     }
 
     // Designer Profile Settings

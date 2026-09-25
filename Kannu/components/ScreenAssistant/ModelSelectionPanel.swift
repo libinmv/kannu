@@ -90,7 +90,7 @@ class ModelSelectionPanel: NSPanel {
         let hostingView = NSHostingView(rootView: contentView)
         hostingView.sizingOptions = []
         applyModelSelectionCornerMask(hostingView, radius: 16)
-        self.contentView = hostingView
+        setHostedContent(hostingView)
         
         // Set size for model selection panel
         let preferredSize = CGSize(width: 450, height: 600)

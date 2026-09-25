@@ -17,6 +17,7 @@
  */
 
 import Foundation
+import AppKit
 import Network
 import Defaults
 
@@ -31,6 +32,10 @@ final class ExtensionRPCServer {
     private var connections: [UUID: RPCClientConnection] = [:]
     private var activeConnectionByBundleIdentifier: [String: UUID] = [:]
     private var shelfSubscribers: Set<String> = [] // bundleIdentifiers subscribed to shelf events
+    /// File pickers a request opened, by the connection that asked. A client that disconnects
+    /// while its picker is up must not leave it on screen: a later pick would land in the Shelf
+    /// for a client that is gone, with the reply dropped.
+    private var openPanelsByConnection: [UUID: [NSSavePanel]] = [:]
     private let port: UInt16 = 9020
     private let queue = DispatchQueue(label: "com.kannu.app.rpc.server", qos: .userInitiated)
     private let decoder = JSONDecoder()
@@ -309,14 +314,29 @@ final class ExtensionRPCServer {
 
         let service = ExtensionRPCService(
             bundleIdentifier: clientConn.bundleIdentifier ?? "unknown",
+            connID: connID,
             server: self
         )
 
-        let responseData = service.handleRequest(request)
-        sendRawData(responseData, to: connID)
+        if let responseData = service.handleRequest(request) {
+            sendRawData(responseData, to: connID)
+        }
     }
 
     // MARK: - Send Helpers
+
+    /// Writes a reply for a request whose handler had to wait for the user (the file picker).
+    /// The response still carries the original request id, so the client matches it as usual.
+    ///
+    /// Delivered only to the connection that asked. A picker can stay open long enough for its
+    /// client to drop and re-handshake, and the identity slot is keyed by bundle identifier alone —
+    /// so re-resolving it here would answer a request the new connection never sent, which a client
+    /// reusing sequential ids could match to something else entirely. A stale reply is dropped.
+    func sendDeferredResponse(_ response: Codable, to bundleIdentifier: String, originatingConnID: UUID) {
+        guard connections[originatingConnID] != nil,
+              activeConnectionByBundleIdentifier[bundleIdentifier] == originatingConnID else { return }
+        sendResponse(response, to: originatingConnID)
+    }
 
     private func sendResponse(_ response: Codable, to connID: UUID) {
         guard let data = try? encoder.encode(response) else { return }
@@ -370,7 +390,17 @@ final class ExtensionRPCServer {
         }
     }
 
+    func register(_ panel: NSSavePanel, for connID: UUID) {
+        openPanelsByConnection[connID, default: []].append(panel)
+    }
+
+    func unregister(_ panel: NSSavePanel, for connID: UUID) {
+        openPanelsByConnection[connID]?.removeAll { $0 === panel }
+        if openPanelsByConnection[connID]?.isEmpty == true { openPanelsByConnection.removeValue(forKey: connID) }
+    }
+
     private func removeConnection(connID: UUID) {
+        openPanelsByConnection.removeValue(forKey: connID)?.forEach { $0.cancel(nil) }
         if let boundIdentifier = connections[connID]?.bundleIdentifier,
            activeConnectionByBundleIdentifier[boundIdentifier] == connID {
             activeConnectionByBundleIdentifier.removeValue(forKey: boundIdentifier)

@@ -271,6 +271,64 @@ final class ClaudeUsageSnapshotTests: XCTestCase {
         XCTAssertEqual(merged?.fiveHourResetsAt, now.addingTimeInterval(300))
     }
 
+    func testMergePrefersTheFresherSourceForAKeyLiveInBoth() {
+        // The bug this pins: a weekly window fetched days ago is "live" until its reset, and
+        // source rank let it beat the desktop app's sample from half an hour ago (20 % vs 31 %).
+        let staleCache = ClaudeUsageSnapshot(windows: [window("seven_day", pct: 20, resetsIn: 86_400)],
+                                             observedAt: now.addingTimeInterval(-6 * 86_400))
+        let freshDesktop = ClaudeUsageSnapshot(windows: [window("seven_day", pct: 31, resetsIn: nil)],
+                                               observedAt: now.addingTimeInterval(-1_800))
+        let merged = ClaudeUsageSnapshot.merged([staleCache, freshDesktop], now: now)
+        XCTAssertEqual(merged?.sevenDayPercent, 31)
+        XCTAssertNil(merged?.sevenDayResetsAt, "the winning window is taken whole; no reset is borrowed from the loser")
+        XCTAssertEqual(merged?.observedAt, now.addingTimeInterval(-1_800))
+    }
+
+    func testMergeBorrowsAnExactResetForAnInferredOne() {
+        // Desktop history derives its reset from the last rollover it sampled, so it lands after
+        // the server's. Taken by freshness it replaced the API's reset on every read, and the
+        // usage-alert push key (the reset) fired the same window twice. The fresher percent still
+        // wins; the exact reset rides along.
+        let exact = now.addingTimeInterval(3 * 86_400)
+        let cache = ClaudeUsageSnapshot(windows: [window("seven_day", pct: 90, resetsIn: 3 * 86_400)],
+                                        observedAt: now.addingTimeInterval(-1_200))
+        let desktop = ClaudeUsageSnapshot(
+            windows: [.init(key: "seven_day", percent: 96, resetsAt: exact.addingTimeInterval(1_800), resetIsInferred: true)],
+            observedAt: now.addingTimeInterval(-300))
+        let merged = ClaudeUsageSnapshot.merged([cache, desktop], now: now)
+        XCTAssertEqual(merged?.sevenDayPercent, 96)
+        XCTAssertEqual(merged?.sevenDayResetsAt, exact)
+        XCTAssertEqual(merged?.window("seven_day")?.resetIsInferred, false)
+        XCTAssertEqual(merged?.observedAt, now.addingTimeInterval(-300))
+    }
+
+    func testMergeKeepsAnInferredResetWhenNoSourceHasAnExactOne() {
+        let inferred = now.addingTimeInterval(3 * 86_400)
+        let cache = ClaudeUsageSnapshot(windows: [window("seven_day", pct: 90, resetsIn: nil)],
+                                        observedAt: now.addingTimeInterval(-1_200))
+        let desktop = ClaudeUsageSnapshot(
+            windows: [.init(key: "seven_day", percent: 96, resetsAt: inferred, resetIsInferred: true)],
+            observedAt: now.addingTimeInterval(-300))
+        let merged = ClaudeUsageSnapshot.merged([cache, desktop], now: now)
+        XCTAssertEqual(merged?.sevenDayResetsAt, inferred)
+        XCTAssertEqual(merged?.window("seven_day")?.resetIsInferred, true)
+        // And an exact reset is never replaced by an inferred one, even when the inferred window wins.
+        XCTAssertEqual(ClaudeUsageSnapshot.merged([desktop, cache], now: now)?.sevenDayResetsAt, inferred)
+    }
+
+    func testMergeRankOnlyBreaksTiesInFreshness() {
+        let higher = ClaudeUsageSnapshot(windows: [window("five_hour", pct: 40, resetsIn: 300)], observedAt: now.addingTimeInterval(-10))
+        let lower = ClaudeUsageSnapshot(windows: [window("five_hour", pct: 45, resetsIn: 900)], observedAt: now.addingTimeInterval(-10))
+        XCTAssertEqual(ClaudeUsageSnapshot.merged([higher, lower], now: now)?.fiveHourPercent, 40)
+        XCTAssertEqual(ClaudeUsageSnapshot.merged([lower, higher], now: now)?.fiveHourPercent, 45)
+    }
+
+    func testMergeALapsedFresherWindowStillLosesToALiveOlderOne() {
+        let olderLive = ClaudeUsageSnapshot(windows: [window("five_hour", pct: 40, resetsIn: 300)], observedAt: now.addingTimeInterval(-3_000))
+        let fresherLapsed = ClaudeUsageSnapshot(windows: [window("five_hour", pct: 90, resetsIn: -1)], observedAt: now)
+        XCTAssertEqual(ClaudeUsageSnapshot.merged([fresherLapsed, olderLive], now: now)?.fiveHourPercent, 40)
+    }
+
     func testMergeIsNilWhenNothingIsLiveAnywhere() {
         let lapsed = ClaudeUsageSnapshot(windows: [window("five_hour", pct: 61, resetsIn: -1)], observedAt: now)
         XCTAssertNil(ClaudeUsageSnapshot.merged([nil, lapsed, nil], now: now))
@@ -325,4 +383,30 @@ final class ClaudeUsageSnapshotTests: XCTestCase {
         XCTAssertEqual(ClaudeUsageSnapshot.hint(hooksInstalled: true, statusline: nil, cache: lapsed, now: now), .signInNeeded)
         XCTAssertEqual(ClaudeUsageSnapshot.hint(hooksInstalled: true, statusline: nil, cache: nil, now: now), .signInNeeded)
     }
+
+    // MARK: - Statusline fast path
+
+    func testStatuslineWriteIsReadWithinAMinute() {
+        let written = now.addingTimeInterval(-5)
+        XCTAssertTrue(ClaudeUsageSnapshot.shouldReadStatusline(now: now, modifiedAt: written, lastSeenModifiedAt: nil, lastRead: nil))
+        XCTAssertTrue(ClaudeUsageSnapshot.shouldReadStatusline(now: now, modifiedAt: written,
+                                                               lastSeenModifiedAt: now.addingTimeInterval(-300),
+                                                               lastRead: now.addingTimeInterval(-61)))
+    }
+
+    func testUnchangedStatuslineIsNotReRead() {
+        let written = now.addingTimeInterval(-300)
+        XCTAssertFalse(ClaudeUsageSnapshot.shouldReadStatusline(now: now, modifiedAt: written, lastSeenModifiedAt: written,
+                                                                lastRead: now.addingTimeInterval(-3600)))
+        XCTAssertFalse(ClaudeUsageSnapshot.shouldReadStatusline(now: now, modifiedAt: nil, lastSeenModifiedAt: nil, lastRead: nil),
+                       "no file, nothing to read")
+    }
+
+    func testStatuslineReadsAreThrottled() {
+        XCTAssertFalse(ClaudeUsageSnapshot.shouldReadStatusline(now: now, modifiedAt: now,
+                                                                lastSeenModifiedAt: now.addingTimeInterval(-30),
+                                                                lastRead: now.addingTimeInterval(-30)),
+                       "a busy session rewrites the file on every API call; once a minute is enough")
+    }
 }
+

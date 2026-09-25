@@ -389,6 +389,43 @@ enum ScreenAssistantDisplayMode: String, CaseIterable, Codable, Defaults.Seriali
     }
 }
 
+/// How an unacknowledged high-severity security finding is shown in the closed notch. Never a
+/// traffic-light colour: the light keeps meaning working / needs input / finished, and a finding
+/// gets a shield beside it.
+enum ADRHighAlertMode: String, CaseIterable, Defaults.Serializable, Identifiable {
+    case untilAcknowledged = "Until acknowledged"
+    case fiveSeconds = "For 5 seconds, then glyph"
+    case glyphOnly = "Glyph only"
+    case off = "Off"
+
+    var id: String { rawValue }
+
+    var localizedName: String {
+        switch self {
+        case .untilAcknowledged: return String(localized: "Until acknowledged")
+        case .fiveSeconds: return String(localized: "For 5 seconds, then glyph")
+        case .glyphOnly: return String(localized: "Glyph only")
+        case .off: return String(localized: "Off")
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .untilAcknowledged:
+            return String(localized: "A shield pill stays beside the traffic light until you acknowledge the finding. Click it to open the panel.")
+        case .fiveSeconds:
+            return String(localized: "The pill shows for five seconds when a finding is new, then only a small shield remains until acknowledged.")
+        case .glyphOnly:
+            return String(localized: "Only a small shield beside the traffic light; no pill.")
+        case .off:
+            return String(localized: "Nothing in the closed notch. Findings still appear in the panel and in Settings.")
+        }
+    }
+
+    var showsGlyph: Bool { self != .off }
+    var showsPill: Bool { self == .untilAcknowledged || self == .fiveSeconds }
+}
+
 enum AgentStatusNotificationProvider: String, CaseIterable, Codable, Defaults.Serializable, Identifiable {
     case ntfy
     case pushover
@@ -872,8 +909,10 @@ extension Defaults.Keys {
     /// Bundle path the login item was last registered from, so the stale-path repair can fire
     /// only when the app actually moved instead of on every launch.
     static let lastLoginItemBundlePath = Key<String>("lastLoginItemBundlePath", default: "")
-    static let showOnAllDisplays = Key<Bool>("showOnAllDisplays", default: true)
-    static let automaticallySwitchDisplay = Key<Bool>("automaticallySwitchDisplay", default: true)
+    /// Where Kannu puts itself. Replaces `showOnAllDisplays` / `automaticallySwitchDisplay` /
+    /// `preferred_screen_name`, which between them could not express "the monitor, while it is
+    /// plugged in". See `DisplayPlacementResolver`.
+    static let displayPlacement = Key<DisplayPlacement>("displayPlacement", default: .externalTakesOver)
     static let hideDynamicIslandFromScreenCapture = Key<Bool>("hideDynamicIslandFromScreenCapture", default: false)
     
         // MARK: Behavior
@@ -1136,6 +1175,14 @@ extension Defaults.Keys {
     static let enableClaudeProvider = Key<Bool>("enableClaudeProvider", default: false)
     static let enableCodexProvider = Key<Bool>("enableCodexProvider", default: false)
     static let enableCursorProvider = Key<Bool>("enableCursorProvider", default: false)
+    /// Usage forecast and alerts. The notch gauge was removed — it showed a bare 9 pt dial with no
+    /// number or window name, next to a shield it was easy to confuse with. The Usage tab carries the
+    /// same information legibly. A background quota check sends requests and a push sends data out, so
+    /// both are opt-in.
+    static let checkQuotaInBackground = Key<Bool>("checkQuotaInBackground", default: false)
+    static let pushUsageLimitAlerts = Key<Bool>("pushUsageLimitAlerts", default: false)
+    static let usageForecastSamples = Key<[String: [UsageForecast.Sample]]>("usageForecastSamples", default: [:])
+    static let usageAlertPushedKeys = Key<[String]>("usageAlertPushedKeys", default: [])
     static let enableAntigravityProvider = Key<Bool>("enableAntigravityProvider", default: false)
     static let llmProviderDefaultsConfigured = Key<Bool>("llmProviderDefaultsConfigured", default: false)
     static let statsStopWhenNotchCloses = Key<Bool>("statsStopWhenNotchCloses", default: true)
@@ -1183,6 +1230,92 @@ extension Defaults.Keys {
     static let agentStoppedCollapseSeconds = Key<Int>("agentStoppedCollapseSeconds", default: 5)
     static let agentInactiveDisplaySeconds = Key<Int>("agentInactiveDisplaySeconds", default: 5)
     static let agentHooksAutoInstallAttempted = Key<Bool>("agentHooksAutoInstallAttempted", default: false)
+    /// Conversation ids of Kannu's own `/usage` probe sessions, so they never show as chats —
+    /// persisted because the probe's dead session file outlives the process that spawned it.
+    static let claudeUsageProbeConversationIDs = Key<[String]>("claudeUsageProbeConversationIDs", default: [])
+
+    // MARK: Security findings (connection to a separately installed ADR — github.com/uber/ADR)
+    /// Extra directory searched for the `adr-discovery` / `adr-sensor` executables, before the
+    /// uv, pipx and Homebrew defaults. Empty = defaults only.
+    static let adrToolDirectory = Key<String>("adrToolDirectory", default: "")
+    /// Where `adr-discovery --output-dir` snapshots are read from. Empty = `~/.kannu/adr/discovery`.
+    static let adrSnapshotDirectory = Key<String>("adrSnapshotDirectory", default: "")
+    static let adrAcknowledgedFindingIDs = Key<[String]>("adrAcknowledgedFindingIDs", default: [])
+    static let adrFindingSnoozes = Key<[SecurityFindingSnooze]>("adrFindingSnoozes", default: [])
+    static let adrLastScan = Key<ADRScanRecord?>("adrLastScan", default: nil)
+    /// Let Kannu invoke the connected `adr-discovery` itself (daily, on config changes, on
+    /// demand). Off = Kannu shows only the scans something else runs.
+    static let adrRunScansEnabled = Key<Bool>("adrRunScansEnabled", default: true)
+    static let adrLastKannuScanAt = Key<Date?>("adrLastKannuScanAt", default: nil)
+    /// Kannu-run scans that failed in a row (no snapshot written). The next one comes after 1, 2,
+    /// 4, 8, 16 hours, never later than the daily scan; a scan that writes a snapshot resets it.
+    static let adrKannuScanFailures = Key<Int>("adrKannuScanFailures", default: 0)
+    /// Optional `--policy` file for Discovery (tenant domains, approved, forbidden).
+    static let adrPolicyFile = Key<String>("adrPolicyFile", default: "")
+    /// How an unacknowledged high finding shows in the closed notch.
+    static let adrHighAlertMode = Key<ADRHighAlertMode>("adrHighAlertMode", default: .untilAcknowledged)
+    /// Push high findings through the mobile-notification provider (once per finding).
+    static let adrPushHighFindings = Key<Bool>("adrPushHighFindings", default: true)
+    static let adrPushMediumFindings = Key<Bool>("adrPushMediumFindings", default: false)
+    /// Finding ids already pushed, so a relaunch does not push the same open finding again.
+    /// Pruned to the ids still open, which lets a finding that vanishes and returns push once more.
+    static let adrPushedFindingIDs = Key<[String]>("adrPushedFindingIDs", default: [])
+
+    // Kannu's own hidden-text check (hook v34). Detection is local — no model, nothing sent — so
+    // it is on; telling the agent changes what it sees, so that is opt-in.
+    static let detectHiddenText = Key<Bool>("detectHiddenText", default: true)
+    static let warnAgentAboutHiddenText = Key<Bool>("warnAgentAboutHiddenText", default: false)
+    // Kannu's secret and sensitive-file checks (hook v35). Local, nothing sent, the agent
+    // untouched — so on, like hidden-text detection.
+    static let detectSecrets = Key<Bool>("detectSecrets", default: true)
+    static let detectSensitivePaths = Key<Bool>("detectSensitivePaths", default: true)
+    // Kannu's "new MCP server" check: local reads of agents' MCP settings, nothing sent.
+    static let watchMCPServers = Key<Bool>("watchMCPServers", default: true)
+    /// The agent policy (`~/.kannu/agent-policy.json`, hook v42): off means every match is reported
+    /// and the call runs; on means Claude Code and Cursor refuse it. Off by default — a change to
+    /// what an agent does is opt-in, and the file itself is the first opt-in.
+    static let enforceAgentPolicy = Key<Bool>("enforceAgentPolicy", default: false)
+    static let mcpServerBaseline = Key<MCPServerWatch.Baseline>("mcpServerBaseline", default: MCPServerWatch.Baseline())
+    static let mcpServerAdditions = Key<[MCPServerWatch.Addition]>("mcpServerAdditions", default: [])
+    /// Sightings from the hook's local checks, kept past their session until acknowledged.
+    static let hookSightingRecords = Key<HookSightingRecords>("hookSightingRecords", default: HookSightingRecords())
+
+    // ADR Detection — session analysis. Everything off by default; the user opts in, picks each
+    // chat, and by default confirms each run. Keys live in the Keychain (`SecureSecretsStore`).
+    static let adrDetectionEnabled = Key<Bool>("adrDetectionEnabled", default: false)
+    static let adrDetectionConsentedAt = Key<Date?>("adrDetectionConsentedAt", default: nil)
+    static let adrDetectionCheckout = Key<String>("adrDetectionCheckout", default: "")
+    static let adrDetectionConfirmEachRun = Key<Bool>("adrDetectionConfirmEachRun", default: true)
+    static let adrDetectionTriageEnabled = Key<Bool>("adrDetectionTriageEnabled", default: false)
+    static let adrDetectionTriageModel = Key<String>("adrDetectionTriageModel", default: "gpt-4o")
+    static let adrDetectionReasoningModel = Key<String>("adrDetectionReasoningModel", default: "claude-sonnet-4-6")
+    static let adrDetectionUseAnthropicAPIKey = Key<Bool>("adrDetectionUseAnthropicAPIKey", default: false)
+    static let adrDetectionContextThreatIntelligence = Key<Bool>("adrDetectionContextThreatIntelligence", default: true)
+    static let adrDetectionContextSourceCode = Key<Bool>("adrDetectionContextSourceCode", default: true)
+    static let adrDetectionContextPolicy = Key<Bool>("adrDetectionContextPolicy", default: true)
+    static let adrDetectionTimeoutSeconds = Key<Int>("adrDetectionTimeoutSeconds", default: 300)
+    static let adrDetectionMaxMessages = Key<Int>("adrDetectionMaxMessages", default: 400)
+    static let adrSessionAnalyses = Key<[ADRSessionAnalysis]>("adrSessionAnalyses", default: [])
+
+    /// The profiles picked during onboarding, recorded so later code can tell what kind of user
+    /// this is. Before this existed, `applyProfileSettings` flipped feature keys and forgot which
+    /// profile asked for them, so nothing could be gated on the choice afterwards.
+    static let userProfiles = Key<[String]>("userProfiles", default: [])
+    /// Watch for main-thread freezes and write a local report when one happens. On for anyone who
+    /// picks the Developer profile at onboarding, off for everyone else, and in About either way.
+    /// Costs one wake every two seconds; nothing is ever sent.
+    static let hangWatchdogEnabled = Key<Bool>("hangWatchdogEnabled", default: false)
+    /// The hang log already offered to the user, so one freeze is offered once.
+    static let lastOfferedHangReport = Key<String>("lastOfferedHangReport", default: "")
+    /// The crash report already offered, for the same reason.
+    static let lastOfferedCrashReport = Key<String>("lastOfferedCrashReport", default: "")
+
+    /// Clicking the media card lands on the browser tab that is playing (Safari, Chrome family),
+    /// which needs the one-time "control <browser>" Automation permission. Off = app only.
+    static let openPlayingBrowserTab = Key<Bool>("openPlayingBrowserTab", default: true)
+    /// Clicking a chat that runs in Terminal or iTerm2 brings its exact tab forward (and switches
+    /// tmux to its pane); needs the one-time "control <terminal>" Automation permission.
+    static let openAgentTerminalTab = Key<Bool>("openAgentTerminalTab", default: true)
     static let showAgentStoppedIndicator = Key<Bool>("showAgentStoppedIndicator", default: false)
     /// Closed-notch traffic light shape. Defaults to `.classic` so existing installs keep the
     /// three-dot look they already have — only fresh installs are asked to choose in onboarding.
@@ -1207,6 +1340,8 @@ extension Defaults.Keys {
     static let agentStatusPushoverAppToken = Key<String>("agentStatusPushoverAppToken", default: "")
     static let agentStatusWebhookURL = Key<String>("agentStatusWebhookURL", default: "")
     static let agentStatusNotifyOnInactive = Key<Bool>("agentStatusNotifyOnInactive", default: false)
+    /// "Still waiting on you": one more push after this many minutes of unanswered yellow; 0 = off.
+    static let agentWaitReminderMinutes = Key<Int>("agentWaitReminderMinutes", default: 0)
 
     // MARK: Screen Assistant Feature
     static let enableScreenAssistant = Key<Bool>("enableScreenAssistant", default: false)
@@ -1397,6 +1532,13 @@ extension Defaults.Keys {
         Defaults[.didMigrateNonNotchAlwaysShow] = true
     }
 
+    /// Everyone gets the new default, including people who had chosen otherwise.
+    ///
+    /// That is deliberate and it is in the release notes: the old default put a window on every
+    /// display and then hid the island on all but the notched one until the pointer rested at the
+    /// top edge, which is the behaviour being fixed. Carrying the old choice forward would carry the
+    /// complaint forward. A user who wants every display back says so in one picker, and
+    /// `chooseDisplay` keeps reading the same `preferred_screen_name` it always did.
     static func migrateCapsLockTintMode() {
         guard Defaults[.didMigrateCapsLockTintMode] == false else { return }
 
@@ -1479,9 +1621,22 @@ extension Defaults.Keys {
 /// Release codename, shown in Settings › About and used for the GitHub release title
 /// (`scripts/manual-release.sh` and `.github/workflows/release.yml` grep the `static let codename` declaration, so keep its
 /// shape). Kannu names releases after watchers — the app's job is to watch your
-/// agents — one per feature release: Argus (1.2.0), then Heimdall, Horus, Vigil, Sentinel. 1.0.0
-/// shipped as "Fiji", the tail of the Atoll island chain this fork inherited; that was not a scheme
-/// choice and is not continued.
+/// agents — one per feature release: Argus (1.2.0), Heimdall (1.3.0), then Horus, Vigil, Sentinel.
+/// 1.0.0 shipped as "Fiji", the tail of the Atoll island chain this fork inherited; that was not a
+/// scheme choice and is not continued.
+///
+/// The name is picked for what the release does, not just for its turn in the list. Argus was many
+/// eyes — 1.2.0 only watched. Heimdall keeps watch at Bifröst *and refuses passage*, which is the
+/// two halves of 1.3.0: the local security checks that detect, and the agent policy that can deny a
+/// tool call on Claude Code and Cursor. Detect and respond.
 enum ReleaseInfo {
-    static let codename = "Argus"
+    static let codename = "Heimdall"
+
+    /// `owner/repo`, used to build the prefilled issue a user can send after a freeze or a crash.
+    /// Kannu never posts anything itself — the link opens their browser with the fields filled in.
+    static let repository = "libinmv/kannu"
 }
+
+/// `DisplayPlacement` lives in the logic test target, which does not link Defaults, so the storage
+/// conformance is declared here. A `String`-backed enum needs nothing more.
+extension DisplayPlacement: Defaults.Serializable {}

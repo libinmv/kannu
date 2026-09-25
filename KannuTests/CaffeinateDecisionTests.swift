@@ -102,7 +102,35 @@ final class CaffeinateDecisionTests: XCTestCase {
 
     func testActiveVisibleSessionQualifies() {
         XCTAssertTrue(AgentTrafficLightMapper.hasCaffeinateWorthySession([session()]))
-        XCTAssertTrue(AgentTrafficLightMapper.hasCaffeinateWorthySession([session(display: .awaitingInput)]))
+        XCTAssertTrue(AgentTrafficLightMapper.hasCaffeinateWorthySession([session(display: .awaitingInput)],
+                                                                         now: Date(timeIntervalSince1970: 1_100)))
+    }
+
+    /// A prompt nobody answers must not keep the Mac awake all night: yellow qualifies for its
+    /// first five minutes only, while an active run qualifies for as long as it runs.
+    func testAwaitingInputQualifiesOnlyInsideItsWindow() {
+        let yellow = [session(display: .awaitingInput)]
+        XCTAssertTrue(AgentTrafficLightMapper.hasCaffeinateWorthySession(yellow, now: Date(timeIntervalSince1970: 1_299)))
+        XCTAssertFalse(AgentTrafficLightMapper.hasCaffeinateWorthySession(yellow, now: Date(timeIntervalSince1970: 1_301)))
+        XCTAssertTrue(AgentTrafficLightMapper.hasCaffeinateWorthySession([session()], now: Date(timeIntervalSince1970: 4_600)))
+    }
+
+    func testRecheckDateIsTheEarliestQualifyingYellowExpiry() {
+        var later = session(id: "conv-later", display: .awaitingInput)
+        later = AgentSessionStatus(
+            id: later.id, provider: later.provider, conversationID: later.conversationID, chatName: nil,
+            projectName: nil, rawState: "awaiting_input", displayState: .awaitingInput,
+            updatedAt: Date(timeIntervalSince1970: 1_200), isVisible: true, executionStartedAt: nil,
+            cwd: nil, hostPID: nil
+        )
+        let sessions = [session(display: .awaitingInput), later]
+        XCTAssertEqual(AgentTrafficLightMapper.caffeinateRecheckDate(sessions, now: Date(timeIntervalSince1970: 1_100)),
+                       Date(timeIntervalSince1970: 1_300))
+        XCTAssertEqual(AgentTrafficLightMapper.caffeinateRecheckDate(sessions, now: Date(timeIntervalSince1970: 1_350)),
+                       Date(timeIntervalSince1970: 1_500), "the first yellow has expired; the next one is due")
+        XCTAssertNil(AgentTrafficLightMapper.caffeinateRecheckDate(sessions, now: Date(timeIntervalSince1970: 1_600)))
+        XCTAssertNil(AgentTrafficLightMapper.caffeinateRecheckDate([session()], now: Date(timeIntervalSince1970: 1_100)),
+                     "a running session has no window to recheck")
     }
 
     func testInvisibleSessionDoesNotQualify() {

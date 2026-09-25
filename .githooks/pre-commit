@@ -13,9 +13,16 @@ fi
 # Prose alone did not hold this invariant, so it is checked here.
 installer_script="Kannu/managers/AgentStatus/AgentHookInstaller.swift"
 mirror_script="scripts/kannu-agent-status.sh"
-if [[ -f "${installer_script}" && -f "${mirror_script}" ]]; then
-  installer_version="$(grep -o 'KANNU_HOOK_SCRIPT_VERSION=[0-9]*' "${installer_script}" | head -1 || true)"
-  mirror_version="$(grep -o 'KANNU_HOOK_SCRIPT_VERSION=[0-9]*' "${mirror_script}" | head -1 || true)"
+# The INDEX, not the working tree: a check that reads the file on disk validates something other
+# than what is being committed (stage a drifted mirror, keep a matching copy unstaged, and the old
+# check passed). A file not in the index falls back to the working copy.
+committed() { git show ":$1" 2>/dev/null || cat "$1"; }
+# Gate on the index as well: a drifted script staged and then deleted from the working tree (the
+# deletion unstaged) is still what gets committed, and a working-tree gate skipped every check.
+in_index() { git cat-file -e ":$1" 2>/dev/null; }
+if in_index "${installer_script}" && in_index "${mirror_script}"; then
+  installer_version="$(committed "${installer_script}" | grep -o 'KANNU_HOOK_SCRIPT_VERSION=[0-9]*' | head -1 || true)"
+  mirror_version="$(committed "${mirror_script}" | grep -o 'KANNU_HOOK_SCRIPT_VERSION=[0-9]*' | head -1 || true)"
   if [[ -n "${installer_version}" && "${installer_version}" != "${mirror_version}" ]]; then
     cat <<EOF
 ERROR: Hook script mirror is out of sync.
@@ -30,13 +37,38 @@ EOF
     exit 1
   fi
 fi
+
+# --- Hook-script body parity and the no-backslash rule -------------------------
+# The markers above only catch a missing version bump. The bodies must be byte-identical too
+# (after the embedded copy's 8-space indent), and the Python must contain no backslash: the
+# embedded copy is a plain Swift string literal, where "\n" becomes a newline and "\U" does not
+# compile. Build code points with chr(). See docs/REGRESSIONS.md entry 1.
+if in_index "${installer_script}" && in_index "${mirror_script}"; then
+  mirror_body="$(committed "${mirror_script}" | awk "/^python3 <<'PY'\$/{f=1;next} /^PY\$/{f=0} f")"
+  if [[ "${mirror_body}" == *\\* ]]; then
+    echo "ERROR: ${mirror_script} has a backslash in its Python body. The embedded Swift literal cannot carry one; use chr()."
+    exit 1
+  fi
+  installer_marker="$(committed "${installer_script}" | grep -o 'KANNU_HOOK_SCRIPT_VERSION=[0-9]*' | head -1 || true)"
+  embedded_body="$(committed "${installer_script}" | awk '/let script = """$/ && !seen {seen=1; f=1; next} f && /^        """$/ {exit} f' \
+    | sed -e 's/^        //' -e "s/\\\\(scriptVersionMarker)/${installer_marker}/")"
+  if [[ "${embedded_body}" != "$(committed "${mirror_script}")" ]]; then
+    cat <<EOF
+ERROR: the hook script body in ${installer_script} differs from ${mirror_script}.
+
+Regenerate the embedded copy from the mirror (8-space indent, marker line replaced by the
+interpolation), then re-stage both. See docs/REGRESSIONS.md entry 1.
+EOF
+    exit 1
+  fi
+fi
 # The Claude statusline script has the same two-copy shape (writeUsageScript embeds it,
 # scripts/kannu-usage-status.sh mirrors it) and drifted unnoticed until v4 because only the
 # agent-status pair was checked. Same rule, same fix.
 usage_mirror_script="scripts/kannu-usage-status.sh"
-if [[ -f "${installer_script}" && -f "${usage_mirror_script}" ]]; then
-  usage_installer_version="$(grep -o 'KANNU_USAGE_SCRIPT_VERSION=[0-9]*' "${installer_script}" | head -1 || true)"
-  usage_mirror_version="$(grep -o 'KANNU_USAGE_SCRIPT_VERSION=[0-9]*' "${usage_mirror_script}" | head -1 || true)"
+if in_index "${installer_script}" && in_index "${usage_mirror_script}"; then
+  usage_installer_version="$(committed "${installer_script}" | grep -o 'KANNU_USAGE_SCRIPT_VERSION=[0-9]*' | head -1 || true)"
+  usage_mirror_version="$(committed "${usage_mirror_script}" | grep -o 'KANNU_USAGE_SCRIPT_VERSION=[0-9]*' | head -1 || true)"
   if [[ -n "${usage_installer_version}" && "${usage_installer_version}" != "${usage_mirror_version}" ]]; then
     cat <<EOF
 ERROR: Usage statusline script mirror is out of sync.
@@ -94,7 +126,89 @@ EOF
     exit 1
   fi
 fi
+# --- Settings layout invariant -------------------------------------------------
+# A Section header or footer built as a raw Text cannot be selected or copied; the shared
+# SettingsSectionHeader / SettingsFooter components exist so it can. Full rules:
+# docs/SETTINGS.md; the real gate is KannuTests/SettingsLayoutRulesTests (no CI job runs
+# this hook). Reads the index, like every check here.
+settings_offender=$(git diff --cached --name-only -- 'Kannu/components/Settings/*.swift' | while read -r f; do
+  git show ":${f}" 2>/dev/null | awk -v file="${f}" '
+    { trimmed = $0; sub(/^[[:space:]]+/, "", trimmed) }
+    trimmed ~ /^\/\// { prev = ""; next }
+    /header: \{[[:space:]]*Text\(/ || /footer: \{[[:space:]]*Text\(/ { print file ": " trimmed }
+    prev ~ /(header|footer): \{[[:space:]]*$/ && trimmed ~ /^Text\(/ { print file ": " trimmed }
+    { prev = $0 }
+  '
+done)
+if [[ -n "${settings_offender}" ]]; then
+  cat <<EOF
+ERROR: a Settings Section header/footer is a raw Text — it cannot be selected.
+Use SettingsSectionHeader / SettingsFooter instead. See docs/SETTINGS.md.
+${settings_offender}
+EOF
+  exit 1
+fi
+
+# --- Modal presentation invariant ---------------------------------------------
+# A file panel's runModal() stops the main run loop, and this app keeps publishing on the
+# main queue while it is stopped, so SwiftUI re-enters layout underneath the modal session.
+# A user clicked the ADR policy picker and the app froze: the main thread was parked in
+# -[NSSavePanel runModal] with the panel out of reach. beginSheetModal is the other half —
+# nearly every window Kannu owns is a borderless non-activating panel at .mainMenu + 3, and
+# a sheet on one of those cannot be focused or moved aside.
+# Both APIs live in ModalPresenter and nowhere else. Strip the file:line: prefix before
+# testing for a comment, or the doc comments explaining this rule trip the check.
+# No trailing "(" on runModal: `panel.runModal ()` is valid Swift that calls the method, and a
+# pattern ending in "(" walked straight past it. beginSheet(/beginCriticalSheet are NSWindow's own
+# spelling of the same mistake.
+modal_helper="Kannu/helpers/ModalPresenter.swift"
+# `git grep --cached`: the index, not the working tree. `/\*` joins the comment exemption so the two
+# copies of this rule (here and ModalPresentationRulesTests) agree.
+stray_modal="$(git grep --cached -nE 'runModal|beginSheetModal|beginSheet\(|beginCriticalSheet|beginModalSession' -- Kannu 2>/dev/null \
+  | grep -v "^${modal_helper}:" \
+  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*|/\*)' || true)"
+if [[ -n "${stray_modal}" ]]; then
+  cat <<EOF
+ERROR: runModal()/beginSheetModal outside ${modal_helper}.
+
+${stray_modal}
+
+runModal() on a file panel freezes the app (a nested modal run loop with SwiftUI still
+publishing on the main queue), and a sheet anchored to one of Kannu's non-activating notch
+panels cannot be reached. Present through ModalPresenter instead:
+
+  ModalPresenter.present(panel) { response in ... }   // open/save panels, never modal
+  ModalPresenter.present(alert) { response in ... }   // sheet when a window is up
+  ModalPresenter.runAppModal(alert)                   // only when the answer is needed now
+
+KannuTests/ModalPresentationRulesTests.swift pins the same rule for CI.
+EOF
+  exit 1
+fi
 # ------------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------------
+
+# Every file that documents the CHANGELOG entry shape must carry the literal keys this hook
+# greps for further down. An unpinned copy is how .agents/.../SKILL.md and
+# .cursor/rules/feature-changelog.mdc both came to describe a shape the hook rejects, so every
+# agent following them wrote commits that could not land. KannuTests/ChangelogRuleDocsTests.swift
+# runs the stronger version of this check (inside the fenced template, de-indented) in CI; this is
+# the millisecond tripwire.
+for doc in CONTRIBUTING.md AGENTS.md .agents/skills/kannu-senior-contributor/SKILL.md .cursor/rules/feature-changelog.mdc; do
+  # Read the INDEX, not the working tree. Staging a template with a key deleted and then restoring
+  # that key as an unstaged edit would otherwise pass this check while committing the broken file.
+  # Every other check in this hook reads the index; this one used to be the exception.
+  git cat-file -e ":${doc}" 2>/dev/null || continue
+  for key in '- \*\*Developer label:\*\*' '- \*\*Agent label:\*\*' '- \*\*Changes:\*\*'; do
+    # -e is required: every key starts with "-", which grep would read as an option.
+    if ! git show ":${doc}" | grep -q -e "${key}"; then
+      echo "ERROR: ${doc} documents the CHANGELOG entry but is missing the literal '${key}'."
+      echo "       This hook greps for it; a file that says otherwise makes agents write rejected commits."
+      exit 1
+    fi
+  done
+done
 
 staged_files="$(git diff --cached --name-only --diff-filter=ACMR)"
 if [[ -z "${staged_files}" ]]; then
@@ -110,7 +224,9 @@ while IFS= read -r file; do
     || [[ "${file}" == "CONTRIBUTING.md" ]] \
     || [[ "${file}" == "ReadMe.md" ]] \
     || [[ "${file}" == "README.md" ]] \
-    || [[ "${file}" =~ ^\.cursor/rules/ ]]; then
+    || [[ "${file}" =~ ^\.cursor/rules/ ]] \
+    || [[ "${file}" == "AGENTS.md" ]] \
+    || [[ "${file}" == "CLAUDE.md" ]]; then
     has_source_change=true
     break
   fi

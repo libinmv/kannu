@@ -66,10 +66,14 @@ enum ClaudeDesktopUsageHistory {
         let windows = codeOrder.compactMap { code -> ClaudeUsageSnapshot.Window? in
             guard let key = windowKeysByCode[code],
                   let percent = (newest.usage[code] as? NSNumber)?.doubleValue else { return nil }
+            let reset = resetDate(for: code, in: samples, now: now)
             return ClaudeUsageSnapshot.Window(
                 key: key,
                 percent: percent,
-                resetsAt: resetDate(for: code, in: samples, now: now)
+                resetsAt: reset,
+                // Derived from the last rollover, not reported: `merged` must not let it displace
+                // the server's own reset for the same key.
+                resetIsInferred: reset != nil
             )
         }
         guard !windows.isEmpty else { return nil }

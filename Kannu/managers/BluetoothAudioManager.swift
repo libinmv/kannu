@@ -19,6 +19,7 @@
 import Foundation
 import Combine
 import AppKit
+import os
 import Defaults
 import SwiftUI
 import IOBluetooth
@@ -73,6 +74,15 @@ class BluetoothAudioManager: ObservableObject {
     private var isPmsetRefreshInFlight = false
     private var lastPmsetRefreshDate: Date?
     private let pmsetRefreshCooldown: TimeInterval = 5
+    /// True while a forced battery scan is running on `pmsetFetchQueue`, so a burst of connect
+    /// notifications spawns one `system_profiler` rather than one per notification.
+    private var isForcedBatteryRefreshInFlight = false
+    /// Orders the live Bluetooth LE battery writes against the forced scans that would otherwise
+    /// revert them. Main thread only; see `BluetoothLiveBatteryWrites` for why it exists. Bounded
+    /// by the number of device keys, since each key holds only its newest write.
+    private var liveBatteryWriteSequence: UInt64 = 0
+    private var liveBatteryWritesByAddress: [String: BluetoothLiveBatteryWrite] = [:]
+    private var liveBatteryWritesByName: [String: BluetoothLiveBatteryWrite] = [:]
     private var hudBatteryWaitTasks: [UUID: Task<Void, Never>] = [:]
     private let hudBatteryWaitInterval: TimeInterval = 0.3
     private let hudBatteryWaitTimeout: TimeInterval = 1.8
@@ -286,12 +296,10 @@ class BluetoothAudioManager: ObservableObject {
         
         print("🎧 [BluetoothAudioManager] Found \(connectedAudioDevices.count) connected audio devices")
 
-        // No battery lookup on this queue: it reads batteryStatusByName/ByAddress and
-        // missingBatteryLog, which the main thread mutates concurrently from the pmset
-        // completion and the merge helpers — an unsynchronised Dictionary race. Battery is
-        // filled on main below from the cache this scan warms.
+        // No battery lookup on this queue: the caches are main-thread state. Battery is filled
+        // on main below from the cache this scan warms.
         let devices = connectedAudioDevices.compactMap { device in
-            createBluetoothAudioDevice(from: device, includeBattery: false)
+            createBluetoothAudioDevice(from: device)
         }
 
         // Warm the battery cache from here. updateBatteryStatuses collects on the calling
@@ -299,7 +307,13 @@ class BluetoothAudioManager: ObservableObject {
         // hopped write, not an off-main read; force: true also skips the unsynchronised
         // lastBatteryStatusUpdate read.
         if !devices.isEmpty {
-            updateBatteryStatuses(force: true)
+            // This scan collects off the main thread too, so it has the same collect-to-apply
+            // window as the forced refresh: a live BLE read that lands while `system_profiler`
+            // runs must not be reverted by the older snapshot. Read the counter on main first.
+            let liveWriteBaseline = Thread.isMainThread
+                ? liveBatteryWriteSequence
+                : DispatchQueue.main.sync { self.liveBatteryWriteSequence }
+            updateBatteryStatuses(force: true, liveWriteBaseline: liveWriteBaseline)
         }
 
         // The IOBluetooth reads above may run on a background queue (first launch touch);
@@ -352,27 +366,15 @@ class BluetoothAudioManager: ObservableObject {
         scheduleEventDrivenListeningModeRefresh(reason: notification.name.rawValue)
     }
 
+    /// Reached by the `name: nil` observer, so this runs for **every** distributed notification
+    /// posted anywhere on the system. The decision lives in `ListeningModeNotificationFilter`, which
+    /// explains why the wildcard stays and what it used to cost.
     @objc private func handlePotentialAirPodsListeningModeNotification(_ notification: Notification) {
         guard Defaults[.showAirPodsListeningModeChanges] else { return }
-        let name = notification.name.rawValue.lowercased()
-        let payload = notification.userInfo?
-            .map { "\($0.key)=\($0.value)" }
-            .joined(separator: " ")
-            .lowercased() ?? ""
-
-        let hasExplicitModePayload = payload.contains("listening") ||
-            payload.contains("lsnm") ||
-            payload.contains("noisecontrol") ||
-            payload.contains("anc") ||
-            payload.contains("transparency") ||
-            payload.contains("adaptive") ||
-            payload.contains("conversation")
-
-        let isSpecificSettingsNotification = name.contains("airpodspro.settingschanged") ||
-            name.contains("audioaccessory.prefschanged") ||
-            name.contains("controlcenter.airpods")
-
-        guard hasExplicitModePayload || isSpecificSettingsNotification else { return }
+        guard ListeningModeNotificationFilter.isPotentialListeningModeChange(
+            name: notification.name.rawValue,
+            userInfo: notification.userInfo
+        ) else { return }
         scheduleEventDrivenListeningModeRefresh(reason: notification.name.rawValue)
     }
 
@@ -422,6 +424,12 @@ class BluetoothAudioManager: ObservableObject {
             if !connectedDevices.contains(where: { $0.address == address }) {
                 print("🎧 [BluetoothAudioManager] 🎉 New audio device connected: \(device.name ?? "Unknown")")
                 
+                // No battery here. This used to take one synchronously, which ran an unforced
+                // `updateBatteryStatuses()` — on a cache older than 20 s that spawned
+                // `system_profiler` and `pmset` inline on this thread (the main thread, via the
+                // 3 s poll or the connect notification), immediately before the connect HUD. That
+                // is the stall `refreshBatteryLevelsForConnectedDevices` below was rewritten to
+                // remove; it applies whatever the cache holds and fetches the rest off-main.
                 guard let audioDevice = createBluetoothAudioDevice(from: device) else {
                     continue
                 }
@@ -499,51 +507,26 @@ class BluetoothAudioManager: ObservableObject {
         return majorClass == audioVideoMajorClass
     }
     
-    /// Creates a BluetoothAudioDevice model from IOBluetoothDevice
-    /// `includeBattery: false` keeps the battery caches untouched — required when called off
-    /// the main thread, since those dictionaries are main-thread state.
-    private func createBluetoothAudioDevice(from device: IOBluetoothDevice, includeBattery: Bool = true) -> BluetoothAudioDevice? {
+    /// Creates a BluetoothAudioDevice model from IOBluetoothDevice.
+    ///
+    /// Never with a battery level. The level used to come from a synchronous
+    /// `updateBatteryStatuses()` here, which spawns `system_profiler` and `pmset` on the calling
+    /// thread; every caller fills it afterwards from the cache via
+    /// `refreshBatteryLevelsForConnectedDevices`, which collects off-main. Keeping a synchronous
+    /// path around is how the connect-path stall survived the 2026-09-13 fix.
+    private func createBluetoothAudioDevice(from device: IOBluetoothDevice) -> BluetoothAudioDevice? {
         let name = device.name ?? "Bluetooth Device"
         let address = device.addressString ?? "Unknown"
-        let batteryLevel = includeBattery ? getBatteryLevel(from: device) : nil
         let deviceType = detectDeviceType(from: device, name: name)
         
         return BluetoothAudioDevice(
             name: name,
             address: address,
-            batteryLevel: batteryLevel,
+            batteryLevel: nil,
             deviceType: deviceType
         )
     }
     
-    /// Extracts battery level from Bluetooth device
-    private func getBatteryLevel(from device: IOBluetoothDevice) -> Int? {
-        updateBatteryStatuses()
-
-        if let level = batteryLevelFromRegistry(forAddress: device.addressString) {
-            clearMissingBatteryInfo(for: device)
-            return level
-        }
-
-        if let name = device.name, let level = batteryLevelFromRegistry(forName: name) {
-            clearMissingBatteryInfo(for: device)
-            return level
-        }
-
-        if let level = batteryLevelFromDefaults(forAddress: device.addressString) {
-            clearMissingBatteryInfo(for: device)
-            return level
-        }
-
-        if let name = device.name, let level = batteryLevelFromDefaults(forName: name) {
-            clearMissingBatteryInfo(for: device)
-            return level
-        }
-
-        logMissingBatteryInfo(for: device)
-        return nil
-    }
-
     // MARK: - PID-based device detection
 
     /// Extract a UInt16 from common payload formats (Int/NSNumber/String including hex like "0x201B").
@@ -605,56 +588,6 @@ class BluetoothAudioManager: ObservableObject {
     }
 
     /// Fallback: attempt to get VendorID/ProductID from system_profiler SPBluetoothDataType JSON.
-    private func vendorProductIDsFromSystemProfiler(forNormalizedAddress target: String) -> (vendor: UInt16, product: UInt16)? {
-        guard !target.isEmpty else { return nil }
-        guard let root = systemProfilerBluetoothDictionary() else { return nil }
-        guard let deviceConnected = root["device_connected"] as? [Any] else { return nil }
-
-        func pidFromPayload(_ payload: [String: Any]) -> UInt16? {
-            if let raw = payload["device_productID"] as? String {
-                let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                if trimmed.hasPrefix("0x"), let value = UInt16(trimmed.dropFirst(2), radix: 16) { return value }
-                if let value = UInt16(trimmed, radix: 16) { return value }
-            }
-            let productKeys = ["device_productID", "ProductID", "product_id", "productID", "DeviceProductID", "ProductId", "Product ID"]
-            return extractUInt16(from: payload, keys: productKeys)
-                ?? deepSearchUInt16(in: payload) { $0.lowercased().contains("productid") }
-        }
-
-        func vidFromPayload(_ payload: [String: Any]) -> UInt16? {
-            let vendorKeys = ["device_vendorID", "VendorID", "vendor_id", "vendorID", "DeviceVendorID", "VendorId", "Vendor ID"]
-            return extractUInt16(from: payload, keys: vendorKeys)
-                ?? deepSearchUInt16(in: payload) { $0.lowercased().contains("vendorid") }
-        }
-
-        for item in deviceConnected {
-            guard let dict = item as? [String: Any],
-                  let nameKey = dict.keys.first,
-                  let infoAny = dict[nameKey],
-                  let payload = infoAny as? [String: Any] else {
-                continue
-            }
-
-            if let address = payload["device_address"] as? String {
-                if normalizeBluetoothIdentifier(address) != target { continue }
-            } else {
-                let candidates = profilerAddressCandidates(from: payload).map(normalizeBluetoothIdentifier)
-                if !candidates.contains(target) { continue }
-            }
-
-            if let pid = pidFromPayload(payload) {
-                if let vid = vidFromPayload(payload) {
-                    return (vendor: vid, product: pid)
-                }
-                if devicePIDMap[pid] != nil {
-                    return (vendor: appleVendorID, product: pid)
-                }
-            }
-        }
-
-        return nil
-    }
-
     /// Attempts to find VendorID/ProductID for a device using Bluetooth caches.
     private func vendorProductIDs(for device: IOBluetoothDevice) -> (vendor: UInt16, product: UInt16)? {
         guard let preferences = UserDefaults(suiteName: bluetoothPreferencesSuite),
@@ -726,10 +659,11 @@ class BluetoothAudioManager: ObservableObject {
             }
         }
 
-        if let fromProfiler = vendorProductIDsFromSystemProfiler(forNormalizedAddress: target) {
-            return fromProfiler
-        }
-
+        // No system_profiler fallback here. This runs inside `createBluetoothAudioDevice` on the
+        // main thread (`detectDeviceType` asks for the PID before it reads the name), and on a
+        // device missing from both preference caches it spawned `system_profiler` and waited —
+        // the same stall as the battery lookup, one field over. A device the caches do not know
+        // is typed by its name, or shown as generic.
         return nil
     }
 
@@ -806,13 +740,64 @@ class BluetoothAudioManager: ObservableObject {
         }
     }
 
+    /// Refreshes the battery levels shown for connected devices.
+    ///
+    /// The forced variant used to run on whatever thread called it, and `updateBatteryStatuses`
+    /// collects inline: `system_profiler SPBluetoothDataType` and `pmset -g accps`, spawned and
+    /// waited on. Every caller but one is the main thread — a connect, a disconnect, or the
+    /// lock-screen weather refresh — so the app froze for as long as those took, which on a real
+    /// connect is the 2-8 s this project already measured (`HangReport.hangThreshold` was set above
+    /// it). The stall landed immediately before `showDeviceConnectedHUD`, so plugging in AirPods
+    /// killed the notch for a few seconds and *then* announced them.
+    ///
+    /// Now the cached values are applied straight away — on a repeat connect they are usually
+    /// already there, so the first frame is unchanged — and the expensive collection happens on
+    /// `pmsetFetchQueue`, with the result applied on the main actor.
+    ///
+    /// Strictly fire-and-forget: `updateBatteryStatuses` publishes through
+    /// `DispatchQueue.main.sync`, so anything that waits for it from the main thread deadlocks.
+    ///
+    /// Moving collection off the main thread is also what makes the live-write baseline necessary.
+    /// `updateBatteryStatuses` replaces its maps wholesale, which was harmless while the window
+    /// between collect and apply was ~0 and is not once it is a whole `system_profiler` run — long
+    /// enough for a live BLE read to land and be reverted, with nothing to recover it because the
+    /// live reader only re-reads a device whose level is `nil`. See `BluetoothLiveBatteryWrites`.
     private func refreshBatteryLevelsForConnectedDevices(forceCacheRefresh: Bool = true) {
-        if forceCacheRefresh {
-            updateBatteryStatuses(force: true)
+        guard forceCacheRefresh else {
+            applyConnectedDeviceBatteryLevels()
+            triggerLiveBatteryRefreshIfNeeded()
+            return
         }
 
         applyConnectedDeviceBatteryLevels()
         triggerLiveBatteryRefreshIfNeeded()
+
+        // AirPods announce in bursts, so a single physical connect can ask for this several times.
+        // One scan at a time; the others would only re-read what it is already fetching.
+        guard !isForcedBatteryRefreshInFlight else { return }
+        isForcedBatteryRefreshInFlight = true
+
+        // Captured here, on the main thread, before the scan can start: anything the live reader
+        // writes past this point is newer than the snapshot the scan is about to take, and
+        // `updateBatteryStatuses` re-applies it rather than reverting it. `triggerLiveBatteryRefresh`
+        // above is exactly such a reader, so this is not a theoretical window.
+        let liveWriteBaseline = liveBatteryWriteSequence
+
+        pmsetFetchQueue.async { [weak self] in
+            guard let self else { return }
+            self.updateBatteryStatuses(force: true, liveWriteBaseline: liveWriteBaseline)
+            DispatchQueue.main.async {
+                self.isForcedBatteryRefreshInFlight = false
+                self.applyConnectedDeviceBatteryLevels()
+                self.triggerLiveBatteryRefreshIfNeeded()
+                // The HUD's own wait tops out at `hudBatteryWaitTimeout`, which is shorter than a
+                // cold `system_profiler`, so a HUD already on screen gets the level patched in the
+                // way `handlePmsetFallbackResults` does.
+                if let level = self.hudBatteryLevelCandidate() {
+                    self.updateActiveBluetoothHUDBattery(with: level)
+                }
+            }
+        }
     }
 
     private func applyConnectedDeviceBatteryLevels(triggerPmsetFallback: Bool = true) {
@@ -953,6 +938,7 @@ class BluetoothAudioManager: ObservableObject {
                 if level > previous {
                     batteryStatusByAddress[addressKey] = level
                     batteryStatus[addressKey] = String(level)
+                    noteLiveBatteryWrite(level: level, addressKey: addressKey, nameKey: nil)
                     didUpdate = true
                 }
             }
@@ -961,6 +947,7 @@ class BluetoothAudioManager: ObservableObject {
                 let previous = batteryStatusByName[nameKey] ?? -1
                 if level > previous {
                     batteryStatusByName[nameKey] = level
+                    noteLiveBatteryWrite(level: level, addressKey: nil, nameKey: nameKey)
                     didUpdate = true
                 }
             }
@@ -971,6 +958,19 @@ class BluetoothAudioManager: ObservableObject {
         applyConnectedDeviceBatteryLevels()
         if let level = hudBatteryLevelCandidate() {
             updateActiveBluetoothHUDBattery(with: level)
+        }
+    }
+
+    /// Records a live read so a forced scan that started before it cannot revert it. Main thread
+    /// only — `handleLiveBatteryResults` is the sole caller and already hops here.
+    private func noteLiveBatteryWrite(level: Int, addressKey: String?, nameKey: String?) {
+        liveBatteryWriteSequence += 1
+        let write = BluetoothLiveBatteryWrite(level: level, sequence: liveBatteryWriteSequence)
+        if let addressKey, !addressKey.isEmpty {
+            liveBatteryWritesByAddress[addressKey] = write
+        }
+        if let nameKey, !nameKey.isEmpty {
+            liveBatteryWritesByName[nameKey] = write
         }
     }
 
@@ -1158,7 +1158,16 @@ class BluetoothAudioManager: ObservableObject {
         return nil
     }
 
-    private func updateBatteryStatuses(force: Bool = false) {
+    /// Collects battery levels from every source and publishes them.
+    ///
+    /// - Parameter liveWriteBaseline: `liveBatteryWriteSequence` as it stood when this scan was
+    ///   dispatched, for a caller that collects off the main thread. Live reads that land while the
+    ///   scan is out are re-applied over its snapshot; see `BluetoothLiveBatteryWrites`. `nil` is
+    ///   only for a caller that collects *and* applies on the main thread, where nothing can
+    ///   interleave between the two; every off-main caller (the launch scan, the forced refresh)
+    ///   must pass one. The snapshot otherwise stands as collected, which is what lets a forced scan
+    ///   lower a value as the battery drains.
+    private func updateBatteryStatuses(force: Bool = false, liveWriteBaseline: UInt64? = nil) {
         let now = Date()
         if !force, let lastBatteryStatusUpdate,
            now.timeIntervalSince(lastBatteryStatusUpdate) < batteryStatusUpdateInterval {
@@ -1183,15 +1192,31 @@ class BluetoothAudioManager: ObservableObject {
         let pmsetEntries = collectPmsetAccessoryBatteryEntries()
         mergePmsetEntries(pmsetEntries, into: &combinedNamePercentages, logNewEntries: true)
 
-        var statuses: [String: String] = [:]
-        for (key, value) in combinedAddressPercentages {
-            statuses[key] = String(clampBatteryPercentage(value))
-        }
-
         let applyUpdates = {
+            var addresses = combinedAddressPercentages
+            var names = combinedNamePercentages
+
+            if let liveWriteBaseline {
+                addresses = BluetoothLiveBatteryWrites.overlaying(
+                    addresses,
+                    with: self.liveBatteryWritesByAddress,
+                    newerThan: liveWriteBaseline
+                )
+                names = BluetoothLiveBatteryWrites.overlaying(
+                    names,
+                    with: self.liveBatteryWritesByName,
+                    newerThan: liveWriteBaseline
+                )
+            }
+
+            var statuses: [String: String] = [:]
+            for (key, value) in addresses {
+                statuses[key] = String(self.clampBatteryPercentage(value))
+            }
+
             self.batteryStatus = statuses
-            self.batteryStatusByAddress = combinedAddressPercentages
-            self.batteryStatusByName = combinedNamePercentages
+            self.batteryStatusByAddress = addresses
+            self.batteryStatusByName = names
             self.lastBatteryStatusUpdate = now
         }
 
@@ -1823,13 +1848,21 @@ class BluetoothAudioManager: ObservableObject {
             try? await Task.sleep(nanoseconds: 180_000_000)
             guard let self, !Task.isCancelled else { return }
 
-            await MainActor.run {
-                guard let device = self.primaryConnectedAirPodsDevice(),
-                      let mode = self.readListeningModeViaDynamicSelectors(for: device) ??
-                        Self.readListeningModeFromIORegistry() else {
-                    return
-                }
+            // The IOBluetooth reads and the dynamic-selector probe stay on main; the `ioreg`
+            // subprocess does not. This task was already detached — only the `MainActor.run` span
+            // was too wide, which put a `fork`/`exec`/read of the whole IORegistry on the main
+            // thread for every Bluetooth notification. The selectors-before-ioreg order is
+            // preserved: the fallback runs only when the cheap path returns nothing.
+            let device = await MainActor.run { self.primaryConnectedAirPodsDevice() }
+            guard let device, !Task.isCancelled else { return }
 
+            let selectorMode = await MainActor.run { self.readListeningModeViaDynamicSelectors(for: device) }
+            guard !Task.isCancelled else { return }
+
+            guard let mode = selectorMode ?? Self.readListeningModeFromIORegistry() else { return }
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
                 self.presentListeningModeIfChanged(
                     AirPodsListeningModeEvent(device: device, mode: mode)
                 )
@@ -1960,7 +1993,39 @@ class BluetoothAudioManager: ObservableObject {
         }
     }
 
+    /// Fallback for the listening mode when the dynamic-selector probe finds nothing.
+    ///
+    /// Two things to know before touching the arguments. First, `ioreg -r -l -w 0` with no match
+    /// criterion (`-c`/`-n`/`-k`) selects **nothing** — measured here: 0 bytes, exit 0 — so on this
+    /// machine the function always returns nil and listening mode actually comes from the dynamic
+    /// selectors and the log-stream observer.
+    ///
+    /// Second, that is the only reason the old drain order was survivable. It called `waitUntilExit`
+    /// *before* reading the pipe, which deadlocks the moment the child writes more than the pipe
+    /// buffer (~64 KB) and blocks waiting for a reader that never comes. Add a `-c` to that command
+    /// and the output jumps to megabytes, turning a dead arm into a permanent hang on every AirPods
+    /// notification — and `HangWatchdog` would file a report for each one. It reads first now,
+    /// matching `collectPmsetAccessoryBatteryEntries` in this same file.
+    ///
+    /// Not called on the main thread; see `scheduleEventDrivenListeningModeRefresh`.
+    ///
+    /// One probe at a time. Running it off the main thread removed the accidental serialisation the
+    /// enclosing `MainActor.run` used to provide, and cancelling the surrounding task does not help:
+    /// cancellation neither interrupts `readDataToEndOfFile()` nor terminates the child. So a
+    /// notification arriving after the 180 ms debounce had already elapsed could start a second
+    /// `ioreg` while the first was still draining. Skipping the second loses nothing — the probe reads
+    /// a live registry, so a concurrent answer would be the same answer.
+    private static let ioRegistryProbeRunning = OSAllocatedUnfairLock(initialState: false)
+
     private static func readListeningModeFromIORegistry() -> AirPodsListeningMode? {
+        let alreadyRunning = ioRegistryProbeRunning.withLock { running -> Bool in
+            if running { return true }
+            running = true
+            return false
+        }
+        guard !alreadyRunning else { return nil }
+        defer { ioRegistryProbeRunning.withLock { $0 = false } }
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/ioreg")
         process.arguments = ["-r", "-l", "-w", "0"]
@@ -1975,12 +2040,12 @@ class BluetoothAudioManager: ObservableObject {
             return nil
         }
 
+        // Read, then wait. Reversing these is the >64 KB deadlock.
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
 
         guard process.terminationStatus == 0 else { return nil }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let output = String(data: data, encoding: .utf8) else { return nil }
+        guard !data.isEmpty, let output = String(data: data, encoding: .utf8) else { return nil }
 
         let interestingLines = output
             .components(separatedBy: .newlines)

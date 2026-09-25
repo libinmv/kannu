@@ -123,23 +123,20 @@ struct IdleAnimationsSettingsSection: View {
                 .frame(height: 140)
             } else {
                 Text("Enable \"Idle Animation\" to customize animations")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 8)
+                    .settingsDescriptionStyle()
             }
         } header: {
             HStack {
-                Text("Idle Animation Style")
+                SettingsSectionHeader("Idle Animation Style")
                 Spacer()
                 if showNotHumanFace {
                     Text("\(customIdleAnimations.count) animations")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .settingsDescriptionStyle()
                 }
             }
         } footer: {
             if showNotHumanFace {
-                Text("Shimmer is the default idle style. Idle animations play briefly at :15 and :45 each hour when the notch is inactive.")
+                SettingsFooter("Shimmer is the default idle style. Idle animations play briefly at :15 and :45 each hour when the notch is inactive.")
             }
         }
         .fileImporter(
@@ -355,6 +352,7 @@ struct AnimationPreviewCard: View {
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
                     .frame(width: 100)
+                    .textSelection(.enabled)
                 
                 if isSelected {
                     Text("Selected")
@@ -371,6 +369,7 @@ struct AnimationPreviewCard: View {
                     Text("Built-in")
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
                 }
             }
         }
@@ -534,6 +533,7 @@ struct URLImportSheet: View {
                 Text("Lottie JSON URL")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
                 TextField("https://example.com/animation.json", text: $urlInput)
                     .textFieldStyle(.roundedBorder)
             }
@@ -542,6 +542,7 @@ struct URLImportSheet: View {
                 Text("Animation Name")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
                 TextField("My Animation", text: $nameInput)
                     .textFieldStyle(.roundedBorder)
             }

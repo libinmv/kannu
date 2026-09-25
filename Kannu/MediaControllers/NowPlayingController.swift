@@ -53,6 +53,13 @@ final class NowPlayingController: ObservableObject, MediaControllerProtocol {
     private var process: Process?
     private var pipeHandler: JSONLinesPipeHandler?
     private var streamTask: Task<Void, Never>?
+    /// The task `init` starts to spawn the helper. Tracked so `stop()` can cancel it: without this a
+    /// controller stopped during its own setup would see no process, return, and then have setup resume
+    /// and launch a helper nothing owns.
+    private var setupTask: Task<Void, Never>?
+    /// Set by `stop()`. Checked after every `await` in setup, because a controller can be released
+    /// before it has finished starting.
+    private var isStopped = false
 
     // MARK: - Initialization
     init?() {
@@ -81,12 +88,15 @@ final class NowPlayingController: ObservableObject, MediaControllerProtocol {
         MRMediaRemoteSetRepeatModeFunction = unsafeBitCast(
             MRMediaRemoteSetRepeatModePointer, to: (@convention(c) (Int) -> Void).self)
 
-        Task { await setupNowPlayingObserver() }
+        setupTask = Task { [weak self] in await self?.setupNowPlayingObserver() }
     }
 
+    /// Kept as a backstop, and **not** the teardown path — see `stop()`. While the stream loop is
+    /// running this is unreachable: the task it owns holds a strong reference back to `self` for the
+    /// duration of a call that never returns.
     deinit {
         streamTask?.cancel()
-        
+
         if let pipeHandler = self.pipeHandler {
             Task { await pipeHandler.close()
             }
@@ -101,6 +111,49 @@ final class NowPlayingController: ObservableObject, MediaControllerProtocol {
 
         self.process = nil
         self.pipeHandler = nil
+    }
+
+    /// Tears down the `mediaremote-adapter.pl` child and the task streaming from it.
+    ///
+    /// `deinit` cannot do this. `streamTask` captures `self` weakly, but once `processJSONStream()` is
+    /// entered the task frame holds `self` strongly, and that call never returns — the pipe loop is a
+    /// `while true` suspended in a continuation. So `self` owns the task, the running task owns `self`,
+    /// and the helper survives even a controller switch inside a live app: measured, nine helpers alive
+    /// at once on the development machine, eight reparented to `launchd`, the oldest fourteen hours,
+    /// three of them from `/Applications`.
+    ///
+    /// The plumbing to break it already existed and nothing called it. `close()` resumes the pending
+    /// continuation with `CancellationError`, which unwinds `processLines`, returns from
+    /// `readJSONLines`, returns from `processJSONStream`, and finally releases `self`.
+    func stop() async {
+        // Set first: setup checks this after its own `await`, so a controller stopped mid-start does
+        // not go on to launch a helper.
+        isStopped = true
+        setupTask?.cancel()
+        setupTask = nil
+        streamTask?.cancel()
+        streamTask = nil
+
+        // Order matters: closing the pipe is what makes the stream loop return, so the child is left
+        // with nowhere to write before it is asked to exit.
+        if let pipeHandler {
+            await pipeHandler.close()
+        }
+        self.pipeHandler = nil
+
+        if let process, process.isRunning {
+            process.terminate()
+        }
+        self.process = nil
+    }
+
+    /// See the protocol. Only the child matters here; nothing is awaited, because the app is exiting.
+    /// Touches the same properties `deinit` does, on whatever thread termination runs on.
+    func terminateChildProcessesForAppExit() {
+        // Also blocks a setup still in flight from launching one after this point.
+        isStopped = true
+        guard let process, process.isRunning else { return }
+        process.terminate()
     }
 
     // MARK: - Protocol Implementation
@@ -166,6 +219,14 @@ final class NowPlayingController: ObservableObject, MediaControllerProtocol {
         
         let pipeHandler = JSONLinesPipeHandler()
         process.standardOutput = await pipeHandler.getPipe()
+
+        // `getPipe()` is an actor hop, so the controller can have been stopped while this was
+        // suspended. Assigning and launching past that point would hand a released controller a live
+        // child process that nothing would ever terminate.
+        guard !isStopped, !Task.isCancelled else {
+            await pipeHandler.close()
+            return
+        }
 
         // Capture stderr so framework/script errors are logged
         let stderrPipe = Pipe()

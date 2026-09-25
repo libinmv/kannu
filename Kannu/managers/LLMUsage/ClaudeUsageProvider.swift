@@ -15,7 +15,14 @@ struct ClaudeUsageProvider: UsageProvider {
         if FileManager.default.fileExists(atPath: root.path) {
             let files = jsonlFiles(under: root)
             if !files.isEmpty {
-                snapshot = JSONLUsageParser.aggregate(files: files, now: now)
+                // `logsUnavailable` stays keyed on the *unfiltered* listing. Keying it on what is
+                // actually read would tell somebody who has not run Claude for eight days that their
+                // logs are unavailable, with a fix-it button for a problem they do not have, instead
+                // of an honest zero.
+                snapshot = JSONLUsageParser.aggregate(
+                    files: UsageWindows.recentlyModified(files, now: now),
+                    now: now
+                )
             } else {
                 snapshot.logsUnavailable = true
             }

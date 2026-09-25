@@ -55,7 +55,7 @@ Expect a `PreventUserIdleSystemSleep` assertion owned by process `Kannu`, named 
 `pgrep caffeinate` finding nothing is correct — there is no subprocess.
 
 Log lines: `init: …`, `reconcile(<trigger>): … → <transition>`, `☕ holding …`, `💤 released …`,
-`failed to create sleep assertion (…); retrying in 5s`. Triggers: `init`, `manual toggle`,
+`failed to create sleep assertion (…); retrying in 5s`. Triggers: `init`, `manual toggle`, `awaiting window`,
 `smart toggle`, `feature toggle`, `sessions`, `retry`.
 
 ## What it deliberately does NOT do
@@ -69,3 +69,12 @@ Log lines: `init: …`, `reconcile(<trigger>): … → <transition>`, `☕ holdi
 - Release latency after an agent stops is bounded by the session monitor's rescan (worst case
   the 30-second safety-net poll). `awaitingInput` counts as active for up to its 5-minute
   staleness window.
+
+## A prompt nobody answers
+
+Since 2026-09-10 an unanswered prompt keeps its yellow for as long as the session is provably
+still waiting (REGRESSIONS entry 12), so the light no longer bounds the hold. The bound is now
+explicit: `awaitingInput` counts as caffeinate-worthy only inside its first five minutes
+(`awaitingInputCaffeinateSeconds`, derived from the light's own 300 s constant), and because the
+session list does not republish at that moment, `reconcile` arms a one-shot `awaiting window`
+recheck at the earliest qualifying yellow's expiry (`caffeinateRecheckDate`).

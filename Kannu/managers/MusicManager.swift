@@ -653,8 +653,33 @@ class MusicManager: ObservableObject {
         controllerCancellables.removeAll()
         transitionWorkItem?.cancel()
 
-        // Release active controller
+        // Release active controller. `stop()` first — a controller that owns a child process cannot
+        // be torn down by releasing it, because its own stream task keeps it alive (see
+        // `NowPlayingController.stop()`).
+        releaseActiveController()
+    }
+
+    /// Last-chance teardown from `applicationWillTerminate`, which cannot await.
+    ///
+    /// Without this the `mediaremote-adapter.pl` child outlives the app and is reparented to launchd —
+    /// the leak that had nine helpers alive at once on the development machine.
+    func stopActiveControllerForTermination() {
+        activeController?.terminateChildProcessesForAppExit()
+    }
+
+    /// Stops the active controller and drops it. The only correct way to stop using one.
+    private func releaseActiveController() {
+        guard let controller = activeController else { return }
         activeController = nil
+
+        // Kill the child synchronously, before returning. `stop()` below does this too, but it runs in
+        // a task that is not guaranteed to get a turn: a controller switch immediately followed by
+        // quitting would leave the old controller off `activeController` — so
+        // `stopActiveControllerForTermination()` cannot see it — with its `stop()` still pending, and
+        // the helper would outlive the app after all. Terminating twice is harmless; leaking is not.
+        controller.terminateChildProcessesForAppExit()
+
+        Task { await controller.stop() }
     }
 
     // MARK: - Setup Methods
@@ -662,7 +687,7 @@ class MusicManager: ObservableObject {
         // Cleanup previous controller
         if activeController != nil {
             controllerCancellables.removeAll()
-            activeController = nil
+            releaseActiveController()
         }
 
         let newController: (any MediaControllerProtocol)?
@@ -1301,6 +1326,15 @@ class MusicManager: ObservableObject {
             }
         } else {
             print("Failed to find app with bundle ID: \(bundleID)")
+        }
+
+        // A browser is already in front by now; land on the tab that is playing, when the
+        // browser can tell us (Safari and Chrome-family). Best-effort, off the main actor.
+        if Defaults[.openPlayingBrowserTab], BrowserTabLocator.canLocate(bundleIdentifier: bundleID) {
+            let title = songTitle, artist = artistName
+            Task { @MainActor in
+                await BrowserTabLocator.bringPlayingTabForward(bundleIdentifier: bundleID, title: title, artist: artist)
+            }
         }
     }
 

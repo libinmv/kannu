@@ -173,6 +173,11 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
         guard volumeEnabled else { return }
 
         // Beat CoreAudio waking OSDUIHelper before the volume write.
+        //
+        // `isRepeat` is deliberately unused. Gating this on it looks like the obvious way to stop a
+        // held key hammering the suppressor, and it is a bug: launchd respawns OSDUIHelper with a
+        // fresh PID mid-burst, so a skipped repeat lets the native HUD render. The cost is handled
+        // where it belongs, in `OSDSuppressionDecision` — read that before reaching for this flag.
         SystemOSDManager.suppressNativeOSDNow()
         
         // Elastic Limit Detection (Vertical HUD)

@@ -59,6 +59,9 @@ final class CaffeinateManager: ObservableObject {
     /// One bounded retry after a failed assertion create. Manual mode has no other event
     /// source, so without this a rare IOPM failure left the switch ON with no assertion forever.
     private var retryTask: Task<Void, Never>?
+    /// A held yellow (a prompt nobody answers) stops qualifying at the 5-minute mark without any
+    /// session republish, so the moment is armed here (REGRESSIONS entry 12).
+    private var windowRecheckTask: Task<Void, Never>?
     private var cancellables: Set<AnyCancellable> = []
 
     private init() {
@@ -103,6 +106,8 @@ final class CaffeinateManager: ObservableObject {
     private func reconcile(trigger: String) {
         retryTask?.cancel()
         retryTask = nil
+        windowRecheckTask?.cancel()
+        windowRecheckTask = nil
 
         let smart = Defaults[.smartCaffeinate]
         let featureEnabled = Defaults[.enableAgentStatusFeature]
@@ -125,6 +130,16 @@ final class CaffeinateManager: ObservableObject {
             Self.log.notice("reconcile(\(trigger, privacy: .public)): smart=\(smart) feature=\(featureEnabled) shouldHold=\(shouldHold) → \(String(describing: transition), privacy: .public)")
         }
         apply(transition, smart: smartNow)
+
+        if smartNow, let recheckAt = AgentTrafficLightMapper.caffeinateRecheckDate(CursorAgentStatusMonitor.shared.sessions) {
+            let delay = max(0, recheckAt.timeIntervalSinceNow + 1)
+            windowRecheckTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(delay))
+                guard !Task.isCancelled else { return }
+                self?.windowRecheckTask = nil
+                self?.reconcile(trigger: "awaiting window")
+            }
+        }
     }
 
     /// Stage 3: execute exactly the transition the pure table chose. Each arm is one or two

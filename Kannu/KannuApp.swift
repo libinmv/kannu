@@ -30,7 +30,6 @@ import SkyLightWindow
 @main
 struct KannuApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @Default(.menubarIcon) var showMenuBarIcon
     @Environment(\.openWindow) var openWindow
 
     init() {
@@ -38,36 +37,12 @@ struct KannuApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra("Kannu", systemImage: "mountain.2.fill", isInserted: $showMenuBarIcon) {
-            Button("Settings") {
-                SettingsWindowController.shared.showWindow()
-            }
-            if SparkleUpdaterController.shared.isEnabled {
-                Button("Check for Updates…") {
-                    SparkleUpdaterController.shared.checkForUpdates(nil)
-                }
-            }
-            Divider()
-            Button("Restart Kannu") {
-                guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return }
-
-                let workspace = NSWorkspace.shared
-
-                if let appURL = workspace.urlForApplication(withBundleIdentifier: bundleIdentifier)
-                {
-
-                    let configuration = NSWorkspace.OpenConfiguration()
-                    configuration.createsNewApplicationInstance = true
-
-                    workspace.openApplication(at: appURL, configuration: configuration)
-                }
-
-                NSApplication.shared.terminate(self)
-            }
-            Button("Quit", role: .destructive) {
-                NSApplication.shared.terminate(self)
-            }
-            .keyboardShortcut(KeyEquivalent("Q"), modifiers: .command)
+        // The menu bar item is an AppDelegate-owned NSStatusItem now: SwiftUI's MenuBarExtra
+        // cannot give the button a click action, and the item's left click opens the notch
+        // (right click keeps the menu). A Scene body cannot be empty, so a never-inserted
+        // extra stands in.
+        MenuBarExtra("Kannu", isInserted: .constant(false)) {
+            EmptyView()
         }
     }
 
@@ -102,8 +77,19 @@ extension AppDelegate {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
-    var windows: [NSScreen: NSWindow] = [:]
-    var viewModels: [NSScreen: KannuViewModel] = [:]
+    /// Live only while the placement follows the pointer (two or more externals).
+    private var pointerMonitor: Any?
+    private var pointerRepositionTask: Task<Void, Never>?
+    /// Coalesces a burst of screen-configuration notifications into one rebuild.
+    private var screenChangeTask: Task<Void, Never>?
+    /// The delayed reposition after an unlock, cancellable so a burst queues one.
+    private var unlockRestoreTask: Task<Void, Never>?
+
+    /// Keyed by `CGDirectDisplayID`, not `NSScreen`. AppKit does not promise `NSScreen` identity
+    /// across a display reconfiguration, so an object key could strand a window on a replug and
+    /// build a second one beside it.
+    var windows: [CGDirectDisplayID: NSWindow] = [:]
+    var viewModels: [CGDirectDisplayID: KannuViewModel] = [:]
     var window: NSWindow?
     let vm: KannuViewModel = .init()
     @ObservedObject var coordinator = KannuViewCoordinator.shared
@@ -275,6 +261,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Clears the marker, so a run that ends here is not read as a crash next time.
+        CrashReporter.shared.noteCleanExit()
         let userInfo: [String: Any] = [
             KannuDistributedNotifications.UserInfoKey.sourcePID: NSNumber(value: ProcessInfo.processInfo.processIdentifier)
         ]
@@ -294,6 +282,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Stop AudioTap capture
         AudioTap.shared.stopCapture()
 
+        // Stop the now-playing helper. Releasing the controller is not enough — its stream task holds
+        // it alive, so without this the `mediaremote-adapter.pl` child outlives the app and is
+        // reparented to launchd. Synchronous on purpose: this is the last chance to signal it.
+        MusicManager.shared.stopActiveControllerForTermination()
+
         // Restore Lunar's native OSD if integration was active
         LunarManager.shared.appWillTerminate()
 
@@ -308,8 +301,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func onScreenUnlocked(_: Notification) {
         print("Screen unlocked")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            guard let self = self else { return }
+        // Cancellable: a lock/unlock burst used to queue one of these per unlock, each racing the
+        // others to rebuild windows a second after the fact.
+        unlockRestoreTask?.cancel()
+        unlockRestoreTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled, let self else { return }
+            self.unlockRestoreTask = nil
             self.restoreWindowsAfterLock()
             self.adjustWindowPosition(changeAlpha: true)
         }
@@ -319,7 +317,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard !windowsHiddenForLock else { return }
         windowsHiddenForLock = true
 
-        if Defaults[.showOnAllDisplays] {
+        if Defaults[.displayPlacement].usesOneWindowPerDisplay {
             for window in windows.values {
                 window.alphaValue = 0
                 window.orderOut(nil)
@@ -334,7 +332,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard windowsHiddenForLock else { return }
         windowsHiddenForLock = false
 
-        if Defaults[.showOnAllDisplays] {
+        if Defaults[.displayPlacement].usesOneWindowPerDisplay {
             for window in windows.values {
                 window.orderFrontRegardless()
                 window.alphaValue = 1
@@ -345,25 +343,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
-    private func cleanupWindows(shouldInvert: Bool = false) {
-        if shouldInvert ? !Defaults[.showOnAllDisplays] : Defaults[.showOnAllDisplays] {
-            for (screen, window) in windows {
-                // Tear down the hosted ContentView before dropping the window
-                // (`.onDisappear` is unreliable for borderless panels).
-                viewModels[screen]?.onViewTeardown?()
-                viewModels[screen]?.onViewTeardown = nil
-                NotchSpaceManager.shared.notchSpace.windows.remove(window)
-                window.close()
-            }
-            windows.removeAll()
-            viewModels.removeAll()
-        } else if let window = window {
-            vm.onViewTeardown?()
-            vm.onViewTeardown = nil
-            NotchSpaceManager.shared.notchSpace.windows.remove(window)
-            window.close()
-            self.window = nil
-        }
+    /// Drops one display's window, the way `tearDownAllWindows` drops all of them.
+    ///
+    /// The unplug path used to close the window without removing it from `notchSpace.windows`, so
+    /// every disconnect retained a dead window for the life of the process.
+    @MainActor
+    private func tearDownWindow(forDisplay id: CGDirectDisplayID) {
+        guard let window = windows[id] else { return }
+        viewModels[id]?.onViewTeardown?()
+        viewModels[id]?.onViewTeardown = nil
+        NotchSpaceManager.shared.notchSpace.windows.remove(window)
+        window.close()
+        windows.removeValue(forKey: id)
+        viewModels.removeValue(forKey: id)
     }
 
     /// Rebuilds the notch's CGSSpace membership from the current hide option and the
@@ -377,7 +369,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NotchSpaceManager.shared.notchSpace.windows = []
             return
         }
-        if Defaults[.showOnAllDisplays] {
+        if Defaults[.displayPlacement].usesOneWindowPerDisplay {
             NotchSpaceManager.shared.notchSpace.windows = Set(windows.values)
         } else if let window = window {
             NotchSpaceManager.shared.notchSpace.windows = [window]
@@ -411,15 +403,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 .environmentObject(viewModel)
                 //.moveToSky()
         )
-        // NSHostingView defaults to `.standardBounds`, which pushes SwiftUI's ideal size into
-        // the window from inside the window's own layout pass — that re-entrancy is what threw
-        // `_postWindowNeedsUpdateConstraints` and aborted the app. Every notch dimension already
-        // comes from `resizeWindows` / `calculateDynamicNotchSize`, so automatic sizing is pure
-        // liability here.
+        // Every notch dimension comes from `resizeWindows` / `calculateDynamicNotchSize`, so
+        // SwiftUI must never size this window. `sizingOptions = []` alone was not enough: as the
+        // window's content view the hosting view still gets a window-size bridge that clamps the
+        // frame on every layout, and fighting it threw `_postWindowNeedsUpdateConstraints`
+        // (docs/REGRESSIONS.md entry 17). `setHostedContent` nests it so the bridge never exists.
         if #available(macOS 13.0, *) {
             hostingView.sizingOptions = []
         }
-        window.contentView = hostingView
+        window.setHostedContent(hostingView)
 
         window.orderFrontRegardless()
         // Pin above every space (fullscreen included) only for "Never hide"; the
@@ -438,11 +430,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             window.alphaValue = 0
         }
         
+        // Size for the screen it is going to, not the one it came from.
+        //
+        // Only `createKannuWindow` used to apply `adjustedSizeForScreen`, and a window that moves
+        // between displays without being rebuilt — the pointer path, `selectedScreenChanged`,
+        // `notchHeightChanged` — kept the previous display's frame. A notched built-in and an
+        // external need different sizes for the same content (the external adds the shadow inset
+        // and the top offset), so the island arrived clipped or offset until something unrelated
+        // resized it.
+        let targetSize = adjustedSizeForScreen(calculateRequiredNotchSize(), screen: screen)
+
         // Use the same centering logic as updateWindowSizeIfNeeded()
         let screenFrame = screen.frame
         let centerX = screenFrame.origin.x + (screenFrame.width / 2)
-        let roundedWidth = window.frame.width.rounded()
-        let roundedHeight = window.frame.height.rounded()
+        let roundedWidth = targetSize.width.rounded()
+        let roundedHeight = targetSize.height.rounded()
         let newX = (centerX - (roundedWidth / 2)).rounded()
         let newY = (screenFrame.origin.y + screenFrame.height - roundedHeight).rounded()
 
@@ -618,8 +620,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        if Defaults[.showOnAllDisplays] {
-            for (screen, window) in windows {
+        if Defaults[.displayPlacement].usesOneWindowPerDisplay {
+            for (id, window) in windows {
+                guard let screen = NSScreen.screens.first(where: { DisplayPlacementRuntime.displayID(for: $0) == id })
+                else { continue }
                 let screenSize = adjustedSizeForScreen(size, screen: screen)
                 if force || window.frame.size != screenSize {
                     resizeWindow(window, on: screen, to: screenSize)
@@ -651,7 +655,134 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.setFrame(targetFrame, display: false)
     }
 
+    // MARK: - Menu bar status item
+
+    /// Opens (or closes) the notch on the display the pointer is on — the shortcut's exact
+    /// behaviour, shared with the menu bar item's left click. Opening from outside arms a 3 s
+    /// auto-close so a notch nobody hovers does not stay open forever.
+    func toggleNotch() {
+        let mouseLocation = NSEvent.mouseLocation
+
+        var viewModel = self.vm
+
+        if Defaults[.displayPlacement].usesOneWindowPerDisplay {
+            for screen in NSScreen.screens where screen.frame.contains(mouseLocation) {
+                if let id = DisplayPlacementRuntime.displayID(for: screen),
+                   let screenViewModel = self.viewModels[id] {
+                    viewModel = screenViewModel
+                    break
+                }
+            }
+        }
+
+        closeNotchWorkItem?.cancel()
+        closeNotchWorkItem = nil
+
+        switch viewModel.notchState {
+        case .closed:
+            viewModel.open()
+
+            let workItem = DispatchWorkItem { [weak viewModel] in
+                viewModel?.close()
+            }
+            closeNotchWorkItem = workItem
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: workItem)
+        case .open:
+            viewModel.close()
+        }
+    }
+
+    /// Creates or removes the status item to match `Defaults[.menubarIcon]`. The eye is the
+    /// brand (Kannu is Malayalam for "eye"; the app icon is the same pair of eyes) — the
+    /// mountain the fork inherited from Atoll is gone. Left click toggles the notch;
+    /// right-click or option-click shows the menu.
+    func syncStatusItem(visible: Bool) {
+        if !visible {
+            if let statusItem {
+                NSStatusBar.system.removeStatusItem(statusItem)
+            }
+            statusItem = nil
+            return
+        }
+        guard statusItem == nil else { return }
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        if let button = item.button {
+            button.image = NSImage(systemSymbolName: "eye.fill",
+                                   accessibilityDescription: String(localized: "Kannu"))
+            button.target = self
+            button.action = #selector(statusItemClicked(_:))
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        }
+        statusItem = item
+    }
+
+    @objc private func statusItemClicked(_ sender: Any?) {
+        let event = NSApp.currentEvent
+        let wantsMenu = event?.type == .rightMouseUp
+            || event?.modifierFlags.contains(.control) == true
+            || event?.modifierFlags.contains(.option) == true
+        if wantsMenu, let statusItem {
+            // Assigning the menu and re-clicking pops it; clearing it afterwards keeps the
+            // plain left click on the toggle action instead of the menu.
+            statusItem.menu = statusItemMenu()
+            statusItem.button?.performClick(nil)
+            statusItem.menu = nil
+        } else {
+            toggleNotch()
+        }
+    }
+
+    private func statusItemMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.addItem(withTitle: String(localized: "Settings"),
+                     action: #selector(statusMenuOpenSettings), keyEquivalent: "").target = self
+        if SparkleUpdaterController.shared.isEnabled {
+            menu.addItem(withTitle: String(localized: "Check for Updates…"),
+                         action: #selector(statusMenuCheckForUpdates), keyEquivalent: "").target = self
+        }
+        menu.addItem(.separator())
+        menu.addItem(withTitle: String(localized: "Restart Kannu"),
+                     action: #selector(statusMenuRestart), keyEquivalent: "").target = self
+        menu.addItem(withTitle: String(localized: "Quit"),
+                     action: #selector(statusMenuQuit), keyEquivalent: "q").target = self
+        return menu
+    }
+
+    @objc private func statusMenuOpenSettings() {
+        SettingsWindowController.shared.showWindow()
+    }
+
+    @objc private func statusMenuCheckForUpdates() {
+        SparkleUpdaterController.shared.checkForUpdates(nil)
+    }
+
+    @objc private func statusMenuRestart() {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return }
+        let workspace = NSWorkspace.shared
+        if let appURL = workspace.urlForApplication(withBundleIdentifier: bundleIdentifier) {
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.createsNewApplicationInstance = true
+            workspace.openApplication(at: appURL, configuration: configuration)
+        }
+        NSApplication.shared.terminate(self)
+    }
+
+    @objc private func statusMenuQuit() {
+        NSApplication.shared.terminate(self)
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+        // `--kannu-snapshots <dir>`: render Settings to PNG and quit, before anything else starts.
+        if let request = DebugSnapshotRequest(arguments: CommandLine.arguments) {
+            Task { @MainActor in
+                await DebugSnapshots.run(request, viewModel: vm)
+                NSApp.terminate(nil)
+            }
+            return
+        }
+        #endif
         let userInfo: [String: Any] = [
             KannuDistributedNotifications.UserInfoKey.sourcePID: NSNumber(value: ProcessInfo.processInfo.processIdentifier)
         ]
@@ -664,6 +795,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         autoEnableLaunchAtLoginIfNeeded()
         repairLoginItemIfStale()
+
+        syncStatusItem(visible: Defaults[.menubarIcon])
+        Defaults.publisher(.menubarIcon, options: [])
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] change in
+                self?.syncStatusItem(visible: change.newValue)
+            }
+            .store(in: &cancellables)
+
+        // A force-quit or a crash runs no teardown, so a now-playing helper from a previous run can
+        // still be streaming. Off the main thread: it walks the process table and reads argv for each
+        // `perl` it finds. It only ever signals a helper started from *this* bundle's script and
+        // already reparented to launchd — see `MediaRemoteAdapterOwnership`.
+        DispatchQueue.global(qos: .utility).async {
+            MediaRemoteAdapterReaper.reapOrphanedHelpers()
+        }
+
+        // Starts before the managers, so a freeze during startup is still caught. The offer for a
+        // previous freeze waits: with no window on screen that alert is app-modal, and one of those
+        // here would stop the rest of launch.
+        HangWatchdog.shared.start()
+        CrashReporter.shared.start()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+            // A freeze is offered before a crash: the hang log is Kannu's own, so it is the more
+            // specific of the two, and only one alert should ever greet a launch.
+            if HangWatchdog.shared.offerNewestReport() { return }
+            CrashReporter.shared.offerNewestReport()
+        }
 
         LockScreenLiveActivityWindowManager.shared.configure(viewModel: vm)
         LockScreenManager.shared.configure(viewModel: vm)
@@ -902,16 +1061,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             CursorAgentStatusMonitor.shared.start()
+            UsageAlertManager.shared.start()
+            // The store before the bridge: the bridge subscribes to `$findings` and prunes the
+            // persisted "already pushed" ids against whatever it receives first. Started the other
+            // way round that first value was the store's empty initial list, the ids were wiped, and
+            // every open high finding was pushed again after each relaunch.
+            SecurityFindingsStore.shared.start()
             AgentStatusNotificationBridge.shared.start()
         }
         Defaults.publisher(.enableAgentStatusFeature, options: []).sink { change in
             Task { @MainActor in
                 if change.newValue {
                     CursorAgentStatusMonitor.shared.start()
+                    UsageAlertManager.shared.start()
                     AgentStatusNotificationBridge.shared.start()
+                    SecurityFindingsStore.shared.start()
                 } else {
                     CursorAgentStatusMonitor.shared.stop()
+                    UsageAlertManager.shared.stop()
                     AgentStatusNotificationBridge.shared.stop()
+                    SecurityFindingsStore.shared.stop()
                 }
             }
         }.store(in: &cancellables)
@@ -925,43 +1094,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
+        // `queue: nil` delivers on whichever thread posted, and these touch windows, so they hop.
         NotificationCenter.default.addObserver(
             forName: Notification.Name.selectedScreenChanged, object: nil, queue: nil
         ) { [weak self] _ in
-            self?.adjustWindowPosition(changeAlpha: true)
+            Task { @MainActor in self?.adjustWindowPosition(changeAlpha: true) }
         }
 
         NotificationCenter.default.addObserver(
             forName: Notification.Name.notchHeightChanged, object: nil, queue: nil
         ) { [weak self] _ in
-            self?.adjustWindowPosition()
+            Task { @MainActor in self?.adjustWindowPosition() }
         }
 
         NotificationCenter.default.addObserver(
-            forName: Notification.Name.automaticallySwitchDisplayChanged, object: nil, queue: nil
+            forName: Notification.Name.displayPlacementChanged, object: nil, queue: nil
         ) { [weak self] _ in
-            guard let self = self, let window = self.window else { return }
-            DispatchQueue.main.async {
-                window.alphaValue =
-                    self.coordinator.selectedScreen == self.coordinator.preferredScreen ? 1 : 0
-            }
-        }
-
-        NotificationCenter.default.addObserver(
-            forName: Notification.Name.showOnAllDisplaysChanged, object: nil, queue: nil
-        ) { [weak self] _ in
-            guard let self = self else { return }
-            self.cleanupWindows(shouldInvert: true)
-
-            if !Defaults[.showOnAllDisplays] {
-                let viewModel = self.vm
-                let window = self.createKannuWindow(
-                    for: NSScreen.main ?? NSScreen.screens.first!, with: viewModel)
-                self.window = window
-                self.adjustWindowPosition(changeAlpha: true)
-            } else {
-                self.adjustWindowPosition()
-            }
+            Task { @MainActor in self?.applyPlacementChange() }
         }
 
         DistributedNotificationCenter.default().addObserver(
@@ -985,53 +1134,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         KeyboardShortcuts.onKeyDown(for: .toggleNotchOpen) { [weak self] in
             guard let self = self else { return }
             guard Defaults[.enableShortcuts] else { return }
-
-            let mouseLocation = NSEvent.mouseLocation
-
-            var viewModel = self.vm
-
-            if Defaults[.showOnAllDisplays] {
-                for screen in NSScreen.screens {
-                    if screen.frame.contains(mouseLocation) {
-                        if let screenViewModel = self.viewModels[screen] {
-                            viewModel = screenViewModel
-                            break
-                        }
-                    }
-                }
-            }
-
-            self.closeNotchWorkItem?.cancel()
-            self.closeNotchWorkItem = nil
-
-            switch viewModel.notchState {
-            case .closed:
-                viewModel.open()
-
-                let workItem = DispatchWorkItem { [weak viewModel] in
-                    viewModel?.close()
-                }
-                self.closeNotchWorkItem = workItem
-
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: workItem)
-            case .open:
-                viewModel.close()
-            }
+            self.toggleNotch()
         }
 
         KeyboardShortcuts.isEnabled = Defaults[.enableShortcuts]
         registerOptionalShortcutHandlers()
         updateFeatureShortcutAvailability()
 
-        if !Defaults[.showOnAllDisplays] {
+        if !Defaults[.displayPlacement].usesOneWindowPerDisplay, let screen = DisplayPlacementRuntime.activeScreen() {
             let viewModel = self.vm
-            let window = createKannuWindow(
-                for: NSScreen.main ?? NSScreen.screens.first!, with: viewModel)
+            let window = createKannuWindow(for: screen, with: viewModel)
             self.window = window
             adjustWindowPosition(changeAlpha: true)
         } else {
             adjustWindowPosition(changeAlpha: true)
         }
+        // Without this the pointer monitor only ever appeared after a replug or a settings change,
+        // so a launch with two externals connected sat on whichever display resolved first and
+        // never followed the pointer at all.
+        syncPointerTracking()
         
         // Skip onboarding window and welcome sound under UI testing.
         if coordinator.firstLaunch && !AppRuntimeEnvironment.isUITesting {
@@ -1304,17 +1425,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     let logData = pipe.fileHandleForReading.readDataToEndOfFile()
                     try logData.write(to: logsFile)
                     
-                    let diagDir = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Logs/DiagnosticReports")
-                    let allFiles = (try? FileManager.default.contentsOfDirectory(at: diagDir, includingPropertiesForKeys: nil)) ?? []
-                    for file in allFiles where file.lastPathComponent.contains("Kannu") {
-                        try? FileManager.default.copyItem(at: file, to: tempDir.appendingPathComponent(file.lastPathComponent))
+                    // Both directory reads used to be `try?`, so a folder Kannu cannot read produced
+                    // a zip with no crash reports in it and said nothing. Now the export records
+                    // what it could not read, and the user can see why the archive looks thin.
+                    var skipped: [String] = []
+                    var copied = 0
+                    let diagnosticDirectories = [
+                        URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Logs/DiagnosticReports"),
+                        URL(fileURLWithPath: "/Library/Logs/DiagnosticReports"),
+                        URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Logs/Kannu")
+                    ]
+                    for directory in diagnosticDirectories {
+                        do {
+                            let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+                            for file in files where file.lastPathComponent.contains("Kannu")
+                                || file.lastPathComponent.hasPrefix("hang-")
+                                || file.lastPathComponent.hasPrefix("exception-") {
+                                try? FileManager.default.copyItem(at: file, to: tempDir.appendingPathComponent(file.lastPathComponent))
+                                copied += 1
+                            }
+                        } catch {
+                            skipped.append("\(directory.lastPathComponent): \(error.localizedDescription)")
+                        }
                     }
-                    
-                    let sysDiagDir = URL(fileURLWithPath: "/Library/Logs/DiagnosticReports")
-                    let sysFiles = (try? FileManager.default.contentsOfDirectory(at: sysDiagDir, includingPropertiesForKeys: nil)) ?? []
-                    for file in sysFiles where file.lastPathComponent.contains("Kannu") {
-                        try? FileManager.default.copyItem(at: file, to: tempDir.appendingPathComponent(file.lastPathComponent))
+                    if !skipped.isEmpty {
+                        let note = (["Kannu could not read these folders:"] + skipped).joined(separator: "\n") + "\n"
+                        try? Data(note.utf8).write(to: tempDir.appendingPathComponent("not_collected.txt"))
                     }
+                    Logger.log("[ExportLogs] Collected \(copied) diagnostics, skipped \(skipped.count) folders", category: .lifecycle)
                     
                     let zipProcess = Process()
                     zipProcess.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
@@ -1332,7 +1470,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         alert.messageText = "Logs Exported"
                         alert.informativeText = "Logs and crash reports have been successfully exported to \(url.lastPathComponent)."
                         alert.alertStyle = .informational
-                        alert.runModal()
+                        ModalPresenter.present(alert)
                     }
                 } catch {
                     DispatchQueue.main.async {
@@ -1340,7 +1478,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         alert.messageText = "Export Failed"
                         alert.informativeText = "Failed to export logs: \(error.localizedDescription)"
                         alert.alertStyle = .critical
-                        alert.runModal()
+                        ModalPresenter.present(alert)
                     }
                 }
             }
@@ -1447,62 +1585,158 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         previousScreens = currentScreens
         
-        if screensChanged {
-            DispatchQueue.main.async { [weak self] in
-                self?.cleanupWindows()
-                self?.adjustWindowPosition()
-            }
+        guard screensChanged else { return }
+
+        // Plugging in a dock emits several of these in a row. Rebuilding on each one ran two
+        // teardown/rebuild cycles at once and reset every hosted view's state; cancelling the
+        // pending task is both the debounce and the in-flight guard.
+        screenChangeTask?.cancel()
+        screenChangeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled, let self else { return }
+            self.screenChangeTask = nil
+            // Both lifecycles, not only the one the current placement uses: `cleanupWindows` tore
+            // down one or the other and left the wrong one's windows behind on a placement change.
+            self.tearDownAllWindows()
+            self.adjustWindowPosition()
+            self.syncPointerTracking()
         }
     }
     
-    @objc func adjustWindowPosition(changeAlpha: Bool = false) {
-        if Defaults[.showOnAllDisplays] {
-            let currentScreens = Set(NSScreen.screens)
-            
-            for screen in windows.keys where !currentScreens.contains(screen) {
-                if let window = windows[screen] {
-                    viewModels[screen]?.onViewTeardown?()
-                    viewModels[screen]?.onViewTeardown = nil
-                    window.close()
-                    windows.removeValue(forKey: screen)
-                    viewModels.removeValue(forKey: screen)
-                }
+    /// Switches Kannu between "one window per display" and "one window on a resolved display".
+    ///
+    /// The two modes have separate window lifecycles — the `windows`/`viewModels` dictionaries and
+    /// the single `window`/`vm` — so changing placement tears one down and builds the other.
+    @MainActor
+    private func applyPlacementChange() {
+        // Tear down *both* lifecycles, not the opposite one.
+        //
+        // This used to call `cleanupWindows(shouldInvert: true)`, which was correct only while the
+        // trigger was a boolean and the lifecycle class always flipped. Three of the four placement
+        // modes share the single-window lifecycle, so switching between them inverted to the
+        // dictionary branch — empty, a no-op — and then overwrote `self.window` without closing it.
+        // The old window stayed on screen at full alpha, still in the notch space, still hosting a
+        // view bound to the same view model, and unreachable by every later reposition. Picking a
+        // display in `chooseDisplay` added one each time.
+        tearDownAllWindows()
+
+        // Pointer tracking follows the new mode whatever happens below, including the early return.
+        defer { syncPointerTracking() }
+
+        if !Defaults[.displayPlacement].usesOneWindowPerDisplay {
+            // No screen at all (clamshell, every display asleep): wait for the next screen change
+            // rather than force-unwrapping an empty list, which traps with no report.
+            guard let screen = DisplayPlacementRuntime.activeScreen() else { return }
+            window = createKannuWindow(for: screen, with: vm)
+        }
+        adjustWindowPosition(changeAlpha: true)
+    }
+
+    /// Closes every window Kannu owns, in either lifecycle.
+    @MainActor
+    private func tearDownAllWindows() {
+        for id in windows.keys { tearDownWindow(forDisplay: id) }
+        if let window {
+            vm.onViewTeardown?()
+            vm.onViewTeardown = nil
+            NotchSpaceManager.shared.notchSpace.windows.remove(window)
+            window.close()
+            self.window = nil
+        }
+    }
+
+    // MARK: - Following the pointer, only when it can matter
+
+    /// Installs a mouse-moved monitor only while the placement actually depends on the pointer —
+    /// `externalTakesOver` with two or more externals — and tears it down the moment it does not.
+    /// With one external, or any other mode, there are no wakeups at all.
+    @MainActor
+    func syncPointerTracking() {
+        if DisplayPlacementRuntime.needsPointerTracking() {
+            guard pointerMonitor == nil else { return }
+            pointerMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] _ in
+                Task { @MainActor in self?.schedulePointerReposition() }
             }
-            
-            for screen in currentScreens {
-                if windows[screen] == nil {
+        } else if let monitor = pointerMonitor {
+            NSEvent.removeMonitor(monitor)
+            pointerMonitor = nil
+        }
+    }
+
+    /// Coalesced: a mouse-moved stream is continuous, so at most one placement pass runs every
+    /// 250 ms, the same discipline the hidden-edge hover poll already uses.
+    @MainActor
+    private func schedulePointerReposition() {
+        guard pointerRepositionTask == nil else { return }
+        pointerRepositionTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            self?.pointerRepositionTask = nil
+            guard let self, !Task.isCancelled, DisplayPlacementRuntime.needsPointerTracking() else { return }
+            let current = self.window?.screen.flatMap(DisplayPlacementRuntime.displayID(for:))
+            guard let target = DisplayPlacementRuntime.activeDisplayIDs().first, target != current else { return }
+            self.adjustWindowPosition(changeAlpha: true)
+        }
+    }
+
+    @MainActor
+    @objc func adjustWindowPosition(changeAlpha: Bool = false) {
+        // A window is never put back over the lock screen: plugging a display in while locked used
+        // to produce a full-alpha notch on top of it, and `onScreenUnlocked` then queued another.
+        //
+        // `windowsHiddenForLock` is cleared in exactly one place, reachable only from
+        // `com.apple.screenIsUnlocked` — a notification macOS is known to drop, which is why
+        // `LockScreenManager` backs it with a session-active observer and a poll. Before this guard
+        // existed a missed notification healed itself on the next screen change, which rebuilt and
+        // ordered the windows front. Now it would hide Kannu until relaunch, so trust the lock
+        // manager over our own flag and recover here.
+        if windowsHiddenForLock, !LockScreenManager.shared.isLocked {
+            restoreWindowsAfterLock()
+        }
+        // A display unplugged while the screen is locked still loses its window: the lock defers
+        // creating and showing windows, never tearing down one whose display is gone.
+        if Defaults[.displayPlacement].usesOneWindowPerDisplay {
+            let liveIDs = Set(NSScreen.screens.compactMap(DisplayPlacementRuntime.displayID(for:)))
+            for id in windows.keys where !liveIDs.contains(id) {
+                tearDownWindow(forDisplay: id)
+            }
+        }
+        guard !windowsHiddenForLock, !LockScreenManager.shared.isLocked else { return }
+
+        if Defaults[.displayPlacement].usesOneWindowPerDisplay {
+            let screensByID = Dictionary(
+                NSScreen.screens.compactMap { screen in
+                    DisplayPlacementRuntime.displayID(for: screen).map { ($0, screen) }
+                },
+                uniquingKeysWith: { first, _ in first }
+            )
+
+            for (id, screen) in screensByID {
+                if windows[id] == nil {
                     let viewModel = KannuViewModel(screen: screen.localizedName)
-                    let window = createKannuWindow(for: screen, with: viewModel)
-                    
-                    windows[screen] = window
-                    viewModels[screen] = viewModel
+                    windows[id] = createKannuWindow(for: screen, with: viewModel)
+                    viewModels[id] = viewModel
                 }
-                
-                if let window = windows[screen], let viewModel = viewModels[screen] {
+
+                if let window = windows[id], let viewModel = viewModels[id] {
                     positionWindow(window, on: screen, changeAlpha: changeAlpha)
-                    
+
                     if viewModel.notchState == .closed {
                         viewModel.close()
                     }
                 }
             }
         } else {
-            let selectedScreen: NSScreen
-
-            if let preferredScreen = NSScreen.screens.first(where: {
-                $0.localizedName == coordinator.preferredScreen
-            }) {
-                coordinator.selectedScreen = coordinator.preferredScreen
-                selectedScreen = preferredScreen
-            } else if Defaults[.automaticallySwitchDisplay], let mainScreen = NSScreen.main {
-                coordinator.selectedScreen = mainScreen.localizedName
-                selectedScreen = mainScreen
-            } else {
-                if let window = window {
-                    window.alphaValue = 0
-                }
+            // One window, on the screen the placement mode resolves to: the external display while
+            // one is plugged in, the built-in when none is, the pointer's display with two or more
+            // externals, or the display the user named. `DisplayPlacementResolver` decides; this
+            // only finds the `NSScreen` that carries the id it returned.
+            guard let selectedScreen = DisplayPlacementRuntime.activeScreen() else {
+                // No screens at all: clamshell, or every display asleep. The next
+                // screen-parameters notification places the window.
+                window?.alphaValue = 0
                 return
             }
+            coordinator.selectedScreen = selectedScreen.localizedName
             
             vm.screen = selectedScreen.localizedName
             vm.notchSize = getClosedNotchSize(screen: selectedScreen.localizedName)
@@ -1568,8 +1802,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 extension Notification.Name {
     static let selectedScreenChanged = Notification.Name("SelectedScreenChanged")
     static let notchHeightChanged = Notification.Name("NotchHeightChanged")
-    static let showOnAllDisplaysChanged = Notification.Name("showOnAllDisplaysChanged")
-    static let automaticallySwitchDisplayChanged = Notification.Name("automaticallySwitchDisplayChanged")
+    static let displayPlacementChanged = Notification.Name("displayPlacementChanged")
 }
 
 extension CGRect: @retroactive Hashable {

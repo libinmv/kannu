@@ -215,7 +215,7 @@ final class VerticalHUDWindowManager {
         win.level = NSWindow.Level.screenSaver
         win.collectionBehavior = [NSWindow.CollectionBehavior.canJoinAllSpaces, NSWindow.CollectionBehavior.stationary, NSWindow.CollectionBehavior.ignoresCycle, NSWindow.CollectionBehavior.fullScreenAuxiliary]
         win.hasShadow = false
-        win.contentView = hostingView
+        win.setHostedContent(hostingView)
         win.alphaValue = 0
         
         // Default to ignoring events until explicitly shown

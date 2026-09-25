@@ -1000,7 +1000,9 @@ final class ShelfItemViewModel: ObservableObject {
             
             alert.accessoryView = accessoryView
             
-            let response = alert.runModal()
+            // The accessory view's sliders and popups only track inside a modal session, so this
+            // one stays app-modal — activated and raised, so it is reachable.
+            let response = ModalPresenter.runAppModal(alert)
             
             if response == .alertFirstButtonReturn {
                 // Get selected options
@@ -1073,7 +1075,7 @@ final class ShelfItemViewModel: ObservableObject {
             alert.informativeText = message
             alert.alertStyle = .warning
             alert.addButton(withTitle: "OK")
-            alert.runModal()
+            ModalPresenter.present(alert)
         }
     }
 

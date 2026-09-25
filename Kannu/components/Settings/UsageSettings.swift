@@ -38,12 +38,9 @@ struct UsageSettings: View {
                 }
                 .settingsHighlight(id: highlightID("Enable LLM Usage Monitor"))
             } header: {
-                Text("Usage Monitor")
+                SettingsSectionHeader("Usage Monitor")
             } footer: {
-                Text("Adds a Usage tab to the notch that tracks token usage and spend across your configured AI providers.")
-                    .multilineTextAlignment(.trailing)
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
+                SettingsFooter("Adds a Usage tab to the notch that tracks token usage and spend across your configured AI providers.")
             }
 
             if enableLLMUsageFeature {
@@ -68,12 +65,22 @@ struct UsageSettings: View {
                     }
                     .settingsHighlight(id: highlightID("Antigravity Provider"))
                 } header: {
-                    Text("Providers")
+                    SettingsSectionHeader("Providers")
                 } footer: {
-                    Text("Choose which AI providers appear in the Usage tab. Claude reads everything from local files and needs no permission; the gauge button on its card hides or shows the rate-limit bars. Codex and Cursor need each CLI signed in locally. Full Disk Access is not required.")
-                        .multilineTextAlignment(.trailing)
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
+                    SettingsFooter("Choose which AI providers appear in the Usage tab. Claude reads everything from local files and needs no permission; the gauge button on its card hides or shows the rate-limit bars. Codex and Cursor need each CLI signed in locally. Full Disk Access is not required.")
+                }
+
+                Section {
+                    SettingsRow("Check Codex and Cursor limits in the background", description: "While a Codex or Cursor agent is working, Kannu asks for your usage every 5 minutes — the same request the Usage tab makes when it is open. Off: they update only while the Usage tab is open.") {
+                        Defaults.Toggle(key: .checkQuotaInBackground) {
+                            Text("Check Codex and Cursor limits in the background")
+                        }
+                    }
+                    .settingsHighlight(id: highlightID("Check Codex and Cursor limits in the background"))
+                } header: {
+                    SettingsSectionHeader("Alerts")
+                } footer: {
+                    SettingsFooter("Each bar also says where it is heading at your current pace, once Kannu has seen it for a little while. A phone push for a nearly full limit is under Agents › Mobile notifications.")
                 }
             }
         }

@@ -57,6 +57,19 @@ final class ClaudeDesktopUsageHistoryTests: XCTestCase {
                        now.addingTimeInterval(-60 * 60 + 5 * 3600))
     }
 
+    func testADerivedResetIsMarkedInferred() throws {
+        // Because it is derived, `ClaudeUsageSnapshot.merged` lets an exact reset from another
+        // source replace it; a window with no rollover has no reset and nothing to mark.
+        // fh drops 30 -> 7 (a rollover); sd only rises (none).
+        let snapshot = try XCTUnwrap(ClaudeDesktopUsageHistory.parse(json: series([
+            (-120, 30, 50), (-60, 7, 51), (-30, 9, 52)
+        ]), now: now))
+        XCTAssertEqual(snapshot.window("five_hour")?.resetIsInferred, true)
+        XCTAssertNotNil(snapshot.window("five_hour")?.resetsAt)
+        XCTAssertEqual(snapshot.window("seven_day")?.resetIsInferred, false)
+        XCTAssertNil(snapshot.window("seven_day")?.resetsAt)
+    }
+
     func testWeeklyResetIsSevenDaysAfterTheRollover() {
         let snapshot = ClaudeDesktopUsageHistory.parse(json: series([
             (-120, 10, 82), (-90, 12, 0), (-30, 14, 3)

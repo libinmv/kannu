@@ -7,7 +7,9 @@ Thank you for your interest in contributing to Kannu! We welcome contributions f
 - [Code of Conduct](#code-of-conduct)
 - [Development Setup](#development-setup)
 - [Git Hook Setup](#git-hook-setup)
+- [Working with AI Agents](#working-with-ai-agents)
 - [Pull Request Process](#pull-request-process)
+- [Before Changing Agent Status Code](#before-changing-agent-status-code)
 - [Commit Checklist](#commit-checklist)
 - [Coding Guidelines](#coding-guidelines)
 - [Design Contributions](#design-contributions)
@@ -36,12 +38,12 @@ We are committed to fostering a welcoming and inclusive environment. Please read
 
 - **Requirements:**
 	- macOS Sonoma 14.0 or later
-	- Xcode 15.0+ with Swift 5.9 toolchain
+	- Xcode 16.4 or later, with a Swift 6.1+ toolchain — `KannuApp.swift` uses `extension CGRect: @retroactive Hashable`, which needs Swift 6.0, and CI builds on `macos-15`/`macos-26` for Swift 6.1+
 	- MacBook with a notch (for full feature testing)
 - **Clone the repo:**
 	```bash
 	git clone <your-fork-url>
-	cd AgentStatDynamicIsland
+	cd kannu
 	open Kannu.xcodeproj
 	```
 - **Build & Run:**
@@ -58,6 +60,21 @@ Run this once after cloning:
 ```
 
 This enables the repo-managed `pre-commit` hook from `.githooks/`.
+
+## Working with AI Agents
+
+Agents do a meaningful share of the work here — the Commit Checklist below asks for an agent feature
+label precisely because of that. If you are pointing one at this repository, or you are one:
+
+- **`AGENTS.md` at the repository root is the canonical instruction file.** It holds the engineering
+  standards: the architecture principles, the build/test/run commands, the house conventions and the
+  traps this project has already paid for. Codex, Cursor, Copilot, Aider and Windsurf read it
+  automatically.
+- **`CLAUDE.md` is Claude Code's entry point**, because Claude Code reads that filename and not
+  `AGENTS.md`. It holds only Claude-specific machinery and imports the shared file with `@AGENTS.md`.
+- **Do not copy rules between them.** One rule in two files is how this repo shipped a documented
+  CHANGELOG shape that the commit hook rejected — twice, in two different files.
+  `KannuTests/ChangelogRuleDocsTests.swift` now fails CI if the copies disagree with the hook.
 
 ## Pull Request Process
 
@@ -79,11 +96,23 @@ that area, and add an entry when you find a bug recurring.
 Before each commit:
 
 1. Define the **developer feature label** (what you are building).
-2. If using an agent, define the **agent feature label**.
-3. Add one new entry to `CHANGELOG.md` under `## [Unreleased]` with:
-   - `Developer label`
-   - `Agent label`
-   - `Changes` bullets listed one-by-one
+2. Define the **agent feature label** if an agent did any of the work. The line itself is required
+   either way — write `none — human-authored` when it did not.
+3. Add one new entry at the **top** of `## [Unreleased]` in `CHANGELOG.md`, in exactly this shape.
+   `.githooks/pre-commit` parses it literally and rejects anything else, so the bold keys and the
+   trailing colons matter:
+
+   ```markdown
+   ### YYYY-MM-DD - <a short title for the change>
+   - **Developer label:** <the developer feature label, or the request in the requester's own words>
+   - **Agent label:** <agent feature label, or "none — human-authored">
+   - **Changes:**
+     - <one concrete change per bullet>
+   ```
+
+   The heading and the `Developer label` are not the same string: the heading titles the change,
+   while the label names the feature or quotes the request that prompted it. Every entry in
+   `CHANGELOG.md` follows that split — read the last few before writing yours.
 4. Stage `CHANGELOG.md` together with the code changes.
 5. Use a commit subject that reflects the developer feature label (avoid vague messages like `Fixes`).
 

@@ -36,16 +36,46 @@ final class PassiveClaudeStateTests: XCTestCase {
         XCTAssertTrue(result.visible)
     }
 
-    func testStaleWorkingWithFreshMtimeStaysThinking() {
-        // Bookkeeping or interim writes count as life signs for an owed response.
-        let tail = Tail(state: .working, recordTimestamp: now.addingTimeInterval(-660))
+    func testStaleWorkingWithFreshConversationalMtimeStaysThinking() {
+        // Interim writes whose newest record is conversational are life signs for an owed
+        // response — mid-turn tool results keep the light on between records.
+        let tail = Tail(state: .working, recordTimestamp: now.addingTimeInterval(-660),
+                        newestRecordIsConversational: true)
         let result = resolve(tail: tail, jsonlMtime: now.addingTimeInterval(-30))
         XCTAssertEqual(result.state, .thinking)
+    }
+
+    func testDraftTrailerDoesNotRelightAStaleWorkingSession() {
+        // The paste bug: an unsent draft appends a `last-prompt` trailer, bumping mtime hours
+        // after the last conversational record. Bookkeeping mtime is not evidence — the chat
+        // ages out on the deciding record's own clock and shows as a dim card.
+        let tail = Tail(state: .working, recordTimestamp: now.addingTimeInterval(-660),
+                        newestRecordIsConversational: false)
+        let result = resolve(tail: tail, jsonlMtime: now.addingTimeInterval(-5))
+        XCTAssertEqual(result.state, .inactive)
+        XCTAssertEqual(result.rawState, "idle")
+        XCTAssertTrue(result.visible)
+    }
+
+    func testFreshWorkingWithBookkeepingTrailerStaysThinking() {
+        // Mid-turn, an attachment lands milliseconds after the user record. The deciding
+        // record itself is fresh, so the light holds without needing the mtime term.
+        let tail = Tail(state: .working, recordTimestamp: now.addingTimeInterval(-20),
+                        newestRecordIsConversational: false)
+        XCTAssertEqual(resolve(tail: tail, jsonlMtime: now).state, .thinking)
     }
 
     func testWorkingWithNoEvidenceStaysThinking() {
         let tail = Tail(state: .working, recordTimestamp: nil)
         XCTAssertEqual(resolve(tail: tail, jsonlMtime: nil).state, .thinking)
+    }
+
+    func testDraftTrailerWithNoRecordTimestampStaysThinking() {
+        // Conservatism holds even with a bookkeeping trailer: no deciding timestamp at all
+        // never ages out — same rule as testWorkingWithNoEvidenceStaysThinking.
+        let tail = Tail(state: .working, recordTimestamp: nil,
+                        newestRecordIsConversational: false)
+        XCTAssertEqual(resolve(tail: tail, jsonlMtime: now).state, .thinking)
     }
 
     func testLongToolRunStaysExecuting() {
@@ -95,4 +125,39 @@ final class PassiveClaudeStateTests: XCTestCase {
         XCTAssertEqual(result.rawState, "thinking")
         XCTAssertTrue(result.visible)
     }
+
+    // MARK: - Is that process still this session? (2026-09-12)
+
+    /// The CLI writes its session record a moment after the process starts — 13 s on this Mac for a
+    /// chat that resumed a 130 MB transcript. Requiring the kernel's start time to be within five
+    /// seconds of `startedAt` marked that live chat dead: its green card was demoted to stopped,
+    /// lost its process id, and went invisible. A reused pid is the thing to catch, and that always
+    /// starts *after* the record was written.
+    func testALiveSessionWhoseRecordWasWrittenLateIsStillAlive() {
+        typealias M = AgentTrafficLightMapper
+        let record: Int64 = 1_789_197_172_129
+        XCTAssertTrue(M.processMatchesSessionRecord(processStartMs: record - 13_100, recordStartedAtMs: record),
+                      "13 s between the process starting and the record being written")
+        XCTAssertTrue(M.processMatchesSessionRecord(processStartMs: record - 1_000, recordStartedAtMs: record))
+        XCTAssertTrue(M.processMatchesSessionRecord(processStartMs: record + 4_000, recordStartedAtMs: record),
+                      "clock slack around the record's own timestamp")
+        XCTAssertFalse(M.processMatchesSessionRecord(processStartMs: record + 60_000, recordStartedAtMs: record),
+                       "a process that started after the record is a reused pid")
+        XCTAssertFalse(M.processMatchesSessionRecord(processStartMs: record - 3_600_000, recordStartedAtMs: record),
+                       "an hour before the record is not this session")
+    }
+
+    func testTheRecordsOwnProcessStartDecidesWhenItHasOne() {
+        typealias M = AgentTrafficLightMapper
+        let record: Int64 = 1_789_197_172_129
+        let procStart = record - 13_100
+        XCTAssertTrue(M.processMatchesSessionRecord(processStartMs: procStart, recordStartedAtMs: record,
+                                                    recordProcStartMs: procStart))
+        XCTAssertTrue(M.processMatchesSessionRecord(processStartMs: procStart + 900, recordStartedAtMs: record,
+                                                    recordProcStartMs: procStart), "second resolution")
+        XCTAssertFalse(M.processMatchesSessionRecord(processStartMs: procStart + 30_000, recordStartedAtMs: record,
+                                                     recordProcStartMs: procStart),
+                       "same pid, different process")
+    }
+
 }
