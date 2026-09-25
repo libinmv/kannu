@@ -1288,7 +1288,7 @@ extension Defaults.Keys {
     static let adrDetectionConfirmEachRun = Key<Bool>("adrDetectionConfirmEachRun", default: true)
     static let adrDetectionTriageEnabled = Key<Bool>("adrDetectionTriageEnabled", default: false)
     static let adrDetectionTriageModel = Key<String>("adrDetectionTriageModel", default: "gpt-4o")
-    static let adrDetectionReasoningModel = Key<String>("adrDetectionReasoningModel", default: "claude-sonnet-4-6")
+    static let adrDetectionReasoningModel = Key<String>("adrDetectionReasoningModel", default: "claude-sonnet-5")
     static let adrDetectionUseAnthropicAPIKey = Key<Bool>("adrDetectionUseAnthropicAPIKey", default: false)
     static let adrDetectionContextThreatIntelligence = Key<Bool>("adrDetectionContextThreatIntelligence", default: true)
     static let adrDetectionContextSourceCode = Key<Bool>("adrDetectionContextSourceCode", default: true)

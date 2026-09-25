@@ -40,7 +40,7 @@ enum ADRDetectionCommand {
     struct Options: Equatable {
         var triageEnabled = false
         var triageModel = "gpt-4o"
-        var reasoningModel = "claude-sonnet-4-6"
+        var reasoningModel = "claude-sonnet-5"
         var threatIntelligence = true
         var sourceCode = true
         var policy = true

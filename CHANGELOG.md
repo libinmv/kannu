@@ -4,6 +4,16 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-25 - New analyses default to claude-sonnet-5
+- **Developer label:** faster and cheaper answers from ADR Detection where nothing has to be proven first
+- **Agent label:** Jev research follow-up — the one-line default, shipped alone so it reverts alone
+- **Changes:**
+  - `adrDetectionReasoningModel` defaults to `claude-sonnet-5` ($2/$10 per MTok vs
+    `claude-sonnet-4-6`'s $3/$15, current generation). Only users who never edited the
+    "Reasoning model" field are affected; an edited field is already stored and wins. The
+    string is consumed by upstream's own Claude session, so if an older Claude CLI rejects
+    it the run fails with a visible upstream error and the field takes any model name.
+
 ### 2026-09-25 - A shadow-triage benchmark decides which engine may gate the reasoning agent
 - **Developer label:** "jev is faster and cheaper, so could it potentially replace the current triage mechanism" — decide it with ADR-Bench numbers, not opinion
 - **Agent label:** Jev research Phase 0 — pre-registered decision rule, engines: upstream gpt-4o / claude-haiku-4-5 / Jev
