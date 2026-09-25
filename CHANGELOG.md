@@ -4,6 +4,27 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-25 - A shadow-triage benchmark decides which engine may gate the reasoning agent
+- **Developer label:** "jev is faster and cheaper, so could it potentially replace the current triage mechanism" — decide it with ADR-Bench numbers, not opinion
+- **Agent label:** Jev research Phase 0 — pre-registered decision rule, engines: upstream gpt-4o / claude-haiku-4-5 / Jev
+- **Changes:**
+  - `scripts/adr-triage-bench.py` (dev tooling; the app never runs it): runs shadow triage over
+    the checkout's ADR-Bench pack, per engine and per dataset — the bench as-is plus an
+    injection-augmented variant (a one-line benign claim inside a malicious task's tool output,
+    an accusation inside a benign one, the probe that dropped Jev from 96.5 % to 26.5 % in
+    priorbench's pre-registered test). Every engine judges the byte-identical evidence block via
+    upstream's own `_format_evidence_conversation`, schema and parser; engine errors escalate
+    (fail-open), results append to a JSONL so partial runs resume, and `--limit` defaults to 10
+    because every task costs real API money.
+  - The pre-registered rule is in the header and the summary: an engine may power a benign-exit
+    gate only if some confidence threshold escalates every malicious task on both datasets while
+    still exiting ≥ 60 % of benign ones; ECE and p50 latency are reported alongside. No engine
+    passing means the gate stays off, and that is a result.
+  - Not run on this Mac: there is no Detection checkout here and the engines need API keys. The
+    loader is written against upstream's `benchmark_pack.py` format, the upstream seams are
+    resolved defensively, and `--inspect` (free) prints the first records so the first run on a
+    checkout machine confirms the mapping before any money is spent.
+
 ### 2026-09-25 - ADR Detection trims tool results head+tail under a transcript budget
 - **Developer label:** "structure output and input to llm and get more faster answer" — the input half: cut what one analysis sends without hiding evidence
 - **Agent label:** Jev research follow-up — adapter v4 input budget, measured on this Mac's 323 transcripts (−40 % mean input)
