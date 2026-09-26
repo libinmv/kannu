@@ -84,6 +84,33 @@ final class AgentSecurityFindingGroupTests: XCTestCase {
         XCTAssertEqual(groups[0].lastSeen, ms(8 * 86_400_000 + 1_000))
     }
 
+    /// Grouping across chats is deliberate, but the row has to be able to *say* which chats — a row
+    /// that reports "3 chats" and will not name them reads as though it is withholding something.
+    /// `chatName` used to be interpolated into `summary` only, so the group could not report it.
+    func testTheGroupReportsTheChatsItSpans() {
+        let chats = [("chat-a", "Tenant Delete Agent"), ("chat-b", "gitlab orchestration"),
+                     ("chat-c", "Claude token usage"), ("chat-d", "Tenant Delete Agent")]
+        let findings = chats.enumerated().map { index, pair in
+            PolicySighting(kind: .command, matched: "ssh", tool: "Bash", blocked: false,
+                           eventCount: 1, firstSeenMs: t0 + Int64(index), lastSeenMs: t0 + Int64(index))
+                .finding(conversationID: pair.0, provider: "claude", chatName: pair.1,
+                         projectName: "p", cwd: "/p")
+        }
+        let group = AgentSecurityFindingGroup.group(findings)[0]
+        XCTAssertEqual(
+            group.chatNames,
+            ["Claude token usage", "Tenant Delete Agent", "gitlab orchestration"],
+            "sorted and de-duplicated — four sightings across three distinct chats"
+        )
+    }
+
+    /// A finding with no chat contributes no name, so a Discovery row shows no chat line at all.
+    func testAFindingWithNoChatContributesNoName() {
+        var finding = Self.bare(id: "d1", subject: "asset-notion")
+        finding.chatName = nil
+        XCTAssertTrue(AgentSecurityFindingGroup.group([finding])[0].chatNames.isEmpty)
+    }
+
     /// Two different rules stay two rows — grouping must not over-merge.
     func testDifferentRulesStayApart() {
         let ssh = PolicySighting(kind: .command, matched: "ssh", tool: "Bash", blocked: false,

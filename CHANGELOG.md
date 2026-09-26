@@ -4,6 +4,32 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-26 - A grouped row says which chats it came from
+- **Developer label:** "is the new build installed, i dont see the issues grouped by chat"
+- **Agent label:** Follow-up 58 - chat names on the grouped row; ship 1.3.2
+- **Changes:**
+  - **The report behind this was two things, and the first was the whole symptom:** 1.3.1 was
+    published but **not installed** — the running app was 1.3.0 / build 3, and `strings` found no
+    `AgentSecurityFindingGroup` or `groupSubject` in its binary, so the grouping code simply was not
+    there. Nothing was wrong with grouping.
+  - **The second was a real gap, and a decision that had never actually been made.** Grouping is
+    machine-wide, across chats, which was *inferred* rather than chosen: when offered machine-wide /
+    per-project / per-chat, the answer was a question about acknowledgement scope. Asked directly, the
+    choice is to keep machine-wide grouping and **name the chats on the collapsed row** instead of
+    hiding them behind Details. On the real data both designs collapse the 21 rotating `ASIA` keys to
+    one row, since they were all in one chat; the difference is only `ssh`.
+  - `chatName` is handed to every `finding(...)` builder and was only ever interpolated into
+    `summary`, so a group could not report which chats it spanned — it could only count opaque
+    `sessionID`s, and only when expanded. `AgentSecurityFinding` now carries `chatName` the way it
+    carries `projectName`, and `AgentSecurityFindingGroup` rolls the names up de-duplicated and
+    sorted.
+  - The collapsed row reads "7 occurrences · 3 chats · first … · last …" with the chats beneath it,
+    two names then a remainder ("Tenant Delete Agent, gitlab orchestration, +1"). A finding seen in
+    one chat shows no chat line — there is nothing to disambiguate. The expanded breakdown lists them
+    all, replacing the session-id tally with real names.
+  - Version 1.3.2, build **5**; the codename stays Heimdall, since the scheme names feature releases.
+
+
 ### 2026-09-26 - Ship 1.3.1 "Heimdall"
 - **Developer label:** "where is the release"
 - **Agent label:** Follow-up 57 - 1.3.1 release mechanics

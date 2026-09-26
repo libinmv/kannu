@@ -94,6 +94,11 @@ struct AgentSecurityFinding: Equatable, Hashable, Identifiable, Codable {
     /// chat (Discovery's assets, the new-server check's config files).
     var projectName: String? = nil
 
+    /// The chat this was seen in. Every builder is already handed it, but it used only to be
+    /// interpolated into `summary` — so a grouped row could not say which chats it spanned, only
+    /// count opaque session ids. Nil where there is no chat (Discovery, the new-server check).
+    var chatName: String? = nil
+
     /// The identity of the *problem*, with the parts that churn deliberately left out — a rotated
     /// credential's fingerprint, the conversation it happened in, the timestamp. `id` still
     /// identifies this one sighting, so acknowledgements written before grouping keep working and
@@ -261,6 +266,7 @@ extension AgentSecurityFinding {
                     firstSeen: firstSeenByID[id] ?? now,
                     lastSeen: now,
                     projectName: session.displayProjectName,
+                    chatName: session.displayChatName,
                     // The project and the agent, not the conversation: "this agent keeps being
                     // started with permission checks off in this repo" is one habit worth one row,
                     // however many sessions it spans.

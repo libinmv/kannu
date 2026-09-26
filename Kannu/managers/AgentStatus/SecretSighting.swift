@@ -218,6 +218,7 @@ struct SecretSighting: HookSighting {
             lastSeen: Date(timeIntervalSince1970: TimeInterval(lastSeenMs) / 1000),
             occurrences: eventCount,
             projectName: projectName,
+            chatName: chatName,
             // The kind of secret, its prefix and the tool that carried it — deliberately **not** the
             // fingerprint. Short-lived credentials rotate by design (an AWS `ASIA` prefix is an STS
             // session token), so putting the fingerprint in the key makes every re-issue a brand-new
