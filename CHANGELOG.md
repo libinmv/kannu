@@ -4,6 +4,20 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-26 - Ship 1.3.1 "Heimdall"
+- **Developer label:** "where is the release"
+- **Agent label:** Follow-up 57 - 1.3.1 release mechanics
+- **Changes:**
+  - `CURRENT_PROJECT_VERSION` 3 -> **4** in both configurations and `MARKETING_VERSION` 1.3.0 ->
+    1.3.1. The build number is the one Sparkle compares, and the live feed's newest item is build 3,
+    so leaving it would have published a release nobody is offered.
+  - 1.3.1 is a patch, so the codename stays **Heimdall**: the scheme names *feature* releases, and a
+    patch does not consume Horus.
+  - Curated notes at `docs/release-notes/1.3.1.md`; the publish step resolves them from the tag.
+  - `docs/SETTINGS.md` gains the rule the new finding row follows: a card's metadata is a
+    `SettingsValueText`, suppressed when it says nothing, and a fact is stated once — which is why
+    the sighting summaries stopped repeating the occurrence count in prose.
+
 ### 2026-09-26 - One row per problem: first reported, last reported, how many times
 - **Developer label:** "we have repeated issues thst come up to acknowledge but if they are same issue recurring we need a way to group them, maybe show first reported, then last reported, no of occurences"
 - **Agent label:** Follow-up 57, part A - group findings on what does not churn

@@ -76,6 +76,13 @@ section describes it, it does not define it.
   the same length everywhere. Same for `SettingsStepperRow`.
 - **An error line is a sibling of the row it belongs to**, so it takes that row's inset — including
   inside an Advanced disclosure.
+- **A card's metadata goes in `SettingsValueText`, and only when it says something.** A count, a
+  first/last-seen pair or a state note ("Still open in kannu") is a read-only value, so it takes the
+  component a trailing path or date takes. Suppress it when it adds nothing: a row standing for a
+  single occurrence, with two identical dates, is noise dressed as information —
+  `SecurityFindingRow` omits its recurrence line in exactly that case. And state a fact once. The
+  same count in prose *and* as a value reads as two different facts, which is why the sighting
+  summaries stopped appending "Seen N times." once the row began showing the real total.
 
 ## Section rules
 
