@@ -4,6 +4,20 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-26 - Bring development into the transcript-budget branch
+- **Developer label:** "make sure all of todays work after release of 1.3.1 is merged to dev"
+- **Agent label:** Follow-up 60 - land the ADR triage research on development
+- **Changes:**
+  - Merged `origin/development` (45 commits: the finding-grouping releases, the battery fixes, the
+    1.3.2 renumber) into `feat/adr-transcript-budget`. One textual conflict, `CHANGELOG.md`, kept
+    both sides.
+  - One semantic conflict: development's `AgentSecurityFindingGroupTests` builds an
+    `ADRSessionAnalysis` by its memberwise init, and this branch added four fields to it
+    (`analysisSeconds`, `messagesAnalyzed`, `inputCharacters`, `transcriptBytes`). The test now
+    passes them as nil. Full suite after the merge: **822 tests, 0 failures** (815 on development
+    plus this branch's 7).
+
+
 ### 2026-09-26 - The next release is 1.3.2, because 1.3.2 never shipped
 - **Developer label:** "Latest published still 1.3.1 (build 4), then it should be 1.3.2, remember
   that"
