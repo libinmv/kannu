@@ -73,6 +73,7 @@
 		AA100000000000000000008D /* CrashReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000008C /* CrashReport.swift */; };
 		AA100000000000000000008F /* DiagnosticScrub.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000008E /* DiagnosticScrub.swift */; };
 		AA1000000000000000000091 /* DisplayPlacementResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000090 /* DisplayPlacementResolver.swift */; };
+		AA10000000000000000000B1 /* ClosedNotchVisibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000AF /* ClosedNotchVisibility.swift */; };
 		AA1000000000000000000093 /* GitHubIssue.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000092 /* GitHubIssue.swift */; };
 		AA1000000000000000000095 /* BluetoothLiveBatteryWrites.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000094 /* BluetoothLiveBatteryWrites.swift */; };
 		AA1000000000000000000097 /* OSDSuppressionDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000096 /* OSDSuppressionDecision.swift */; };
@@ -162,6 +163,7 @@
 		AA100000000000000000008C /* CrashReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CrashReport.swift; path = Kannu/managers/CrashReport.swift; sourceTree = SOURCE_ROOT; };
 		AA100000000000000000008E /* DiagnosticScrub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DiagnosticScrub.swift; path = Kannu/managers/DiagnosticScrub.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000090 /* DisplayPlacementResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DisplayPlacementResolver.swift; path = Kannu/managers/Display/DisplayPlacementResolver.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000AF /* ClosedNotchVisibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClosedNotchVisibility.swift; path = Kannu/managers/Display/ClosedNotchVisibility.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000092 /* GitHubIssue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GitHubIssue.swift; path = Kannu/managers/GitHubIssue.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000094 /* BluetoothLiveBatteryWrites.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BluetoothLiveBatteryWrites.swift; path = Kannu/managers/BluetoothLiveBatteryWrites.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000096 /* OSDSuppressionDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OSDSuppressionDecision.swift; path = Kannu/managers/OSDSuppressionDecision.swift; sourceTree = SOURCE_ROOT; };
@@ -599,6 +601,7 @@
 				AA100000000000000000008D /* CrashReport.swift in Sources */,
 				AA100000000000000000008F /* DiagnosticScrub.swift in Sources */,
 				AA1000000000000000000091 /* DisplayPlacementResolver.swift in Sources */,
+				AA10000000000000000000B1 /* ClosedNotchVisibility.swift in Sources */,
 				AA1000000000000000000093 /* GitHubIssue.swift in Sources */,
 				AA1000000000000000000095 /* BluetoothLiveBatteryWrites.swift in Sources */,
 				AA1000000000000000000097 /* OSDSuppressionDecision.swift in Sources */,

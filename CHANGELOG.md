@@ -4,14 +4,53 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
-### 2026-09-25 - Nothing unreleased yet - 1.3.0 just shipped
-- **Developer label:** release bookkeeping, not a feature
-- **Agent label:** Follow-up 55 - placeholder so the section is not empty
+### 2026-09-26 - The notch cannot go blank because Kannu has not worked out which screen it is on
+- **Developer label:** "in local build ui is not coming can you check"
+- **Agent label:** Follow-up 57, part B - an unknown screen is not a notchless screen
 - **Changes:**
-  - 1.3.0 shipped on 2026-09-25; everything it contains is under `## [1.3.0]` below. Replace this
-    placeholder with the next real entry rather than adding one above it. It exists only because
-    `.githooks/pre-commit` rejects a commit whose `[Unreleased]` section is empty, so the section
-    states why it is empty instead of saying nothing.
+  - **The bug, seen in the field on 1.3.0's own code.** The app was perfectly healthy - idle main
+    thread, agent monitor publishing, `Caffeinate` reconciling - and drew no notch at all for over a
+    day, hover included. `KannuViewModel.hideOnClosed` is initialised `true` and its only writer is
+    the fullscreen detector's Combine sink, which was gated on `$screen.compactMap { $0 }`. That
+    swallowed the initial nil, and `CombineLatest` emits nothing until every side has spoken, so a
+    view model whose `screen` was never assigned produced **no signal at all** and kept the
+    initialiser forever. `vm.screen` is assigned only inside `adjustWindowPosition`, below a lock
+    guard and a no-screens early return, so a launch while the screen was locked - or in clamshell,
+    or with every display asleep - left it nil permanently. Repeated sleep/wake and display-off/on
+    cycles preceded the report.
+  - **It was two failures wearing one coat.** Besides refusing to paint
+    (`ContentView.shouldPaintClosedNotchBackground`), the stuck flag collapsed
+    `effectiveClosedNotchHeight` to **zero** - because a nil `screen` made `currentScreen` nil, which
+    the expression read as "this display has no notch", *on a notched MacBook*. That removed the
+    hover target too, so the notch could not even be summoned back. Fixing only the paint guard
+    would have left an invisible, un-hoverable notch and looked like a fix.
+  - The distinction the fix turns on: **an unknown screen is not a notchless screen.** `hideOnClosed`
+    now starts `false` (hiding is the exception that needs evidence), the detector chain combines
+    flat so a nil screen simply answers "not fullscreen" instead of dropping out, an unresolvable
+    screen keeps the notch's height, and launch seeds `vm.screen` itself before handing off to
+    `adjustWindowPosition` - which may still legitimately bail. Only *positioning* stays behind the
+    lock guard; identity never does.
+  - **A missing Accessibility grant no longer hides the product.** `isInNativeFullscreen` answered
+    `true` when `AXIsProcessTrusted()` was false - "assume fullscreen" - so a freshly installed
+    build, whose new code identity drops every TCC grant, hid the notch for any *maximized* window
+    under `.always` and for a maximized media window under `.nowPlayingOnly`. Confirmed live on the
+    reporter's Mac. It now answers `false` and says once in the log that detection is degraded:
+    showing the notch over a fullscreen app is a cosmetic miss, hiding it everywhere reads as a
+    broken app.
+  - **A dropped unlock notification recovers on its own.** macOS drops `com.apple.screenIsUnlocked`
+    often enough that `LockScreenManager`'s 500 ms poll is the real recovery path, and it cleared
+    `isLocked` without telling `AppDelegate` - so `windowsHiddenForLock` stayed set and the self-heal
+    inside `adjustWindowPosition` was never reached. It now posts `lockStateDidClear`, which
+    `AppDelegate` observes.
+  - **Tested, where none of this was testable before.** `KannuViewModel`, `AppDelegate`,
+    `FullscreenMediaDetector` and `LockScreenManager` had zero coverage of any kind and are all
+    `@MainActor` AppKit/SwiftUI types. The two rules that carried the defect are now a
+    Foundation-only `ClosedNotchVisibility` in the logic target, with the app delegating to it so
+    there is one copy rather than two: 10 tests including the exact composition that produced the
+    bug. The parts that are ordering and defaults rather than arithmetic are pinned by
+    `ClosedNotchVisibilityRulesTests`, a source scan in the `ClosedNotchObservationTests` shape with
+    its anti-vacuity devices - and it caught two mistakes in its own first run, one of them a rule
+    tripping over the comment that explained it.
 
 ## [1.3.0] - 2026-09-25 - Heimdall
 

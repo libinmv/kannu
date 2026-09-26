@@ -171,6 +171,11 @@ class LockScreenManager: ObservableObject {
         updateIdleState(locked: false)
         isLocked = false
         stopLockStatePolling()
+        // Tell AppDelegate the lock state cleared, whichever path noticed. macOS drops
+        // com.apple.screenIsUnlocked often enough that the poll above is the real recovery path,
+        // and it used to clear this flag silently — leaving the notch windows hidden and the
+        // shared view model without a screen name until something unrelated moved the window.
+        NotificationCenter.default.post(name: .lockStateDidClear, object: nil)
         postUnlockMusicHUDTask?.cancel()
         shouldDelayPostUnlockMusicHUD = Defaults[.enableLockScreenLiveActivity]
 

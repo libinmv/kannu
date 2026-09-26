@@ -114,13 +114,33 @@ class FullscreenMediaDetector: ObservableObject {
         }
     }
 
+    /// Says once, not on every window scan, that fullscreen detection is degraded. Without the
+    /// grant Kannu cannot tell fullscreen from maximized, so it stops hiding the notch at all.
+    private static let accessibilityWarningOnce: Void = {
+        NSLog("⚠️ Kannu: Accessibility is not granted, so fullscreen cannot be told apart from "
+              + "maximized. The notch will stay visible over fullscreen apps until it is granted.")
+    }()
+
+    private static func warnAboutMissingAccessibilityOnce() {
+        _ = accessibilityWarningOnce
+    }
+
     /// Confirms an app the detector flagged as screen-filling is in *genuine* native
     /// fullscreen, not merely maximized/zoomed. On a notched Mac a maximized window and a
     /// fullscreen window report nearly identical frames, so frame size alone can't tell them
-    /// apart — the Accessibility `AXFullScreen` attribute can. Falls back to the detector's
-    /// frame-based result when Accessibility isn't trusted (so behavior doesn't silently break).
+    /// apart — the Accessibility `AXFullScreen` attribute can.
+    ///
+    /// Without the Accessibility grant this used to answer `true` — "assume fullscreen" — which
+    /// meant a freshly installed build (a new code identity drops every TCC grant) hid the notch
+    /// for any *maximized* window under `.always`, and for a maximized media window under
+    /// `.nowPlayingOnly`. Hiding the entire product on an unverifiable guess is the worse error,
+    /// so an untrusted process now answers `false` and says so once in the log. Showing the notch
+    /// over a fullscreen app is a cosmetic miss; hiding it everywhere reads as a broken app.
     private func isInNativeFullscreen(_ app: MacroVisionKit.FullscreenWindowInfo) -> Bool {
-        guard AXIsProcessTrusted() else { return true }
+        guard AXIsProcessTrusted() else {
+            Self.warnAboutMissingAccessibilityOnce()
+            return false
+        }
 
         let appElement = AXUIElementCreateApplication(app.processId)
 
