@@ -150,7 +150,7 @@ def main():
     parser.add_argument("--report", default="")
     parser.add_argument("--triage", choices=["on", "off"], default="off")
     parser.add_argument("--triage-model", default="gpt-4o")
-    parser.add_argument("--reasoning-model", default="claude-sonnet-4-6")
+    parser.add_argument("--reasoning-model", default="claude-sonnet-5")
     parser.add_argument("--context", default="threat_intelligence,source_code,policy")
     parser.add_argument("--timeout", type=int, default=300)
     parser.add_argument("--max-turns", type=int, default=60)

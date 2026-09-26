@@ -4,6 +4,52 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-27 - Act on CodeRabbit's review of #64: the bench was measuring less than it claimed
+- **Developer label:** CodeRabbit's ten findings on the triage bench, each verified against
+  upstream's own source and the real ADR-Bench pack before acting
+- **Agent label:** Follow-up 60 - review round on the transcript-budget PR
+- **Changes:**
+  - **Labels never resolved on the standard pack.** The manifest's `tasks` is tasks.json's own
+    `{"tasks": [...]}` wrapper with integer ids, while packed records carry folder names
+    (`task_001`), and each definition's label sits at `ground_truth: "benign"|"malicious"` — so
+    `labels` stayed empty and a run could finish having benchmarked nothing. Verified against the
+    genuine upstream pack: 0 labelled before, **303 labelled (42 malicious)** after. The run now
+    also refuses outright when no labelled task matches.
+  - **The injection probe now lands in real tool output.** Claude history carries tool results as
+    blocks inside user-role messages; the old `augment()` looked for a `tool` role, found none, and
+    appended a synthetic message — measuring a different thing than "an instruction inside the
+    original tool output". Flattening records which messages held a `tool_result` block, the line is
+    appended to the newest one, and a conversation with no tool output at all is marked
+    `synthetic_injection` and counted separately in the summary.
+  - **The triage config selects `structured_risk_route_v1`.** Upstream builds the plain `TriageLLM`
+    otherwise, and `_format_evidence_conversation` — the shared evidence block every engine judges —
+    exists only on `StructuredRiskRouteTriageLLM`, so Haiku and Jev crashed before their own
+    error handling (confirmed in `adr_baseline.py:709-717` and `structured_risk_route_triage.py:429`).
+  - **Engine errors stop scoring as confident escalations.** All three engines' error paths returned
+    `benign_exit=False, confidence=0.9`, which `summarize()` counted as correct malicious coverage —
+    an engine failing every call could pass rule (a). Error rows carry `error`, are excluded from
+    the sweep, and are reported apart; fail-open stays the documented gate behaviour.
+  - **One θ, both datasets.** The sweep chose a separate best threshold per dataset, so two printed
+    PASSes could imply an engine qualifies when no single θ does — against the file's own
+    pre-registered rule. The sweep runs per engine across every dataset at the same θ; the verdict
+    prints once, and it prints **UNVERIFIED** instead of PASS when any dataset has no scored
+    malicious task (a 10-task `--limit` can select none, making rule (a) vacuously true). Also
+    removes Ruff's B023 (loop-variable capture in the old lambda).
+  - **Resumed rows bind to their benchmark.** The resume key was (task, engine, dataset); an `--out`
+    holding rows from a different `--bench` skipped the new calls and summarised the old rows as the
+    current run. Every row now carries `bench_sha` (the benchmark file's content hash); resume skips
+    and the summary reads only rows from the same bench, and foreign rows are counted out loud.
+  - **The Jev endpoint must be https**, since the request carries `JEV_API_KEY` as a bearer token.
+  - `docs/ADR.md` stops claiming the transcript budget is a hard ceiling — only tool results are
+    stubbed, so prose-heavy chats can overrun it, which the CHANGELOG already said.
+  - The adapter's standalone `--reasoning-model` default catches up with the Swift default
+    (`claude-sonnet-5`), in both byte-identical copies; Kannu always passes the flag, so in-app
+    behaviour is unchanged and the adapter version stays 5.
+  - Everything re-verified: `augment`/`summarize` exercised by a no-network harness (real-tool-result
+    injection, synthetic flagged, error exclusion, UNVERIFIED verdict), the label fix against the
+    real upstream pack, full suite **822 tests, 0 failures**.
+
+
 ### 2026-09-26 - The triage bench checks its arguments like the adapter does
 - **Developer label:** SonarCloud's four Path Traversal findings on `scripts/adr-triage-bench.py`
 - **Agent label:** Follow-up 60 - clear PR #64's security gate

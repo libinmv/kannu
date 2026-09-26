@@ -199,8 +199,8 @@ key if you would rather spend API credits than your subscription's 5-hour/weekly
 Model names, the three context servers, the reasoning timeout, the message cap (newest N
 messages) and the transcript budget are all editable. Long tool results are trimmed keeping
 head **and** tail — an injected payload hides at the end of fetched content at least as often
-as at the start — and past the budget the oldest tool results are stubbed, so one analysis
-cannot exceed the model's context however long the chat ran.
+as at the start — and past the budget the oldest tool results are stubbed. Only tool results are
+stubbed: user and assistant text never is, so a prose-heavy chat can still overrun the budget.
 
 Run one: right-click a finished Claude Code chat in the notch → **Analyze with ADR Detection…**.
 By default a confirmation names the transcript and the providers every time. The verdict shows
