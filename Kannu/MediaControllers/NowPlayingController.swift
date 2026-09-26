@@ -137,20 +137,10 @@ final class NowPlayingController: ObservableObject, MediaControllerProtocol {
         streamTask?.cancel()
         streamTask = nil
 
-        stderrPipe?.fileHandleForReading.readabilityHandler = nil
+        await MediaRemoteAdapterChild.tearDown(process: process, pipeHandler: pipeHandler, stderrPipe: stderrPipe)
         stderrPipe = nil
-
-        // Order matters: closing the pipe is what makes the stream loop return, so the child is left
-        // with nowhere to write before it is asked to exit.
-        if let pipeHandler {
-            await pipeHandler.close()
-        }
-        self.pipeHandler = nil
-
-        if let process, process.isRunning {
-            process.terminate()
-        }
-        self.process = nil
+        pipeHandler = nil
+        process = nil
     }
 
     /// See the protocol. Only the child matters here; nothing is awaited, because the app is exiting.
@@ -158,8 +148,7 @@ final class NowPlayingController: ObservableObject, MediaControllerProtocol {
     func terminateChildProcessesForAppExit() {
         // Also blocks a setup still in flight from launching one after this point.
         isStopped = true
-        guard let process, process.isRunning else { return }
-        process.terminate()
+        MediaRemoteAdapterChild.terminateForAppExit(process: process)
     }
 
     // MARK: - Protocol Implementation

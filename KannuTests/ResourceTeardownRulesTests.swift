@@ -114,7 +114,11 @@ final class ResourceTeardownRulesTests: XCTestCase {
         for (path, source) in sources {
             let lines = Self.lines(of: source)
             guard lines.contains(where: { $0.contains("readabilityHandler = {") }) else { continue }
-            guard !lines.contains(where: { $0.contains("readabilityHandler = nil") }) else { continue }
+            if lines.contains(where: { $0.contains("readabilityHandler = nil") }) { continue }
+            // Or it hands the whole teardown to the one place that does it in the right order. Named
+            // explicitly rather than matched loosely, so "someone else probably clears it" is never
+            // the thing that satisfies this rule.
+            if lines.contains(where: { $0.contains("MediaRemoteAdapterChild.tearDown") }) { continue }
             offenders.append(path)
         }
 
@@ -126,6 +130,14 @@ final class ResourceTeardownRulesTests: XCTestCase {
             spins, burning idle wakeups until the process quits. Clear it — and close the descriptor \
             — where the process is torn down, as SystemTimerBridge.stopLogStream() does.
             """
+        )
+
+        // The delegate itself is where the clearing has to be, or the exemption above is a hole.
+        let shared = sources["Kannu/MediaControllers/MediaRemoteAdapterChild.swift"]
+        XCTAssertNotNil(shared, "MediaRemoteAdapterChild.swift was not read; the exemption would pass vacuously.")
+        XCTAssertTrue(
+            shared?.contains("readabilityHandler = nil") == true,
+            "MediaRemoteAdapterChild no longer clears the handler, so everything delegating to it now spins on EOF."
         )
 
         // Anti-vacuity: the files this rule is about must actually be in the scan and must actually

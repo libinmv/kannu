@@ -911,6 +911,13 @@ symptom disappear. The cost shows up on someone else's battery, days later, as "
 Energy Impact" — and because none of it belongs to any one feature, switching features off does not
 help, which reads as a false report.
 
+**The duplication is the mechanism, and SonarCloud measured it:** `AmazonMusicController` and
+`NowPlayingController` share **162 duplicated lines** across five blocks. Two near-copies is why one
+got the fix and the other did not, for months. The order-sensitive teardown now lives once in
+`MediaRemoteAdapterChild`, documented step by step, and both call it; their setup and streaming paths
+stay separate because those genuinely differ. If a third controller ever runs a helper, it calls that
+too — do not copy a `stop()`.
+
 **Guards:** `ResourceTeardownRulesTests` — the protocol may not default either method (verified to
 fail when the default is restored), every conformer must declare both, and every file that installs a
 `readabilityHandler` must also clear one. There is **no guard** for the second-owner shape: "a view

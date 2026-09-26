@@ -74,6 +74,14 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     It is a cancellable `DispatchWorkItem` now, replaced on a new transition and cancelled when
     monitoring stops, re-checked between windows so a superseded scan does not go on to the expensive
     one.
+  - **The duplication that caused it is gone from the part that matters.** SonarCloud put a number on
+    the root cause: `AmazonMusicController` and `NowPlayingController` share **162 duplicated lines**
+    across five blocks. That is why `e7dfc83` fixed the teardown in one and the other kept leaking —
+    the same disease as entry 1 (two copies of one artifact, only one exercised), in Swift instead of
+    in the hook script. The order-sensitive teardown now lives once, in
+    `MediaRemoteAdapterChild.tearDown(process:pipeHandler:stderrPipe:)`, with the reason each step
+    comes where it does; both controllers call it. The setup and streaming paths stay per-controller,
+    because those genuinely differ, so this is not a rewrite of two live media paths in a battery fix.
   - `docs/REGRESSIONS.md` entry **19** records the rule and its second breaking, with the
     second-owner and EOF-pipe shapes as part of it, and `Kannu/MediaControllers/` joins the Danger
     zones table. Guards in `ResourceTeardownRulesTests`: the protocol may not default either method
