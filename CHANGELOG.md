@@ -4,6 +4,21 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-26 - Bump to 1.3.3, build 6, and supersede the unpublished 1.3.2
+- **Developer label:** ship the energy fix where it can reach the person who reported it
+- **Agent label:** Follow-up 59 - 1.3.3 release mechanics
+- **Changes:**
+  - `CURRENT_PROJECT_VERSION` 5 -> **6** in both configurations and `MARKETING_VERSION` 1.3.2 ->
+    1.3.3. Build 5 is never published: 1.3.2 was committed but never released, and its one change
+    (chat names on a grouped row) rides in this release instead. The build number is what Sparkle
+    compares, and the live feed's newest item is build 4, so 6 is offered to everyone.
+  - The codename stays **Heimdall** — the scheme names feature releases, and this is a patch.
+  - Curated notes at `docs/release-notes/1.3.3.md`, which `release.yml` resolves from the tag. They
+    lead with the battery fix, because that is the reason to take this update, and they state the
+    measured before-numbers as measured while claiming no after-number: the only honest place to take
+    one is the installed notarized build, which does not exist until this ships.
+
+
 ### 2026-09-26 - Six ways a settings toggle left work running behind it
 - **Developer label:** "Do not know why but after continuously toggling all different types of
   settings uses around 5,000 energy impacts on activity monitor, compared to 84.6 (my browser). Tried
