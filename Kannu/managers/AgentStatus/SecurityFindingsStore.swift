@@ -88,6 +88,13 @@ final class SecurityFindingsStore: ObservableObject {
         /// why comparing ids would serve a stale row: the occurrence count and last-seen would
         /// freeze, and a severity rise (a longer preview turning medium into high) would never reach
         /// the visibility check, so an escalation that should resurface a group would stay hidden.
+        ///
+        /// This only memoises anything because a rebuild from unchanged input is *equal* — the same
+        /// invariant `publishFindings()` depends on, pinned by
+        /// `AgentSecurityFindingTests.testRebuildingFromUnchangedInputIsEqual`. A builder that
+        /// stamps `Date()` into a finding breaks both at once: every publish republishes, and the
+        /// stamp never matches, so grouping re-runs on every read from `ContentView` and the closed
+        /// pill as well.
         let findings: [AgentSecurityFinding]
         let acknowledgedGroups: [String: SecurityFindingAcknowledgement]
         let legacyAcknowledged: Set<String>

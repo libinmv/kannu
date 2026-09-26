@@ -206,4 +206,20 @@ final class ADRSnapshotTests: XCTestCase {
         XCTAssertEqual(ADRSnapshot.newestSnapshotURL(in: dir)?.lastPathComponent, "snapshot-20260909T090000.json",
                        "only snapshot-*.json counts, newest by mtime")
     }
+
+    func testGeneratedAtParsesTheScansOwnTimestamp() throws {
+        let snapshot = try ADRSnapshot.decode(Data(ADRSnapshotFixture.json.utf8))
+        XCTAssertEqual(snapshot.generatedAt, Date(timeIntervalSince1970: 1_788_919_200))
+    }
+
+    func testGeneratedAtToleratesFractionalSecondsAndRefusesJunk() throws {
+        func dated(_ value: String) throws -> ADRSnapshot {
+            try ADRSnapshot.decode(Data(ADRSnapshotFixture.json
+                .replacingOccurrences(of: "\"2026-09-09T02:00:00+00:00\"", with: "\"\(value)\"").utf8))
+        }
+        XCTAssertEqual(try dated("2026-09-09T02:00:00.250+00:00").generatedAt, Date(timeIntervalSince1970: 1_788_919_200.25))
+        XCTAssertEqual(try dated("2026-09-09T02:00:00Z").generatedAt, Date(timeIntervalSince1970: 1_788_919_200))
+        XCTAssertNil(try dated("").generatedAt)
+        XCTAssertNil(try dated("last Tuesday").generatedAt)
+    }
 }

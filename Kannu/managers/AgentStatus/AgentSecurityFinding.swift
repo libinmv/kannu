@@ -194,12 +194,27 @@ struct AgentSecurityFinding: Equatable, Hashable, Identifiable, Codable {
 
     /// Maps a Discovery snapshot's findings, joining each to its asset for a name and a path.
     /// `existing` lets a finding keep its original `firstSeen` across re-scans.
+    ///
+    /// **Every timestamp here must be fixed for a given snapshot.** Findings are not persisted:
+    /// they are rebuilt from all five sources on every publish, and `publishFindings`' `combined !=
+    /// findings` check is the only thing stopping that publish from reaching `@Published findings`
+    /// on every pass. A `Date()` taken at rebuild time makes that check always true, so the notch,
+    /// the closed pill and Settings re-render continuously — measured at 41% CPU and 928 idle
+    /// wakeups a second in 1.3.1. `firstSeen` is carried from `existing` for this reason; `lastSeen`
+    /// comes from the snapshot's own scan time for the same one.
     static func findings(
         from snapshot: ADRSnapshot,
         existing: [AgentSecurityFinding] = [],
         now: Date = Date()
     ) -> [AgentSecurityFinding] {
         let firstSeenByID = Dictionary(existing.map { ($0.id, $0.firstSeen) }, uniquingKeysWith: { a, _ in a })
+        let lastSeenByID = Dictionary(
+            existing.compactMap { finding in finding.lastSeen.map { (finding.id, $0) } },
+            uniquingKeysWith: { a, _ in a }
+        )
+        // The scan's own time, not the rebuild's. Nil rather than `now` when upstream gave no usable
+        // timestamp: the group falls back to `firstSeen`, and an unknown last-seen must not churn.
+        let scannedAt = snapshot.generatedAt
         return snapshot.findings.map { finding in
             let asset = snapshot.asset(id: finding.assetId)
             let evidence = finding.evidence.map { item -> String in
@@ -221,7 +236,7 @@ struct AgentSecurityFinding: Equatable, Hashable, Identifiable, Codable {
                 sessionID: nil,
                 firstSeen: firstSeenByID[id] ?? now,
                 revealPath: reveal,
-                lastSeen: now,
+                lastSeen: scannedAt ?? lastSeenByID[id],
                 // The asset and the rule. `id` folds in the rendered evidence, so a reworded proof
                 // or a changed path from ADR reads as a new finding; the asset does not move, so the
                 // row stays one row. ADR reports no project, so only "acknowledge everywhere"
@@ -264,7 +279,12 @@ extension AgentSecurityFinding {
                     assetPath: session.cwd,
                     sessionID: session.conversationID,
                     firstSeen: firstSeenByID[id] ?? now,
-                    lastSeen: now,
+                    // The session's own last event, never `Date()`: an unattended session is
+                    // rebuilt on every publish, and a rebuild-time stamp would make
+                    // `publishFindings`' equality gate always fail. The hook never refreshes a
+                    // status file's `ts` while nothing happens (docs/REGRESSIONS.md entry 12), so
+                    // this is stable exactly as long as the session is quiet.
+                    lastSeen: session.updatedAt,
                     projectName: session.displayProjectName,
                     chatName: session.displayChatName,
                     // The project and the agent, not the conversation: "this agent keeps being
