@@ -4,6 +4,24 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-26 - The next release is 1.3.2, because 1.3.2 never shipped
+- **Developer label:** "Latest published still 1.3.1 (build 4), then it should be 1.3.2, remember
+  that"
+- **Agent label:** Follow-up 60 - renumber the pending release
+- **Changes:**
+  - `MARKETING_VERSION` 1.3.3 -> **1.3.2** in both configurations. The rule, now recorded: the next
+    release number is the last *published* one plus a patch — a version that was committed but never
+    released does not consume its number. 1.3.2 was committed as build 5 and never tagged, so the
+    battery-fix release takes the 1.3.2 name.
+  - `CURRENT_PROJECT_VERSION` stays **6**: commit `b979cd7` already used build 5 for a different
+    tree, Sparkle compares only the build number, and 6 > the feed's 4 either way. Two trees claiming
+    build 5 is exactly the ambiguity the build counter exists to prevent.
+  - `docs/release-notes/1.3.2.md` — the chat-names-only stub is replaced by the full 1.3.3 notes
+    retitled, since the tag drives the notes lookup (`release.yml` resolves
+    `docs/release-notes/${RELEASE_VERSION}.md`); `1.3.3.md` deleted. The two entries below that say
+    "1.3.3" stay as history of what was believed at the time.
+
+
 ### 2026-09-26 - Bump to 1.3.3, build 6, and supersede the unpublished 1.3.2
 - **Developer label:** ship the energy fix where it can reach the person who reported it
 - **Agent label:** Follow-up 59 - 1.3.3 release mechanics
