@@ -4,6 +4,49 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-26 - One row per problem: first reported, last reported, how many times
+- **Developer label:** "we have repeated issues thst come up to acknowledge but if they are same issue recurring we need a way to group them, maybe show first reported, then last reported, no of occurences"
+- **Agent label:** Follow-up 57, part A - group findings on what does not churn
+- **Changes:**
+  - **The problem, measured rather than assumed.** One real Mac held **28 acknowledged finding ids**
+    and 27 stored sighting rows that were **three actual problems**: an `aws_access_key` with an
+    `ASIA` prefix via Bash (21 rows, 22 occurrences, **21 distinct fingerprints**), `ssh` via Bash
+    (4 rows, 7 occurrences, **3 different chats**) and `yt-dlp` (2 rows). `ASIA` is an AWS **STS
+    temporary** credential: it rotates by design, so that first row count could only ever grow.
+  - **The cause: the identity contained the thing that changes.** `stableID` is called with
+    `subject: conversationID` by every hook-derived builder, so the same problem in a new chat is a
+    new id and a new acknowledgement; `evidence` carries the secret's fingerprint, so a rotated key
+    is too; `firstSeenMs` is in the digest for hidden text and new MCP servers, so a recurrence in
+    the *same* chat also counted as new; and Discovery and Detection fold in wording and confidence,
+    so a reworded proof or a re-analysis at 0.92 read as a fresh finding.
+  - Findings now also carry a **`groupSubject`** — the identity of the *problem*, with the churn left
+    out — plus `lastSeen`, `occurrences` and `projectName`. `stableID` and every digest are
+    **unchanged**, which is what keeps the golden-id tests meaningful and the 28 stored
+    acknowledgements valid. Per family: secrets key on kind + prefix + tool and **never** the
+    fingerprint; policy on the rule and what it matched; sensitive paths on the file and the access;
+    hidden text on the technique and where it arrived, never the decoded preview; new servers on the
+    server and its config file; Discovery on the asset. Detection deliberately stays per-chat — a
+    verdict is about one conversation — but stops splitting on confidence.
+  - **Acknowledging settles the problem, not the sighting**, and stays quiet however often it recurs.
+    It comes back only on escalation: a rise in severity, or a change of outcome. That second signal
+    is not decoration — severity points the *wrong* way here, because a policy match that **ran** is
+    high while one Kannu **refused** is medium, so "Kannu started blocking this" would have read as
+    an improvement and stayed silent. Outcome is tracked in its own field for exactly that case.
+  - **Scope is the user's to choose**, because display grouping does not decide it: deciding `ssh` is
+    fine in one repo says nothing about another. The default is narrow (this project), with
+    "everywhere" available; acknowledging a second project widens the same decision. A group spanning
+    a project you acknowledged and one you did not **stays visible**, showing only the part still
+    unaddressed, and hides only once every project it spans is covered.
+  - **A reversal stated rather than smuggled:** `ingest` prunes acknowledgements to the findings
+    currently on screen, on the principle that "if the same finding returns later it should be seen
+    again". That rule *is* what caused the re-acknowledging, because identity carried the
+    conversation so the same finding almost never returned — a new one did. Group acknowledgements
+    are exempt from it, and the comment now says why. Legacy per-finding acknowledgements are still
+    read, so nothing already dismissed comes back after the upgrade.
+  - The notch shield counts **groups**, so 21 rotations of one credential are one thing to act on.
+    `groupRanking` is memoised against its inputs, since the 20 Hz hover poll reads it.
+  - 19 tests over the pure grouping and acknowledgement rules, driven by the real numbers above.
+
 ### 2026-09-26 - The notch cannot go blank because Kannu has not worked out which screen it is on
 - **Developer label:** "in local build ui is not coming can you check"
 - **Agent label:** Follow-up 57, part B - an unknown screen is not a notchless screen

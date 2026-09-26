@@ -213,7 +213,18 @@ struct SecretSighting: HookSighting {
             assetName: projectName,
             assetPath: cwd,
             sessionID: conversationID,
-            firstSeen: Date(timeIntervalSince1970: TimeInterval(firstSeenMs) / 1000)
+            firstSeen: Date(timeIntervalSince1970: TimeInterval(firstSeenMs) / 1000),
+            lastSeen: Date(timeIntervalSince1970: TimeInterval(lastSeenMs) / 1000),
+            occurrences: eventCount,
+            projectName: projectName,
+            // The kind of secret, its prefix and the tool that carried it — deliberately **not** the
+            // fingerprint. Short-lived credentials rotate by design (an AWS `ASIA` prefix is an STS
+            // session token), so putting the fingerprint in the key makes every re-issue a brand-new
+            // problem with its own acknowledgement, forever: one real Mac accumulated 21 rows and 21
+            // fingerprints for a single behaviour. The fingerprints still appear in the group's
+            // details — they are what says how many distinct keys were exposed — they just do not
+            // decide identity.
+            groupSubject: "\(kind.rawValue)|\(prefix)|\(tool ?? "")"
         )
     }
 }

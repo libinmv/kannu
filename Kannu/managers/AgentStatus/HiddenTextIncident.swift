@@ -204,7 +204,15 @@ struct HiddenTextIncident: HookSighting {
             assetPath: cwd,
             sessionID: conversationID,
             firstSeen: Date(timeIntervalSince1970: TimeInterval(firstSeenMs) / 1000),
-            kannuOnlyEvidence: previewLine.map { [$0] } ?? []
+            kannuOnlyEvidence: previewLine.map { [$0] } ?? [],
+            lastSeen: Date(timeIntervalSince1970: TimeInterval(lastSeenMs) / 1000),
+            occurrences: eventCount,
+            projectName: projectName,
+            // The technique and where it arrived. Not the preview: the decoded text differs with
+            // every payload while the problem — something is smuggling invisible characters into
+            // what this agent reads — is one. And not `firstSeenMs`, which sits in the *finding* id
+            // and so made a second sighting in the very same chat count as a new problem.
+            groupSubject: "\(kind.rawValue)|\(location.rawValue)"
         )
     }
 }

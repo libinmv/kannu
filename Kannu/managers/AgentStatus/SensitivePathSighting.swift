@@ -217,7 +217,13 @@ struct SensitivePathSighting: HookSighting {
             assetPath: cwd,
             sessionID: conversationID,
             firstSeen: Date(timeIntervalSince1970: TimeInterval(firstSeenMs) / 1000),
-            revealPath: revealPath
+            revealPath: revealPath,
+            lastSeen: Date(timeIntervalSince1970: TimeInterval(lastSeenMs) / 1000),
+            occurrences: eventCount,
+            projectName: projectName,
+            // The file and what was done to it. The path *is* the identity here, so it stays; the
+            // conversation goes, because reading `~/.ssh/id_ed25519` in ten chats is one problem.
+            groupSubject: "\(category.rawValue)|\(access.rawValue)|\(path)"
         )
     }
 }
