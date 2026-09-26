@@ -83,8 +83,12 @@ final class SecurityFindingsStore: ObservableObject {
     /// Everything `groupRanking` depends on. Cheap to compare, so the grouping itself runs only when
     /// something it reads actually moved.
     struct GroupRankingStamp: Equatable {
-        let findingCount: Int
-        let findingIDs: String
+        /// The whole array, not its ids. Ids deliberately exclude what churns — `eventCount`,
+        /// `lastSeenMs`, a hidden-text preview — which is the entire point of grouping, and exactly
+        /// why comparing ids would serve a stale row: the occurrence count and last-seen would
+        /// freeze, and a severity rise (a longer preview turning medium into high) would never reach
+        /// the visibility check, so an escalation that should resurface a group would stay hidden.
+        let findings: [AgentSecurityFinding]
         let acknowledgedGroups: [String: SecurityFindingAcknowledgement]
         let legacyAcknowledged: Set<String>
         let snoozes: [SecurityFindingSnooze]
@@ -222,8 +226,7 @@ final class SecurityFindingsStore: ObservableObject {
     /// 27 rows twenty times a second to answer a boolean would be pure waste.
     var groupRanking: SecurityFindingGroups {
         let stamp = GroupRankingStamp(
-            findingCount: findings.count,
-            findingIDs: findings.map(\.id).joined(separator: "\u{1F}"),
+            findings: findings,
             acknowledgedGroups: acknowledgedGroups,
             legacyAcknowledged: acknowledgedIDs,
             snoozes: snoozes
@@ -388,9 +391,17 @@ final class SecurityFindingsStore: ObservableObject {
 
     func snooze(_ id: String, for interval: TimeInterval) {
         let until = Date().addingTimeInterval(interval)
-        snoozes = SecurityFindingPriority.pruned(snoozes.filter { $0.id != id }, keeping: Set(findings.map(\.id)))
+        snoozes = SecurityFindingPriority.pruned(snoozes.filter { $0.id != id }, keeping: liveSnoozeKeys)
             + [SecurityFindingSnooze(id: id, until: until)]
         Defaults[.adrFindingSnoozes] = snoozes
+    }
+
+    /// Every id a snooze may legitimately be keyed on. Settings snoozes a **group** id, and a group
+    /// id is deliberately not a finding id — so pruning against finding ids alone deleted every group
+    /// snooze the next time anything was snoozed or a snapshot landed, and a snoozed row came back
+    /// within minutes instead of a day.
+    private var liveSnoozeKeys: Set<String> {
+        Set(findings.map(\.id)).union(AgentSecurityFindingGroup.group(findings).map(\.id))
     }
 
     func clearAcknowledgements() {
@@ -1021,7 +1032,7 @@ final class SecurityFindingsStore: ObservableObject {
             acknowledgedIDs = keptAcks
             Defaults[.adrAcknowledgedFindingIDs] = Array(keptAcks).sorted()
         }
-        let keptSnoozes = SecurityFindingPriority.pruned(snoozes, keeping: ids, now: now)
+        let keptSnoozes = SecurityFindingPriority.pruned(snoozes, keeping: liveSnoozeKeys, now: now)
         if keptSnoozes != snoozes {
             snoozes = keptSnoozes
             Defaults[.adrFindingSnoozes] = keptSnoozes

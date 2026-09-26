@@ -127,7 +127,8 @@ struct AgentSecuritySettings: View {
             }
             .settingsHighlight(id: highlightID("High-severity alerts in the notch"))
 
-            if !findingsStore.acknowledgedIDs.isEmpty || !findingsStore.snoozes.isEmpty {
+            if !findingsStore.acknowledgedIDs.isEmpty || !findingsStore.acknowledgedGroups.isEmpty
+                || !findingsStore.snoozes.isEmpty {
                 SettingsActionRow {
                     Button("Show acknowledged and snoozed again") { findingsStore.clearAcknowledgements() }
                 }

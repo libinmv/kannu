@@ -100,9 +100,12 @@ extension SecurityFindingAcknowledgement {
         case .everywhere:
             return .acknowledged
         case .projects(let acknowledged):
-            // A group with no project at all cannot be covered project-by-project; only
-            // "everywhere" settles it, so treat a project-scoped ack as not covering it.
-            guard !group.projects.isEmpty else { return .partiallyAcknowledged(unacknowledged: []) }
+            // A member with no project cannot be covered project-by-project — and a group can mix
+            // named and projectless members, so it is not enough that *some* project is named. Only
+            // "everywhere" settles those.
+            guard !group.projects.isEmpty,
+                  !group.findings.contains(where: { $0.projectName == nil })
+            else { return .partiallyAcknowledged(unacknowledged: []) }
             let outstanding = group.projects.filter { !acknowledged.contains($0) }
             return outstanding.isEmpty ? .acknowledged
                                        : .partiallyAcknowledged(unacknowledged: outstanding)

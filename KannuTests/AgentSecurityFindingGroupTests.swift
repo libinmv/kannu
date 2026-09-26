@@ -167,6 +167,42 @@ final class AgentSecurityFindingGroupTests: XCTestCase {
                        AgentSecurityFindingGroup.group(findings).map(\.id))
     }
 
+    /// A group id is deliberately not a finding id, so anything that prunes snoozes or memo stamps
+    /// against finding ids alone will silently drop group state. This pins the distinction that
+    /// `SecurityFindingsStore.liveSnoozeKeys` and `GroupRankingStamp` both depend on.
+    func testAGroupIDIsNotOneOfItsFindingIDs() {
+        let findings = (0..<3).map { index in
+            SecretSighting(kind: .awsAccessKey, location: .toolInput, tool: "Bash", prefix: "ASIA",
+                           length: 20, fingerprint: String(format: "%012x", index), eventCount: 1,
+                           firstSeenMs: t0, lastSeenMs: t0)
+                .finding(conversationID: "c", provider: "claude", chatName: "c",
+                         projectName: "p", cwd: "/p")
+        }
+        let group = AgentSecurityFindingGroup.group(findings)[0]
+        XCTAssertFalse(
+            findings.map(\.id).contains(group.id),
+            "a group id must not collide with a finding id, or pruning by finding id looks correct"
+        )
+    }
+
+    /// The memo stamp compares the whole findings array precisely because ids leave out what churns.
+    /// If a count or a last-seen moves while ids stay the same, the row must not go stale.
+    func testTheSameIDsWithDifferentCountsAreDifferentGroups() {
+        func finding(events: Int, last: Int64) -> AgentSecurityFinding {
+            PolicySighting(kind: .command, matched: "ssh", tool: "Bash", blocked: false,
+                           eventCount: events, firstSeenMs: t0, lastSeenMs: last)
+                .finding(conversationID: "c", provider: "claude", chatName: "c",
+                         projectName: "p", cwd: "/p")
+        }
+        let before = finding(events: 1, last: t0)
+        let after = finding(events: 9, last: t0 + 60_000)
+        XCTAssertEqual(before.id, after.id, "the finding id deliberately ignores counts and times")
+        XCTAssertNotEqual(before, after, "but the finding itself differs, which is what the memo reads")
+
+        XCTAssertEqual(AgentSecurityFindingGroup.group([before])[0].occurrences, 1)
+        XCTAssertEqual(AgentSecurityFindingGroup.group([after])[0].occurrences, 9)
+    }
+
     private static func bare(id: String, subject: String? = nil) -> AgentSecurityFinding {
         var finding = AgentSecurityFinding(
             id: id, source: .kannu, rule: "r", severity: .medium, title: "t", summary: "s",

@@ -60,6 +60,18 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
   - The notch shield counts **groups**, so 21 rotations of one credential are one thing to act on.
     `groupRanking` is memoised against its inputs, since the 20 Hz hover poll reads it.
   - 19 tests over the pure grouping and acknowledgement rules, driven by the real numbers above.
+  - **Acting on CodeRabbit's review of #59, which found four real holes in the above.** The notch
+    card's Acknowledge still wrote a single legacy per-finding id, so for any group with more than one
+    member — 21 rotated keys, say — clicking it did nothing visible and the shield stayed up. Group
+    snoozes were pruned against *finding* ids, and a group id deliberately is not one, so a 24-hour
+    snooze was deleted within minutes. The memo stamp compared finding ids, which by design exclude
+    counts, times and previews — so a row's occurrence count and last-seen could freeze, and a
+    severity rise never reached the visibility check, silently swallowing the escalation the feature
+    exists for. A group mixing projectless and named members was hidden by a project-scoped
+    acknowledgement that could not actually cover the projectless part. Plus: the push subscription
+    now observes group acknowledgements, and "Show acknowledged and snoozed again" appears for group
+    acknowledgements rather than only legacy ones. Three new tests pin the two distinctions that made
+    these possible — a group id is never a finding id, and identical ids can carry different counts.
   - **On screen:** a row now stands for a problem and carries "N occurrences · first … · last …",
     shown only when it says something — a single sighting with a count of 1 and two identical dates
     does not. Expanding adds the spread that grouping folded together ("21 separate sightings folded

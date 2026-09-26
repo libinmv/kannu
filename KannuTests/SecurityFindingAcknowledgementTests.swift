@@ -169,6 +169,36 @@ final class SecurityFindingAcknowledgementTests: XCTestCase {
         )
     }
 
+    /// A group can mix members that have a project with members that have none. Acknowledging "the
+    /// projects this group is in" cannot cover the projectless ones, so it must not hide the row —
+    /// otherwise a finding nobody assessed disappears because a sibling was assessed.
+    func testAProjectlessMemberIsNotCoveredByAProjectScopedAcknowledgement() {
+        let named = PolicySighting(kind: .command, matched: "ssh", tool: "Bash", blocked: false,
+                                  eventCount: 1, firstSeenMs: t0, lastSeenMs: t0)
+            .finding(conversationID: "a", provider: "claude", chatName: "a",
+                     projectName: "Vendors", cwd: "/x/Vendors")
+        let projectless = PolicySighting(kind: .command, matched: "ssh", tool: "Bash", blocked: false,
+                                        eventCount: 1, firstSeenMs: t0 + 1, lastSeenMs: t0 + 1)
+            .finding(conversationID: "b", provider: "claude", chatName: "b",
+                     projectName: nil, cwd: nil)
+        let group = AgentSecurityFindingGroup.group([named, projectless])[0]
+        XCTAssertEqual(group.projects, ["Vendors"], "only the named project is listed")
+
+        XCTAssertTrue(
+            SecurityFindingAcknowledgement.visibility(
+                of: group, acknowledgement: ack(group, scope: .projects(["Vendors"]))
+            ).isVisible,
+            "the projectless member is still unaddressed, so the row stays"
+        )
+        XCTAssertEqual(
+            SecurityFindingAcknowledgement.visibility(
+                of: group, acknowledgement: ack(group, scope: .everywhere)
+            ),
+            .acknowledged,
+            "only everywhere can settle a member that belongs to no project"
+        )
+    }
+
     // MARK: - Persistence shape
 
     func testItRoundTripsThroughJSON() throws {

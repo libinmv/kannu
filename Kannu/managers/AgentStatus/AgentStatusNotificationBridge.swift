@@ -52,7 +52,12 @@ final class AgentStatusNotificationBridge: ObservableObject {
         // and because the store only assigns on change, the push waited for the next unrelated
         // change. One hop puts the handler after the assignment.
         store.$findings.map { _ in () }
-            .merge(with: store.$acknowledgedIDs.map { _ in () }, store.$snoozes.map { _ in () })
+            // $acknowledgedGroups is in here because the prune that lets an escalated group push
+            // again runs inside handleFindingsChange: without it, acknowledging leaves the id in
+            // pushedFindingIDs and the next escalation is silently swallowed.
+            .merge(with: store.$acknowledgedIDs.map { _ in () },
+                   store.$acknowledgedGroups.map { _ in () },
+                   store.$snoozes.map { _ in () })
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in self?.handleFindingsChange() }
             .store(in: &cancellables)
