@@ -28,21 +28,22 @@ import SwiftUI
 /// The row shows `displayedEvidence` (Kannu-only lines such as decoded hidden text included);
 /// Copy for agent and Copy Details are built elsewhere and never carry those lines.
 struct SecurityFindingRow: View {
-    let finding: AgentSecurityFinding
+    let row: SecurityFindingGroups.Row
     let copyForAgent: () -> Void
-    let acknowledge: () -> Void
+    /// `nil` projects means everywhere; a list narrows the decision to those projects.
+    let acknowledge: ([String]?) -> Void
     let snooze: () -> Void
     /// Nil when the chat the finding came from has no card to go back to.
     let openChat: (() -> Void)?
 
-    /// Survives re-renders; SwiftUI keys it on the finding's id through the enclosing `ForEach`.
+    /// Survives re-renders; SwiftUI keys it on the group's id through the enclosing `ForEach`.
     @State private var isExpanded: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(finding: AgentSecurityFinding, initiallyExpanded: Bool = false,
-         copyForAgent: @escaping () -> Void, acknowledge: @escaping () -> Void, snooze: @escaping () -> Void,
-         openChat: (() -> Void)? = nil) {
-        self.finding = finding
+    init(row: SecurityFindingGroups.Row, initiallyExpanded: Bool = false,
+         copyForAgent: @escaping () -> Void, acknowledge: @escaping ([String]?) -> Void,
+         snooze: @escaping () -> Void, openChat: (() -> Void)? = nil) {
+        self.row = row
         self.copyForAgent = copyForAgent
         self.acknowledge = acknowledge
         self.snooze = snooze
@@ -50,7 +51,10 @@ struct SecurityFindingRow: View {
         _isExpanded = State(initialValue: initiallyExpanded)
     }
 
-    private var isHigh: Bool { finding.severity == .high }
+    private var group: AgentSecurityFindingGroup { row.group }
+    /// The row speaks as the group's worst, most recent member.
+    private var finding: AgentSecurityFinding { group.representative }
+    private var isHigh: Bool { group.severity == .high }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -70,6 +74,8 @@ struct SecurityFindingRow: View {
                     Text(verbatim: finding.summary)
                         .settingsDescriptionStyle()
                         .lineLimit(isExpanded ? nil : 2)
+                    if let recurrence { SettingsValueText(recurrence) }
+                    if let state = stateNote { SettingsValueText(state) }
                 }
 
                 if isExpanded {
@@ -77,13 +83,14 @@ struct SecurityFindingRow: View {
                     Text(SecurityFindingGuide.details(for: finding))
                         .settingsDescriptionStyle()
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    if let breakdown { SettingsValueText(breakdown) }
                 }
 
                 HStack(spacing: 8) {
                     detailsToggle
                     Spacer(minLength: 8)
                     moreMenu
-                    Button("Acknowledge", action: acknowledge)
+                    Button(acknowledgeLabel) { acknowledge(narrowScope) }
                     CopyForAgentButton(copy: copyForAgent)
                 }
                 .controlSize(.small)
@@ -94,8 +101,72 @@ struct SecurityFindingRow: View {
         .accessibilityElement(children: .contain)
     }
 
+    /// "7 occurrences · first 17 Sep at 15:49 · last 25 Sep at 16:41". Omitted when the row stands
+    /// for a single sighting, where a count of 1 and two identical dates say nothing.
+    private var recurrence: String? {
+        guard group.occurrences > 1 || group.distinctFindings > 1 else { return nil }
+        let first = group.firstSeen.formatted(date: .abbreviated, time: .shortened)
+        let last = group.lastSeen.formatted(date: .abbreviated, time: .shortened)
+        var parts = [String(localized: "\(group.occurrences) occurrences")]
+        parts.append(String(localized: "first \(first)"))
+        if group.lastSeen != group.firstSeen { parts.append(String(localized: "last \(last)")) }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Why the row is still here after being acknowledged — the honest half of grouping. Without it
+    /// a partially acknowledged group looks like the acknowledgement simply failed.
+    private var stateNote: String? {
+        switch row.visibility {
+        case .unacknowledged:
+            return nil
+        case .escalated(let reason):
+            return String(localized: "Back because it is \(reason)")
+        case .partiallyAcknowledged(let outstanding):
+            guard !outstanding.isEmpty else {
+                return String(localized: "Acknowledged for a project, but this one belongs to none — acknowledge everywhere to settle it")
+            }
+            return String(localized: "Still open in \(outstanding.joined(separator: ", "))")
+        case .acknowledged:
+            return String(localized: "Acknowledged")
+        }
+    }
+
+    /// The spread, shown only when expanded: what the row folded together, so the grouping is
+    /// legible rather than magic.
+    private var breakdown: String? {
+        var parts: [String] = []
+        if group.distinctFindings > 1 {
+            // For a rotating credential this is the number that matters: 21 distinct keys, not 21 rows.
+            parts.append(String(localized: "\(group.distinctFindings) separate sightings folded in"))
+        }
+        if group.projects.count > 1 {
+            parts.append(String(localized: "projects: \(group.projects.joined(separator: ", "))"))
+        }
+        let chats = Set(group.findings.compactMap(\.sessionID)).count
+        if chats > 1 { parts.append(String(localized: "across \(chats) chats")) }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// Narrow by default: the projects this group has actually been seen in. `nil` means everywhere,
+    /// and is reserved for the menu — or for a group that belongs to no project at all, where
+    /// project scoping cannot settle anything.
+    private var narrowScope: [String]? { group.projects.isEmpty ? nil : group.projects }
+
+    private var acknowledgeLabel: String {
+        switch group.projects.count {
+        case 0: return String(localized: "Acknowledge")
+        case 1: return String(localized: "Acknowledge for \(group.projects[0])")
+        default: return String(localized: "Acknowledge for \(group.projects.count) projects")
+        }
+    }
+
     private var moreMenu: some View {
         SettingsMoreMenu(accessibilityLabel: Text("More actions")) {
+            if !group.projects.isEmpty {
+                // Only worth offering when the primary action was the narrow one.
+                Button("Acknowledge everywhere") { acknowledge(nil) }
+                Divider()
+            }
             Button("Snooze 24h", action: snooze)
             if finding.revealPath != nil || finding.projectFolder != nil || openChat != nil {
                 Divider()

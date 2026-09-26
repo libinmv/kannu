@@ -94,7 +94,8 @@ struct PolicySighting: HookSighting {
         } else {
             text = String(localized: "The agent used \(what) in “\(chatName)”. Blocking was off, so it ran; this is the report.")
         }
-        if eventCount > 1 { text += " " + String(localized: "Seen \(eventCount) times.") }
+        // The count is not repeated here: the row shows "N occurrences · first … · last …"
+        // from the group, and saying it twice in two formats reads as two different facts.
         return text
     }
 
@@ -134,7 +135,15 @@ struct PolicySighting: HookSighting {
             assetName: projectName,
             assetPath: cwd,
             sessionID: conversationID,
-            firstSeen: Date(timeIntervalSince1970: TimeInterval(firstSeenMs) / 1000)
+            firstSeen: Date(timeIntervalSince1970: TimeInterval(firstSeenMs) / 1000),
+            lastSeen: Date(timeIntervalSince1970: TimeInterval(lastSeenMs) / 1000),
+            occurrences: eventCount,
+            projectName: projectName,
+            // The rule and what it matched, and nothing else: not the conversation, so the same
+            // rule firing in another chat is the same row; and not `blocked`, because Kannu
+            // starting to refuse a call is a change of outcome for one problem, not a new problem.
+            groupSubject: "\(kind.rawValue)|\(matched)",
+            outcomeTag: blocked ? "blocked" : "ran"
         )
     }
 }

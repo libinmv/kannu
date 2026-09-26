@@ -70,7 +70,13 @@ final class SensitivePathSightingTests: XCTestCase {
             }
         }
         XCTAssertTrue(sighting().summary(chatName: "Chat").contains("~/.ssh/id_ed25519"))
-        XCTAssertTrue(sighting(events: 2).summary(chatName: "Chat").hasSuffix("Seen 2 times."))
+        // The count is the group row's job now, not the summary's.
+        XCTAssertFalse(sighting(events: 2).summary(chatName: "Chat").contains("Seen 2 times"))
+        XCTAssertEqual(
+            sighting(events: 2).finding(conversationID: "c", provider: "claude", chatName: "Chat",
+                                        projectName: "p", cwd: "/p").occurrences,
+            2, "and it reaches the finding, where the group adds it up"
+        )
         XCTAssertTrue(sighting(failed: true).evidence(provider: "codex").contains { $0.contains("the call failed") })
         let lookup = sighting(.keychainItem, path: "security find-generic-password")
         XCTAssertEqual(lookup.title, "The agent looked up a keychain item")

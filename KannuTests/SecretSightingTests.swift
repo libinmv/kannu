@@ -65,7 +65,13 @@ final class SecretSightingTests: XCTestCase {
         XCTAssertTrue(prompt.summary(chatName: "Deploy").contains("an AWS access key"))
         XCTAssertEqual(sighting(.githubToken, .toolInput, tool: "Bash").title, "The agent used a secret in a tool call")
         XCTAssertEqual(sighting(.githubToken, .toolInput, tool: "Write").title, "The agent wrote a secret into a file")
-        XCTAssertTrue(sighting(events: 3).summary(chatName: "c").hasSuffix("Seen 3 times."))
+        // The count is the group row's job now, not the summary's.
+        XCTAssertFalse(sighting(events: 3).summary(chatName: "c").contains("Seen 3 times"))
+        XCTAssertEqual(
+            sighting(events: 3).finding(conversationID: "c", provider: "claude", chatName: "c",
+                                        projectName: "p", cwd: "/p").occurrences,
+            3, "and it reaches the finding, where the group adds it up"
+        )
         let evidence = prompt.evidence(provider: "claude")
         XCTAssertEqual(evidence.count, Set(evidence).count, "distinct lines")
         XCTAssertTrue(evidence[0].contains("AKIA"))

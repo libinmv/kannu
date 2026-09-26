@@ -4,14 +4,138 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
-### 2026-09-25 - Nothing unreleased yet - 1.3.0 just shipped
-- **Developer label:** release bookkeeping, not a feature
-- **Agent label:** Follow-up 55 - placeholder so the section is not empty
+### 2026-09-26 - Ship 1.3.1 "Heimdall"
+- **Developer label:** "where is the release"
+- **Agent label:** Follow-up 57 - 1.3.1 release mechanics
 - **Changes:**
-  - 1.3.0 shipped on 2026-09-25; everything it contains is under `## [1.3.0]` below. Replace this
-    placeholder with the next real entry rather than adding one above it. It exists only because
-    `.githooks/pre-commit` rejects a commit whose `[Unreleased]` section is empty, so the section
-    states why it is empty instead of saying nothing.
+  - `CURRENT_PROJECT_VERSION` 3 -> **4** in both configurations and `MARKETING_VERSION` 1.3.0 ->
+    1.3.1. The build number is the one Sparkle compares, and the live feed's newest item is build 3,
+    so leaving it would have published a release nobody is offered.
+  - 1.3.1 is a patch, so the codename stays **Heimdall**: the scheme names *feature* releases, and a
+    patch does not consume Horus.
+  - Curated notes at `docs/release-notes/1.3.1.md`; the publish step resolves them from the tag.
+  - `docs/SETTINGS.md` gains the rule the new finding row follows: a card's metadata is a
+    `SettingsValueText`, suppressed when it says nothing, and a fact is stated once — which is why
+    the sighting summaries stopped repeating the occurrence count in prose.
+
+### 2026-09-26 - One row per problem: first reported, last reported, how many times
+- **Developer label:** "we have repeated issues thst come up to acknowledge but if they are same issue recurring we need a way to group them, maybe show first reported, then last reported, no of occurences"
+- **Agent label:** Follow-up 57, part A - group findings on what does not churn
+- **Changes:**
+  - **The problem, measured rather than assumed.** One real Mac held **28 acknowledged finding ids**
+    and 27 stored sighting rows that were **three actual problems**: an `aws_access_key` with an
+    `ASIA` prefix via Bash (21 rows, 22 occurrences, **21 distinct fingerprints**), `ssh` via Bash
+    (4 rows, 7 occurrences, **3 different chats**) and `yt-dlp` (2 rows). `ASIA` is an AWS **STS
+    temporary** credential: it rotates by design, so that first row count could only ever grow.
+  - **The cause: the identity contained the thing that changes.** `stableID` is called with
+    `subject: conversationID` by every hook-derived builder, so the same problem in a new chat is a
+    new id and a new acknowledgement; `evidence` carries the secret's fingerprint, so a rotated key
+    is too; `firstSeenMs` is in the digest for hidden text and new MCP servers, so a recurrence in
+    the *same* chat also counted as new; and Discovery and Detection fold in wording and confidence,
+    so a reworded proof or a re-analysis at 0.92 read as a fresh finding.
+  - Findings now also carry a **`groupSubject`** — the identity of the *problem*, with the churn left
+    out — plus `lastSeen`, `occurrences` and `projectName`. `stableID` and every digest are
+    **unchanged**, which is what keeps the golden-id tests meaningful and the 28 stored
+    acknowledgements valid. Per family: secrets key on kind + prefix + tool and **never** the
+    fingerprint; policy on the rule and what it matched; sensitive paths on the file and the access;
+    hidden text on the technique and where it arrived, never the decoded preview; new servers on the
+    server and its config file; Discovery on the asset. Detection deliberately stays per-chat — a
+    verdict is about one conversation — but stops splitting on confidence.
+  - **Acknowledging settles the problem, not the sighting**, and stays quiet however often it recurs.
+    It comes back only on escalation: a rise in severity, or a change of outcome. That second signal
+    is not decoration — severity points the *wrong* way here, because a policy match that **ran** is
+    high while one Kannu **refused** is medium, so "Kannu started blocking this" would have read as
+    an improvement and stayed silent. Outcome is tracked in its own field for exactly that case.
+  - **Scope is the user's to choose**, because display grouping does not decide it: deciding `ssh` is
+    fine in one repo says nothing about another. The default is narrow (this project), with
+    "everywhere" available; acknowledging a second project widens the same decision. A group spanning
+    a project you acknowledged and one you did not **stays visible**, showing only the part still
+    unaddressed, and hides only once every project it spans is covered.
+  - **A reversal stated rather than smuggled:** `ingest` prunes acknowledgements to the findings
+    currently on screen, on the principle that "if the same finding returns later it should be seen
+    again". That rule *is* what caused the re-acknowledging, because identity carried the
+    conversation so the same finding almost never returned — a new one did. Group acknowledgements
+    are exempt from it, and the comment now says why. Legacy per-finding acknowledgements are still
+    read, so nothing already dismissed comes back after the upgrade.
+  - The notch shield counts **groups**, so 21 rotations of one credential are one thing to act on.
+    `groupRanking` is memoised against its inputs, since the 20 Hz hover poll reads it.
+  - 19 tests over the pure grouping and acknowledgement rules, driven by the real numbers above.
+  - **Acting on CodeRabbit's review of #59, which found four real holes in the above.** The notch
+    card's Acknowledge still wrote a single legacy per-finding id, so for any group with more than one
+    member — 21 rotated keys, say — clicking it did nothing visible and the shield stayed up. Group
+    snoozes were pruned against *finding* ids, and a group id deliberately is not one, so a 24-hour
+    snooze was deleted within minutes. The memo stamp compared finding ids, which by design exclude
+    counts, times and previews — so a row's occurrence count and last-seen could freeze, and a
+    severity rise never reached the visibility check, silently swallowing the escalation the feature
+    exists for. A group mixing projectless and named members was hidden by a project-scoped
+    acknowledgement that could not actually cover the projectless part. Plus: the push subscription
+    now observes group acknowledgements, and "Show acknowledged and snoozed again" appears for group
+    acknowledgements rather than only legacy ones. Three new tests pin the two distinctions that made
+    these possible — a group id is never a finding id, and identical ids can carry different counts.
+  - **On screen:** a row now stands for a problem and carries "N occurrences · first … · last …",
+    shown only when it says something — a single sighting with a count of 1 and two identical dates
+    does not. Expanding adds the spread that grouping folded together ("21 separate sightings folded
+    in", the projects, how many chats), so the row is legible rather than magic. Acknowledge reads
+    "Acknowledge for kannu-site" and narrows to the projects the group has been seen in, with
+    "Acknowledge everywhere" in the "…" menu; a partially acknowledged group says "Still open in
+    kannu" rather than looking as though the acknowledgement failed, and an escalated one says why
+    it came back.
+  - The four sightings stop appending "Seen N times." to their summaries. The row states the count
+    once, from the group; two statements of the same fact in two formats read as two facts. Three
+    tests that pinned that prose now pin its absence **and** that the count reaches the finding,
+    which is the behaviour that actually matters.
+  - Every consumer counts groups, not sightings: the notch shield and its pill, the "other findings"
+    count, and the push. So 21 rotations of one credential are one shield, one pill and one push
+    instead of twenty-one. The DEBUG snapshot board groups its fixtures the same way, so it shows the
+    shape the product has.
+
+### 2026-09-26 - The notch cannot go blank because Kannu has not worked out which screen it is on
+- **Developer label:** "in local build ui is not coming can you check"
+- **Agent label:** Follow-up 57, part B - an unknown screen is not a notchless screen
+- **Changes:**
+  - **The bug, seen in the field on 1.3.0's own code.** The app was perfectly healthy - idle main
+    thread, agent monitor publishing, `Caffeinate` reconciling - and drew no notch at all for over a
+    day, hover included. `KannuViewModel.hideOnClosed` is initialised `true` and its only writer is
+    the fullscreen detector's Combine sink, which was gated on `$screen.compactMap { $0 }`. That
+    swallowed the initial nil, and `CombineLatest` emits nothing until every side has spoken, so a
+    view model whose `screen` was never assigned produced **no signal at all** and kept the
+    initialiser forever. `vm.screen` is assigned only inside `adjustWindowPosition`, below a lock
+    guard and a no-screens early return, so a launch while the screen was locked - or in clamshell,
+    or with every display asleep - left it nil permanently. Repeated sleep/wake and display-off/on
+    cycles preceded the report.
+  - **It was two failures wearing one coat.** Besides refusing to paint
+    (`ContentView.shouldPaintClosedNotchBackground`), the stuck flag collapsed
+    `effectiveClosedNotchHeight` to **zero** - because a nil `screen` made `currentScreen` nil, which
+    the expression read as "this display has no notch", *on a notched MacBook*. That removed the
+    hover target too, so the notch could not even be summoned back. Fixing only the paint guard
+    would have left an invisible, un-hoverable notch and looked like a fix.
+  - The distinction the fix turns on: **an unknown screen is not a notchless screen.** `hideOnClosed`
+    now starts `false` (hiding is the exception that needs evidence), the detector chain combines
+    flat so a nil screen simply answers "not fullscreen" instead of dropping out, an unresolvable
+    screen keeps the notch's height, and launch seeds `vm.screen` itself before handing off to
+    `adjustWindowPosition` - which may still legitimately bail. Only *positioning* stays behind the
+    lock guard; identity never does.
+  - **A missing Accessibility grant no longer hides the product.** `isInNativeFullscreen` answered
+    `true` when `AXIsProcessTrusted()` was false - "assume fullscreen" - so a freshly installed
+    build, whose new code identity drops every TCC grant, hid the notch for any *maximized* window
+    under `.always` and for a maximized media window under `.nowPlayingOnly`. Confirmed live on the
+    reporter's Mac. It now answers `false` and says once in the log that detection is degraded:
+    showing the notch over a fullscreen app is a cosmetic miss, hiding it everywhere reads as a
+    broken app.
+  - **A dropped unlock notification recovers on its own.** macOS drops `com.apple.screenIsUnlocked`
+    often enough that `LockScreenManager`'s 500 ms poll is the real recovery path, and it cleared
+    `isLocked` without telling `AppDelegate` - so `windowsHiddenForLock` stayed set and the self-heal
+    inside `adjustWindowPosition` was never reached. It now posts `lockStateDidClear`, which
+    `AppDelegate` observes.
+  - **Tested, where none of this was testable before.** `KannuViewModel`, `AppDelegate`,
+    `FullscreenMediaDetector` and `LockScreenManager` had zero coverage of any kind and are all
+    `@MainActor` AppKit/SwiftUI types. The two rules that carried the defect are now a
+    Foundation-only `ClosedNotchVisibility` in the logic target, with the app delegating to it so
+    there is one copy rather than two: 10 tests including the exact composition that produced the
+    bug. The parts that are ordering and defaults rather than arithmetic are pinned by
+    `ClosedNotchVisibilityRulesTests`, a source scan in the `ClosedNotchObservationTests` shape with
+    its anti-vacuity devices - and it caught two mistakes in its own first run, one of them a rule
+    tripping over the comment that explained it.
 
 ## [1.3.0] - 2026-09-25 - Heimdall
 

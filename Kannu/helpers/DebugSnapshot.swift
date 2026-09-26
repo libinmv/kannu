@@ -198,9 +198,15 @@ enum DebugSnapshots {
             }
 
             Section {
-                ForEach(Array(DebugSnapshotFixtures.findings.enumerated()), id: \.element.id) { index, finding in
-                    SecurityFindingRow(finding: finding, initiallyExpanded: index == 1,
-                                       copyForAgent: {}, acknowledge: {}, snooze: {})
+                ForEach(
+                    Array(SecurityFindingsStore.buildGroupRanking(
+                        findings: DebugSnapshotFixtures.findings,
+                        acknowledgedGroups: [:], legacyAcknowledged: [], snoozes: []
+                    ).rows.enumerated()),
+                    id: \.element.group.id
+                ) { index, row in
+                    SecurityFindingRow(row: row, initiallyExpanded: index == 1,
+                                       copyForAgent: {}, acknowledge: { _ in }, snooze: {})
                 }
             } header: {
                 Text(verbatim: "Security findings")

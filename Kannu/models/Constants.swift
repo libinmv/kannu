@@ -1240,7 +1240,16 @@ extension Defaults.Keys {
     static let adrToolDirectory = Key<String>("adrToolDirectory", default: "")
     /// Where `adr-discovery --output-dir` snapshots are read from. Empty = `~/.kannu/adr/discovery`.
     static let adrSnapshotDirectory = Key<String>("adrSnapshotDirectory", default: "")
+    /// Legacy, per-finding acknowledgements. Still **read** so nothing a user already dismissed
+    /// comes back after the upgrade, but no longer written: `adrAcknowledgedGroups` replaces it.
     static let adrAcknowledgedFindingIDs = Key<[String]>("adrAcknowledgedFindingIDs", default: [])
+    /// Acknowledgements keyed by `AgentSecurityFinding.groupID` — a decision about a *problem*, with
+    /// the scope it reaches and what it looked like at the time, so a group that gets worse can come
+    /// back. Unlike the legacy set this is never pruned to the findings currently on screen: staying
+    /// settled while a thing recurs is the entire point.
+    static let adrAcknowledgedGroups = Key<[String: SecurityFindingAcknowledgement]>(
+        "adrAcknowledgedGroups", default: [:]
+    )
     static let adrFindingSnoozes = Key<[SecurityFindingSnooze]>("adrFindingSnoozes", default: [])
     static let adrLastScan = Key<ADRScanRecord?>("adrLastScan", default: nil)
     /// Let Kannu invoke the connected `adr-discovery` itself (daily, on config changes, on

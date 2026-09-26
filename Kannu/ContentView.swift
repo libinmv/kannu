@@ -497,7 +497,7 @@ struct ContentView: View {
     /// activity, or while the pointer is on the island. Everywhere else the raw value stands.
     /// An unacknowledged high finding shows the shield cue even with no agent on screen.
     private var securityCueWanted: Bool {
-        enableAgentStatusFeature && securityFindings.ranking.pendingHighCount > 0 && adrHighAlertMode.showsGlyph
+        enableAgentStatusFeature && securityFindings.groupRanking.pendingHighCount > 0 && adrHighAlertMode.showsGlyph
     }
 
     private var showAgentTrafficLight: Bool {
