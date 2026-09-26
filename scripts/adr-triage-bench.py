@@ -295,10 +295,18 @@ def main():
     parser.add_argument("--inspect", action="store_true", help="print the first records' shapes and exit (free)")
     args = parser.parse_args()
 
+    # A person runs this, but an agent may build the command line — the same reason
+    # adr-analyze-session.py checks its arguments rather than trusting its caller. Everything
+    # read or written resolves to a real path under the home folder, or the run refuses.
+    home = Path.home().resolve()
     checkout = Path(args.checkout).expanduser().resolve()
-    bench_path = Path(args.bench) if args.bench else max((checkout / "benchmark").glob("adr_bench_*.jsonl"), default=None)
-    if not bench_path or not Path(bench_path).is_file():
-        raise SystemExit("no adr_bench_*.jsonl found; pass --bench")
+    if home not in checkout.parents:
+        raise SystemExit("--checkout must be a folder under the home folder")
+    bench_path = Path(args.bench).expanduser().resolve() if args.bench else max(
+        (checkout / "benchmark").glob("adr_bench_*.jsonl"), default=None)
+    if not bench_path or bench_path.suffix != ".jsonl" or not bench_path.is_file() or home not in bench_path.resolve().parents:
+        raise SystemExit("no adr_bench_*.jsonl found under the home folder; pass --bench")
+    bench_path = bench_path.resolve()
     manifest, tasks, labels = load_bench(bench_path)
     print("bench: %s — %d tasks, %d labelled (%d malicious)" % (
         bench_path, len(tasks), len(labels), sum(1 for v in labels.values() if v)))
@@ -322,7 +330,9 @@ def main():
             raise SystemExit("engine %s needs %s" % (engine, ", ".join(missing)))
 
     done = set()
-    out_path = Path(args.out)
+    out_path = Path(args.out).expanduser().resolve()
+    if out_path.suffix != ".jsonl" or home not in out_path.parents:
+        raise SystemExit("--out must be a .jsonl path under the home folder")
     if out_path.exists():
         with open(out_path, encoding="utf-8") as handle:
             for line in handle:

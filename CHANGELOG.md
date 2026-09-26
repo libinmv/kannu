@@ -4,6 +4,17 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-26 - The triage bench checks its arguments like the adapter does
+- **Developer label:** SonarCloud's four Path Traversal findings on `scripts/adr-triage-bench.py`
+- **Agent label:** Follow-up 60 - clear PR #64's security gate
+- **Changes:**
+  - `--checkout`, `--bench` and `--out` now resolve to real paths and must sit under the home
+    folder, or the run refuses with a plain message — the same rule `adr-analyze-session.py`
+    adopted in `9e86b72` for the same finding class, and for the same reason: a person runs this,
+    but an agent may build the command line. Refusals verified against `/etc`, `/etc/passwd` and an
+    out-of-home output path.
+
+
 ### 2026-09-26 - Bring development into the transcript-budget branch
 - **Developer label:** "make sure all of todays work after release of 1.3.1 is merged to dev"
 - **Agent label:** Follow-up 60 - land the ADR triage research on development
