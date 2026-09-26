@@ -94,7 +94,8 @@ struct PolicySighting: HookSighting {
         } else {
             text = String(localized: "The agent used \(what) in “\(chatName)”. Blocking was off, so it ran; this is the report.")
         }
-        if eventCount > 1 { text += " " + String(localized: "Seen \(eventCount) times.") }
+        // The count is not repeated here: the row shows "N occurrences · first … · last …"
+        // from the group, and saying it twice in two formats reads as two different facts.
         return text
     }
 

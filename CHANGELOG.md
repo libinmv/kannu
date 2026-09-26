@@ -46,6 +46,22 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
   - The notch shield counts **groups**, so 21 rotations of one credential are one thing to act on.
     `groupRanking` is memoised against its inputs, since the 20 Hz hover poll reads it.
   - 19 tests over the pure grouping and acknowledgement rules, driven by the real numbers above.
+  - **On screen:** a row now stands for a problem and carries "N occurrences · first … · last …",
+    shown only when it says something — a single sighting with a count of 1 and two identical dates
+    does not. Expanding adds the spread that grouping folded together ("21 separate sightings folded
+    in", the projects, how many chats), so the row is legible rather than magic. Acknowledge reads
+    "Acknowledge for kannu-site" and narrows to the projects the group has been seen in, with
+    "Acknowledge everywhere" in the "…" menu; a partially acknowledged group says "Still open in
+    kannu" rather than looking as though the acknowledgement failed, and an escalated one says why
+    it came back.
+  - The four sightings stop appending "Seen N times." to their summaries. The row states the count
+    once, from the group; two statements of the same fact in two formats read as two facts. Three
+    tests that pinned that prose now pin its absence **and** that the count reaches the finding,
+    which is the behaviour that actually matters.
+  - Every consumer counts groups, not sightings: the notch shield and its pill, the "other findings"
+    count, and the push. So 21 rotations of one credential are one shield, one pill and one push
+    instead of twenty-one. The DEBUG snapshot board groups its fixtures the same way, so it shows the
+    shape the product has.
 
 ### 2026-09-26 - The notch cannot go blank because Kannu has not worked out which screen it is on
 - **Developer label:** "in local build ui is not coming can you check"

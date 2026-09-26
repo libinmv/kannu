@@ -351,13 +351,14 @@ final class SecurityFindingsStore: ObservableObject {
 
     /// Settles a whole problem, as far as the user says it reaches.
     ///
-    /// `project` nil means everywhere. Passing a project narrows it to that project, and
-    /// acknowledging a second one widens the same decision rather than replacing it — so a group
+    /// `projects` nil means everywhere. A list narrows the decision to those projects, and
+    /// acknowledging more later widens the same decision rather than replacing it — so a group
     /// spanning two repos stays on screen, showing only the part still unaddressed, until both are
     /// covered. Severity and outcome are stamped now, which is what lets the group come back if it
     /// later gets worse.
-    func acknowledgeGroup(_ group: AgentSecurityFindingGroup, project: String?) {
-        let scope: SecurityFindingAcknowledgement.Scope = project.map { .projects([$0]) } ?? .everywhere
+    func acknowledgeGroup(_ group: AgentSecurityFindingGroup, projects: [String]?) {
+        let scope: SecurityFindingAcknowledgement.Scope =
+            projects.map { .projects(Set($0).sorted()) } ?? .everywhere
         let fresh = SecurityFindingAcknowledgement(
             scope: scope,
             severityAtAck: group.severity.rawValue,
@@ -368,7 +369,12 @@ final class SecurityFindingsStore: ObservableObject {
         // escalation the user has now seen and accepted does not resurface immediately.
         var updated = acknowledgedGroups
         if let existing = updated[group.id] {
-            var widened = existing.adding(project: project)
+            var widened = existing
+            if let projects {
+                for project in projects { widened = widened.adding(project: project) }
+            } else {
+                widened.scope = .everywhere
+            }
             widened.severityAtAck = fresh.severityAtAck
             widened.outcomeAtAck = fresh.outcomeAtAck
             widened.ackedAt = fresh.ackedAt

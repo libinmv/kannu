@@ -106,7 +106,7 @@ struct NotchAgentStatusView: View {
             VStack(alignment: .leading, spacing: 12) {
                 caffeinateRow
 
-                if let pinned = findingsStore.ranking.pinned {
+                if let pinned = findingsStore.groupRanking.pinnedFinding {
                     securityPinnedCard(pinned)
                 }
 
@@ -294,8 +294,8 @@ struct NotchAgentStatusView: View {
 
     /// Open findings other than the pinned one (which has its own card).
     private var openFindingCount: Int {
-        let ranking = findingsStore.ranking
-        return ranking.visible.count - (ranking.pinned == nil ? 0 : 1)
+        let groups = findingsStore.groupRanking
+        return groups.visible.count - (groups.pinned == nil ? 0 : 1)
     }
 
     /// The one high finding that owns the closed-notch cue, pinned above the primary session.

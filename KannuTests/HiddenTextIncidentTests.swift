@@ -111,7 +111,9 @@ final class HiddenTextIncidentTests: XCTestCase {
         let summary = i.summary(chatName: "Fix the parser")
         XCTAssertFalse(summary.contains("SECRET"), "the summary is what a push sends")
         XCTAssertTrue(summary.contains("25 invisible characters in a Read result"))
-        XCTAssertTrue(summary.contains("Seen 3 times"))
+        // The count moved out of the prose: the row shows it once, from the group, as
+        // "N occurrences · first … · last …". Saying it twice read as two different facts.
+        XCTAssertFalse(summary.contains("Seen 3 times"))
         let finding = i.finding(conversationID: "c1", provider: "claude", chatName: "Fix the parser", projectName: "kannu", cwd: "/p")
         XCTAssertEqual(finding.source, AgentSecurityFinding.Source.kannu)
         XCTAssertEqual(finding.severity, AgentSecurityFinding.Severity.high)

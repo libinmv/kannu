@@ -136,13 +136,18 @@ final class AgentStatusNotificationBridge: ObservableObject {
 
     private func handleFindingsChange() {
         guard Defaults[.enableAgentStatusMobileNotifications], Defaults[.adrPushHighFindings] else { return }
-        let ranking = SecurityFindingsStore.shared.ranking
-        let candidates = ranking.visible.filter {
-            $0.severity == .high || ($0.severity == .medium && Defaults[.adrPushMediumFindings])
+        // Keyed on the group, so one problem pushes once however many sightings it has. An
+        // escalation changes the group's visibility, not its id, so the re-push comes from the
+        // prune below letting it back in — the same mechanism a vanished-and-returned finding used.
+        let groups = SecurityFindingsStore.shared.groupRanking
+        let candidates = groups.visible.filter {
+            $0.group.severity == .high
+                || ($0.group.severity == .medium && Defaults[.adrPushMediumFindings])
         }
-        pushedFindingIDs.formIntersection(Set(candidates.map(\.id)))
-        let fresh = candidates.filter { !pushedFindingIDs.contains($0.id) }
-        pushedFindingIDs.formUnion(fresh.map(\.id))
+        pushedFindingIDs.formIntersection(Set(candidates.map(\.group.id)))
+        let fresh = candidates.filter { !pushedFindingIDs.contains($0.group.id) }
+            .map(\.group.representative)
+        pushedFindingIDs.formUnion(candidates.map(\.group.id))
         let persisted = pushedFindingIDs.sorted()
         if persisted != Defaults[.adrPushedFindingIDs] { Defaults[.adrPushedFindingIDs] = persisted }
         guard !fresh.isEmpty else { return }

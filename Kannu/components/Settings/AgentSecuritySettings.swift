@@ -91,19 +91,22 @@ struct AgentSecuritySettings: View {
                 SettingsErrorText(error)
             }
 
-            let ranking = findingsStore.ranking
-            if ranking.visible.isEmpty {
+            // One row per problem, not per sighting: 21 rotations of one credential are one thing to
+            // act on. `groupRanking` is memoised, so reading it here costs nothing per render.
+            let groups = findingsStore.groupRanking
+            if groups.visible.isEmpty {
                 Text(findingsStore.lastScan == nil
                      ? String(localized: "No findings yet.")
                      : String(localized: "No open findings."))
                     .settingsDescriptionStyle()
             } else {
-                ForEach(ranking.visible) { finding in
+                ForEach(groups.visible, id: \.group.id) { row in
+                    let finding = row.group.representative
                     SecurityFindingRow(
-                        finding: finding,
+                        row: row,
                         copyForAgent: { findingsStore.copyAgentPrompt(for: finding) },
-                        acknowledge: { findingsStore.acknowledge(finding.id) },
-                        snooze: { findingsStore.snooze(finding.id, for: 24 * 3600) },
+                        acknowledge: { findingsStore.acknowledgeGroup(row.group, projects: $0) },
+                        snooze: { findingsStore.snooze(row.group.id, for: 24 * 3600) },
                         openChat: findingsStore.hasChat(for: finding)
                             ? { if !findingsStore.openChat(for: finding) { NSSound.beep() } }
                             : nil
@@ -818,12 +821,17 @@ extension AgentSecuritySettings {
     }
 
     /// DEBUG snapshot harness: the findings rows as the Security findings section draws them.
+    /// Groups the fixtures exactly as the real section does, so the board shows the recurrence line
+    /// and the scoped Acknowledge rather than a shape the product no longer has.
     static func snapshotFindingRows(_ findings: [AgentSecurityFinding]) -> AnyView {
-        AnyView(Form {
+        let groups = SecurityFindingsStore.buildGroupRanking(
+            findings: findings, acknowledgedGroups: [:], legacyAcknowledged: [], snoozes: []
+        )
+        return AnyView(Form {
             Section {
-                ForEach(findings) { finding in
-                    SecurityFindingRow(finding: finding, copyForAgent: {}, acknowledge: {}, snooze: {},
-                                       openChat: finding.sessionID == nil ? nil : {})
+                ForEach(groups.rows, id: \.group.id) { row in
+                    SecurityFindingRow(row: row, copyForAgent: {}, acknowledge: { _ in }, snooze: {},
+                                       openChat: row.group.representative.sessionID == nil ? nil : {})
                 }
             } header: {
                 SettingsSectionHeader("Security findings")

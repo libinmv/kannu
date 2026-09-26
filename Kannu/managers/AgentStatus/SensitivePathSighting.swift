@@ -174,7 +174,8 @@ struct SensitivePathSighting: HookSighting {
     func summary(chatName: String) -> String {
         var text = tool.map { String(localized: "\(path), with \($0), in “\(chatName)”.") }
             ?? String(localized: "\(path), in “\(chatName)”.")
-        if eventCount > 1 { text += " " + String(localized: "Seen \(eventCount) times.") }
+        // The count is not repeated here: the row shows "N occurrences · first … · last …"
+        // from the group, and saying it twice in two formats reads as two different facts.
         return text
     }
 

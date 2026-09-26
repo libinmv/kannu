@@ -172,7 +172,8 @@ struct SecretSighting: HookSighting {
             text = tool.map { String(localized: "The agent put \(kind.phrase) into a \($0) call in “\(chatName)”.") }
                 ?? String(localized: "The agent put \(kind.phrase) into a tool call in “\(chatName)”.")
         }
-        if eventCount > 1 { text += " " + String(localized: "Seen \(eventCount) times.") }
+        // The count is not repeated here: the row shows "N occurrences · first … · last …"
+        // from the group, and saying it twice in two formats reads as two different facts.
         return text
     }
 

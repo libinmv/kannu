@@ -116,6 +116,8 @@ struct SecurityFindingGroups: Equatable {
     var acknowledged: [Row] { rows.filter { !$0.visibility.isVisible } }
     /// The one the notch pins, if any.
     var pinned: Row? { visible.first { $0.group.severity == .high } }
+    /// The pinned row's finding, for the notch card and the push, which speak about a finding.
+    var pinnedFinding: AgentSecurityFinding? { pinned?.group.representative }
     /// What the notch shield counts. Groups, not sightings — so 21 rotations of one credential are
     /// one thing to deal with, which is the number a person can act on.
     var pendingHighCount: Int { visible.filter { $0.group.severity == .high }.count }
