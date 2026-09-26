@@ -3,6 +3,14 @@
     <channel>
         <title>Kannu</title>
         <item>
+            <title>1.3.1</title>
+            <pubDate>Sat, 26 Sep 2026 13:14:43 +0000</pubDate>
+            <sparkle:version>4</sparkle:version>
+            <sparkle:shortVersionString>1.3.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/libinmv/kannu/releases/download/v1.3.1/Kannu.1.3.1.dmg" length="21005040" type="application/octet-stream" sparkle:edSignature="SHEKPwAGCohu3SxRb7zCU2xDLR/khJsZhvYSXy0c1ew+KuXI88TN7887eQvgz9oGhVIjHzOqWMwBBGUQKtEKAA=="/>
+        </item>
+        <item>
             <title>1.3.0</title>
             <pubDate>Fri, 25 Sep 2026 13:52:05 +0000</pubDate>
             <sparkle:version>3</sparkle:version>
@@ -17,14 +25,6 @@
             <sparkle:shortVersionString>1.2.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/libinmv/kannu/releases/download/v1.2.0/Kannu.1.2.0.dmg" length="19173128" type="application/octet-stream" sparkle:edSignature="jAqSBcXme/mmoLxKHgn/j1cvnHOxNYYn5SE/MOeB+EGL9E8x05gVeJ5uhjQtViQn3qfJJCOS74nniCV1dkzpBQ=="/>
-        </item>
-        <item>
-            <title>1.0.0</title>
-            <pubDate>Fri, 31 Jul 2026 06:54:55 +0000</pubDate>
-            <sparkle:version>1</sparkle:version>
-            <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/libinmv/kannu/releases/download/v1.0.0/Kannu.1.0.0.dmg" length="18833102" type="application/octet-stream" sparkle:edSignature="38fWCci53k6KO3s1uGBONR53H/6GZ7Am8qtEm/cv2n/OrJqjvEMs/W21Z3TeIHvTwd/zuo0zsX0rQgpV4eDgAg=="/>
         </item>
     </channel>
 </rss>
