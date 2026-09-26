@@ -139,6 +139,7 @@ struct PolicySighting: HookSighting {
             lastSeen: Date(timeIntervalSince1970: TimeInterval(lastSeenMs) / 1000),
             occurrences: eventCount,
             projectName: projectName,
+            chatName: chatName,
             // The rule and what it matched, and nothing else: not the conversation, so the same
             // rule firing in another chat is the same row; and not `blocked`, because Kannu
             // starting to refuse a call is a change of outcome for one problem, not a new problem.

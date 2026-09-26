@@ -161,8 +161,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
     
-    /// Setup observers for music player state changes to restart AudioTap capture
+    /// The two `NSWorkspace` observers the waveform capture needs, held so they can be removed.
+    /// They used to be registered and their tokens thrown away, while the registration ran again on
+    /// every `enableRealTimeWaveform` -> true: two permanent observers per on/off cycle, each firing
+    /// on every music-app launch on the machine for the rest of the process.
+    private var audioTapMusicObservers: [NSObjectProtocol] = []
+
+    /// Setup observers for music player state changes to restart AudioTap capture. Idempotent.
     private func setupAudioTapMusicObservers() {
+        guard audioTapMusicObservers.isEmpty else { return }
         // Listen for app launches to restart capture when music apps are opened
         let targetBundleIDs = [
             "com.apple.Music",
@@ -177,7 +184,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "com.coppertino.Vox",
         ]
         
-        NSWorkspace.shared.notificationCenter.addObserver(
+        let launchObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didLaunchApplicationNotification,
             object: nil,
             queue: .main
@@ -197,7 +204,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         
         // Also observe app terminations to restart capture
-        NSWorkspace.shared.notificationCenter.addObserver(
+        let terminateObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didTerminateApplicationNotification,
             object: nil,
             queue: .main
@@ -212,6 +219,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 AudioTap.shared.restartCapture()
             }
         }
+
+        audioTapMusicObservers = [launchObserver, terminateObserver]
+    }
+
+    private func teardownAudioTapMusicObservers() {
+        for observer in audioTapMusicObservers {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
+        audioTapMusicObservers.removeAll()
     }
     
     private static let loginItemLog = os.Logger(subsystem: "com.kannu.app", category: "LaunchAtLogin")
@@ -910,6 +926,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     self?.setupAudioTapMusicObservers()
                 } else {
                     AudioTap.shared.stopCapture()
+                    self?.teardownAudioTapMusicObservers()
                 }
             }
             .store(in: &cancellables)

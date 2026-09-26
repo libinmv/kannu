@@ -4,6 +4,172 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-26 - Bump to 1.3.3, build 6, and supersede the unpublished 1.3.2
+- **Developer label:** ship the energy fix where it can reach the person who reported it
+- **Agent label:** Follow-up 59 - 1.3.3 release mechanics
+- **Changes:**
+  - `CURRENT_PROJECT_VERSION` 5 -> **6** in both configurations and `MARKETING_VERSION` 1.3.2 ->
+    1.3.3. Build 5 is never published: 1.3.2 was committed but never released, and its one change
+    (chat names on a grouped row) rides in this release instead. The build number is what Sparkle
+    compares, and the live feed's newest item is build 4, so 6 is offered to everyone.
+  - The codename stays **Heimdall** — the scheme names feature releases, and this is a patch.
+  - Curated notes at `docs/release-notes/1.3.3.md`, which `release.yml` resolves from the tag. They
+    lead with the battery fix, because that is the reason to take this update, and they state the
+    measured before-numbers as measured while claiming no after-number: the only honest place to take
+    one is the installed notarized build, which does not exist until this ships.
+
+
+### 2026-09-26 - Six ways a settings toggle left work running behind it
+- **Developer label:** "Do not know why but after continuously toggling all different types of
+  settings uses around 5,000 energy impacts on activity monitor, compared to 84.6 (my browser). Tried
+  disabelling all different features; uses half battery in about 20 minutes."
+- **Agent label:** Follow-up 59 - the toggle-accumulation leaks behind the energy report
+- **Changes:**
+  - **The reporter's trigger was not the grouping bug fixed in the entry below.** That one is real and
+    measured here, but it has nothing to do with toggling settings — so the report was checked against
+    the code a second time, asking specifically what a *toggle* leaves behind. Six things, each of
+    which accumulates and none of which belongs to any single feature, which is exactly why
+    "disabelling all different features" did not help.
+  - **`MediaControllerProtocol` no longer defaults its own teardown.** `stop()` and
+    `terminateChildProcessesForAppExit()` carried default no-ops, on the reasoning that most
+    controllers own nothing outside themselves. Two of the five did.
+    `MusicManager.releaseActiveController()` had been calling both correctly all along and was
+    answered with nothing. They are requirements now, so a missing teardown is a compile error; the
+    two AppleScript controllers state their empty implementations explicitly.
+  - **`AmazonMusicController` now tears down its `mediaremote-adapter.pl` child.** Same structure as
+    `NowPlayingController`, same unreachable `deinit` — `streamTask`'s frame holds `self` strongly and
+    its pipe loop never returns — so every switch of the Media > Music Source picker left one more
+    helper streaming to nobody, reparented to `launchd`, surviving app quit. It gains `stop()`,
+    `terminateChildProcessesForAppExit()`, a stored `setupTask` and an `isStopped` flag so a
+    controller stopped mid-start does not go on to launch a helper anyway.
+  - **`YouTubeMusicController` stops, and stays stopped.** It had no `stop()` and no reachable
+    `deinit`, so its 2 s poll, its WebSocket and its app-state observer survived being dropped — and
+    it *rebuilt itself*: the disconnect handler calls `startPeriodicUpdates()` and
+    `scheduleReconnect()`, which sleeps and then makes a fresh socket and a fresh timer. Its only gate
+    was `isActive()`, which asks whether the YouTube Music app is running, never whether this
+    controller is still in use. Every re-arming path now checks `isStopped`, including after the
+    reconnect backoff's sleep.
+  - **The HUD preview stopped powering a 6.7 Hz display poll.** `HUDPreviewViewModel.init` called
+    `start()` on the three shared system controllers and never stopped them, and the Settings window
+    is built once and only `orderOut`-ed, so it is never released. With the HUD feature **off**,
+    opening its settings pane started `SystemBrightnessController`'s 0.15 s poll — a full
+    `IOServiceGetMatchingServices` match where CoreBrightness declines — for the rest of the process,
+    and turning the feature off again could not stop it, because `stopObserving()` only runs on a
+    transition and it was already off. A preview consumes the three change notifications, which the
+    HUD's own observer already produces when the feature is on; it starts nothing.
+  - **The waveform's two `NSWorkspace` observers are removable.** Both `addObserver` tokens were
+    discarded, and the registration ran again on every `enableRealTimeWaveform` -> true: two permanent
+    observers per on/off cycle, each firing on every music-app launch on the machine. They are held,
+    removed on disable, and the setup is idempotent.
+  - **Three `readabilityHandler`s are cleared now.** When the child exits, the read end is permanently
+    signalled readable: `availableData` returns empty, the closure returns, GCD re-arms the source, and
+    it fires again immediately — a tight loop that burns idle wakeups, which is what Activity Monitor's
+    Energy Impact weights most heavily. Fixed on the two `mediaremote-adapter.pl` stderr pipes and on
+    the AirPods listening-mode `log stream`, matching what `SystemTimerBridge.stopLogStream()` and
+    `FocusLogStream` already did.
+  - **The Focus-mode seed scan cannot queue behind itself.** Each transition into the log-stream
+    detection mode enqueued up to three synchronous `log show --last 5m/1h/24h --debug` runs on a
+    *serial* `.userInitiated` queue, and nothing cancelled a queued one, so switching the mode a few
+    times left `log` and `logd` reading `/var/db/diagnostics` long after the setting was switched back.
+    It is a cancellable `DispatchWorkItem` now, replaced on a new transition and cancelled when
+    monitoring stops, re-checked between windows so a superseded scan does not go on to the expensive
+    one.
+  - **The duplication that caused it is gone from the part that matters.** SonarCloud put a number on
+    the root cause: `AmazonMusicController` and `NowPlayingController` share **162 duplicated lines**
+    across five blocks. That is why `e7dfc83` fixed the teardown in one and the other kept leaking —
+    the same disease as entry 1 (two copies of one artifact, only one exercised), in Swift instead of
+    in the hook script. The order-sensitive teardown now lives once, in
+    `MediaRemoteAdapterChild.tearDown(process:pipeHandler:stderrPipe:)`, with the reason each step
+    comes where it does; both controllers call it. The setup and streaming paths stay per-controller,
+    because those genuinely differ, so this is not a rewrite of two live media paths in a battery fix.
+  - `docs/REGRESSIONS.md` entry **19** records the rule and its second breaking, with the
+    second-owner and EOF-pipe shapes as part of it, and `Kannu/MediaControllers/` joins the Danger
+    zones table. Guards in `ResourceTeardownRulesTests`: the protocol may not default either method
+    (verified to fail when the default is restored), every conformer must declare both, and a file that
+    installs a `readabilityHandler` must clear one. The second-owner shape has no guard and the entry
+    says so, with the manual check to run instead.
+
+
+### 2026-09-26 - The wakeup storm grouping caused, and a metadata line that read as broken
+- **Developer label:** "can you check if this is true in our case" (a user's energy report: ~5,000
+  Energy Impact against a browser's 84.6, half a battery in 20 minutes, 93% battery health), and
+  "4 separate sightings folded in · projects: Vendors, kannu · across 3 chats this is broken in first
+  finding"
+- **Agent label:** Follow-up 59 - the energy regression, the truncated line, the chat count
+- **Changes:**
+  - **The energy report is real, it reproduces here, and the cause was 1.3.1's grouping commit.**
+    Measured on this Mac against an app documented at 0.9% CPU and 12 idle wakeups a second: 33.9%
+    CPU and 172 wakeups/s on the first sample, **41.2% and 928/s** thirty seconds later. Not driven
+    by agent activity — zero hook writes in the preceding minute and zero log lines in five — and
+    `sample` showed the main thread in continuous `NSHostingView.layout()` and Core Animation
+    commits, the signature of self-sustaining render churn. Activity Monitor weights wakeups heavily,
+    so ~928/s is how the reporter's 5,000 is reached where raw CPU alone would not.
+  - **The mechanism.** Findings are never persisted: all five sources are rebuilt on every publish,
+    and `publishFindings()`'s `combined != findings` check is the only thing stopping that from
+    reaching `@Published findings` each time. The grouping commit added `lastSeen: now` — a fresh
+    `Date()` — to two builders, so every rebuild differed by timestamp alone, the check never held,
+    and the notch, the closed pill and Settings all re-rendered continuously. It compounded: the
+    `groupRanking` memo stamp holds the whole findings array, so an always-changing array meant the
+    stamp never matched and grouping re-ran on every read, from `ContentView` and the closed pill's
+    bodies. This is the render churn #48 removed in 1.3.0, reintroduced. The surrounding code was
+    careful about exactly this — `firstSeen` is written `firstSeenByID[id] ?? now` *so that it stays
+    stable across rescans* — and `lastSeen: now` went in beside it without the same treatment. It
+    also explains "disabling all the features didn't help": the loop belongs to no feature.
+  - Both builders now take a timestamp that is fixed for a given input. A Discovery finding's
+    last-seen is the **scan's** own time, from the snapshot's `timestamp` (new `ADRSnapshot.generatedAt`,
+    RFC 3339 with or without fractional seconds), falling back to the carried value and then to nil —
+    never to the rebuild's clock, because an unknown last-seen must not churn. An unattended
+    session's is `session.updatedAt`, which the hook never refreshes while nothing happens
+    (`docs/REGRESSIONS.md` entry 12), so it is stable exactly as long as the session is quiet.
+  - **The invariant nothing pinned before now:** a rebuild from unchanged input must be *equal*, even
+    at a different wall-clock time. `AgentSecurityFindingTests.testRebuildingFromUnchangedInputIsEqual`
+    rebuilds both sources twice, feeding the previous round back in as the store does, and planting
+    the original `lastSeen: now` fails it with the consequence named. The `GroupRankingStamp` comment
+    now records that its memo only works because of the same invariant.
+  - **The "broken" line was a component used against its own contract.** `SettingsValueText` is one
+    line with **middle** truncation — right for `/Users/…/snapshot.json`, where both ends carry the
+    meaning, and wrong for a sentence, which renders with its middle amputated. `SecurityFindingRow`
+    used it four times as a full-width leading line: the recurrence line, the chats line, the
+    partial-acknowledgement note ("Acknowledged for a project, but this one belongs to none…") and
+    the breakdown. All four now take `.settingsDescriptionStyle()`, which wraps and matches the
+    summary above them.
+  - The `docs/SETTINGS.md` rule that sent them there ("a card's metadata goes in
+    `SettingsValueText`") was added in 1.3.1 and is simply wrong — it contradicts the component's own
+    doc comment. Corrected to say trailing values only, with the leading-line case named, and the
+    doc's own preamble settles the tie: the component wins.
+  - **A group counts its chats by `sessionID` now, and names them by title.** Nothing stops two chats
+    carrying the same display name — a default title, the same repo opened twice — and
+    `chatNames.count` folded those into one, so a finding genuinely spanning two identically named
+    chats reported "1 chat" and dropped the chat line entirely. `chatCount` counts sessions; the
+    de-duplicated names stay for display. Found by CodeRabbit on #61.
+
+
+### 2026-09-26 - A grouped row says which chats it came from
+- **Developer label:** "is the new build installed, i dont see the issues grouped by chat"
+- **Agent label:** Follow-up 58 - chat names on the grouped row; ship 1.3.2
+- **Changes:**
+  - **The report behind this was two things, and the first was the whole symptom:** 1.3.1 was
+    published but **not installed** — the running app was 1.3.0 / build 3, and `strings` found no
+    `AgentSecurityFindingGroup` or `groupSubject` in its binary, so the grouping code simply was not
+    there. Nothing was wrong with grouping.
+  - **The second was a real gap, and a decision that had never actually been made.** Grouping is
+    machine-wide, across chats, which was *inferred* rather than chosen: when offered machine-wide /
+    per-project / per-chat, the answer was a question about acknowledgement scope. Asked directly, the
+    choice is to keep machine-wide grouping and **name the chats on the collapsed row** instead of
+    hiding them behind Details. On the real data both designs collapse the 21 rotating `ASIA` keys to
+    one row, since they were all in one chat; the difference is only `ssh`.
+  - `chatName` is handed to every `finding(...)` builder and was only ever interpolated into
+    `summary`, so a group could not report which chats it spanned — it could only count opaque
+    `sessionID`s, and only when expanded. `AgentSecurityFinding` now carries `chatName` the way it
+    carries `projectName`, and `AgentSecurityFindingGroup` rolls the names up de-duplicated and
+    sorted.
+  - The collapsed row reads "7 occurrences · 3 chats · first … · last …" with the chats beneath it,
+    two names then a remainder ("Tenant Delete Agent, gitlab orchestration, +1"). A finding seen in
+    one chat shows no chat line — there is nothing to disambiguate. The expanded breakdown lists them
+    all, replacing the session-id tally with real names.
+  - Version 1.3.2, build **5**; the codename stays Heimdall, since the scheme names feature releases.
+
+
 ### 2026-09-26 - Ship 1.3.1 "Heimdall"
 - **Developer label:** "where is the release"
 - **Agent label:** Follow-up 57 - 1.3.1 release mechanics

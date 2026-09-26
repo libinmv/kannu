@@ -209,6 +209,7 @@ struct HiddenTextIncident: HookSighting {
             lastSeen: Date(timeIntervalSince1970: TimeInterval(lastSeenMs) / 1000),
             occurrences: eventCount,
             projectName: projectName,
+            chatName: chatName,
             // The technique and where it arrived. Not the preview: the decoded text differs with
             // every payload while the problem — something is smuggling invisible characters into
             // what this agent reads — is one. And not `firstSeenMs`, which sits in the *finding* id

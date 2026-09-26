@@ -74,8 +74,13 @@ struct SecurityFindingRow: View {
                     Text(verbatim: finding.summary)
                         .settingsDescriptionStyle()
                         .lineLimit(isExpanded ? nil : 2)
-                    if let recurrence { SettingsValueText(recurrence) }
-                    if let state = stateNote { SettingsValueText(state) }
+                    // These are full-width leading lines, not trailing values, so they take the
+                    // wrapping description style. `SettingsValueText` is one line, elided in the
+                    // *middle* — right for `/Users/…/snapshot.json`, and in 1.3.1 it amputated the
+                    // middle of every sentence here.
+                    if let recurrence { Text(verbatim: recurrence).settingsDescriptionStyle() }
+                    if let chats { Text(verbatim: chats).settingsDescriptionStyle() }
+                    if let state = stateNote { Text(verbatim: state).settingsDescriptionStyle() }
                 }
 
                 if isExpanded {
@@ -83,7 +88,7 @@ struct SecurityFindingRow: View {
                     Text(SecurityFindingGuide.details(for: finding))
                         .settingsDescriptionStyle()
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    if let breakdown { SettingsValueText(breakdown) }
+                    if let breakdown { Text(verbatim: breakdown).settingsDescriptionStyle() }
                 }
 
                 HStack(spacing: 8) {
@@ -108,9 +113,22 @@ struct SecurityFindingRow: View {
         let first = group.firstSeen.formatted(date: .abbreviated, time: .shortened)
         let last = group.lastSeen.formatted(date: .abbreviated, time: .shortened)
         var parts = [String(localized: "\(group.occurrences) occurrences")]
+        if group.chatCount > 1 { parts.append(String(localized: "\(group.chatCount) chats")) }
         parts.append(String(localized: "first \(first)"))
         if group.lastSeen != group.firstSeen { parts.append(String(localized: "last \(last)")) }
         return parts.joined(separator: " · ")
+    }
+
+    /// The chats themselves, on the collapsed row. Grouping across chats is deliberate, but a row
+    /// that reports "3 chats" and will not say which reads as though it is withholding something —
+    /// and the chat is usually how someone recognises what happened. Two names, then a remainder.
+    private var chats: String? {
+        let names = group.chatNames
+        // Gate on the real chat count, not the name count: two chats that happen to share a title
+        // are still two chats, and the row should say so rather than go quiet.
+        guard group.chatCount > 1, !names.isEmpty else { return nil }
+        if names.count <= 2 { return names.joined(separator: ", ") }
+        return String(localized: "\(names[0]), \(names[1]), +\(names.count - 2)")
     }
 
     /// Why the row is still here after being acknowledged — the honest half of grouping. Without it
@@ -142,8 +160,9 @@ struct SecurityFindingRow: View {
         if group.projects.count > 1 {
             parts.append(String(localized: "projects: \(group.projects.joined(separator: ", "))"))
         }
-        let chats = Set(group.findings.compactMap(\.sessionID)).count
-        if chats > 1 { parts.append(String(localized: "across \(chats) chats")) }
+        if group.chatCount > 1, !group.chatNames.isEmpty {
+            parts.append(String(localized: "chats: \(group.chatNames.joined(separator: ", "))"))
+        }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
