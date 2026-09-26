@@ -53,6 +53,9 @@ final class NowPlayingController: ObservableObject, MediaControllerProtocol {
     private var process: Process?
     private var pipeHandler: JSONLinesPipeHandler?
     private var streamTask: Task<Void, Never>?
+    /// Held so `stop()` can clear its `readabilityHandler`. Left installed, an EOF pipe reads as
+    /// permanently readable and GCD re-arms the source on every empty read — a tight wakeup loop.
+    private var stderrPipe: Pipe?
     /// The task `init` starts to spawn the helper. Tracked so `stop()` can cancel it: without this a
     /// controller stopped during its own setup would see no process, return, and then have setup resume
     /// and launch a helper nothing owns.
@@ -133,6 +136,9 @@ final class NowPlayingController: ObservableObject, MediaControllerProtocol {
         setupTask = nil
         streamTask?.cancel()
         streamTask = nil
+
+        stderrPipe?.fileHandleForReading.readabilityHandler = nil
+        stderrPipe = nil
 
         // Order matters: closing the pipe is what makes the stream loop return, so the child is left
         // with nowhere to write before it is asked to exit.
@@ -243,6 +249,7 @@ final class NowPlayingController: ObservableObject, MediaControllerProtocol {
         
         self.process = process
         self.pipeHandler = pipeHandler
+        self.stderrPipe = stderrPipe
 
         do {
             try process.run()

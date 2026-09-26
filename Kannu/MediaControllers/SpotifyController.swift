@@ -108,6 +108,11 @@ class SpotifyController: MediaControllerProtocol {
     }
 
     // MARK: - Protocol Implementation
+    /// Nothing to release: SpotifyController drives its app through AppleScript and owns no child
+    /// process, timer or socket. Spelled out because the protocol no longer defaults it — see there.
+    func stop() async {}
+    func terminateChildProcessesForAppExit() {}
+
     func play() async { await executeCommand("play") }
     func pause() async { await executeCommand("pause") }
     func togglePlay() async { await executeCommand("playpause") }

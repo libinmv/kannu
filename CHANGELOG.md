@@ -4,6 +4,69 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-26 - Six ways a settings toggle left work running behind it
+- **Developer label:** "Do not know why but after continuously toggling all different types of
+  settings uses around 5,000 energy impacts on activity monitor, compared to 84.6 (my browser). Tried
+  disabelling all different features; uses half battery in about 20 minutes."
+- **Agent label:** Follow-up 59 - the toggle-accumulation leaks behind the energy report
+- **Changes:**
+  - **The reporter's trigger was not the grouping bug fixed in the entry below.** That one is real and
+    measured here, but it has nothing to do with toggling settings — so the report was checked against
+    the code a second time, asking specifically what a *toggle* leaves behind. Six things, each of
+    which accumulates and none of which belongs to any single feature, which is exactly why
+    "disabelling all different features" did not help.
+  - **`MediaControllerProtocol` no longer defaults its own teardown.** `stop()` and
+    `terminateChildProcessesForAppExit()` carried default no-ops, on the reasoning that most
+    controllers own nothing outside themselves. Two of the five did.
+    `MusicManager.releaseActiveController()` had been calling both correctly all along and was
+    answered with nothing. They are requirements now, so a missing teardown is a compile error; the
+    two AppleScript controllers state their empty implementations explicitly.
+  - **`AmazonMusicController` now tears down its `mediaremote-adapter.pl` child.** Same structure as
+    `NowPlayingController`, same unreachable `deinit` — `streamTask`'s frame holds `self` strongly and
+    its pipe loop never returns — so every switch of the Media > Music Source picker left one more
+    helper streaming to nobody, reparented to `launchd`, surviving app quit. It gains `stop()`,
+    `terminateChildProcessesForAppExit()`, a stored `setupTask` and an `isStopped` flag so a
+    controller stopped mid-start does not go on to launch a helper anyway.
+  - **`YouTubeMusicController` stops, and stays stopped.** It had no `stop()` and no reachable
+    `deinit`, so its 2 s poll, its WebSocket and its app-state observer survived being dropped — and
+    it *rebuilt itself*: the disconnect handler calls `startPeriodicUpdates()` and
+    `scheduleReconnect()`, which sleeps and then makes a fresh socket and a fresh timer. Its only gate
+    was `isActive()`, which asks whether the YouTube Music app is running, never whether this
+    controller is still in use. Every re-arming path now checks `isStopped`, including after the
+    reconnect backoff's sleep.
+  - **The HUD preview stopped powering a 6.7 Hz display poll.** `HUDPreviewViewModel.init` called
+    `start()` on the three shared system controllers and never stopped them, and the Settings window
+    is built once and only `orderOut`-ed, so it is never released. With the HUD feature **off**,
+    opening its settings pane started `SystemBrightnessController`'s 0.15 s poll — a full
+    `IOServiceGetMatchingServices` match where CoreBrightness declines — for the rest of the process,
+    and turning the feature off again could not stop it, because `stopObserving()` only runs on a
+    transition and it was already off. A preview consumes the three change notifications, which the
+    HUD's own observer already produces when the feature is on; it starts nothing.
+  - **The waveform's two `NSWorkspace` observers are removable.** Both `addObserver` tokens were
+    discarded, and the registration ran again on every `enableRealTimeWaveform` -> true: two permanent
+    observers per on/off cycle, each firing on every music-app launch on the machine. They are held,
+    removed on disable, and the setup is idempotent.
+  - **Three `readabilityHandler`s are cleared now.** When the child exits, the read end is permanently
+    signalled readable: `availableData` returns empty, the closure returns, GCD re-arms the source, and
+    it fires again immediately — a tight loop that burns idle wakeups, which is what Activity Monitor's
+    Energy Impact weights most heavily. Fixed on the two `mediaremote-adapter.pl` stderr pipes and on
+    the AirPods listening-mode `log stream`, matching what `SystemTimerBridge.stopLogStream()` and
+    `FocusLogStream` already did.
+  - **The Focus-mode seed scan cannot queue behind itself.** Each transition into the log-stream
+    detection mode enqueued up to three synchronous `log show --last 5m/1h/24h --debug` runs on a
+    *serial* `.userInitiated` queue, and nothing cancelled a queued one, so switching the mode a few
+    times left `log` and `logd` reading `/var/db/diagnostics` long after the setting was switched back.
+    It is a cancellable `DispatchWorkItem` now, replaced on a new transition and cancelled when
+    monitoring stops, re-checked between windows so a superseded scan does not go on to the expensive
+    one.
+  - `docs/REGRESSIONS.md` entry **19** records the rule and its second breaking, with the
+    second-owner and EOF-pipe shapes as part of it, and `Kannu/MediaControllers/` joins the Danger
+    zones table. Guards in `ResourceTeardownRulesTests`: the protocol may not default either method
+    (verified to fail when the default is restored), every conformer must declare both, and a file that
+    installs a `readabilityHandler` must clear one. The second-owner shape has no guard and the entry
+    says so, with the manual check to run instead.
+
+
 ### 2026-09-26 - The wakeup storm grouping caused, and a metadata line that read as broken
 - **Developer label:** "can you check if this is true in our case" (a user's energy report: ~5,000
   Energy Impact against a browser's 84.6, half a battery in 20 minutes, 93% battery health), and

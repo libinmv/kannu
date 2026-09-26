@@ -50,6 +50,13 @@ final class AmazonMusicController: ObservableObject, MediaControllerProtocol {
     private var process: Process?
     private var pipeHandler: JSONLinesPipeHandler?
     private var streamTask: Task<Void, Never>?
+    /// Held so `stop()` can clear its `readabilityHandler`. Left installed, an EOF pipe reads as
+    /// permanently readable and GCD re-arms the source on every empty read — a tight wakeup loop.
+    private var stderrPipe: Pipe?
+    /// The `init` task that launches the helper, so a controller stopped mid-start cannot go on to
+    /// launch one.
+    private var setupTask: Task<Void, Never>?
+    private var isStopped = false
 
     /// True only after a stream line explicitly identified Amazon Music as the now playing source.
     private var amazonSessionActive = false
@@ -79,7 +86,7 @@ final class AmazonMusicController: ObservableObject, MediaControllerProtocol {
         MRMediaRemoteSetRepeatModeFunction = unsafeBitCast(
             MRMediaRemoteSetRepeatModePointer, to: (@convention(c) (Int) -> Void).self)
 
-        Task { await setupNowPlayingObserver() }
+        setupTask = Task { [weak self] in await self?.setupNowPlayingObserver() }
     }
 
     deinit {
@@ -98,6 +105,48 @@ final class AmazonMusicController: ObservableObject, MediaControllerProtocol {
 
         self.process = nil
         self.pipeHandler = nil
+    }
+
+    /// Tears down the `mediaremote-adapter.pl` child, the task streaming from it, and the stderr pipe.
+    ///
+    /// `deinit` above cannot do this, for the reason the protocol spells out: `streamTask`'s frame
+    /// holds `self` strongly once `processJSONStream()` is entered, and that call never returns — the
+    /// pipe loop is suspended in a continuation. So `self` owns the task, the running task owns
+    /// `self`, and until this existed, switching the Music Source away from Amazon Music left the
+    /// helper streaming to nobody and reparented to `launchd`, one more on every switch, surviving
+    /// even app quit. `MusicManager.releaseActiveController()` was already calling this; the protocol
+    /// was answering for it with a no-op.
+    func stop() async {
+        // Set first: setup checks this after its own `await`, so a controller stopped mid-start does
+        // not go on to launch a helper.
+        isStopped = true
+        setupTask?.cancel()
+        setupTask = nil
+        streamTask?.cancel()
+        streamTask = nil
+
+        stderrPipe?.fileHandleForReading.readabilityHandler = nil
+        stderrPipe = nil
+
+        // Order matters: closing the pipe is what makes the stream loop return, so the child is left
+        // with nowhere to write before it is asked to exit.
+        if let pipeHandler {
+            await pipeHandler.close()
+        }
+        self.pipeHandler = nil
+
+        if let process, process.isRunning {
+            process.terminate()
+        }
+        self.process = nil
+    }
+
+    /// See the protocol. Only the child matters here; nothing is awaited, because the app is exiting.
+    func terminateChildProcessesForAppExit() {
+        // Also blocks a setup still in flight from launching one after this point.
+        isStopped = true
+        guard let process, process.isRunning else { return }
+        process.terminate()
     }
 
     func play() async {
@@ -172,8 +221,15 @@ final class AmazonMusicController: ObservableObject, MediaControllerProtocol {
             print("AmazonMusicController [stderr]: \(message)")
         }
 
+        guard !isStopped, !Task.isCancelled else {
+            stderrPipe.fileHandleForReading.readabilityHandler = nil
+            await pipeHandler.close()
+            return
+        }
+
         self.process = process
         self.pipeHandler = pipeHandler
+        self.stderrPipe = stderrPipe
 
         do {
             try process.run()

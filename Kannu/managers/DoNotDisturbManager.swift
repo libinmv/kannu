@@ -50,6 +50,14 @@ final class DoNotDisturbManager: ObservableObject {
     /// Periodic task that verifies focus is still active when `isDoNotDisturbActive` is true.
     /// Catches cases where the disabled notification fails to fire.
     private var stateVerificationTask: Task<Void, Never>?
+    /// The queued one-shot `log show` seed, held so it can be cancelled.
+    ///
+    /// `metadataExtractionQueue` is serial, and each seed runs up to three synchronous `log show`
+    /// scans — the last of them over a full day of debug logs. Nothing cancelled a queued one, so
+    /// every transition into `.useDevTools` enqueued another round to run back-to-back: switching the
+    /// Focus detection mode a few times left `log`/`logd` reading `/var/db/diagnostics` long after
+    /// the setting had been switched back.
+    fileprivate var initialFocusScan: DispatchWorkItem?
 
     @Published private(set) var monitoringMode: FocusMonitoringMode = Defaults[.focusMonitoringMode]
 
@@ -115,6 +123,8 @@ final class DoNotDisturbManager: ObservableObject {
         notificationCenter.removeObserver(self, name: .focusModeDisabled, object: nil)
 
         focusLogStream.stop()
+        initialFocusScan?.cancel()
+        initialFocusScan = nil
         stopAssertionsPolling()
         stateVerificationTask?.cancel()
         stateVerificationTask = nil
@@ -531,6 +541,8 @@ private extension DoNotDisturbManager {
             checkInitialFocusStateViaLog()
         } else {
             focusLogStream.stop()
+            initialFocusScan?.cancel()
+            initialFocusScan = nil
             startAssertionsPolling()
         }
     }
@@ -541,10 +553,16 @@ private extension DoNotDisturbManager {
     /// seeds the initial focus state from it. Tries progressively larger windows so the common
     /// case (focus toggled recently) resolves in ~1-2s without scanning a full day of logs.
     private func checkInitialFocusStateViaLog() {
-        metadataExtractionQueue.async { [weak self] in
-            guard let self else { return }
+        // One seed at a time: a mode switch replaces the pending scan rather than queueing behind it.
+        initialFocusScan?.cancel()
+        var item: DispatchWorkItem!
+        item = DispatchWorkItem { [weak self] in
+            guard let self, !item.isCancelled else { return }
 
             for window in ["5m", "1h", "24h"] {
+                // Checked per window as well as before starting: a scan already running cannot be
+                // interrupted, but it must not go on to the more expensive windows once superseded.
+                guard !item.isCancelled else { return }
                 let task = Process()
                 task.executableURL = URL(fileURLWithPath: "/usr/bin/log")
                 task.arguments = [
@@ -579,6 +597,8 @@ private extension DoNotDisturbManager {
                 return
             }
         }
+        initialFocusScan = item
+        metadataExtractionQueue.async(execute: item)
     }
 
     func startAssertionsPolling() {
