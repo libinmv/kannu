@@ -2103,6 +2103,11 @@ private final class AirPodsListeningModeLogObserver {
     var onModeChange: ((AirPodsListeningMode, String?) -> Void)?
 
     private var process: Process?
+    /// Held so `stop()` can clear the handler and close the descriptor. An EOF pipe reads as
+    /// permanently readable, so a handler left installed is re-armed by GCD on every empty read — a
+    /// tight wakeup loop with nothing to show for it. `SystemTimerBridge.stopLogStream()` and
+    /// `FocusLogStream.handleTermination()` already do it this way.
+    private var outputPipe: Pipe?
     private let queue = DispatchQueue(label: "com.dynamicisland.airpods-listening-log", qos: .utility)
     private var lineBuffer = ""
 
@@ -2134,6 +2139,7 @@ private final class AirPodsListeningModeLogObserver {
         do {
             try process.run()
             self.process = process
+            self.outputPipe = outputPipe
             print("🎧 [BluetoothAudioManager] AirPods listening mode log observer started")
         } catch {
             outputPipe.fileHandleForReading.readabilityHandler = nil
@@ -2142,7 +2148,15 @@ private final class AirPodsListeningModeLogObserver {
     }
 
     func stop() {
-        process?.terminate()
+        // Clear the handler before terminating: the child's exit closes the write end, and a handler
+        // still installed then spins on EOF for as long as the process lives.
+        outputPipe?.fileHandleForReading.readabilityHandler = nil
+        outputPipe?.fileHandleForReading.closeFile()
+        outputPipe = nil
+
+        if let process, process.isRunning {
+            process.terminate()
+        }
         process = nil
     }
 

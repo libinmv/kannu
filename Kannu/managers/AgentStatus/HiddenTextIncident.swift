@@ -150,7 +150,8 @@ struct HiddenTextIncident: HookSighting {
     /// shown in Kannu only.
     func summary(chatName: String) -> String {
         var text = String(localized: "\(characterCount) \(characterWord) in \(place), in “\(chatName)”.")
-        if eventCount > 1 { text += " " + String(localized: "Seen \(eventCount) times.") }
+        // The count is not repeated here: the row shows "N occurrences · first … · last …"
+        // from the group, and saying it twice in two formats reads as two different facts.
         return text
     }
 
@@ -204,7 +205,16 @@ struct HiddenTextIncident: HookSighting {
             assetPath: cwd,
             sessionID: conversationID,
             firstSeen: Date(timeIntervalSince1970: TimeInterval(firstSeenMs) / 1000),
-            kannuOnlyEvidence: previewLine.map { [$0] } ?? []
+            kannuOnlyEvidence: previewLine.map { [$0] } ?? [],
+            lastSeen: Date(timeIntervalSince1970: TimeInterval(lastSeenMs) / 1000),
+            occurrences: eventCount,
+            projectName: projectName,
+            chatName: chatName,
+            // The technique and where it arrived. Not the preview: the decoded text differs with
+            // every payload while the problem — something is smuggling invisible characters into
+            // what this agent reads — is one. And not `firstSeenMs`, which sits in the *finding* id
+            // and so made a second sighting in the very same chat count as a new problem.
+            groupSubject: "\(kind.rawValue)|\(location.rawValue)"
         )
     }
 }

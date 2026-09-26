@@ -49,6 +49,14 @@ final class YouTubeMusicController: MediaControllerProtocol, @unchecked Sendable
     private var updateTimer: Timer?
     private var appStateObserver: Task<Void, Never>?
     private var reconnectDelay: TimeInterval = 1.0
+    /// Set by `stop()`. Every path that re-arms the timer or the socket checks it, because this
+    /// controller could otherwise rebuild itself after being dropped: a disconnect calls
+    /// `startPeriodicUpdates()` **and** `scheduleReconnect()`, which sleeps and then calls
+    /// `initializeIfAppActive()` for a fresh socket and a fresh timer. `isActive()` is not that
+    /// check — it only asks whether the YouTube Music app is running, not whether this controller is
+    /// still the one in use. A switch away from YouTube Music used to leave a 2 s poll and a socket
+    /// that reconnected forever, one more of each per switch.
+    private var isStopped = false
     
     // MARK: - Initialization
     init(configuration: YouTubeMusicConfiguration = .default) {
@@ -63,6 +71,33 @@ final class YouTubeMusicController: MediaControllerProtocol, @unchecked Sendable
         }
     }
     
+    // MARK: - Teardown
+
+    /// Stops the poll, the socket and the observer, and blocks every path that would restart them.
+    /// Called by `MusicManager.releaseActiveController()` on a Music Source change; before this
+    /// existed the protocol answered for it with a no-op.
+    func stop() async {
+        isStopped = true
+
+        artworkFetchTask?.cancel()
+        artworkFetchTask = nil
+        appStateObserver?.cancel()
+        appStateObserver = nil
+
+        // The timer was scheduled on the main run loop; invalidate it there, as `handleAppTerminated`
+        // already does.
+        await MainActor.run { stopPeriodicUpdates() }
+
+        await webSocketClient?.disconnect()
+        webSocketClient = nil
+    }
+
+    /// Nothing outside the process to signal — no child process. The socket and the timer die with
+    /// the process. Spelled out because the protocol no longer defaults it.
+    func terminateChildProcessesForAppExit() {
+        isStopped = true
+    }
+
     // MARK: - MediaControllerProtocol Implementation
     func play() async { await sendCommand(endpoint: "/play", method: "POST") }
     
@@ -166,7 +201,7 @@ final class YouTubeMusicController: MediaControllerProtocol, @unchecked Sendable
     }
     
     private func initializeIfAppActive() async {
-        guard isActive() else { return }
+        guard !isStopped, isActive() else { return }
         
         do {
             let token = try await authManager.authenticate()
@@ -265,21 +300,24 @@ final class YouTubeMusicController: MediaControllerProtocol, @unchecked Sendable
     
     private func handleWebSocketDisconnect() async {
         webSocketClient = nil
+        guard !isStopped else { return }
         await startPeriodicUpdates() // Fallback to polling
         await scheduleReconnect()
     }
     
     private func scheduleReconnect() async {
+        guard !isStopped else { return }
         try? await Task.sleep(for: .seconds(reconnectDelay))
         reconnectDelay = min(reconnectDelay * 2, configuration.reconnectDelay.upperBound)
-        
-        if isActive() {
+
+        // Re-checked after the sleep: a stop during the backoff must not be undone by the wake.
+        if !isStopped, isActive() {
             await initializeIfAppActive()
         }
     }
     
     private func startPeriodicUpdates() async {
-        guard isActive() && webSocketClient == nil else { return }
+        guard !isStopped, isActive(), webSocketClient == nil else { return }
         
         stopPeriodicUpdates()
         

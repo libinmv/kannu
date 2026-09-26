@@ -126,7 +126,16 @@ struct ADRSessionAnalysis: Codable, Equatable, Identifiable {
             assetPath: reportPath,
             sessionID: conversationID,
             firstSeen: existingFirstSeen ?? date,
-            revealPath: reportPath
+            revealPath: reportPath,
+            lastSeen: date,
+            projectName: nil,
+            chatName: chatName,
+            // The chat and the tactic, and **stays per-chat** — unlike every other family. A
+            // Detection verdict is a judgement about one specific conversation, so two chats judged
+            // the same way are genuinely two things to read. What this does drop is the churn the
+            // finding id carries: `confidence 0.91` and the model name are in `id`, so re-analysing
+            // the same chat at 0.92, or with a different model, used to appear as a new finding.
+            groupSubject: "\(conversationID)|\(rule)"
         )
     }
 }

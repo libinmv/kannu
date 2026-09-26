@@ -76,6 +76,18 @@ section describes it, it does not define it.
   the same length everywhere. Same for `SettingsStepperRow`.
 - **An error line is a sibling of the row it belongs to**, so it takes that row's inset — including
   inside an Advanced disclosure.
+- **`SettingsValueText` is for a trailing value, never for a leading line.** It is one line with
+  middle truncation, which is right for `/Users/…/snapshot.json` — both ends carry the meaning — and
+  wrong for anything that reads as a sentence, which renders with its middle amputated. A full-width
+  line under a title takes `.settingsDescriptionStyle()`, which wraps and matches the summary above
+  it. An earlier version of this rule said the opposite ("a card's metadata goes in
+  `SettingsValueText`"), and `SecurityFindingRow` followed it for four prose lines in 1.3.1; the
+  component's own doc comment says trailing, and the component wins.
+- **A card's metadata appears only when it says something.** Suppress it when it adds nothing: a row
+  standing for a single occurrence, with two identical dates, is noise dressed as information —
+  `SecurityFindingRow` omits its recurrence line in exactly that case. And state a fact once. The
+  same count in prose *and* as a value reads as two different facts, which is why the sighting
+  summaries stopped appending "Seen N times." once the row began showing the real total.
 
 ## Section rules
 

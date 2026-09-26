@@ -174,7 +174,8 @@ struct SensitivePathSighting: HookSighting {
     func summary(chatName: String) -> String {
         var text = tool.map { String(localized: "\(path), with \($0), in “\(chatName)”.") }
             ?? String(localized: "\(path), in “\(chatName)”.")
-        if eventCount > 1 { text += " " + String(localized: "Seen \(eventCount) times.") }
+        // The count is not repeated here: the row shows "N occurrences · first … · last …"
+        // from the group, and saying it twice in two formats reads as two different facts.
         return text
     }
 
@@ -217,7 +218,14 @@ struct SensitivePathSighting: HookSighting {
             assetPath: cwd,
             sessionID: conversationID,
             firstSeen: Date(timeIntervalSince1970: TimeInterval(firstSeenMs) / 1000),
-            revealPath: revealPath
+            revealPath: revealPath,
+            lastSeen: Date(timeIntervalSince1970: TimeInterval(lastSeenMs) / 1000),
+            occurrences: eventCount,
+            projectName: projectName,
+            chatName: chatName,
+            // The file and what was done to it. The path *is* the identity here, so it stays; the
+            // conversation goes, because reading `~/.ssh/id_ed25519` in ten chats is one problem.
+            groupSubject: "\(category.rawValue)|\(access.rawValue)|\(path)"
         )
     }
 }

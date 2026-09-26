@@ -90,7 +90,7 @@ struct AgentTrafficLightIndicator: View {
     /// A pending high finding shows a shield beside the dots in every mode but Off. It rides
     /// along wherever the dots are drawn (standalone, or inside the music pill).
     private var showsSecurityGlyph: Bool {
-        !suppressSecurityGlyph && highAlertMode.showsGlyph && findingsStore.ranking.pendingHighCount > 0
+        !suppressSecurityGlyph && highAlertMode.showsGlyph && findingsStore.groupRanking.pendingHighCount > 0
     }
     /// Keyed by session ID — records when a session first became non-active (stopped/inactive),
     /// so a just-finished run can pulse red briefly before settling.
@@ -275,17 +275,17 @@ struct AgentTrafficLightLiveActivity: View {
     var body: some View {
         let now = Date()
         let _ = pillWake
-        let ranking = findingsStore.ranking
-        let pillEnd = ranking.pinned.flatMap {
+        let groups = findingsStore.groupRanking
+        let pillEnd = groups.pinnedFinding.flatMap {
             AgentTrafficLightAttention.pillChange(fiveSecondMode: highAlertMode == .fiveSeconds, firstSeen: $0.firstSeen, now: now)
         }
-        let pinnedPill = ranking.pinned.flatMap { pillIsVisible(at: now, pinned: $0) ? $0 : nil }
+        let pinnedPill = groups.pinnedFinding.flatMap { pillIsVisible(at: now, pinned: $0) ? $0 : nil }
         HStack(spacing: 8) {
             AgentTrafficLightIndicator(suppressSecurityGlyph: pinnedPill != nil)
             if let pinned = pinnedPill {
                 SecurityAlertPill(
                     finding: pinned,
-                    extraCount: max(0, ranking.pendingHighCount - 1),
+                    extraCount: max(0, groups.pendingHighCount - 1),
                     maxWidth: min(contentWidth * 0.62, 190)
                 )
                 .onTapGesture { onTapSecurityPill?() }

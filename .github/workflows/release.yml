@@ -195,13 +195,29 @@ jobs:
           path: Updates/appcast.xml
           if-no-files-found: warn
 
+      # Prefer hand-written notes at docs/release-notes/<version>.md, falling back to GitHub's
+      # generated commit list when a tag has none. The path is derived from the tag on purpose: a
+      # hardcoded one would publish the previous release's notes on the next tag, and the generated
+      # list is wrong here anyway because the v1.2.0 tag was orphaned by the 2026-09-03 history reset.
+      - name: Resolve Release Notes
+        run: |
+          NOTES="docs/release-notes/${RELEASE_VERSION}.md"
+          if [ -f "${NOTES}" ]; then
+            echo "Publishing curated notes from ${NOTES}."
+            echo "RELEASE_BODY_PATH=${NOTES}" >> "$GITHUB_ENV"
+          else
+            echo "No ${NOTES}; falling back to generated release notes."
+            echo "RELEASE_BODY_PATH=" >> "$GITHUB_ENV"
+          fi
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           name: ${{ env.RELEASE_TITLE }}
           files: |
             build/${{ env.RELEASE_DMG }}
-          generate_release_notes: true
+          body_path: ${{ env.RELEASE_BODY_PATH }}
+          generate_release_notes: ${{ env.RELEASE_BODY_PATH == '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

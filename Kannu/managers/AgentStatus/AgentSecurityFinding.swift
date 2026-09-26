@@ -81,6 +81,53 @@ struct AgentSecurityFinding: Equatable, Hashable, Identifiable, Codable {
     /// in a prompt, hidden text). Outside the id, so ids, acknowledgements and snoozes are unchanged.
     var revealPath: String? = nil
 
+    /// When this finding was last seen, if the source tracks it (the hook sightings all do). Nil
+    /// for sources that only know "it is true now" — Discovery has no upstream timestamp at all.
+    var lastSeen: Date? = nil
+
+    /// How many times the underlying thing happened, as counted by whoever counts it. The hook
+    /// aggregates per chat, so this is that chat's tally; totals across chats are rolled up by
+    /// `AgentSecurityFindingGroup`, never by summing these in place.
+    var occurrences: Int = 1
+
+    /// The chat's project, used to scope an acknowledgement. Nil for findings that are not about a
+    /// chat (Discovery's assets, the new-server check's config files).
+    var projectName: String? = nil
+
+    /// The chat this was seen in. Every builder is already handed it, but it used only to be
+    /// interpolated into `summary` — so a grouped row could not say which chats it spanned, only
+    /// count opaque session ids. Nil where there is no chat (Discovery, the new-server check).
+    var chatName: String? = nil
+
+    /// The identity of the *problem*, with the parts that churn deliberately left out — a rotated
+    /// credential's fingerprint, the conversation it happened in, the timestamp. `id` still
+    /// identifies this one sighting, so acknowledgements written before grouping keep working and
+    /// the golden-id tests keep passing; this is what one row in the UI stands for.
+    ///
+    /// Nil means "do not group me": the finding stands alone under its own id.
+    var groupSubject: String? = nil
+
+    /// The *shape* of this occurrence, when the shape can change while the problem stays the same
+    /// — for a policy match, whether it ran or was refused. It is not part of `groupSubject`,
+    /// because "an agent kept running `ssh`" and "Kannu started refusing `ssh`" are one problem
+    /// with two outcomes; and it is not derivable from `severity`, which moves the *other* way
+    /// (a match that ran is high, one Kannu refused is medium). An acknowledged group whose set of
+    /// outcomes changes comes back, which is the whole point of tracking it.
+    var outcomeTag: String? = nil
+
+    /// One row in Settings › Agent Security. Falls back to `id` so an ungrouped finding is its own
+    /// group of one rather than silently merging with anything.
+    var groupID: String {
+        guard let groupSubject else { return id }
+        return AgentSecurityFinding.stableID(
+            source: source, rule: rule, subject: groupSubject, evidence: []
+        )
+    }
+
+    /// What the group is keyed on, shown in the details so the grouping is legible rather than
+    /// magic ("every `ASIA` key Bash saw", not "21 things we decided were the same").
+    var groupSubjectLabel: String? { groupSubject }
+
     /// The chat's project folder, for Kannu's own findings about a chat (`assetPath` is the chat's
     /// working directory there); nil for ADR's findings and for the new-server check.
     var projectFolder: String? {
@@ -147,12 +194,27 @@ struct AgentSecurityFinding: Equatable, Hashable, Identifiable, Codable {
 
     /// Maps a Discovery snapshot's findings, joining each to its asset for a name and a path.
     /// `existing` lets a finding keep its original `firstSeen` across re-scans.
+    ///
+    /// **Every timestamp here must be fixed for a given snapshot.** Findings are not persisted:
+    /// they are rebuilt from all five sources on every publish, and `publishFindings`' `combined !=
+    /// findings` check is the only thing stopping that publish from reaching `@Published findings`
+    /// on every pass. A `Date()` taken at rebuild time makes that check always true, so the notch,
+    /// the closed pill and Settings re-render continuously — measured at 41% CPU and 928 idle
+    /// wakeups a second in 1.3.1. `firstSeen` is carried from `existing` for this reason; `lastSeen`
+    /// comes from the snapshot's own scan time for the same one.
     static func findings(
         from snapshot: ADRSnapshot,
         existing: [AgentSecurityFinding] = [],
         now: Date = Date()
     ) -> [AgentSecurityFinding] {
         let firstSeenByID = Dictionary(existing.map { ($0.id, $0.firstSeen) }, uniquingKeysWith: { a, _ in a })
+        let lastSeenByID = Dictionary(
+            existing.compactMap { finding in finding.lastSeen.map { (finding.id, $0) } },
+            uniquingKeysWith: { a, _ in a }
+        )
+        // The scan's own time, not the rebuild's. Nil rather than `now` when upstream gave no usable
+        // timestamp: the group falls back to `firstSeen`, and an unknown last-seen must not churn.
+        let scannedAt = snapshot.generatedAt
         return snapshot.findings.map { finding in
             let asset = snapshot.asset(id: finding.assetId)
             let evidence = finding.evidence.map { item -> String in
@@ -173,7 +235,13 @@ struct AgentSecurityFinding: Equatable, Hashable, Identifiable, Codable {
                 assetPath: asset?.installPath,
                 sessionID: nil,
                 firstSeen: firstSeenByID[id] ?? now,
-                revealPath: reveal
+                revealPath: reveal,
+                lastSeen: scannedAt ?? lastSeenByID[id],
+                // The asset and the rule. `id` folds in the rendered evidence, so a reworded proof
+                // or a changed path from ADR reads as a new finding; the asset does not move, so the
+                // row stays one row. ADR reports no project, so only "acknowledge everywhere"
+                // applies to these.
+                groupSubject: finding.assetId
             )
         }
     }
@@ -210,7 +278,19 @@ extension AgentSecurityFinding {
                     assetName: session.displayProjectName,
                     assetPath: session.cwd,
                     sessionID: session.conversationID,
-                    firstSeen: firstSeenByID[id] ?? now
+                    firstSeen: firstSeenByID[id] ?? now,
+                    // The session's own last event, never `Date()`: an unattended session is
+                    // rebuilt on every publish, and a rebuild-time stamp would make
+                    // `publishFindings`' equality gate always fail. The hook never refreshes a
+                    // status file's `ts` while nothing happens (docs/REGRESSIONS.md entry 12), so
+                    // this is stable exactly as long as the session is quiet.
+                    lastSeen: session.updatedAt,
+                    projectName: session.displayProjectName,
+                    chatName: session.displayChatName,
+                    // The project and the agent, not the conversation: "this agent keeps being
+                    // started with permission checks off in this repo" is one habit worth one row,
+                    // however many sessions it spans.
+                    groupSubject: "unattended|\(session.provider)|\(session.displayProjectName)"
                 )
             }
     }

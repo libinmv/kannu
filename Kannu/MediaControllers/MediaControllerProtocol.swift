@@ -39,7 +39,15 @@ protocol MediaControllerProtocol: ObservableObject {
     func updatePlaybackInfo() async
 
     /// Releases anything the controller owns outside the process — a child process, a pipe, a stream
-    /// task. Most controllers own nothing of the sort and take the default no-op.
+    /// task, a timer, a socket.
+    ///
+    /// **Every controller states this explicitly, even when there is nothing to release.** These two
+    /// used to carry default no-op implementations, and the cost was invisible: `AmazonMusicController`
+    /// owns a `mediaremote-adapter.pl` child and `YouTubeMusicController` owns a repeating timer and a
+    /// WebSocket, and both silently inherited "release nothing". Switching the Music Source away from
+    /// either one left its work running for the life of the process — one more orphaned helper, or one
+    /// more self-reconnecting socket, on every switch. A requirement makes a missing teardown a
+    /// compile error instead of a battery report.
     ///
     /// This exists because `deinit` is not a teardown path for a controller that keeps a live child.
     /// `NowPlayingController` holds a `Task` that holds the controller (its stream loop never returns,
@@ -54,9 +62,4 @@ protocol MediaControllerProtocol: ObservableObject {
     /// Terminating the child is the only part that must happen before the process exits — the pipe and
     /// the stream task die with it either way.
     func terminateChildProcessesForAppExit()
-}
-
-extension MediaControllerProtocol {
-    func stop() async {}
-    func terminateChildProcessesForAppExit() {}
 }

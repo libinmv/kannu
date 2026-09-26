@@ -67,6 +67,54 @@ final class AgentSecurityFindingTests: XCTestCase {
         XCTAssertEqual(later[0].firstSeen, t0)
     }
 
+    /// The invariant `publishFindings()` rests on, and the one nothing pinned before 1.3.2.
+    ///
+    /// Findings are never persisted — all five sources are rebuilt on every publish, and
+    /// `combined != findings` is the only gate stopping `@Published findings` from firing each
+    /// time. So a rebuild from unchanged input must be **equal**, including when the rebuild
+    /// happens at a different wall-clock time. In 1.3.1 two builders took a fresh `Date()` for
+    /// `lastSeen`, the gate never held, and the notch, the closed pill and Settings re-rendered
+    /// continuously: 41% CPU and 928 idle wakeups a second, from an app documented at 0.9% and 12.
+    func testRebuildingFromUnchangedInputIsEqual() throws {
+        let snap = try snapshot()
+        let sessions = [session("a", unattended: true), session("b", unattended: true)]
+
+        let discoveryFirst = AgentSecurityFinding.findings(from: snap, now: t0)
+        let nativeFirst = AgentSecurityFinding.nativeFindings(from: sessions, now: t0)
+
+        // A later publish, with the previous round fed back in exactly as the store does it.
+        let discoveryAgain = AgentSecurityFinding.findings(from: snap, existing: discoveryFirst, now: t0.addingTimeInterval(7))
+        let nativeAgain = AgentSecurityFinding.nativeFindings(from: sessions, existing: nativeFirst, now: t0.addingTimeInterval(7))
+
+        XCTAssertEqual(discoveryAgain, discoveryFirst, "a Discovery rebuild moved, so every publish would republish")
+        XCTAssertEqual(nativeAgain, nativeFirst, "an unattended rebuild moved, so every publish would republish")
+
+        // And once more, to catch a value that only settles on the second pass.
+        XCTAssertEqual(AgentSecurityFinding.findings(from: snap, existing: discoveryAgain, now: t0.addingTimeInterval(900)), discoveryFirst)
+        XCTAssertEqual(AgentSecurityFinding.nativeFindings(from: sessions, existing: nativeAgain, now: t0.addingTimeInterval(900)), nativeFirst)
+    }
+
+    func testDiscoveryLastSeenIsTheScanTimeNotTheRebuildTime() throws {
+        let findings = AgentSecurityFinding.findings(from: try snapshot(), now: t0)
+        // The fixture's own "timestamp": 2026-09-09T02:00:00+00:00.
+        XCTAssertEqual(findings[0].lastSeen, Date(timeIntervalSince1970: 1_788_919_200))
+    }
+
+    func testDiscoveryLastSeenIsNilRatherThanNowWhenTheScanHasNoTimestamp() throws {
+        let undated = ADRSnapshotFixture.json.replacingOccurrences(
+            of: "\"timestamp\": \"2026-09-09T02:00:00+00:00\"", with: "\"timestamp\": \"\"")
+        let snap = try ADRSnapshot.decode(Data(undated.utf8))
+        let first = AgentSecurityFinding.findings(from: snap, now: t0)
+        XCTAssertNil(first[0].lastSeen, "an unknown last-seen must not become the rebuild's clock")
+        // Still stable, and a carried value still survives.
+        XCTAssertEqual(AgentSecurityFinding.findings(from: snap, existing: first, now: t0.addingTimeInterval(60)), first)
+    }
+
+    func testUnattendedLastSeenIsTheSessionsOwnClock() {
+        let findings = AgentSecurityFinding.nativeFindings(from: [session("a", unattended: true)], now: t0.addingTimeInterval(5_000))
+        XCTAssertEqual(findings[0].lastSeen, t0, "the session's updatedAt, not the rebuild's Date()")
+    }
+
     func testSeverityWordsAndUnknownRuleTitles() {
         XCTAssertEqual(AgentSecurityFinding.Severity(adr: "high"), .high)
         XCTAssertEqual(AgentSecurityFinding.Severity(adr: "critical"), .high)

@@ -4,6 +4,354 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-26 - The next release is 1.3.2, because 1.3.2 never shipped
+- **Developer label:** "Latest published still 1.3.1 (build 4), then it should be 1.3.2, remember
+  that"
+- **Agent label:** Follow-up 60 - renumber the pending release
+- **Changes:**
+  - `MARKETING_VERSION` 1.3.3 -> **1.3.2** in both configurations. The rule, now recorded: the next
+    release number is the last *published* one plus a patch — a version that was committed but never
+    released does not consume its number. 1.3.2 was committed as build 5 and never tagged, so the
+    battery-fix release takes the 1.3.2 name.
+  - `CURRENT_PROJECT_VERSION` stays **6**: commit `b979cd7` already used build 5 for a different
+    tree, Sparkle compares only the build number, and 6 > the feed's 4 either way. Two trees claiming
+    build 5 is exactly the ambiguity the build counter exists to prevent.
+  - `docs/release-notes/1.3.2.md` — the chat-names-only stub is replaced by the full 1.3.3 notes
+    retitled, since the tag drives the notes lookup (`release.yml` resolves
+    `docs/release-notes/${RELEASE_VERSION}.md`); `1.3.3.md` deleted. The two entries below that say
+    "1.3.3" stay as history of what was believed at the time.
+
+
+### 2026-09-26 - Bump to 1.3.3, build 6, and supersede the unpublished 1.3.2
+- **Developer label:** ship the energy fix where it can reach the person who reported it
+- **Agent label:** Follow-up 59 - 1.3.3 release mechanics
+- **Changes:**
+  - `CURRENT_PROJECT_VERSION` 5 -> **6** in both configurations and `MARKETING_VERSION` 1.3.2 ->
+    1.3.3. Build 5 is never published: 1.3.2 was committed but never released, and its one change
+    (chat names on a grouped row) rides in this release instead. The build number is what Sparkle
+    compares, and the live feed's newest item is build 4, so 6 is offered to everyone.
+  - The codename stays **Heimdall** — the scheme names feature releases, and this is a patch.
+  - Curated notes at `docs/release-notes/1.3.3.md`, which `release.yml` resolves from the tag. They
+    lead with the battery fix, because that is the reason to take this update, and they state the
+    measured before-numbers as measured while claiming no after-number: the only honest place to take
+    one is the installed notarized build, which does not exist until this ships.
+
+
+### 2026-09-26 - Six ways a settings toggle left work running behind it
+- **Developer label:** "Do not know why but after continuously toggling all different types of
+  settings uses around 5,000 energy impacts on activity monitor, compared to 84.6 (my browser). Tried
+  disabelling all different features; uses half battery in about 20 minutes."
+- **Agent label:** Follow-up 59 - the toggle-accumulation leaks behind the energy report
+- **Changes:**
+  - **The reporter's trigger was not the grouping bug fixed in the entry below.** That one is real and
+    measured here, but it has nothing to do with toggling settings — so the report was checked against
+    the code a second time, asking specifically what a *toggle* leaves behind. Six things, each of
+    which accumulates and none of which belongs to any single feature, which is exactly why
+    "disabelling all different features" did not help.
+  - **`MediaControllerProtocol` no longer defaults its own teardown.** `stop()` and
+    `terminateChildProcessesForAppExit()` carried default no-ops, on the reasoning that most
+    controllers own nothing outside themselves. Two of the five did.
+    `MusicManager.releaseActiveController()` had been calling both correctly all along and was
+    answered with nothing. They are requirements now, so a missing teardown is a compile error; the
+    two AppleScript controllers state their empty implementations explicitly.
+  - **`AmazonMusicController` now tears down its `mediaremote-adapter.pl` child.** Same structure as
+    `NowPlayingController`, same unreachable `deinit` — `streamTask`'s frame holds `self` strongly and
+    its pipe loop never returns — so every switch of the Media > Music Source picker left one more
+    helper streaming to nobody, reparented to `launchd`, surviving app quit. It gains `stop()`,
+    `terminateChildProcessesForAppExit()`, a stored `setupTask` and an `isStopped` flag so a
+    controller stopped mid-start does not go on to launch a helper anyway.
+  - **`YouTubeMusicController` stops, and stays stopped.** It had no `stop()` and no reachable
+    `deinit`, so its 2 s poll, its WebSocket and its app-state observer survived being dropped — and
+    it *rebuilt itself*: the disconnect handler calls `startPeriodicUpdates()` and
+    `scheduleReconnect()`, which sleeps and then makes a fresh socket and a fresh timer. Its only gate
+    was `isActive()`, which asks whether the YouTube Music app is running, never whether this
+    controller is still in use. Every re-arming path now checks `isStopped`, including after the
+    reconnect backoff's sleep.
+  - **The HUD preview stopped powering a 6.7 Hz display poll.** `HUDPreviewViewModel.init` called
+    `start()` on the three shared system controllers and never stopped them, and the Settings window
+    is built once and only `orderOut`-ed, so it is never released. With the HUD feature **off**,
+    opening its settings pane started `SystemBrightnessController`'s 0.15 s poll — a full
+    `IOServiceGetMatchingServices` match where CoreBrightness declines — for the rest of the process,
+    and turning the feature off again could not stop it, because `stopObserving()` only runs on a
+    transition and it was already off. A preview consumes the three change notifications, which the
+    HUD's own observer already produces when the feature is on; it starts nothing.
+  - **The waveform's two `NSWorkspace` observers are removable.** Both `addObserver` tokens were
+    discarded, and the registration ran again on every `enableRealTimeWaveform` -> true: two permanent
+    observers per on/off cycle, each firing on every music-app launch on the machine. They are held,
+    removed on disable, and the setup is idempotent.
+  - **Three `readabilityHandler`s are cleared now.** When the child exits, the read end is permanently
+    signalled readable: `availableData` returns empty, the closure returns, GCD re-arms the source, and
+    it fires again immediately — a tight loop that burns idle wakeups, which is what Activity Monitor's
+    Energy Impact weights most heavily. Fixed on the two `mediaremote-adapter.pl` stderr pipes and on
+    the AirPods listening-mode `log stream`, matching what `SystemTimerBridge.stopLogStream()` and
+    `FocusLogStream` already did.
+  - **The Focus-mode seed scan cannot queue behind itself.** Each transition into the log-stream
+    detection mode enqueued up to three synchronous `log show --last 5m/1h/24h --debug` runs on a
+    *serial* `.userInitiated` queue, and nothing cancelled a queued one, so switching the mode a few
+    times left `log` and `logd` reading `/var/db/diagnostics` long after the setting was switched back.
+    It is a cancellable `DispatchWorkItem` now, replaced on a new transition and cancelled when
+    monitoring stops, re-checked between windows so a superseded scan does not go on to the expensive
+    one.
+  - **The duplication that caused it is gone from the part that matters.** SonarCloud put a number on
+    the root cause: `AmazonMusicController` and `NowPlayingController` share **162 duplicated lines**
+    across five blocks. That is why `e7dfc83` fixed the teardown in one and the other kept leaking —
+    the same disease as entry 1 (two copies of one artifact, only one exercised), in Swift instead of
+    in the hook script. The order-sensitive teardown now lives once, in
+    `MediaRemoteAdapterChild.tearDown(process:pipeHandler:stderrPipe:)`, with the reason each step
+    comes where it does; both controllers call it. The setup and streaming paths stay per-controller,
+    because those genuinely differ, so this is not a rewrite of two live media paths in a battery fix.
+  - `docs/REGRESSIONS.md` entry **19** records the rule and its second breaking, with the
+    second-owner and EOF-pipe shapes as part of it, and `Kannu/MediaControllers/` joins the Danger
+    zones table. Guards in `ResourceTeardownRulesTests`: the protocol may not default either method
+    (verified to fail when the default is restored), every conformer must declare both, and a file that
+    installs a `readabilityHandler` must clear one. The second-owner shape has no guard and the entry
+    says so, with the manual check to run instead.
+
+
+### 2026-09-26 - The wakeup storm grouping caused, and a metadata line that read as broken
+- **Developer label:** "can you check if this is true in our case" (a user's energy report: ~5,000
+  Energy Impact against a browser's 84.6, half a battery in 20 minutes, 93% battery health), and
+  "4 separate sightings folded in · projects: Vendors, kannu · across 3 chats this is broken in first
+  finding"
+- **Agent label:** Follow-up 59 - the energy regression, the truncated line, the chat count
+- **Changes:**
+  - **The energy report is real, it reproduces here, and the cause was 1.3.1's grouping commit.**
+    Measured on this Mac against an app documented at 0.9% CPU and 12 idle wakeups a second: 33.9%
+    CPU and 172 wakeups/s on the first sample, **41.2% and 928/s** thirty seconds later. Not driven
+    by agent activity — zero hook writes in the preceding minute and zero log lines in five — and
+    `sample` showed the main thread in continuous `NSHostingView.layout()` and Core Animation
+    commits, the signature of self-sustaining render churn. Activity Monitor weights wakeups heavily,
+    so ~928/s is how the reporter's 5,000 is reached where raw CPU alone would not.
+  - **The mechanism.** Findings are never persisted: all five sources are rebuilt on every publish,
+    and `publishFindings()`'s `combined != findings` check is the only thing stopping that from
+    reaching `@Published findings` each time. The grouping commit added `lastSeen: now` — a fresh
+    `Date()` — to two builders, so every rebuild differed by timestamp alone, the check never held,
+    and the notch, the closed pill and Settings all re-rendered continuously. It compounded: the
+    `groupRanking` memo stamp holds the whole findings array, so an always-changing array meant the
+    stamp never matched and grouping re-ran on every read, from `ContentView` and the closed pill's
+    bodies. This is the render churn #48 removed in 1.3.0, reintroduced. The surrounding code was
+    careful about exactly this — `firstSeen` is written `firstSeenByID[id] ?? now` *so that it stays
+    stable across rescans* — and `lastSeen: now` went in beside it without the same treatment. It
+    also explains "disabling all the features didn't help": the loop belongs to no feature.
+  - Both builders now take a timestamp that is fixed for a given input. A Discovery finding's
+    last-seen is the **scan's** own time, from the snapshot's `timestamp` (new `ADRSnapshot.generatedAt`,
+    RFC 3339 with or without fractional seconds), falling back to the carried value and then to nil —
+    never to the rebuild's clock, because an unknown last-seen must not churn. An unattended
+    session's is `session.updatedAt`, which the hook never refreshes while nothing happens
+    (`docs/REGRESSIONS.md` entry 12), so it is stable exactly as long as the session is quiet.
+  - **The invariant nothing pinned before now:** a rebuild from unchanged input must be *equal*, even
+    at a different wall-clock time. `AgentSecurityFindingTests.testRebuildingFromUnchangedInputIsEqual`
+    rebuilds both sources twice, feeding the previous round back in as the store does, and planting
+    the original `lastSeen: now` fails it with the consequence named. The `GroupRankingStamp` comment
+    now records that its memo only works because of the same invariant.
+  - **The "broken" line was a component used against its own contract.** `SettingsValueText` is one
+    line with **middle** truncation — right for `/Users/…/snapshot.json`, where both ends carry the
+    meaning, and wrong for a sentence, which renders with its middle amputated. `SecurityFindingRow`
+    used it four times as a full-width leading line: the recurrence line, the chats line, the
+    partial-acknowledgement note ("Acknowledged for a project, but this one belongs to none…") and
+    the breakdown. All four now take `.settingsDescriptionStyle()`, which wraps and matches the
+    summary above them.
+  - The `docs/SETTINGS.md` rule that sent them there ("a card's metadata goes in
+    `SettingsValueText`") was added in 1.3.1 and is simply wrong — it contradicts the component's own
+    doc comment. Corrected to say trailing values only, with the leading-line case named, and the
+    doc's own preamble settles the tie: the component wins.
+  - **A group counts its chats by `sessionID` now, and names them by title.** Nothing stops two chats
+    carrying the same display name — a default title, the same repo opened twice — and
+    `chatNames.count` folded those into one, so a finding genuinely spanning two identically named
+    chats reported "1 chat" and dropped the chat line entirely. `chatCount` counts sessions; the
+    de-duplicated names stay for display. Found by CodeRabbit on #61.
+
+
+### 2026-09-26 - A grouped row says which chats it came from
+- **Developer label:** "is the new build installed, i dont see the issues grouped by chat"
+- **Agent label:** Follow-up 58 - chat names on the grouped row; ship 1.3.2
+- **Changes:**
+  - **The report behind this was two things, and the first was the whole symptom:** 1.3.1 was
+    published but **not installed** — the running app was 1.3.0 / build 3, and `strings` found no
+    `AgentSecurityFindingGroup` or `groupSubject` in its binary, so the grouping code simply was not
+    there. Nothing was wrong with grouping.
+  - **The second was a real gap, and a decision that had never actually been made.** Grouping is
+    machine-wide, across chats, which was *inferred* rather than chosen: when offered machine-wide /
+    per-project / per-chat, the answer was a question about acknowledgement scope. Asked directly, the
+    choice is to keep machine-wide grouping and **name the chats on the collapsed row** instead of
+    hiding them behind Details. On the real data both designs collapse the 21 rotating `ASIA` keys to
+    one row, since they were all in one chat; the difference is only `ssh`.
+  - `chatName` is handed to every `finding(...)` builder and was only ever interpolated into
+    `summary`, so a group could not report which chats it spanned — it could only count opaque
+    `sessionID`s, and only when expanded. `AgentSecurityFinding` now carries `chatName` the way it
+    carries `projectName`, and `AgentSecurityFindingGroup` rolls the names up de-duplicated and
+    sorted.
+  - The collapsed row reads "7 occurrences · 3 chats · first … · last …" with the chats beneath it,
+    two names then a remainder ("Tenant Delete Agent, gitlab orchestration, +1"). A finding seen in
+    one chat shows no chat line — there is nothing to disambiguate. The expanded breakdown lists them
+    all, replacing the session-id tally with real names.
+  - Version 1.3.2, build **5**; the codename stays Heimdall, since the scheme names feature releases.
+
+
+### 2026-09-26 - Ship 1.3.1 "Heimdall"
+- **Developer label:** "where is the release"
+- **Agent label:** Follow-up 57 - 1.3.1 release mechanics
+- **Changes:**
+  - `CURRENT_PROJECT_VERSION` 3 -> **4** in both configurations and `MARKETING_VERSION` 1.3.0 ->
+    1.3.1. The build number is the one Sparkle compares, and the live feed's newest item is build 3,
+    so leaving it would have published a release nobody is offered.
+  - 1.3.1 is a patch, so the codename stays **Heimdall**: the scheme names *feature* releases, and a
+    patch does not consume Horus.
+  - Curated notes at `docs/release-notes/1.3.1.md`; the publish step resolves them from the tag.
+  - `docs/SETTINGS.md` gains the rule the new finding row follows: a card's metadata is a
+    `SettingsValueText`, suppressed when it says nothing, and a fact is stated once — which is why
+    the sighting summaries stopped repeating the occurrence count in prose.
+
+### 2026-09-26 - One row per problem: first reported, last reported, how many times
+- **Developer label:** "we have repeated issues thst come up to acknowledge but if they are same issue recurring we need a way to group them, maybe show first reported, then last reported, no of occurences"
+- **Agent label:** Follow-up 57, part A - group findings on what does not churn
+- **Changes:**
+  - **The problem, measured rather than assumed.** One real Mac held **28 acknowledged finding ids**
+    and 27 stored sighting rows that were **three actual problems**: an `aws_access_key` with an
+    `ASIA` prefix via Bash (21 rows, 22 occurrences, **21 distinct fingerprints**), `ssh` via Bash
+    (4 rows, 7 occurrences, **3 different chats**) and `yt-dlp` (2 rows). `ASIA` is an AWS **STS
+    temporary** credential: it rotates by design, so that first row count could only ever grow.
+  - **The cause: the identity contained the thing that changes.** `stableID` is called with
+    `subject: conversationID` by every hook-derived builder, so the same problem in a new chat is a
+    new id and a new acknowledgement; `evidence` carries the secret's fingerprint, so a rotated key
+    is too; `firstSeenMs` is in the digest for hidden text and new MCP servers, so a recurrence in
+    the *same* chat also counted as new; and Discovery and Detection fold in wording and confidence,
+    so a reworded proof or a re-analysis at 0.92 read as a fresh finding.
+  - Findings now also carry a **`groupSubject`** — the identity of the *problem*, with the churn left
+    out — plus `lastSeen`, `occurrences` and `projectName`. `stableID` and every digest are
+    **unchanged**, which is what keeps the golden-id tests meaningful and the 28 stored
+    acknowledgements valid. Per family: secrets key on kind + prefix + tool and **never** the
+    fingerprint; policy on the rule and what it matched; sensitive paths on the file and the access;
+    hidden text on the technique and where it arrived, never the decoded preview; new servers on the
+    server and its config file; Discovery on the asset. Detection deliberately stays per-chat — a
+    verdict is about one conversation — but stops splitting on confidence.
+  - **Acknowledging settles the problem, not the sighting**, and stays quiet however often it recurs.
+    It comes back only on escalation: a rise in severity, or a change of outcome. That second signal
+    is not decoration — severity points the *wrong* way here, because a policy match that **ran** is
+    high while one Kannu **refused** is medium, so "Kannu started blocking this" would have read as
+    an improvement and stayed silent. Outcome is tracked in its own field for exactly that case.
+  - **Scope is the user's to choose**, because display grouping does not decide it: deciding `ssh` is
+    fine in one repo says nothing about another. The default is narrow (this project), with
+    "everywhere" available; acknowledging a second project widens the same decision. A group spanning
+    a project you acknowledged and one you did not **stays visible**, showing only the part still
+    unaddressed, and hides only once every project it spans is covered.
+  - **A reversal stated rather than smuggled:** `ingest` prunes acknowledgements to the findings
+    currently on screen, on the principle that "if the same finding returns later it should be seen
+    again". That rule *is* what caused the re-acknowledging, because identity carried the
+    conversation so the same finding almost never returned — a new one did. Group acknowledgements
+    are exempt from it, and the comment now says why. Legacy per-finding acknowledgements are still
+    read, so nothing already dismissed comes back after the upgrade.
+  - The notch shield counts **groups**, so 21 rotations of one credential are one thing to act on.
+    `groupRanking` is memoised against its inputs, since the 20 Hz hover poll reads it.
+  - 19 tests over the pure grouping and acknowledgement rules, driven by the real numbers above.
+  - **Acting on CodeRabbit's review of #59, which found four real holes in the above.** The notch
+    card's Acknowledge still wrote a single legacy per-finding id, so for any group with more than one
+    member — 21 rotated keys, say — clicking it did nothing visible and the shield stayed up. Group
+    snoozes were pruned against *finding* ids, and a group id deliberately is not one, so a 24-hour
+    snooze was deleted within minutes. The memo stamp compared finding ids, which by design exclude
+    counts, times and previews — so a row's occurrence count and last-seen could freeze, and a
+    severity rise never reached the visibility check, silently swallowing the escalation the feature
+    exists for. A group mixing projectless and named members was hidden by a project-scoped
+    acknowledgement that could not actually cover the projectless part. Plus: the push subscription
+    now observes group acknowledgements, and "Show acknowledged and snoozed again" appears for group
+    acknowledgements rather than only legacy ones. Three new tests pin the two distinctions that made
+    these possible — a group id is never a finding id, and identical ids can carry different counts.
+  - **On screen:** a row now stands for a problem and carries "N occurrences · first … · last …",
+    shown only when it says something — a single sighting with a count of 1 and two identical dates
+    does not. Expanding adds the spread that grouping folded together ("21 separate sightings folded
+    in", the projects, how many chats), so the row is legible rather than magic. Acknowledge reads
+    "Acknowledge for kannu-site" and narrows to the projects the group has been seen in, with
+    "Acknowledge everywhere" in the "…" menu; a partially acknowledged group says "Still open in
+    kannu" rather than looking as though the acknowledgement failed, and an escalated one says why
+    it came back.
+  - The four sightings stop appending "Seen N times." to their summaries. The row states the count
+    once, from the group; two statements of the same fact in two formats read as two facts. Three
+    tests that pinned that prose now pin its absence **and** that the count reaches the finding,
+    which is the behaviour that actually matters.
+  - Every consumer counts groups, not sightings: the notch shield and its pill, the "other findings"
+    count, and the push. So 21 rotations of one credential are one shield, one pill and one push
+    instead of twenty-one. The DEBUG snapshot board groups its fixtures the same way, so it shows the
+    shape the product has.
+
+### 2026-09-26 - The notch cannot go blank because Kannu has not worked out which screen it is on
+- **Developer label:** "in local build ui is not coming can you check"
+- **Agent label:** Follow-up 57, part B - an unknown screen is not a notchless screen
+- **Changes:**
+  - **The bug, seen in the field on 1.3.0's own code.** The app was perfectly healthy - idle main
+    thread, agent monitor publishing, `Caffeinate` reconciling - and drew no notch at all for over a
+    day, hover included. `KannuViewModel.hideOnClosed` is initialised `true` and its only writer is
+    the fullscreen detector's Combine sink, which was gated on `$screen.compactMap { $0 }`. That
+    swallowed the initial nil, and `CombineLatest` emits nothing until every side has spoken, so a
+    view model whose `screen` was never assigned produced **no signal at all** and kept the
+    initialiser forever. `vm.screen` is assigned only inside `adjustWindowPosition`, below a lock
+    guard and a no-screens early return, so a launch while the screen was locked - or in clamshell,
+    or with every display asleep - left it nil permanently. Repeated sleep/wake and display-off/on
+    cycles preceded the report.
+  - **It was two failures wearing one coat.** Besides refusing to paint
+    (`ContentView.shouldPaintClosedNotchBackground`), the stuck flag collapsed
+    `effectiveClosedNotchHeight` to **zero** - because a nil `screen` made `currentScreen` nil, which
+    the expression read as "this display has no notch", *on a notched MacBook*. That removed the
+    hover target too, so the notch could not even be summoned back. Fixing only the paint guard
+    would have left an invisible, un-hoverable notch and looked like a fix.
+  - The distinction the fix turns on: **an unknown screen is not a notchless screen.** `hideOnClosed`
+    now starts `false` (hiding is the exception that needs evidence), the detector chain combines
+    flat so a nil screen simply answers "not fullscreen" instead of dropping out, an unresolvable
+    screen keeps the notch's height, and launch seeds `vm.screen` itself before handing off to
+    `adjustWindowPosition` - which may still legitimately bail. Only *positioning* stays behind the
+    lock guard; identity never does.
+  - **A missing Accessibility grant no longer hides the product.** `isInNativeFullscreen` answered
+    `true` when `AXIsProcessTrusted()` was false - "assume fullscreen" - so a freshly installed
+    build, whose new code identity drops every TCC grant, hid the notch for any *maximized* window
+    under `.always` and for a maximized media window under `.nowPlayingOnly`. Confirmed live on the
+    reporter's Mac. It now answers `false` and says once in the log that detection is degraded:
+    showing the notch over a fullscreen app is a cosmetic miss, hiding it everywhere reads as a
+    broken app.
+  - **A dropped unlock notification recovers on its own.** macOS drops `com.apple.screenIsUnlocked`
+    often enough that `LockScreenManager`'s 500 ms poll is the real recovery path, and it cleared
+    `isLocked` without telling `AppDelegate` - so `windowsHiddenForLock` stayed set and the self-heal
+    inside `adjustWindowPosition` was never reached. It now posts `lockStateDidClear`, which
+    `AppDelegate` observes.
+  - **Tested, where none of this was testable before.** `KannuViewModel`, `AppDelegate`,
+    `FullscreenMediaDetector` and `LockScreenManager` had zero coverage of any kind and are all
+    `@MainActor` AppKit/SwiftUI types. The two rules that carried the defect are now a
+    Foundation-only `ClosedNotchVisibility` in the logic target, with the app delegating to it so
+    there is one copy rather than two: 10 tests including the exact composition that produced the
+    bug. The parts that are ordering and defaults rather than arithmetic are pinned by
+    `ClosedNotchVisibilityRulesTests`, a source scan in the `ClosedNotchObservationTests` shape with
+    its anti-vacuity devices - and it caught two mistakes in its own first run, one of them a rule
+    tripping over the comment that explained it.
+
+## [1.3.0] - 2026-09-25 - Heimdall
+
+### 2026-09-25 - Ship 1.3.0 "Heimdall"
+- **Developer label:** "plan for release will existings users get auto update"
+- **Agent label:** Follow-up 55 - 1.3.0 release mechanics, and the build number that decides whether anyone gets it
+- **Changes:**
+  - `CURRENT_PROJECT_VERSION` 2 -> 3 in **both** configurations, and `MARKETING_VERSION` 1.2.0 ->
+    1.3.0. The build number is the one that matters: Sparkle compares the installed `CFBundleVersion`
+    against the feed's `sparkle:version` as integers and ignores `MARKETING_VERSION` entirely, so
+    with the build left at 2 CI would have built, signed, notarized and published `Kannu.1.3.0.dmg`
+    and regenerated an appcast still advertising build 2 - a release that looks perfect from the
+    outside while every existing user is told they are up to date. Nothing in the pipeline
+    cross-checks the tag against either version field, so the release checklist now does.
+  - `ReleaseInfo.codename` Argus -> **Heimdall**, and its doc comment now says why rather than only
+    listing the scheme. Argus was all eyes, and 1.2.0 only watched; Heimdall keeps watch at Bifrost
+    *and refuses passage*, which is the two halves of this release - the local checks that detect and
+    the agent policy that can deny a tool call. `scripts/RELEASE.md` records the rule that the name
+    is chosen for what a release does, not for its turn in the list.
+  - Curated release notes at `docs/release-notes/1.3.0.md`, and the publish step resolves
+    `docs/release-notes/<version>.md` from the tag instead of asking GitHub to generate a commit
+    list. Generated notes would have been wrong here anyway: the `v1.2.0` tag was orphaned by the
+    2026-09-03 history reset, so it is an ancestor of nothing and the diff has no sane base. The
+    path is derived rather than hardcoded so the next tag cannot publish this release's notes.
+  - The changelog is cut into `## [1.3.0]` and `## [1.2.0]` sections. `## [Unreleased]` had never
+    been cut for any release and held 205 entries going back to 2026-07-09; diffing
+    `v1.2.0:CHANGELOG.md` (105 entries) against this file puts the boundary beyond doubt - exactly
+    **100 entries are new**, the oldest being "Sign the release DMG", and the first pre-existing one
+    is "Name releases after watchers; 1.2.0 is Argus". Relabelling the whole section would have
+    claimed July's work as new. `[Unreleased]` carries a placeholder entry rather than nothing,
+    because `.githooks/pre-commit` rejects a commit whose `[Unreleased]` section is empty.
+
 ### 2026-09-26 - Every tool result the detector sees is fenced, named and labelled untrusted
 - **Developer label:** "this text came from a tool result, so it is data, not intent" — per-message provenance instead of one prose warning, plus the command strings the adapter used to discard
 - **Agent label:** Jev research follow-up — adapter v5 provenance separation (spotlighting), measured on this Mac's 336 transcripts
@@ -2742,6 +3090,8 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
   - `docs/REGRESSIONS.md` says up front that the commit hashes it cites predate the 2026-09-03
     history reset and no longer resolve in a fresh clone. The rules and guards are unaffected; only
     the provenance links are dead.
+
+## [1.2.0] - 2026-09-03 - Argus
 
 ### 2026-09-03 - Name releases after watchers; 1.2.0 is Argus
 - **Developer label:** avoid atoll style naming and do something else we made first version fiji mistakenly

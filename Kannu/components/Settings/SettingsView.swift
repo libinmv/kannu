@@ -1829,10 +1829,17 @@ final class HUDPreviewViewModel: ObservableObject {
     }
 
     private func setup() {
-        // Ensure controllers are active
-        SystemVolumeController.shared.start()
-        SystemBrightnessController.shared.start()
-        SystemKeyboardBacklightController.shared.start()
+        // Deliberately starts nothing. This is a *preview*: it only needs the three change
+        // notifications, which `SystemChangesObserver` already produces whenever the HUD feature is
+        // on. Starting the shared controllers here turned the preview into a second owner of them —
+        // and since it never stopped them, opening this pane with the HUD switched **off** left
+        // `SystemBrightnessController`'s 6.7 Hz IOKit poll running for the rest of the process:
+        // `stopObserving()` never runs again, because the feature was already off. That is the
+        // reported "toggled a lot of settings, then disabling the features didn't help".
+        //
+        // With the feature on, nothing changes — the observer is running the controllers and the
+        // notifications flow. With it off, the preview sits still, which is the honest thing for a
+        // preview of something that is not running.
 
         // Initial state from volume
         let vol = SystemVolumeController.shared.currentVolume

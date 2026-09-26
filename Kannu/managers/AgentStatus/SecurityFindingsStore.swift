@@ -45,6 +45,10 @@ struct ADRScanRecord: Codable, Equatable, Defaults.Serializable {
 }
 
 extension SecurityFindingSnooze: Defaults.Serializable {}
+// Declared here rather than beside the type: `SecurityFindingAcknowledgement` is in the logic test
+// target, which stays Foundation-only and never links Defaults — the same split `HookSightingRecords`
+// already uses.
+extension SecurityFindingAcknowledgement: Defaults.Serializable {}
 extension ADRSessionAnalysis: Defaults.Serializable {}
 extension HookSightingRecords: Defaults.Serializable {}
 extension MCPServerWatch.Baseline: Defaults.Serializable {}
@@ -64,13 +68,39 @@ final class SecurityFindingsStore: ObservableObject {
     @Published private(set) var lastScan: ADRScanRecord?
     /// Why the newest snapshot could not be read, if it could not.
     @Published private(set) var snapshotError: String?
+    /// Legacy per-finding acknowledgements, read on launch and never added to. They keep working so
+    /// an upgrade does not resurface the pile a user already worked through.
     @Published private(set) var acknowledgedIDs: Set<String>
+    /// Acknowledgements by group. Written from here on.
+    @Published private(set) var acknowledgedGroups: [String: SecurityFindingAcknowledgement]
     @Published private(set) var snoozes: [SecurityFindingSnooze] {
         didSet { armSnoozeExpiry() }
     }
     /// Wakes once when the next snooze ends, so a snoozed finding comes back on time without any
     /// view re-ranking on a timer.
     private var snoozeExpiryTask: Task<Void, Never>?
+
+    /// Everything `groupRanking` depends on. Cheap to compare, so the grouping itself runs only when
+    /// something it reads actually moved.
+    struct GroupRankingStamp: Equatable {
+        /// The whole array, not its ids. Ids deliberately exclude what churns — `eventCount`,
+        /// `lastSeenMs`, a hidden-text preview — which is the entire point of grouping, and exactly
+        /// why comparing ids would serve a stale row: the occurrence count and last-seen would
+        /// freeze, and a severity rise (a longer preview turning medium into high) would never reach
+        /// the visibility check, so an escalation that should resurface a group would stay hidden.
+        ///
+        /// This only memoises anything because a rebuild from unchanged input is *equal* — the same
+        /// invariant `publishFindings()` depends on, pinned by
+        /// `AgentSecurityFindingTests.testRebuildingFromUnchangedInputIsEqual`. A builder that
+        /// stamps `Date()` into a finding breaks both at once: every publish republishes, and the
+        /// stamp never matches, so grouping re-runs on every read from `ContentView` and the closed
+        /// pill as well.
+        let findings: [AgentSecurityFinding]
+        let acknowledgedGroups: [String: SecurityFindingAcknowledgement]
+        let legacyAcknowledged: Set<String>
+        let snoozes: [SecurityFindingSnooze]
+    }
+    private var cachedGroupRanking: (stamp: GroupRankingStamp, value: SecurityFindingGroups)?
     /// A scan Kannu started is in flight.
     @Published private(set) var isScanning = false
     @Published private(set) var lastKannuScanAt: Date?
@@ -127,6 +157,7 @@ final class SecurityFindingsStore: ObservableObject {
 
     private init() {
         acknowledgedIDs = Set(Defaults[.adrAcknowledgedFindingIDs])
+        acknowledgedGroups = Defaults[.adrAcknowledgedGroups]
         snoozes = Defaults[.adrFindingSnoozes]
         lastScan = Defaults[.adrLastScan]
         lastKannuScanAt = Defaults[.adrLastKannuScanAt]
@@ -195,6 +226,62 @@ final class SecurityFindingsStore: ObservableObject {
 
     var ranking: SecurityFindingPriority.Ranking {
         SecurityFindingPriority.rank(findings, acknowledged: acknowledgedIDs, snoozes: snoozes)
+    }
+
+    /// One row per problem, with first/last seen and an occurrence count, and the visibility verdict
+    /// for each. Memoised against its inputs: `ranking` is read by the 20 Hz hover poll, and grouping
+    /// 27 rows twenty times a second to answer a boolean would be pure waste.
+    var groupRanking: SecurityFindingGroups {
+        let stamp = GroupRankingStamp(
+            findings: findings,
+            acknowledgedGroups: acknowledgedGroups,
+            legacyAcknowledged: acknowledgedIDs,
+            snoozes: snoozes
+        )
+        if let cached = cachedGroupRanking, cached.stamp == stamp { return cached.value }
+        let value = Self.buildGroupRanking(
+            findings: findings, acknowledgedGroups: acknowledgedGroups,
+            legacyAcknowledged: acknowledgedIDs, snoozes: snoozes
+        )
+        cachedGroupRanking = (stamp, value)
+        return value
+    }
+
+    static func buildGroupRanking(
+        findings: [AgentSecurityFinding],
+        acknowledgedGroups: [String: SecurityFindingAcknowledgement],
+        legacyAcknowledged: Set<String>,
+        snoozes: [SecurityFindingSnooze],
+        now: Date = Date()
+    ) -> SecurityFindingGroups {
+        let snoozed = Set(snoozes.filter { $0.until > now }.map(\.id))
+        var rows: [SecurityFindingGroups.Row] = []
+        for group in AgentSecurityFindingGroup.group(findings) {
+            // A group every one of whose findings was acknowledged under the old per-finding scheme
+            // stays settled. Anything less is not enough: one member acknowledged out of five never
+            // meant the problem was dealt with.
+            let coveredByLegacy = group.findings.allSatisfy { legacyAcknowledged.contains($0.id) }
+            if coveredByLegacy && acknowledgedGroups[group.id] == nil {
+                rows.append(.init(group: group, visibility: .acknowledged))
+                continue
+            }
+            if snoozed.contains(group.id) {
+                rows.append(.init(group: group, visibility: .acknowledged))
+                continue
+            }
+            rows.append(.init(
+                group: group,
+                visibility: SecurityFindingAcknowledgement.visibility(
+                    of: group, acknowledgement: acknowledgedGroups[group.id]
+                )
+            ))
+        }
+        rows.sort {
+            if $0.group.severity != $1.group.severity { return $0.group.severity > $1.group.severity }
+            if $0.group.lastSeen != $1.group.lastSeen { return $0.group.lastSeen > $1.group.lastSeen }
+            return $0.group.representative.title < $1.group.representative.title
+        }
+        return SecurityFindingGroups(rows: rows)
     }
 
     // MARK: - Lifecycle
@@ -272,17 +359,64 @@ final class SecurityFindingsStore: ObservableObject {
         Defaults[.adrAcknowledgedFindingIDs] = Array(acknowledgedIDs).sorted()
     }
 
+    /// Settles a whole problem, as far as the user says it reaches.
+    ///
+    /// `projects` nil means everywhere. A list narrows the decision to those projects, and
+    /// acknowledging more later widens the same decision rather than replacing it — so a group
+    /// spanning two repos stays on screen, showing only the part still unaddressed, until both are
+    /// covered. Severity and outcome are stamped now, which is what lets the group come back if it
+    /// later gets worse.
+    func acknowledgeGroup(_ group: AgentSecurityFindingGroup, projects: [String]?) {
+        let scope: SecurityFindingAcknowledgement.Scope =
+            projects.map { .projects(Set($0).sorted()) } ?? .everywhere
+        let fresh = SecurityFindingAcknowledgement(
+            scope: scope,
+            severityAtAck: group.severity.rawValue,
+            outcomeAtAck: group.outcomeSignature,
+            ackedAt: Date()
+        )
+        // Widen an existing decision instead of overwriting it, and re-stamp severity/outcome so an
+        // escalation the user has now seen and accepted does not resurface immediately.
+        var updated = acknowledgedGroups
+        if let existing = updated[group.id] {
+            var widened = existing
+            if let projects {
+                for project in projects { widened = widened.adding(project: project) }
+            } else {
+                widened.scope = .everywhere
+            }
+            widened.severityAtAck = fresh.severityAtAck
+            widened.outcomeAtAck = fresh.outcomeAtAck
+            widened.ackedAt = fresh.ackedAt
+            updated[group.id] = widened
+        } else {
+            updated[group.id] = fresh
+        }
+        acknowledgedGroups = updated
+        Defaults[.adrAcknowledgedGroups] = updated
+    }
+
     func snooze(_ id: String, for interval: TimeInterval) {
         let until = Date().addingTimeInterval(interval)
-        snoozes = SecurityFindingPriority.pruned(snoozes.filter { $0.id != id }, keeping: Set(findings.map(\.id)))
+        snoozes = SecurityFindingPriority.pruned(snoozes.filter { $0.id != id }, keeping: liveSnoozeKeys)
             + [SecurityFindingSnooze(id: id, until: until)]
         Defaults[.adrFindingSnoozes] = snoozes
     }
 
+    /// Every id a snooze may legitimately be keyed on. Settings snoozes a **group** id, and a group
+    /// id is deliberately not a finding id — so pruning against finding ids alone deleted every group
+    /// snooze the next time anything was snoozed or a snapshot landed, and a snoozed row came back
+    /// within minutes instead of a day.
+    private var liveSnoozeKeys: Set<String> {
+        Set(findings.map(\.id)).union(AgentSecurityFindingGroup.group(findings).map(\.id))
+    }
+
     func clearAcknowledgements() {
         acknowledgedIDs = []
+        acknowledgedGroups = [:]
         snoozes = []
         Defaults[.adrAcknowledgedFindingIDs] = []
+        Defaults[.adrAcknowledgedGroups] = [:]
         Defaults[.adrFindingSnoozes] = []
     }
 
@@ -901,15 +1035,22 @@ final class SecurityFindingsStore: ObservableObject {
         publishFindings()
         if reviewQueue != snapshot.reviewQueue { reviewQueue = snapshot.reviewQueue }
 
-        // Acknowledgements and snoozes for findings that vanished are dropped: if the same
-        // finding returns later it should be seen again, not silently pre-acknowledged.
+        // Legacy per-finding acknowledgements and snoozes for findings that vanished are dropped:
+        // under the old per-finding scheme, a finding returning later should be seen again.
+        //
+        // `acknowledgedGroups` is deliberately **not** pruned this way, and that is a reversal worth
+        // being explicit about rather than an oversight. This rule is precisely what made the same
+        // `ssh` match demand a fresh acknowledgement in every new chat: identity carried the
+        // conversation, so "the same finding" almost never came back — a *new* one did. A group is
+        // keyed on the problem instead, so staying settled while the problem recurs is the point,
+        // and a group comes back only when it gets worse (see `SecurityFindingAcknowledgement`).
         let ids = Set(findings.map(\.id))
         let keptAcks = acknowledgedIDs.intersection(ids)
         if keptAcks != acknowledgedIDs {
             acknowledgedIDs = keptAcks
             Defaults[.adrAcknowledgedFindingIDs] = Array(keptAcks).sorted()
         }
-        let keptSnoozes = SecurityFindingPriority.pruned(snoozes, keeping: ids, now: now)
+        let keptSnoozes = SecurityFindingPriority.pruned(snoozes, keeping: liveSnoozeKeys, now: now)
         if keptSnoozes != snoozes {
             snoozes = keptSnoozes
             Defaults[.adrFindingSnoozes] = keptSnoozes

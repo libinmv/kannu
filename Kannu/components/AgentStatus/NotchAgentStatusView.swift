@@ -106,7 +106,7 @@ struct NotchAgentStatusView: View {
             VStack(alignment: .leading, spacing: 12) {
                 caffeinateRow
 
-                if let pinned = findingsStore.ranking.pinned {
+                if let pinned = findingsStore.groupRanking.pinned {
                     securityPinnedCard(pinned)
                 }
 
@@ -294,14 +294,15 @@ struct NotchAgentStatusView: View {
 
     /// Open findings other than the pinned one (which has its own card).
     private var openFindingCount: Int {
-        let ranking = findingsStore.ranking
-        return ranking.visible.count - (ranking.pinned == nil ? 0 : 1)
+        let groups = findingsStore.groupRanking
+        return groups.visible.count - (groups.pinned == nil ? 0 : 1)
     }
 
     /// The one high finding that owns the closed-notch cue, pinned above the primary session.
     /// Monochrome shield; the severity word is text, so nothing here competes with the lights.
     @ViewBuilder
-    private func securityPinnedCard(_ finding: AgentSecurityFinding) -> some View {
+    private func securityPinnedCard(_ row: SecurityFindingGroups.Row) -> some View {
+        let finding = row.group.representative
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "exclamationmark.shield.fill")
                 .font(.system(size: 18, weight: .semibold))
@@ -335,7 +336,13 @@ struct NotchAgentStatusView: View {
                         )
                     }
                     Button(String(localized: "Acknowledge")) {
-                        findingsStore.acknowledge(finding.id)
+                        // The card speaks for a group, so it must settle the group. Writing a single
+                        // legacy finding id did nothing visible whenever the group had more than one
+                        // member — 21 rotated keys, say — because a legacy acknowledgement only
+                        // counts when it covers every member. The shield and pill just stayed up.
+                        let projects = row.group.projects
+                        findingsStore.acknowledgeGroup(row.group,
+                                                       projects: projects.isEmpty ? nil : projects)
                     }
                     Button {
                         findingsStore.copyAgentPrompt(for: finding)
