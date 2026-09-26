@@ -212,4 +212,20 @@ struct ADRSnapshot: Codable, Equatable {
     func asset(id: String) -> Asset? {
         assets.first { $0.assetId == id }
     }
+
+    /// When ADR ran this scan, from the snapshot's own `timestamp` (RFC 3339, e.g.
+    /// `2026-09-26T06:13:20+00:00`). Nil when upstream omitted or reshaped it.
+    ///
+    /// This is the only honest "last seen" a Discovery finding has, and — just as importantly — it
+    /// is a *fixed* value: findings are rebuilt from scratch on every publish, so a timestamp taken
+    /// at rebuild time would differ on every pass, defeat `publishFindings`' equality gate and spin
+    /// the whole UI. See the note on `AgentSecurityFinding.findings(from:existing:now:)`.
+    var generatedAt: Date? {
+        guard !timestamp.isEmpty else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: timestamp) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: timestamp)
+    }
 }

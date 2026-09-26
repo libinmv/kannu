@@ -46,6 +46,17 @@ struct AgentSecurityFindingGroup: Identifiable, Equatable {
     /// Projects this group has been seen in, sorted. Empty when the source has no project (ADR's
     /// assets, the new-server check) — then only "acknowledge everywhere" makes sense.
     let projects: [String]
+    /// Chats this group has been seen in, sorted, for display. De-duplicated by *name*, because two
+    /// rows reading "gitlab orchestration" twice says nothing — so this is a list to show, never a
+    /// tally. Shown on the row rather than only when expanded: grouping across chats is the point,
+    /// but a row that will not say *which* chats reads as though it has hidden something. Empty for
+    /// findings that are not about a chat.
+    let chatNames: [String]
+    /// How many chats, counted by `sessionID`. Nothing stops two chats carrying the same display
+    /// name — a default title, the same repo opened twice — and `chatNames.count` folds those into
+    /// one, so a finding genuinely spanning two chats would report neither the count nor the chat
+    /// line. Count with this; name with `chatNames`.
+    let chatCount: Int
     /// How many distinct findings rolled into the row: "21 distinct keys". 1 means the row is a
     /// single sighting and the count adds nothing.
     let distinctFindings: Int
@@ -86,6 +97,8 @@ struct AgentSecurityFindingGroup: Identifiable, Equatable {
                 lastSeen: lastSeens.max() ?? worst.firstSeen,
                 occurrences: members.reduce(0) { $0 + max(1, $1.occurrences) },
                 projects: Set(members.compactMap(\.projectName)).sorted(),
+                chatNames: Set(members.compactMap(\.chatName)).sorted(),
+                chatCount: Set(members.compactMap(\.sessionID)).count,
                 distinctFindings: Set(members.map(\.id)).count,
                 findings: members.sorted { severityThenRecency($1, $0) }
             )

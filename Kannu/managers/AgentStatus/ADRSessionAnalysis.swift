@@ -118,6 +118,7 @@ struct ADRSessionAnalysis: Codable, Equatable, Identifiable {
             revealPath: reportPath,
             lastSeen: date,
             projectName: nil,
+            chatName: chatName,
             // The chat and the tactic, and **stays per-chat** — unlike every other family. A
             // Detection verdict is a judgement about one specific conversation, so two chats judged
             // the same way are genuinely two things to read. What this does drop is the churn the

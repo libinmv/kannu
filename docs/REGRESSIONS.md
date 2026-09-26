@@ -866,6 +866,68 @@ does not close it.
 
 ---
 
+## 19. Whoever stops using a resource says so — a default no-op is not saying so
+
+**Rule:** A controller, observer or view model that owns something outside itself — a child process,
+a repeating timer, a socket, a pipe handler, a workspace observer — has an explicit teardown, and the
+owner calls it when it stops using it. `deinit` is not that path: a running task that holds `self`
+keeps the object alive, so `deinit` is unreachable exactly when it matters. And a protocol never
+*defaults* its teardown, because a defaulted requirement makes a missing teardown invisible.
+
+**Broken twice, and the second time in four places at once.** `e7dfc83` found nine
+`mediaremote-adapter.pl` helpers alive at once, eight reparented to `launchd`, the oldest fourteen
+hours old, and fixed it by giving `NowPlayingController` a real `stop()` — writing the rule into
+`MediaControllerProtocol`'s doc comment, and *also* giving that protocol a default no-op "because most
+controllers own nothing of the sort". Two of the five did.
+`AmazonMusicController` owns the same kind of helper and `YouTubeMusicController` owns a 2 s timer and
+a WebSocket, and both silently inherited "release nothing" — so `MusicManager.releaseActiveController()`,
+which had been calling `stop()` and `terminateChildProcessesForAppExit()` correctly all along, released
+nothing, and every Music Source change left one more helper or one more socket behind. The YouTube one
+was worse than a leak: its disconnect handler calls `startPeriodicUpdates()` *and* `scheduleReconnect()`,
+whose only gate was "is the YouTube Music app running" — not "am I still the controller in use" — so a
+dropped controller rebuilt its own timer and socket indefinitely (2026-09-26).
+
+**Two more shapes of the same mistake, found in the same sweep:**
+
+- **A second owner that never releases.** `HUDPreviewViewModel.init` called `start()` on the three
+  shared system controllers so its little preview would animate, and never stopped them. With the HUD
+  feature *off*, merely opening its settings pane started `SystemBrightnessController`'s 6.7 Hz IOKit
+  poll for the rest of the process: turning the feature off again cannot stop it, because
+  `stopObserving()` only runs on a transition and the feature was already off. This is the reported
+  "toggled a lot of settings, then disabling the features didn't help". A preview consumes
+  notifications; it does not start the thing it previews.
+- **A handler left on an EOF pipe.** Once the child exits, the read end is permanently signalled
+  readable: `availableData` returns empty, the closure returns, GCD re-arms the source, and it fires
+  again immediately. Three sites installed a `readabilityHandler` and never cleared it, while three
+  others in the same codebase already did — clear it, and close the descriptor, where the process is
+  torn down.
+- **Discarded observer tokens.** `setupAudioTapMusicObservers` threw away both `addObserver` return
+  values and ran again on every `enableRealTimeWaveform` -> true: two permanent `NSWorkspace`
+  observers per on/off cycle, unbounded.
+
+**Why it keeps happening:** the leak is invisible from inside the app. Nothing crashes, nothing logs,
+and the orphan is reparented to `launchd`, so it survives even the quit-and-relaunch that makes the
+symptom disappear. The cost shows up on someone else's battery, days later, as "Kannu uses 5,000
+Energy Impact" — and because none of it belongs to any one feature, switching features off does not
+help, which reads as a false report.
+
+**The duplication is the mechanism, and SonarCloud measured it:** `AmazonMusicController` and
+`NowPlayingController` share **162 duplicated lines** across five blocks. Two near-copies is why one
+got the fix and the other did not, for months. The order-sensitive teardown now lives once in
+`MediaRemoteAdapterChild`, documented step by step, and both call it; their setup and streaming paths
+stay separate because those genuinely differ. If a third controller ever runs a helper, it calls that
+too — do not copy a `stop()`.
+
+**Guards:** `ResourceTeardownRulesTests` — the protocol may not default either method (verified to
+fail when the default is restored), every conformer must declare both, and every file that installs a
+`readabilityHandler` must also clear one. There is **no guard** for the second-owner shape: "a view
+model must not `start()` a shared singleton" is not mechanically separable from legitimate starts. The
+check is manual, and it is `pgrep -fl "mediaremote-adapter.pl"` and
+`powermetrics --samplers tasks -n 1 | grep -A2 Kannu` after switching a source or a mode a few times —
+an idle-wakeup count out of all proportion to CPU is the signature.
+
+---
+
 ## Danger zones
 
 Commit counts across all branches (`--follow`, so pre-rename history counts):
@@ -880,6 +942,7 @@ Commit counts across all branches (`--follow`, so pre-rename history counts):
 | `KannuApp.swift` (`createKannuWindow`, `adjustWindowPosition`) and every panel manager | — | Window creation **and the screen assignment that feeds the view model**. A hosting view installed as a panel's content view gets SwiftUI's window-size bridge and fights Kannu's sizing until AppKit aborts; and an early return that skips `vm.screen` leaves a correctly-sized window that paints nothing and has zero height, permanently (entry 17 and its 2026-09-26 addendum). Use `setHostedContent`, and keep identity ahead of every guard. |
 | `BluetoothAudioManager.swift` | 19 | Battery collection. Spawns `system_profiler` and `pmset` and waits, on whatever thread calls it — moved off main four separate times: twice re-landing there in the same change that was meant to fix it, once leaving the connect path itself on main (entry 11, 2026-09-13 and 2026-09-16 addenda). |
 | `AGENTS.md` / `CLAUDE.md` | — | The instruction files every agent reads. One rule stated in both drifts silently; the split and the import are pinned by `ChangelogRuleDocsTests` (entry 16). |
+| `Kannu/MediaControllers/` | — | Every controller owns something outside itself — a `mediaremote-adapter.pl` child, a timer, a WebSocket — and the protocol no longer defaults the teardown. Read entry 19 before adding a controller or changing how one is released; a missing `stop()` leaks one helper or socket per Music Source change and is invisible from inside the app. |
 | `AgentSessionLogParser.swift` | 8 | `readTrailingLines` and the tail verdict. 4 of 8 commits touch the reader; **2 of those 4 fix the same failure mode** — the reader returning nil and silently sending callers down a wrong path (entry 4). |
 
 If you are changing a *constant* in `AgentTrafficLightState.swift`, assume it is load-bearing
