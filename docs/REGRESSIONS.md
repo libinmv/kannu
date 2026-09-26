@@ -805,6 +805,36 @@ self-tests for every shape it must catch and every cure it must leave alone. **M
 touching window creation: `/usr/bin/log show --predicate 'category == "DisplayCycle" && eventMessage CONTAINS "Marking window"'`
 should stay empty for Kannu under agent load.
 
+**Addendum, 2026-09-26 — a window is not enough; the view model must know which screen it is on.**
+This entry owns "the window exists but fights its own size". The neighbouring failure is *the window
+exists, is correctly sized, and still shows nothing*, and it shipped in 1.3.0. `vm.screen` was
+assigned in exactly one place, inside `adjustWindowPosition`, **below** both
+`guard !windowsHiddenForLock, !LockScreenManager.shared.isLocked` and a no-screens early return. A
+launch while the screen was locked, in clamshell, or with every display asleep therefore left it nil
+for the whole session — and the fullscreen detector's sink was gated on `$screen.compactMap { $0 }`,
+so it produced no signal at all and `hideOnClosed` kept its `true` initialiser forever. Two
+consequences, not one: the closed notch refused to paint, **and** `effectiveClosedNotchHeight`
+collapsed to 0, because a nil screen read as "notchless" on a notched MacBook — which removed the
+hover target, so it could not be summoned back.
+
+**Rule this adds:** only *positioning and ordering* may sit behind the lock guard. Screen identity,
+window creation, and anything a publisher keys on must be established before any early return — a
+guard that skips bookkeeping leaves state that never recovers, because nothing re-enters the method.
+A dropped `com.apple.screenIsUnlocked` is the same shape: `LockScreenManager`'s poll cleared
+`isLocked` without telling `AppDelegate`, so the self-heal at the top of `adjustWindowPosition` was
+never reached; it now posts `lockStateDidClear`. Related: a missing Accessibility grant made
+`isInNativeFullscreen` answer `true` ("assume fullscreen"), which hid the notch for any *maximized*
+window on a fresh install, since a new code identity drops every TCC grant.
+
+**Guard for the addendum — exists.** `KannuTests/ClosedNotchVisibilityTests.swift` covers the two
+extracted rules in `ClosedNotchVisibility` (Foundation-only, in the logic target, with the app
+delegating to it so there is one copy and not two), including the exact composition that produced the
+bug. `KannuTests/ClosedNotchVisibilityRulesTests.swift` pins what is ordering and defaults rather
+than arithmetic: `hideOnClosed` declared `false`, no `compactMap` gating the detector chain, launch
+seeding the screen before it hands off, the Accessibility fallback not answering `true`, and the
+`lockStateDidClear` round trip. First occurrence, so this is an addendum rather than a numbered
+entry — one commit, and an entry without hashes is an opinion.
+
 ---
 
 ## 18. Another app's click never opens the notch
@@ -847,7 +877,7 @@ Commit counts across all branches (`--follow`, so pre-rename history counts):
 | `AgentHookInstaller.swift` | 17 | Embedded script + event table + install/uninstall/migration. Grows monotonically; every growth episode has broken `checkInstalled` or a migration (entries 1 and 6). |
 | `CursorAgentStatusMonitor.swift` (usage spawn) | — | The `/usage` fetch invocation. Two silent breakages in one day from added flags/env (entry 8). |
 | `ModalPresenter.swift` | 2 | The only place allowed to stop the main run loop. Every site in the app funnels through it, and the hang watchdog trusts it to declare a deliberate stall (entry 14). |
-| `KannuApp.swift` (`createKannuWindow`) and every panel manager | — | Window creation. A hosting view installed as a panel's content view gets SwiftUI's window-size bridge and fights Kannu's sizing until AppKit aborts (entry 17). Use `setHostedContent`. |
+| `KannuApp.swift` (`createKannuWindow`, `adjustWindowPosition`) and every panel manager | — | Window creation **and the screen assignment that feeds the view model**. A hosting view installed as a panel's content view gets SwiftUI's window-size bridge and fights Kannu's sizing until AppKit aborts; and an early return that skips `vm.screen` leaves a correctly-sized window that paints nothing and has zero height, permanently (entry 17 and its 2026-09-26 addendum). Use `setHostedContent`, and keep identity ahead of every guard. |
 | `BluetoothAudioManager.swift` | 19 | Battery collection. Spawns `system_profiler` and `pmset` and waits, on whatever thread calls it — moved off main four separate times: twice re-landing there in the same change that was meant to fix it, once leaving the connect path itself on main (entry 11, 2026-09-13 and 2026-09-16 addenda). |
 | `AGENTS.md` / `CLAUDE.md` | — | The instruction files every agent reads. One rule stated in both drifts silently; the split and the import are pinned by `ChangelogRuleDocsTests` (entry 16). |
 | `AgentSessionLogParser.swift` | 8 | `readTrailingLines` and the tail verdict. 4 of 8 commits touch the reader; **2 of those 4 fix the same failure mode** — the reader returning nil and silently sending callers down a wrong path (entry 4). |

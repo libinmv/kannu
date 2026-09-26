@@ -52,7 +52,12 @@ final class AgentStatusNotificationBridge: ObservableObject {
         // and because the store only assigns on change, the push waited for the next unrelated
         // change. One hop puts the handler after the assignment.
         store.$findings.map { _ in () }
-            .merge(with: store.$acknowledgedIDs.map { _ in () }, store.$snoozes.map { _ in () })
+            // $acknowledgedGroups is in here because the prune that lets an escalated group push
+            // again runs inside handleFindingsChange: without it, acknowledging leaves the id in
+            // pushedFindingIDs and the next escalation is silently swallowed.
+            .merge(with: store.$acknowledgedIDs.map { _ in () },
+                   store.$acknowledgedGroups.map { _ in () },
+                   store.$snoozes.map { _ in () })
             .receive(on: DispatchQueue.main)
             .sink { [weak self] in self?.handleFindingsChange() }
             .store(in: &cancellables)
@@ -136,13 +141,18 @@ final class AgentStatusNotificationBridge: ObservableObject {
 
     private func handleFindingsChange() {
         guard Defaults[.enableAgentStatusMobileNotifications], Defaults[.adrPushHighFindings] else { return }
-        let ranking = SecurityFindingsStore.shared.ranking
-        let candidates = ranking.visible.filter {
-            $0.severity == .high || ($0.severity == .medium && Defaults[.adrPushMediumFindings])
+        // Keyed on the group, so one problem pushes once however many sightings it has. An
+        // escalation changes the group's visibility, not its id, so the re-push comes from the
+        // prune below letting it back in — the same mechanism a vanished-and-returned finding used.
+        let groups = SecurityFindingsStore.shared.groupRanking
+        let candidates = groups.visible.filter {
+            $0.group.severity == .high
+                || ($0.group.severity == .medium && Defaults[.adrPushMediumFindings])
         }
-        pushedFindingIDs.formIntersection(Set(candidates.map(\.id)))
-        let fresh = candidates.filter { !pushedFindingIDs.contains($0.id) }
-        pushedFindingIDs.formUnion(fresh.map(\.id))
+        pushedFindingIDs.formIntersection(Set(candidates.map(\.group.id)))
+        let fresh = candidates.filter { !pushedFindingIDs.contains($0.group.id) }
+            .map(\.group.representative)
+        pushedFindingIDs.formUnion(candidates.map(\.group.id))
         let persisted = pushedFindingIDs.sorted()
         if persisted != Defaults[.adrPushedFindingIDs] { Defaults[.adrPushedFindingIDs] = persisted }
         guard !fresh.isEmpty else { return }

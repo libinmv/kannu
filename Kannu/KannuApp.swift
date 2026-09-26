@@ -1113,6 +1113,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in self?.applyPlacementChange() }
         }
 
+        // Re-enter adjustWindowPosition whenever the lock state clears, however it cleared. The
+        // self-heal for a dropped unlock notification lives inside that method, so without this it
+        // only ran if the user happened to replug a display or change a setting.
+        NotificationCenter.default.addObserver(
+            forName: Notification.Name.lockStateDidClear, object: nil, queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor in self?.adjustWindowPosition(changeAlpha: true) }
+        }
+
         DistributedNotificationCenter.default().addObserver(
             self, selector: #selector(onScreenLocked(_:)),
             name: NSNotification.Name(rawValue: "com.apple.screenIsLocked"), object: nil)
@@ -1141,14 +1150,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         registerOptionalShortcutHandlers()
         updateFeatureShortcutAvailability()
 
-        if !Defaults[.displayPlacement].usesOneWindowPerDisplay, let screen = DisplayPlacementRuntime.activeScreen() {
-            let viewModel = self.vm
-            let window = createKannuWindow(for: screen, with: viewModel)
-            self.window = window
-            adjustWindowPosition(changeAlpha: true)
-        } else {
-            adjustWindowPosition(changeAlpha: true)
+        // Seed the shared view model's screen name here, not only inside adjustWindowPosition.
+        // That assignment sits below the lock guard and the no-screens return, so a launch while
+        // the screen was locked — or in clamshell — left `vm.screen` nil for the whole session,
+        // which left the closed notch unpainted and zero-height even after the situation cleared.
+        // Only the identity is seeded; positioning stays behind the guard where it belongs.
+        if !Defaults[.displayPlacement].usesOneWindowPerDisplay {
+            if let screen = DisplayPlacementRuntime.activeScreen() {
+                let viewModel = self.vm
+                viewModel.screen = screen.localizedName
+                let window = createKannuWindow(for: screen, with: viewModel)
+                self.window = window
+            } else if let fallback = NSScreen.main {
+                self.vm.screen = fallback.localizedName
+            }
         }
+        adjustWindowPosition(changeAlpha: true)
         // Without this the pointer monitor only ever appeared after a replug or a settings change,
         // so a launch with two externals connected sat on whichever display resolved first and
         // never followed the pointer at all.
@@ -1803,6 +1820,11 @@ extension Notification.Name {
     static let selectedScreenChanged = Notification.Name("SelectedScreenChanged")
     static let notchHeightChanged = Notification.Name("NotchHeightChanged")
     static let displayPlacementChanged = Notification.Name("displayPlacementChanged")
+    /// `LockScreenManager` posts this whenever it clears the locked state, including from its own
+    /// 500 ms poll. macOS drops `com.apple.screenIsUnlocked` often enough that the poll is the real
+    /// recovery path, and it used to clear `isLocked` without telling `AppDelegate` — so
+    /// `windowsHiddenForLock` stayed set and `adjustWindowPosition`'s self-heal was never reached.
+    static let lockStateDidClear = Notification.Name("LockStateDidClear")
 }
 
 extension CGRect: @retroactive Hashable {

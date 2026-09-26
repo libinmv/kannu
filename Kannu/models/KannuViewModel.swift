@@ -42,7 +42,13 @@ class KannuViewModel: NSObject, ObservableObject {
     /// borderless panels, preventing leaked hover-polling Tasks from accumulating.
     var onViewTeardown: (() -> Void)?
     
-    @Published var hideOnClosed: Bool = true
+    /// Hides every closed-notch surface while a fullscreen app owns the screen. It starts `false`
+    /// on purpose: the flag's only job is to hide for a *detected* fullscreen app, and defaulting
+    /// to `true` meant "invisible until proven otherwise". `setupDetectorObserver`'s sink is the
+    /// only writer, and while it had no signal the notch both refused to paint
+    /// (`ContentView.shouldPaintClosedNotchBackground`) and collapsed to zero height
+    /// (`effectiveClosedNotchHeight`) — a healthy app with no UI at all.
+    @Published var hideOnClosed: Bool = false
     @Published var isBatteryPopoverActive: Bool = false
     @Published var isClipboardPopoverActive: Bool = false
     @Published var isColorPickerPopoverActive: Bool = false
@@ -255,25 +261,26 @@ class KannuViewModel: NSObject, ObservableObject {
     }
     
     private func setupDetectorObserver() {
-        // 1) Publisher for the user’s fullscreen detection setting
         let enabledPublisher = Defaults
             .publisher(.enableFullscreenMediaDetection)
             .map(\.newValue)
 
-        // 2) For each non‑nil screen name, map to a Bool publisher for that screen's status
-        let statusPublisher = $screen
-            .compactMap { $0 }
-            .removeDuplicates()
-            .map { screenName in
-                self.detector.$fullscreenStatus
-                    .map { $0[screenName] ?? false }
-                    .removeDuplicates()
+        // All three inputs are combined flat, and the verdict itself lives in
+        // `ClosedNotchVisibility.shouldHideClosedNotch` so it can be tested.
+        //
+        // This used to gate the chain on `$screen.compactMap { $0 }` feeding a `switchToLatest`.
+        // That swallowed the initial nil screen, and `CombineLatest` emits nothing until every
+        // side has spoken — so a view model whose `screen` was never assigned produced no signal
+        // at all, and `hideOnClosed` kept whatever it was initialised to for the whole session.
+        // A nil screen now simply answers "not fullscreen", so there is no silent state left.
+        Publishers.CombineLatest3($screen, detector.$fullscreenStatus, enabledPublisher)
+            .map { screen, status, enabled in
+                ClosedNotchVisibility.shouldHideClosedNotch(
+                    detectionEnabled: enabled,
+                    screen: screen,
+                    fullscreenStatus: status
+                )
             }
-            .switchToLatest()
-
-        // 3) Combine enabled & status, animate only on changes
-        Publishers.CombineLatest(statusPublisher, enabledPublisher)
-            .map { status, enabled in enabled && status }
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] shouldHide in
@@ -284,11 +291,18 @@ class KannuViewModel: NSObject, ObservableObject {
             .store(in: &cancellables)
     }
     
-    // Computed property for effective notch height
+    /// Zero only where there is genuinely nothing to occupy: a notchless screen with a fullscreen
+    /// app on it. An *unresolved* screen used to land here too, which read a bookkeeping gap as a
+    /// hardware fact — it collapsed the notch to zero height on a notched MacBook and took the
+    /// hover target with it, so the user could not even point at it to bring it back. The rule
+    /// itself is in `ClosedNotchVisibility` where it is tested; this resolves the screen for it.
     var effectiveClosedNotchHeight: CGFloat {
-        let currentScreen = NSScreen.screens.first { $0.localizedName == screen }
-        let noNotchAndFullscreen = hideOnClosed && (currentScreen?.safeAreaInsets.top ?? 0 <= 0 || currentScreen == nil)
-        return noNotchAndFullscreen ? 0 : closedNotchSize.height
+        let currentScreen = NSScreen.screens.first { $0.localizedName == screen } ?? NSScreen.main
+        return ClosedNotchVisibility.effectiveClosedNotchHeight(
+            hideOnClosed: hideOnClosed,
+            topSafeAreaInset: currentScreen?.safeAreaInsets.top,
+            closedHeight: closedNotchSize.height
+        )
     }
 
 

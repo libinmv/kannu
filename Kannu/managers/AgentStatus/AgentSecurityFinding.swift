@@ -81,6 +81,48 @@ struct AgentSecurityFinding: Equatable, Hashable, Identifiable, Codable {
     /// in a prompt, hidden text). Outside the id, so ids, acknowledgements and snoozes are unchanged.
     var revealPath: String? = nil
 
+    /// When this finding was last seen, if the source tracks it (the hook sightings all do). Nil
+    /// for sources that only know "it is true now" — Discovery has no upstream timestamp at all.
+    var lastSeen: Date? = nil
+
+    /// How many times the underlying thing happened, as counted by whoever counts it. The hook
+    /// aggregates per chat, so this is that chat's tally; totals across chats are rolled up by
+    /// `AgentSecurityFindingGroup`, never by summing these in place.
+    var occurrences: Int = 1
+
+    /// The chat's project, used to scope an acknowledgement. Nil for findings that are not about a
+    /// chat (Discovery's assets, the new-server check's config files).
+    var projectName: String? = nil
+
+    /// The identity of the *problem*, with the parts that churn deliberately left out — a rotated
+    /// credential's fingerprint, the conversation it happened in, the timestamp. `id` still
+    /// identifies this one sighting, so acknowledgements written before grouping keep working and
+    /// the golden-id tests keep passing; this is what one row in the UI stands for.
+    ///
+    /// Nil means "do not group me": the finding stands alone under its own id.
+    var groupSubject: String? = nil
+
+    /// The *shape* of this occurrence, when the shape can change while the problem stays the same
+    /// — for a policy match, whether it ran or was refused. It is not part of `groupSubject`,
+    /// because "an agent kept running `ssh`" and "Kannu started refusing `ssh`" are one problem
+    /// with two outcomes; and it is not derivable from `severity`, which moves the *other* way
+    /// (a match that ran is high, one Kannu refused is medium). An acknowledged group whose set of
+    /// outcomes changes comes back, which is the whole point of tracking it.
+    var outcomeTag: String? = nil
+
+    /// One row in Settings › Agent Security. Falls back to `id` so an ungrouped finding is its own
+    /// group of one rather than silently merging with anything.
+    var groupID: String {
+        guard let groupSubject else { return id }
+        return AgentSecurityFinding.stableID(
+            source: source, rule: rule, subject: groupSubject, evidence: []
+        )
+    }
+
+    /// What the group is keyed on, shown in the details so the grouping is legible rather than
+    /// magic ("every `ASIA` key Bash saw", not "21 things we decided were the same").
+    var groupSubjectLabel: String? { groupSubject }
+
     /// The chat's project folder, for Kannu's own findings about a chat (`assetPath` is the chat's
     /// working directory there); nil for ADR's findings and for the new-server check.
     var projectFolder: String? {
@@ -173,7 +215,13 @@ struct AgentSecurityFinding: Equatable, Hashable, Identifiable, Codable {
                 assetPath: asset?.installPath,
                 sessionID: nil,
                 firstSeen: firstSeenByID[id] ?? now,
-                revealPath: reveal
+                revealPath: reveal,
+                lastSeen: now,
+                // The asset and the rule. `id` folds in the rendered evidence, so a reworded proof
+                // or a changed path from ADR reads as a new finding; the asset does not move, so the
+                // row stays one row. ADR reports no project, so only "acknowledge everywhere"
+                // applies to these.
+                groupSubject: finding.assetId
             )
         }
     }
@@ -210,7 +258,13 @@ extension AgentSecurityFinding {
                     assetName: session.displayProjectName,
                     assetPath: session.cwd,
                     sessionID: session.conversationID,
-                    firstSeen: firstSeenByID[id] ?? now
+                    firstSeen: firstSeenByID[id] ?? now,
+                    lastSeen: now,
+                    projectName: session.displayProjectName,
+                    // The project and the agent, not the conversation: "this agent keeps being
+                    // started with permission checks off in this repo" is one habit worth one row,
+                    // however many sessions it spans.
+                    groupSubject: "unattended|\(session.provider)|\(session.displayProjectName)"
                 )
             }
     }

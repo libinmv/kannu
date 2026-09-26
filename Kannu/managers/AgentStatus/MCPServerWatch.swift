@@ -295,7 +295,13 @@ enum MCPServerWatch {
                 assetPath: configPath,
                 sessionID: nil,
                 firstSeen: seen,
-                revealPath: configPath
+                revealPath: configPath,
+                lastSeen: seen,
+                // This server, in this config file. `firstSeenMs` deliberately stays out: it belongs
+                // in the *finding* id ("removed and added again is news again"), but as a group key
+                // it would turn one server that keeps reappearing into an endless run of new
+                // problems rather than one row with a count and a last-seen.
+                groupSubject: "\(configPath)|\(key)"
             )
         }
     }
