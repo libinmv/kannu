@@ -1297,13 +1297,14 @@ extension Defaults.Keys {
     static let adrDetectionConfirmEachRun = Key<Bool>("adrDetectionConfirmEachRun", default: true)
     static let adrDetectionTriageEnabled = Key<Bool>("adrDetectionTriageEnabled", default: false)
     static let adrDetectionTriageModel = Key<String>("adrDetectionTriageModel", default: "gpt-4o")
-    static let adrDetectionReasoningModel = Key<String>("adrDetectionReasoningModel", default: "claude-sonnet-4-6")
+    static let adrDetectionReasoningModel = Key<String>("adrDetectionReasoningModel", default: "claude-sonnet-5")
     static let adrDetectionUseAnthropicAPIKey = Key<Bool>("adrDetectionUseAnthropicAPIKey", default: false)
     static let adrDetectionContextThreatIntelligence = Key<Bool>("adrDetectionContextThreatIntelligence", default: true)
     static let adrDetectionContextSourceCode = Key<Bool>("adrDetectionContextSourceCode", default: true)
     static let adrDetectionContextPolicy = Key<Bool>("adrDetectionContextPolicy", default: true)
     static let adrDetectionTimeoutSeconds = Key<Int>("adrDetectionTimeoutSeconds", default: 300)
     static let adrDetectionMaxMessages = Key<Int>("adrDetectionMaxMessages", default: 400)
+    static let adrDetectionMaxCharacters = Key<Int>("adrDetectionMaxCharacters", default: 150_000)
     static let adrSessionAnalyses = Key<[ADRSessionAnalysis]>("adrSessionAnalyses", default: [])
 
     /// The profiles picked during onboarding, recorded so later code can tell what kind of user
