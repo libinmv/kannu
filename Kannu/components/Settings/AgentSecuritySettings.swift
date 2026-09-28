@@ -138,7 +138,7 @@ struct AgentSecuritySettings: View {
             SettingsSectionHeader("Security findings")
                 .settingsHighlight(id: highlightID("Security findings"))
         } footer: {
-            SettingsFooter("Kannu never changes your agent or MCP settings. Nothing leaves this Mac unless you turn on push notifications or session analysis. Details: docs/ADR.md in the Kannu repository.")
+            SettingsFooter("Detection is best-effort: Kannu can miss things, and an empty list is not proof that nothing happened. Kannu never changes your agent or MCP settings. Nothing leaves this Mac unless you turn on push notifications or session analysis. Details: docs/ADR.md in the Kannu repository.")
         }
         .onAppear {
             if adr.discovery.state == .unchecked { adr.checkAgain() }

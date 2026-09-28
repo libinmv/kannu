@@ -4,6 +4,100 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-28 - Act on CodeRabbit's review of #65: an open that fails says so, a file that waits arrives
+- **Developer label:** CodeRabbit's two findings on the Terms of Use gate, both verified against the
+  code
+- **Agent label:** Follow-up 61 - review round on the terms gate
+- **Changes:**
+  - **A file opened with Kannu while the terms were on screen was dropped.** The open handlers returned
+    early before acceptance, and Accept never replayed them, so the file never reached the shelf. They
+    now hold the URLs, and `continueLaunch()` hands them to the shelf as its last step, once the notch
+    and the shelf exist. After a Decline they go nowhere. `openFile` answers "taken" rather than
+    "refused", because it will be handled. Pinned by
+    `LaunchGateRulesTests.testFilesOpenedBeforeAcceptanceWaitAndReachTheShelf`.
+  - **"View License" and the About › Legal buttons reported success before the open finished.**
+    `NSWorkspace.open(_:withApplicationAt:configuration:)` reports its result asynchronously, so a
+    TextEdit failure never showed the error line. `LegalDocuments.open` now takes a completion that
+    gets the real outcome on the main queue: false for a file missing from the bundle, and false for a
+    failed open. The error wording now covers both.
+  - Full suite: **833 tests, 0 failures**.
+
+
+### 2026-09-28 - Kannu asks for acceptance of its Terms of Use before it does anything
+- **Developer label:** "we need no liability asserted through a terms of acceptance based on standard
+  practices and user gaurded behind it start using the app"
+- **Agent label:** Follow-up 61 - clickwrap Terms of Use gate, the licence inside the app
+- **Changes:**
+  - **What existed before:** the only disclaimer was GPL-3.0 §15–17, and it never reached a user. The
+    published 1.3.2 DMG held `Kannu.app` and the Applications link and nothing else; no LICENSE or
+    NOTICE was in the bundle, About had no row for it, and nothing was ever accepted. Shipping a GPL
+    binary without the licence is also a gap under the licence's own §4 and §6.
+  - **Worse, Kannu acted before anyone could have agreed to anything.** The delegate's stored `let`
+    singletons spawned `mediaremote-adapter.pl` and `log stream` children and could raise the
+    Bluetooth and ~/Downloads permission prompts before the first window existed; `KannuApp.init`
+    probed provider folders and deleted a legacy Keychain item; and the launch wrote agent hooks into
+    `~/.claude`, `~/.cursor` and `~/.codex` on first run, started ADR scans and the login item, and
+    raised the Location and Accessibility prompts. Onboarding came after all of it and gated nothing
+    — and `firstLaunch` is cleared by the notch's hello animation rather than by finishing
+    onboarding, so it could not have served as the gate either.
+  - **`TERMS.md`** at the repository root is the one copy of the terms: standard clickwrap terms for
+    free software, provider "the Kannu project and its contributors", no governing-law clause. They
+    cover agreement (Decline means do not use), the licence (it prevails about the software), no
+    warranty ("as is", "as available"), **security specifically** — vulnerabilities may exist that
+    nobody knows about and may be exploited, and the security features are best-effort and not
+    advice — a limitation of liability that names security incidents and the exploitation of any
+    vulnerability known or unknown, the user's responsibilities, third-party services, changes,
+    non-excludable consumer rights with severability, and contact. The vulnerability-reporting
+    sentence stays general because private vulnerability reporting is not enabled on the repository.
+  - **The gate.** `applicationDidFinishLaunching` now starts only the crash marker, the hang watchdog,
+    the updater (so a corrected build can still arrive) and the orphan reaper (which only stops
+    Kannu's own helpers), then shows the Terms of Use unless the current version has been accepted.
+    Everything else the launch did moved **unchanged** into `continueLaunch()`, which runs once. The
+    ten eager singletons are `lazy var` and `continueLaunch()` touches each in its old order, so they
+    all still start at launch, just after acceptance. `KannuApp.init` is gone, and its one call moved
+    into `continueLaunch()`. The app-menu Settings… item, `applicationDidBecomeActive`, shelf
+    file-opening and the termination teardown all wait on the same flag — after a Decline the
+    teardown would otherwise build MusicManager, AudioTap and Lunar only to stop them — and a Dock
+    click brings the terms back to the front.
+  - **The gate window** follows standard clickwrap practice. The full text sits in a selectable
+    scroll view, the "I have read and agree" box starts unchecked, and Accept stays disabled until it
+    is ticked. Decline quits, and View License opens the GPL. Accepting records the version and the
+    time (`termsAcceptedVersion`, `termsAcceptedAt`). It is a titled `.normal` window like onboarding
+    — not a notch panel, not `runModal` (docs/REGRESSIONS.md entry 14) — with its content installed
+    through `setHostedContent` (entry 17). If the terms are missing from the bundle, it fails closed
+    and says so.
+  - **Every user accepts once.** Existing installs have no recorded acceptance, so they see the gate on
+    their first launch after updating. Bumping `TermsOfUse.currentVersion` together with `TERMS.md`'s
+    `Version` line asks everyone again.
+  - `TERMS.md`, `LICENSE` and `NOTICE` are copied into `Kannu.app/Contents/Resources` from the
+    repository root as `SOURCE_ROOT` file references, so there is one copy of each and nothing can
+    drift. About gains a **Legal** section: Terms of Use (when and which version you accepted, with
+    **View**) and License (**View License**, **Acknowledgements**), each opening in TextEdit. Both rows
+    have search entries, so the inventory pins move 205/254/248 -> 207/256/250.
+  - The Security findings footer now opens "Detection is best-effort: Kannu can miss things, and an
+    empty list is not proof that nothing happened."
+  - **Guards:**
+    - `TermsOfUseTests` covers who may skip the gate, pins the constant to `TERMS.md`'s declared
+      version, and checks that the terms still disclaim warranty and liability, including for unknown
+      vulnerabilities.
+    - `LaunchGateRulesTests` scans the source: the terms are checked before the launch continues,
+      nothing that installs hooks, starts monitors or builds windows runs before the gate, the
+      singletons stay lazy and `continueLaunch()` still starts every one, `KannuApp` has no working
+      `init`, and all three documents stay in the Resources phase. Planting a stored `let` singleton
+      and a pre-gate hook install fails it with three messages.
+    - `ClosedNotchVisibilityRulesTests` now reads `continueLaunch()`, where the screen seed moved.
+  - **Verified at runtime** on a signed local build under its own bundle id, with the installed app
+    untouched:
+    - Unaccepted: the process stays alive with **zero child processes** and exactly one window (the
+      580-wide terms window), with no notch and no menu-bar work, and `~/.claude/settings.json` is
+      untouched. Quitting it left nothing behind.
+    - With acceptance recorded, relaunched: the helpers start (`mediaremote-adapter.pl` and three
+      `log stream`s), the notch panel appears, and no terms window is shown.
+    - Full suite: **832 tests, 0 failures**.
+  - `AGENTS.md`'s eager-singleton trap is rewritten: the singletons are lazy and nothing runs before
+    the terms are accepted.
+
+
 ### 2026-09-27 - Act on CodeRabbit's review of #64: the bench was measuring less than it claimed
 - **Developer label:** CodeRabbit's ten findings on the triage bench, each verified against
   upstream's own source and the real ADR-Bench pack before acting

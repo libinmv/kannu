@@ -1293,6 +1293,10 @@ extension Defaults.Keys {
     // chat, and by default confirms each run. Keys live in the Keychain (`SecureSecretsStore`).
     static let adrDetectionEnabled = Key<Bool>("adrDetectionEnabled", default: false)
     static let adrDetectionConsentedAt = Key<Date?>("adrDetectionConsentedAt", default: nil)
+    // Terms of Use. The launch is held until `TermsOfUse.isAccepted(acceptedVersion:)` is true.
+    // Both nil for every install from before the gate, so existing users accept once too.
+    static let termsAcceptedVersion = Key<Int?>("termsAcceptedVersion", default: nil)
+    static let termsAcceptedAt = Key<Date?>("termsAcceptedAt", default: nil)
     static let adrDetectionCheckout = Key<String>("adrDetectionCheckout", default: "")
     static let adrDetectionConfirmEachRun = Key<Bool>("adrDetectionConfirmEachRun", default: true)
     static let adrDetectionTriageEnabled = Key<Bool>("adrDetectionTriageEnabled", default: false)
