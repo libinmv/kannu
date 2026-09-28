@@ -160,8 +160,9 @@ final class AgentSecurityFindingGroupTests: XCTestCase {
                 conversationID: chat, chatName: chat, date: Date(timeIntervalSince1970: 1),
                 isMalicious: true, confidence: confidence, tactic: "permission_abuse",
                 explanation: "e", threatMessages: 3, totalMessages: 9, method: nil, modelUsed: "m",
-                inputTokens: nil, outputTokens: nil, costUSD: nil, triageEnabled: false,
-                reportPath: nil
+                inputTokens: nil, outputTokens: nil, costUSD: nil,
+                analysisSeconds: nil, messagesAnalyzed: nil, inputCharacters: nil,
+                transcriptBytes: nil, triageEnabled: false, reportPath: nil
             ).finding()
         }
         let reanalysed = [analysis(chat: "chat-1", confidence: 0.91), analysis(chat: "chat-1", confidence: 0.92)]

@@ -468,18 +468,23 @@ struct NotchAgentStatusView: View {
             alert.informativeText = failure.message
             ModalPresenter.present(alert)
         case .success(let plan):
-            guard detectionConfirmEachRun else { findingsStore.runAnalysis(plan); return }
+            // An unchanged chat always confirms, even with per-chat confirmation off: silently
+            // re-spending a full reasoning run on the same bytes is never what the click meant.
+            guard detectionConfirmEachRun || plan.unchangedSinceLastVerdict else { findingsStore.runAnalysis(plan); return }
             let options = SecurityFindingsStore.analysisOptions()
             let alert = NSAlert()
             alert.messageText = String(localized: "Send this chat to ADR Detection?")
             var lines = [String(localized: "The transcript \"\(session.displayChatName)\" (up to \(options.maxMessages) messages) leaves this Mac:")]
+            if plan.unchangedSinceLastVerdict, let previous = findingsStore.analysis(for: session.conversationID) {
+                lines.insert(String(localized: "This chat has not changed since its last analysis (\(previous.shortLabel)) — analysing again re-sends the same transcript."), at: 0)
+            }
             lines.append(String(localized: "• Anthropic, via \(Defaults[.adrDetectionUseAnthropicAPIKey] ? "your API key" : "your Claude Code login (uses your quota)"), model \(options.reasoningModel)"))
             if options.triageEnabled { lines.append(String(localized: "• OpenAI, via your API key, model \(options.triageModel) (triage first)")) }
             lines.append(String(localized: "ADR runs an unattended Claude session on this Mac to reason about it (file edits disallowed). Nothing else is sent, and nothing runs automatically."))
             alert.informativeText = lines.joined(separator: "\n")
             alert.addButton(withTitle: String(localized: "Analyze"))
             alert.addButton(withTitle: String(localized: "Cancel"))
-            alert.showsSuppressionButton = true
+            alert.showsSuppressionButton = detectionConfirmEachRun
             alert.suppressionButton?.title = String(localized: "Don't ask again for each chat")
             // The notch window sits at `.mainMenu + 3`, so an alert at the default level rendered
             // behind it: a stopped app and no dialog. `runAppModal` activates and raises first.

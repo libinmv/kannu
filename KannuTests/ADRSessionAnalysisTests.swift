@@ -77,4 +77,29 @@ final class ADRSessionAnalysisTests: XCTestCase {
         XCTAssertEqual(ADRSessionAnalysis.title(forTactic: "novel_thing"), "Novel thing in this chat")
         XCTAssertEqual(ADRSessionAnalysis.title(forTactic: nil), "Malicious activity in this chat")
     }
+
+    func testANewVerdictCarriesTheNewMetrics() throws {
+        let a = try ADRSessionAnalysis.parse(
+            Data(#"{"schema":1,"is_malicious":false,"confidence":0.05,"explanation":"ok","analysis_seconds":41.5,"messages_analyzed":120,"input_characters":64000,"triage":"off"}"#.utf8),
+            conversationID: "conv-1", chatName: nil, reportPath: nil, transcriptBytes: 123_456, now: t0)
+        XCTAssertEqual(a.analysisSeconds, 41.5)
+        XCTAssertEqual(a.messagesAnalyzed, 120)
+        XCTAssertEqual(a.inputCharacters, 64_000)
+        XCTAssertEqual(a.transcriptBytes, 123_456)
+    }
+
+    func testAVerdictStoredBeforeTheNewFieldsStillDecodes() throws {
+        // `Defaults[.adrSessionAnalyses]` decodes what an older build stored; a non-optional new
+        // field would make every element fail and silently empty the 50-verdict cache on upgrade.
+        let current = try parse(#"{"schema":1,"is_malicious":true,"confidence":0.9,"tactic":"permission_abuse","explanation":"x"}"#)
+        var json = try XCTUnwrap(try JSONSerialization.jsonObject(with: JSONEncoder().encode(current)) as? [String: Any])
+        for key in ["analysisSeconds", "messagesAnalyzed", "inputCharacters", "transcriptBytes"] { json.removeValue(forKey: key) }
+        let old = try JSONDecoder().decode(ADRSessionAnalysis.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertEqual(old.conversationID, "conv-1")
+        XCTAssertTrue(old.isMalicious)
+        XCTAssertNil(old.analysisSeconds)
+        XCTAssertNil(old.messagesAnalyzed)
+        XCTAssertNil(old.inputCharacters)
+        XCTAssertNil(old.transcriptBytes)
+    }
 }

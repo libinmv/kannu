@@ -19,6 +19,10 @@
 		7E61181C2E24071E0050006C /* MacroVisionKit in Frameworks */ = {isa = PBXBuildFile; productRef = 146BC4362D366E9B0047C66A /* MacroVisionKit */; };
 		7E6856482EA963FD00D261F5 /* Lock.json in Resources */ = {isa = PBXBuildFile; fileRef = 7E6856472EA963FD00D261F5 /* Lock.json */; };
 		7E8130402E3FB40500E08F3F /* mediaremote-adapter.pl in Resources */ = {isa = PBXBuildFile; fileRef = 7E81303D2E3FB40500E08F3F /* mediaremote-adapter.pl */; };
+		AA100000000000000000F002 /* TERMS.md in Resources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000F001 /* TERMS.md */; };
+		AA100000000000000000F004 /* LICENSE in Resources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000F003 /* LICENSE */; };
+		AA100000000000000000F006 /* NOTICE in Resources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000F005 /* NOTICE */; };
+		AA100000000000000000F008 /* TermsOfUse.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000F007 /* TermsOfUse.swift */; };
 		7E8840D72E9A346700C5CB8C /* Dog waiting.json in Resources */ = {isa = PBXBuildFile; fileRef = 7E8840D62E9A346700C5CB8C /* Dog waiting.json */; };
 		7E8840D92E9A347000C5CB8C /* Moody Dog.json in Resources */ = {isa = PBXBuildFile; fileRef = 7E8840D82E9A347000C5CB8C /* Moody Dog.json */; };
 		7E8840DB2E9A347800C5CB8C /* Orange Cat Peeping.json in Resources */ = {isa = PBXBuildFile; fileRef = 7E8840DA2E9A347800C5CB8C /* Orange Cat Peeping.json */; };
@@ -112,6 +116,10 @@
 		7E25ECA42E6C6E7800700E72 /* DisplayServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = DisplayServices.framework; path = /System/Library/PrivateFrameworks/DisplayServices.framework; sourceTree = "<absolute>"; };
 		7E6856472EA963FD00D261F5 /* Lock.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = Lock.json; sourceTree = "<group>"; };
 		7E81303D2E3FB40500E08F3F /* mediaremote-adapter.pl */ = {isa = PBXFileReference; lastKnownFileType = text.script.perl; path = "mediaremote-adapter.pl"; sourceTree = "<group>"; };
+		AA100000000000000000F001 /* TERMS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; name = TERMS.md; path = TERMS.md; sourceTree = SOURCE_ROOT; };
+		AA100000000000000000F003 /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; name = LICENSE; path = LICENSE; sourceTree = SOURCE_ROOT; };
+		AA100000000000000000F005 /* NOTICE */ = {isa = PBXFileReference; lastKnownFileType = text; name = NOTICE; path = NOTICE; sourceTree = SOURCE_ROOT; };
+		AA100000000000000000F007 /* TermsOfUse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TermsOfUse.swift; path = Kannu/models/TermsOfUse.swift; sourceTree = SOURCE_ROOT; };
 		7E8840D62E9A346700C5CB8C /* Dog waiting.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "Dog waiting.json"; sourceTree = "<group>"; };
 		7E8840D82E9A347000C5CB8C /* Moody Dog.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "Moody Dog.json"; sourceTree = "<group>"; };
 		7E8840DA2E9A347800C5CB8C /* Orange Cat Peeping.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "Orange Cat Peeping.json"; sourceTree = "<group>"; };
@@ -340,6 +348,9 @@
 				7E8840D52E9A341F00C5CB8C /* LottieAnimations */,
 				7E81304F2E3FB42700E08F3F /* Frameworks */,
 				7E81303F2E3FB40500E08F3F /* mediaremote-adapter */,
+				AA100000000000000000F001 /* TERMS.md */,
+				AA100000000000000000F003 /* LICENSE */,
+				AA100000000000000000F005 /* NOTICE */,
 				F54406E92CD4987A00C7AFD9 /* Kannu */,
 				F54406E82CD4987A00C7AFD9 /* Products */,
 				BF9102C8771E45168EF97D18 /* KannuUITests */,
@@ -503,6 +514,9 @@
 			files = (
 				7E9918722EFDAE5B002EDFD5 /* MediaRemoteAdapter.framework in Resources */,
 				7E8130402E3FB40500E08F3F /* mediaremote-adapter.pl in Resources */,
+				AA100000000000000000F002 /* TERMS.md in Resources */,
+				AA100000000000000000F004 /* LICENSE in Resources */,
+				AA100000000000000000F006 /* NOTICE in Resources */,
 				7E6856482EA963FD00D261F5 /* Lock.json in Resources */,
 				7E8840D92E9A347000C5CB8C /* Moody Dog.json in Resources */,
 				7E9911B02EFD7D1B002EDFD5 /* Reindeer.json in Resources */,
@@ -606,6 +620,7 @@
 				AA100000000000000000008F /* DiagnosticScrub.swift in Sources */,
 				AA1000000000000000000091 /* DisplayPlacementResolver.swift in Sources */,
 				AA10000000000000000000B1 /* ClosedNotchVisibility.swift in Sources */,
+				AA100000000000000000F008 /* TermsOfUse.swift in Sources */,
 				AA10000000000000000000B3 /* AgentSecurityFindingGroup.swift in Sources */,
 				AA10000000000000000000B5 /* SecurityFindingAcknowledgement.swift in Sources */,
 				AA1000000000000000000093 /* GitHubIssue.swift in Sources */,
@@ -818,7 +833,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Kannu/Preview Content\"";
 				DEVELOPMENT_TEAM = 3Z7WX43G8Q;
@@ -856,7 +871,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.3.2;
+				MARKETING_VERSION = 1.3.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.kannu.app.dev;
 				PRODUCT_NAME = Kannu;
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -886,7 +901,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Kannu/Preview Content\"";
 				DEVELOPMENT_TEAM = S2WWHQQH2V;
@@ -924,7 +939,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.3.2;
+				MARKETING_VERSION = 1.3.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.kannu.app;
 				PRODUCT_NAME = Kannu;
 				PROVISIONING_PROFILE_SPECIFIER = "";

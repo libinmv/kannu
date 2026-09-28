@@ -35,6 +35,13 @@ struct ADRSessionAnalysis: Codable, Equatable, Identifiable {
     let inputTokens: Int?
     let outputTokens: Int?
     let costUSD: Double?
+    /// v4 metrics — Optional so verdicts stored before them still decode; a non-optional
+    /// field here silently discards every cached verdict on upgrade.
+    let analysisSeconds: Double?
+    let messagesAnalyzed: Int?
+    let inputCharacters: Int?
+    /// Transcript size when analysed, for the unchanged-since-last-verdict skip.
+    let transcriptBytes: Int?
     let triageEnabled: Bool
     let reportPath: String?
 
@@ -42,7 +49,7 @@ struct ADRSessionAnalysis: Codable, Equatable, Identifiable {
 
     /// The adapter's stdout JSON (`schema` 1). An `error` key is the adapter saying why it
     /// could not run; that is surfaced, never turned into a "clean" verdict.
-    static func parse(_ data: Data, conversationID: String, chatName: String?, reportPath: String?, now: Date = Date()) throws -> ADRSessionAnalysis {
+    static func parse(_ data: Data, conversationID: String, chatName: String?, reportPath: String?, transcriptBytes: Int? = nil, now: Date = Date()) throws -> ADRSessionAnalysis {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               (json["schema"] as? NSNumber)?.intValue == 1 else { throw ParseError.notAVerdict }
         if let error = json["error"] as? String { throw ParseError.adapterError(error) }
@@ -64,6 +71,10 @@ struct ADRSessionAnalysis: Codable, Equatable, Identifiable {
             inputTokens: int("input_tokens"),
             outputTokens: int("output_tokens"),
             costUSD: double("cost_usd"),
+            analysisSeconds: double("analysis_seconds"),
+            messagesAnalyzed: int("messages_analyzed"),
+            inputCharacters: int("input_characters"),
+            transcriptBytes: transcriptBytes,
             triageEnabled: (json["triage"] as? String) == "on",
             reportPath: reportPath
         )

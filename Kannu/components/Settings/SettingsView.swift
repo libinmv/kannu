@@ -955,10 +955,14 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .agentSecurity, title: "Use an Anthropic API key", keywords: ["adr", "detection", "anthropic", "api key", "quota"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Use an Anthropic API key")),
             SettingsSearchEntry(tab: .agentSecurity, title: "Triage with OpenAI first", keywords: ["adr", "detection", "openai", "triage", "gpt"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Triage with OpenAI first")),
             SettingsSearchEntry(tab: .agentSecurity, title: "Messages sent", keywords: ["adr", "detection", "messages", "cap", "transcript"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Messages sent")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "Transcript budget", keywords: ["adr", "detection", "budget", "characters", "size", "truncate", "trim", "tokens"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Transcript budget")),
+            SettingsSearchEntry(tab: .agentSecurity, title: "Context servers", keywords: ["adr", "detection", "context", "mcp", "threat intelligence", "source code", "policy store"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Context servers")),
             SettingsSearchEntry(tab: .agentSecurity, title: "Confirm before every analysis", keywords: ["adr", "detection", "confirm", "consent"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Confirm before every analysis")),
             SettingsSearchEntry(tab: .agentStatus, title: "Mobile notifications", keywords: ["mobile", "push", "ntfy", "pushover", "webhook", "iphone", "android"], highlightID: SettingsTab.agentStatus.highlightID(for: "Mobile notifications")),
             SettingsSearchEntry(tab: .agentStatus, title: "Send test notification", keywords: ["test", "mobile", "push", "notification"], highlightID: SettingsTab.agentStatus.highlightID(for: "Send test notification")),
             SettingsSearchEntry(tab: .about, title: "Watch for freezes", keywords: ["freeze", "frozen", "hang", "stuck", "unresponsive", "beachball", "spinning", "crash", "report", "diagnostics", "developer"], highlightID: SettingsTab.about.highlightID(for: "Watch for freezes")),
+            SettingsSearchEntry(tab: .about, title: "Terms of Use", keywords: ["terms", "legal", "agreement", "warranty", "liability", "accept"], highlightID: SettingsTab.about.highlightID(for: "Terms of Use")),
+            SettingsSearchEntry(tab: .about, title: "License", keywords: ["license", "licence", "gpl", "legal", "warranty", "acknowledgements", "notice"], highlightID: SettingsTab.about.highlightID(for: "License")),
             SettingsSearchEntry(tab: .about, title: "Report a Problem", keywords: ["report", "problem", "bug", "crash", "issue", "github", "feedback", "diagnostics"], highlightID: SettingsTab.about.highlightID(for: "Report a Problem")),
             SettingsSearchEntry(tab: .about, title: "Copy Latest Report", keywords: ["copy", "crash", "report", "diagnostics", "clipboard", "paste", "log"], highlightID: SettingsTab.about.highlightID(for: "Copy Latest Report")),
         ]
@@ -3140,11 +3144,23 @@ struct Media: View {
 
 struct About: View {
     @Default(.hangWatchdogEnabled) var hangWatchdogEnabled
+    @Default(.termsAcceptedVersion) var termsAcceptedVersion
+    @Default(.termsAcceptedAt) var termsAcceptedAt
+    @State private var legalDocumentMissing = false
     @State private var copiedReport = false
     @State private var reportCopyFailed = false
 
     private func highlightID(_ title: String) -> String {
         SettingsTab.about.highlightID(for: title)
+    }
+
+    /// "Accepted 28 Sep 2026 at 10:04 (version 1)." — what the gate recorded.
+    private var termsAcceptanceText: String {
+        guard let version = termsAcceptedVersion, let date = termsAcceptedAt else {
+            return String(localized: "Kannu is provided as is, without warranty, under these terms.")
+        }
+        let when = date.formatted(date: .abbreviated, time: .shortened)
+        return String(localized: "You accepted version \(version) on \(when). Kannu is provided as is, without warranty, under these terms.")
     }
 
     /// "1.2.0 (2)" — the build used to hide behind a tap; it is what a bug report needs.
@@ -3175,6 +3191,26 @@ struct About: View {
                 }
             } header: {
                 SettingsSectionHeader("Version info")
+            }
+
+            Section {
+                SettingsActionRow("Terms of Use", description: termsAcceptanceText) {
+                    Button("View") { LegalDocuments.open(.terms) { legalDocumentMissing = !$0 } }
+                }
+                .settingsHighlight(id: highlightID("Terms of Use"))
+                SettingsActionRow(
+                    "License",
+                    description: "Kannu is free software under the GNU General Public License v3, provided as is, without warranty of any kind."
+                ) {
+                    Button("View License") { LegalDocuments.open(.license) { legalDocumentMissing = !$0 } }
+                    Button("Acknowledgements") { LegalDocuments.open(.notice) { legalDocumentMissing = !$0 } }
+                }
+                .settingsHighlight(id: highlightID("License"))
+                if legalDocumentMissing {
+                    SettingsErrorText("That document could not be opened. If it keeps failing, reinstall Kannu from kannu.app.")
+                }
+            } header: {
+                SettingsSectionHeader("Legal")
             }
 
             Section {

@@ -1293,17 +1293,22 @@ extension Defaults.Keys {
     // chat, and by default confirms each run. Keys live in the Keychain (`SecureSecretsStore`).
     static let adrDetectionEnabled = Key<Bool>("adrDetectionEnabled", default: false)
     static let adrDetectionConsentedAt = Key<Date?>("adrDetectionConsentedAt", default: nil)
+    // Terms of Use. The launch is held until `TermsOfUse.isAccepted(acceptedVersion:)` is true.
+    // Both nil for every install from before the gate, so existing users accept once too.
+    static let termsAcceptedVersion = Key<Int?>("termsAcceptedVersion", default: nil)
+    static let termsAcceptedAt = Key<Date?>("termsAcceptedAt", default: nil)
     static let adrDetectionCheckout = Key<String>("adrDetectionCheckout", default: "")
     static let adrDetectionConfirmEachRun = Key<Bool>("adrDetectionConfirmEachRun", default: true)
     static let adrDetectionTriageEnabled = Key<Bool>("adrDetectionTriageEnabled", default: false)
     static let adrDetectionTriageModel = Key<String>("adrDetectionTriageModel", default: "gpt-4o")
-    static let adrDetectionReasoningModel = Key<String>("adrDetectionReasoningModel", default: "claude-sonnet-4-6")
+    static let adrDetectionReasoningModel = Key<String>("adrDetectionReasoningModel", default: "claude-sonnet-5")
     static let adrDetectionUseAnthropicAPIKey = Key<Bool>("adrDetectionUseAnthropicAPIKey", default: false)
     static let adrDetectionContextThreatIntelligence = Key<Bool>("adrDetectionContextThreatIntelligence", default: true)
     static let adrDetectionContextSourceCode = Key<Bool>("adrDetectionContextSourceCode", default: true)
     static let adrDetectionContextPolicy = Key<Bool>("adrDetectionContextPolicy", default: true)
     static let adrDetectionTimeoutSeconds = Key<Int>("adrDetectionTimeoutSeconds", default: 300)
     static let adrDetectionMaxMessages = Key<Int>("adrDetectionMaxMessages", default: 400)
+    static let adrDetectionMaxCharacters = Key<Int>("adrDetectionMaxCharacters", default: 150_000)
     static let adrSessionAnalyses = Key<[ADRSessionAnalysis]>("adrSessionAnalyses", default: [])
 
     /// The profiles picked during onboarding, recorded so later code can tell what kind of user
