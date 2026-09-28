@@ -4,6 +4,22 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-28 - Ship 1.3.3 "Heimdall"
+- **Developer label:** "release 1.3.3"
+- **Agent label:** Follow-up 62 - 1.3.3 release mechanics
+- **Changes:**
+  - `MARKETING_VERSION` 1.3.2 -> **1.3.3** and `CURRENT_PROJECT_VERSION` 6 -> **7** in both
+    configurations. Last published is 1.3.2 (build 6), and the live feed's newest item is build 6, so 7
+    is offered to everyone. The codename stays **Heimdall** for a patch.
+  - Carries #64 (ADR Detection: head-and-tail trimming, about 40% less input, provenance-fenced tool
+    results, `claude-sonnet-5` default) and #65 (the Terms of Use gate and the licence inside the
+    app). Neither made it into 1.3.2, whose release branch was pinned before they merged.
+  - `origin/main` (the v1.3.2 appcast item and two pricing-data commits) merged into `development`
+    first, so the release PR cannot drop the build-6 item from the feed.
+  - Curated notes at `docs/release-notes/1.3.3.md`. They lead with the terms gate, because every
+    existing user meets it on first launch and should know why Kannu is waiting.
+
+
 ### 2026-09-28 - Act on CodeRabbit's review of #65: an open that fails says so, a file that waits arrives
 - **Developer label:** CodeRabbit's two findings on the Terms of Use gate, both verified against the
   code
