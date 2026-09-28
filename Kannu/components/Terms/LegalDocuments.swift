@@ -48,13 +48,20 @@ enum LegalDocuments {
     }
 
     /// Opens a document in TextEdit. Named explicitly because `LICENSE` and `NOTICE` have no
-    /// extension, so `NSWorkspace.open(_:)` would have no app to choose. Returns false when the file
-    /// is not in the bundle, so the caller can say so instead of doing nothing.
-    @discardableResult
-    static func open(_ document: Document) -> Bool {
-        guard let url = url(for: document) else { return false }
+    /// extension, so `NSWorkspace.open(_:)` would have no app to choose.
+    ///
+    /// `completion` gets the real outcome, on the main queue: false when the file is missing from the
+    /// bundle, and false when TextEdit could not open it. The open itself is asynchronous, so a result
+    /// returned before it finished would report success for an open that then failed.
+    static func open(_ document: Document, completion: @escaping @MainActor (Bool) -> Void) {
+        guard let url = url(for: document) else {
+            DispatchQueue.main.async { completion(false) }
+            return
+        }
         let textEdit = URL(fileURLWithPath: "/System/Applications/TextEdit.app")
-        NSWorkspace.shared.open([url], withApplicationAt: textEdit, configuration: NSWorkspace.OpenConfiguration())
-        return true
+        NSWorkspace.shared.open([url], withApplicationAt: textEdit,
+                                configuration: NSWorkspace.OpenConfiguration()) { _, error in
+            DispatchQueue.main.async { completion(error == nil) }
+        }
     }
 }

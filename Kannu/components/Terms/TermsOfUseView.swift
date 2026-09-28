@@ -63,10 +63,10 @@ struct TermsOfUseView: View {
 
             HStack(spacing: 10) {
                 Button("View License") {
-                    licenseMissing = !LegalDocuments.open(.license)
+                    LegalDocuments.open(.license) { opened in licenseMissing = !opened }
                 }
                 if licenseMissing {
-                    Text("The license is missing from this copy of Kannu.")
+                    Text("The license could not be opened.")
                         .font(.caption)
                         .foregroundStyle(.red)
                 }

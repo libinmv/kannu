@@ -3195,19 +3195,19 @@ struct About: View {
 
             Section {
                 SettingsActionRow("Terms of Use", description: termsAcceptanceText) {
-                    Button("View") { legalDocumentMissing = !LegalDocuments.open(.terms) }
+                    Button("View") { LegalDocuments.open(.terms) { legalDocumentMissing = !$0 } }
                 }
                 .settingsHighlight(id: highlightID("Terms of Use"))
                 SettingsActionRow(
                     "License",
                     description: "Kannu is free software under the GNU General Public License v3, provided as is, without warranty of any kind."
                 ) {
-                    Button("View License") { legalDocumentMissing = !LegalDocuments.open(.license) }
-                    Button("Acknowledgements") { legalDocumentMissing = !LegalDocuments.open(.notice) }
+                    Button("View License") { LegalDocuments.open(.license) { legalDocumentMissing = !$0 } }
+                    Button("Acknowledgements") { LegalDocuments.open(.notice) { legalDocumentMissing = !$0 } }
                 }
                 .settingsHighlight(id: highlightID("License"))
                 if legalDocumentMissing {
-                    SettingsErrorText("That document is missing from this copy of Kannu. Reinstall it from kannu.app.")
+                    SettingsErrorText("That document could not be opened. If it keeps failing, reinstall Kannu from kannu.app.")
                 }
             } header: {
                 SettingsSectionHeader("Legal")

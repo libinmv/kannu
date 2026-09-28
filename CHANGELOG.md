@@ -4,6 +4,25 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-28 - Act on CodeRabbit's review of #65: an open that fails says so, a file that waits arrives
+- **Developer label:** CodeRabbit's two findings on the Terms of Use gate, both verified against the
+  code
+- **Agent label:** Follow-up 61 - review round on the terms gate
+- **Changes:**
+  - **A file opened with Kannu while the terms were on screen was dropped.** The open handlers returned
+    early before acceptance, and Accept never replayed them, so the file never reached the shelf. They
+    now hold the URLs, and `continueLaunch()` hands them to the shelf as its last step, once the notch
+    and the shelf exist. After a Decline they go nowhere. `openFile` answers "taken" rather than
+    "refused", because it will be handled. Pinned by
+    `LaunchGateRulesTests.testFilesOpenedBeforeAcceptanceWaitAndReachTheShelf`.
+  - **"View License" and the About › Legal buttons reported success before the open finished.**
+    `NSWorkspace.open(_:withApplicationAt:configuration:)` reports its result asynchronously, so a
+    TextEdit failure never showed the error line. `LegalDocuments.open` now takes a completion that
+    gets the real outcome on the main queue: false for a file missing from the bundle, and false for a
+    failed open. The error wording now covers both.
+  - Full suite: **833 tests, 0 failures**.
+
+
 ### 2026-09-28 - Kannu asks for acceptance of its Terms of Use before it does anything
 - **Developer label:** "we need no liability asserted through a terms of acceptance based on standard
   practices and user gaurded behind it start using the app"

@@ -116,6 +116,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// True once the Terms of Use are accepted and the real launch has run. Everything that could
     /// start a manager, open Settings or touch a singleton checks it first.
     private(set) var launchContinued = false
+    /// Files opened with Kannu while the Terms of Use are still on screen. They wait here and reach the
+    /// shelf once the terms are accepted, rather than being dropped; after a Decline they go nowhere.
+    private var shelfURLsAwaitingAcceptance: [URL] = []
     private var windowsHiddenForLock = false
     private var optionalShortcutHandlersRegistered = false
     private weak var focusWithoutDevToolsMenuItem: NSMenuItem?
@@ -154,13 +157,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        guard launchContinued else { return }
+        guard launchContinued else {
+            shelfURLsAwaitingAcceptance.append(contentsOf: urls.filter(\.isFileURL))
+            return
+        }
         _ = handleIncomingShelfURLs(urls)
     }
 
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
-        guard launchContinued else { return false }
-        return handleIncomingShelfURLs([URL(fileURLWithPath: filename)])
+        let url = URL(fileURLWithPath: filename)
+        guard launchContinued else {
+            // Taken, not refused: it reaches the shelf the moment the terms are accepted.
+            shelfURLsAwaitingAcceptance.append(url)
+            return true
+        }
+        return handleIncomingShelfURLs([url])
     }
 
     private func handleIncomingShelfURLs(_ urls: [URL]) -> Bool {
@@ -1269,6 +1280,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let timerWidgetManager = LockScreenTimerWidgetManager.shared
         timerWidgetManager.handleLockStateChange(isLocked: LockScreenManager.shared.currentLockStatus)
 
+        // Last, once the notch and the shelf exist: files opened with Kannu while the terms were up.
+        if !shelfURLsAwaitingAcceptance.isEmpty {
+            let waiting = shelfURLsAwaitingAcceptance
+            shelfURLsAwaitingAcceptance.removeAll()
+            _ = handleIncomingShelfURLs(waiting)
+        }
     }
 
     private func installTopMenuItemsIfNeeded() {

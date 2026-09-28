@@ -111,6 +111,21 @@ final class LaunchGateRulesTests: XCTestCase {
         }
     }
 
+    /// A file opened with Kannu while the terms are up waits for acceptance instead of vanishing
+    /// (CodeRabbit on #65: the first version of the gate dropped it, and Accept never replayed it).
+    func testFilesOpenedBeforeAcceptanceWaitAndReachTheShelf() throws {
+        let source = try Self.appDelegate()
+        for handler in ["application(_ application: NSApplication, open urls", "application(_ sender: NSApplication, openFile"] {
+            let start = try XCTUnwrap(source.range(of: "func \(handler)"), "\(handler) went away")
+            let body = Self.code(String(source[start.upperBound...].prefix(600)))
+            XCTAssertTrue(body.contains("shelfURLsAwaitingAcceptance.append"),
+                          "\(handler) drops a file opened before the terms are accepted")
+        }
+        let proceed = Self.code(try XCTUnwrap(Self.body(ofFunction: "continueLaunch", in: source)))
+        XCTAssertTrue(proceed.contains("handleIncomingShelfURLs(waiting)"),
+                      "continueLaunch no longer hands the waiting files to the shelf")
+    }
+
     // MARK: - The scanner is not vacuous
 
     func testTheScannerSeesAPlantedOffender() {
