@@ -73,9 +73,12 @@ final class ClosedNotchVisibilityRulesTests: XCTestCase {
     /// methods, so comparing offsets across the whole file compares unrelated code.
     func testLaunchSeedsTheScreenBeforeHandingOffToAdjustWindowPosition() throws {
         let text = try XCTUnwrap(Self.appSources()["Kannu/KannuApp.swift"])
+        // The launch proper lives in `continueLaunch()` since the Terms of Use gate:
+        // `applicationDidFinishLaunching` now only starts the invariants and decides whether to
+        // show the gate, and the screen seed moved with the rest of the launch, unchanged.
         let launch = try XCTUnwrap(
-            Self.body(ofFunction: "applicationDidFinishLaunching", in: text),
-            "applicationDidFinishLaunching went away — this pin is now vacuous, update it"
+            Self.body(ofFunction: "continueLaunch", in: text),
+            "continueLaunch went away — this pin is now vacuous, update it"
         )
         let seed = try XCTUnwrap(
             launch.range(of: "viewModel.screen = screen.localizedName")?.lowerBound,

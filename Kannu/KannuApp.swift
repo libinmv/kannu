@@ -32,10 +32,6 @@ struct KannuApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @Environment(\.openWindow) var openWindow
 
-    init() {
-        LLMUsageManager.configureProviderDefaultsIfNeeded()
-    }
-
     var body: some Scene {
         // The menu bar item is an AppDelegate-owned NSStatusItem now: SwiftUI's MenuBarExtra
         // cannot give the button a click action, and the item's left click opens the notch
@@ -50,6 +46,12 @@ struct KannuApp: App {
     var commands: some Commands {
         CommandGroup(replacing: .appSettings) {
             Button("Settings…") {
+                // Settings runs the agent-hook migrations; nothing does that before the terms
+                // are accepted, so before then this brings the terms back instead.
+                guard appDelegate.launchContinued else {
+                    TermsGateWindowController.shared.bringToFront()
+                    return
+                }
                 SettingsWindowController.shared.showWindow()
             }
         }
@@ -91,23 +93,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var windows: [CGDirectDisplayID: NSWindow] = [:]
     var viewModels: [CGDirectDisplayID: KannuViewModel] = [:]
     var window: NSWindow?
-    let vm: KannuViewModel = .init()
+    // Lazy, all of them: constructing these spawns helpers and can raise permission prompts
+    // (Bluetooth, ~/Downloads), and nothing may happen before the Terms of Use are accepted.
+    // `continueLaunch()` touches each one, in this order, the moment the launch may proceed.
+    lazy var vm: KannuViewModel = .init()
     @ObservedObject var coordinator = KannuViewCoordinator.shared
     var whatsNewWindow: NSWindow?
     var timer: Timer?
-    let dndManager = DoNotDisturbManager.shared  // NEW: DND detection
-    let bluetoothAudioManager = BluetoothAudioManager.shared  // NEW: Bluetooth audio detection
-    let idleAnimationManager = IdleAnimationManager.shared  // NEW: Custom idle animations
-    let downloadManager = DownloadManager.shared  // NEW: Chromium downloads detection
-    let lockScreenPanelManager = LockScreenPanelManager.shared  // NEW: Lock screen music panel
-    let mediaControlsStateCoordinator = MediaControlsStateCoordinator.shared
-    let systemTimerBridge = SystemTimerBridge.shared
-    let extensionXPCServiceHost = ExtensionXPCServiceHost.shared
-    let extensionRPCServer = ExtensionRPCServer.shared
+    lazy var dndManager = DoNotDisturbManager.shared  // NEW: DND detection
+    lazy var bluetoothAudioManager = BluetoothAudioManager.shared  // NEW: Bluetooth audio detection
+    lazy var idleAnimationManager = IdleAnimationManager.shared  // NEW: Custom idle animations
+    lazy var downloadManager = DownloadManager.shared  // NEW: Chromium downloads detection
+    lazy var lockScreenPanelManager = LockScreenPanelManager.shared  // NEW: Lock screen music panel
+    lazy var mediaControlsStateCoordinator = MediaControlsStateCoordinator.shared
+    lazy var systemTimerBridge = SystemTimerBridge.shared
+    lazy var extensionXPCServiceHost = ExtensionXPCServiceHost.shared
+    lazy var extensionRPCServer = ExtensionRPCServer.shared
     var closeNotchWorkItem: DispatchWorkItem?
     private var previousScreens: [NSScreen]?
     private var onboardingWindowController: NSWindowController?
     private var cancellables = Set<AnyCancellable>()
+    /// True once the Terms of Use are accepted and the real launch has run. Everything that could
+    /// start a manager, open Settings or touch a singleton checks it first.
+    private(set) var launchContinued = false
     private var windowsHiddenForLock = false
     private var optionalShortcutHandlersRegistered = false
     private weak var focusWithoutDevToolsMenuItem: NSMenuItem?
@@ -135,15 +143,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        guard launchContinued else { return }
         installTopMenuItemsIfNeeded()
     }
 
+    /// A Dock click before the terms are accepted brings them back rather than doing nothing.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !launchContinued { TermsGateWindowController.shared.bringToFront() }
+        return true
+    }
+
     func application(_ application: NSApplication, open urls: [URL]) {
+        guard launchContinued else { return }
         _ = handleIncomingShelfURLs(urls)
     }
 
     func application(_ sender: NSApplication, openFile filename: String) -> Bool {
-        handleIncomingShelfURLs([URL(fileURLWithPath: filename)])
+        guard launchContinued else { return false }
+        return handleIncomingShelfURLs([URL(fileURLWithPath: filename)])
     }
 
     private func handleIncomingShelfURLs(_ urls: [URL]) -> Bool {
@@ -279,6 +296,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         // Clears the marker, so a run that ends here is not read as a crash next time.
         CrashReporter.shared.noteCleanExit()
+        // Declined, or quit at the terms: nothing was started, so there is nothing to stop — and
+        // the teardown below would construct MusicManager, AudioTap and Lunar just to stop them.
+        guard launchContinued else { return }
         let userInfo: [String: Any] = [
             KannuDistributedNotifications.UserInfoKey.sourcePID: NSNumber(value: ProcessInfo.processInfo.processIdentifier)
         ]
@@ -799,6 +819,58 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         #endif
+
+        // Only what must run whatever the user decides: the crash marker and the watchdog (a crash or
+        // a freeze at the terms still leaves a note), the updater (a corrected build must still be
+        // able to arrive), and the reaper, which only ever stops Kannu's own orphaned helpers.
+        startLaunchInvariants()
+
+        // Nothing else — no helper, no permission prompt, no hook written into ~/.claude or ~/.cursor,
+        // no notch — until the current Terms of Use are accepted. UI tests skip the gate.
+        if TermsOfUse.isAccepted(acceptedVersion: Defaults[.termsAcceptedVersion])
+            || AppRuntimeEnvironment.isUITesting {
+            continueLaunch()
+        } else {
+            TermsGateWindowController.shared.show { [weak self] in self?.continueLaunch() }
+        }
+    }
+
+    private func startLaunchInvariants() {
+        // A force-quit or a crash runs no teardown, so a now-playing helper from a previous run can
+        // still be streaming. Off the main thread: it walks the process table and reads argv for each
+        // `perl` it finds. It only ever signals a helper started from *this* bundle's script and
+        // already reparented to launchd — see `MediaRemoteAdapterOwnership`.
+        DispatchQueue.global(qos: .utility).async {
+            MediaRemoteAdapterReaper.reapOrphanedHelpers()
+        }
+        // Starts before everything else, so a freeze during startup — or at the terms — is still
+        // caught. The offer for a previous freeze waits until the launch continues.
+        HangWatchdog.shared.start()
+        CrashReporter.shared.start()
+        SparkleUpdaterController.shared.configure()
+    }
+
+    /// The launch proper, once the Terms of Use are accepted. Runs once.
+    private func continueLaunch() {
+        guard !launchContinued else { return }
+        launchContinued = true
+
+        // Held back until now; this used to run in `KannuApp.init`, before any window.
+        LLMUsageManager.configureProviderDefaultsIfNeeded()
+
+        // The singletons that used to be built eagerly with the delegate, in their declaration
+        // order, so every one of them still starts at launch — just not before the terms.
+        _ = vm
+        _ = dndManager
+        _ = bluetoothAudioManager
+        _ = idleAnimationManager
+        _ = downloadManager
+        _ = lockScreenPanelManager
+        _ = mediaControlsStateCoordinator
+        _ = systemTimerBridge
+        _ = extensionXPCServiceHost
+        _ = extensionRPCServer
+
         let userInfo: [String: Any] = [
             KannuDistributedNotifications.UserInfoKey.sourcePID: NSNumber(value: ProcessInfo.processInfo.processIdentifier)
         ]
@@ -820,19 +892,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
-        // A force-quit or a crash runs no teardown, so a now-playing helper from a previous run can
-        // still be streaming. Off the main thread: it walks the process table and reads argv for each
-        // `perl` it finds. It only ever signals a helper started from *this* bundle's script and
-        // already reparented to launchd — see `MediaRemoteAdapterOwnership`.
-        DispatchQueue.global(qos: .utility).async {
-            MediaRemoteAdapterReaper.reapOrphanedHelpers()
-        }
-
-        // Starts before the managers, so a freeze during startup is still caught. The offer for a
-        // previous freeze waits: with no window on screen that alert is app-modal, and one of those
-        // here would stop the rest of launch.
-        HangWatchdog.shared.start()
-        CrashReporter.shared.start()
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
             // A freeze is offered before a crash: the hang log is Kannu's own, so it is the more
             // specific of the two, and only one alert should ever greet a launch.
@@ -847,7 +906,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         _ = CaffeinateManager.shared
         extensionXPCServiceHost.start()
         extensionRPCServer.start()
-        SparkleUpdaterController.shared.configure()
         
         // Migrate legacy progress bar settings
         Defaults.Keys.migrateProgressBarStyle()
