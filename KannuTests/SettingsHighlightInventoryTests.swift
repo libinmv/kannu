@@ -58,14 +58,28 @@ final class SettingsHighlightInventoryTests: XCTestCase {
 
     func testCountsArePinned() throws {
         let inventory = try Self.inventory()
-        XCTAssertEqual(inventory.entries.count, 207, "search entries")
-        XCTAssertEqual(inventory.registrations.values.reduce(0, +), 256, "row registrations")
-        XCTAssertEqual(inventory.registrations.count, 250, "distinct registered ids")
+        XCTAssertEqual(inventory.entries.count, 208, "search entries")
+        XCTAssertEqual(inventory.registrations.values.reduce(0, +), 257, "row registrations")
+        XCTAssertEqual(inventory.registrations.count, 251, "distinct registered ids")
     }
 
     func testOnlyTheKnownRowsTakeTheirIdBuilderFromAParent() throws {
         let unattributed = try Self.inventory().registrations.keys.filter { $0.tab == nil }.map(\.title)
         XCTAssertEqual(Set(unattributed), ["Accent colour", "Device Picker Style"])
+    }
+
+    func testQuitIsFindableBySearch() throws {
+        // Searching "quit" or "exit" found nothing while the only Quit was a toolbar button, which
+        // search cannot land on. The entry must carry both words; the pairing tests below prove it
+        // lands on a registered row.
+        let settingsView = try XCTUnwrap(try Self.sources()["SettingsView.swift"])
+        let entry = try XCTUnwrap(settingsView.components(separatedBy: "\n").first {
+            $0.contains("SettingsSearchEntry(") && $0.contains("highlightID(for: \"Quit Kannu\")")
+        }, "no search entry lands on the Quit Kannu row")
+        for word in ["\"quit\"", "\"exit\""] {
+            XCTAssertTrue(entry.contains(word), "searching \(word) must find Quit Kannu")
+        }
+        XCTAssertTrue(settingsView.contains(".settingsHighlight(id: highlightID(\"Quit Kannu\"))"), "the Quit row lost its highlight id")
     }
 
     // MARK: - Pairing
