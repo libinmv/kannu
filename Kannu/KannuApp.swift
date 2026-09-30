@@ -1287,6 +1287,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: NSWorkspace.shared)
             }
         }
+        // `--kannu-strand-clipboard`: show the panel, strand it the way a sleep or lock can,
+        // then run the show-path repair on the live window — the clipboard sibling of the
+        // strand-notch proof above (#67 covered only the notch windows).
+        if CommandLine.arguments.contains("--kannu-strand-clipboard") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                ClipboardPanelManager.shared.showClipboardPanel()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    guard let panel = ClipboardPanelManager.shared.debugVisiblePanel else { return }
+                    CGSSpace.debugStrandFromActiveSpace([panel])
+                    Self.spacesLog.notice("DEBUG stranded clipboard panel; onActive=\(panel.isOnActiveSpace, privacy: .public)")
+                    ClipboardPanelManager.shared.repairVisiblePanelSpaces(context: "debug-strand")
+                }
+            }
+        }
         #endif
 
         DistributedNotificationCenter.default().addObserver(
@@ -1694,7 +1708,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             switch Defaults[.clipboardDisplayMode] {
             case .panel:
-                ClipboardPanelManager.shared.toggleClipboardPanel()
+                ClipboardPanelManager.shared.toggleClipboardPanel(trigger: "shortcut")
             case .popover:
                 if vm.notchState == .closed {
                     vm.open()

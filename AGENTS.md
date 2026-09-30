@@ -97,7 +97,8 @@ Pure unit tests for state transitions and business logic; integration tests for 
 One asymmetry worth knowing before adding a test, because it is not discoverable: a **new test file
 needs no `project.pbxproj` edit** — the target picks up `KannuTests/` through a synchronized group. A
 **production file you want to test does** need adding to that target's explicit Sources phase, and only
-Foundation-only files can go there.
+files with no app-module dependencies can go there — Foundation or system frameworks only (`HostedContent.swift`
+is the one AppKit/SwiftUI file, for its geometry tests).
 
 ## Security and privacy
 

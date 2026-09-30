@@ -186,6 +186,7 @@ final class TimerControlWindowManager {
         window.backgroundColor = .clear
         window.hasShadow = false
         window.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
+        window.hidesOnDeactivate = false  // NSPanel defaults true: ordered out on app deactivation (WindowFullscreenRulesTests)
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         window.ignoresMouseEvents = false
         window.isMovable = false
