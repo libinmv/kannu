@@ -51,7 +51,7 @@ final class WindowFullscreenRulesTests: XCTestCase {
             guard let open = remainder.firstIndex(of: "[") else { break }
             let between = remainder[..<open]
             // An assignment puts only `=` and whitespace between the property and its list.
-            guard between.count <= 4, between.contains("=") else { continue }
+            guard String(between).trimmingCharacters(in: .whitespacesAndNewlines) == "=" else { continue }
             guard let close = remainder[open...].firstIndex(of: "]") else { break }
             lists.append(String(remainder[remainder.index(after: open)..<close]))
             remainder = remainder[remainder.index(after: close)...]
@@ -126,5 +126,10 @@ final class WindowFullscreenRulesTests: XCTestCase {
         let multiline = "collectionBehavior = [\n    .fullScreenAuxiliary,\n    .canJoinAllSpaces,\n]"
         XCTAssertEqual(Self.behaviorAssignments(in: multiline).count, 1)
         XCTAssertTrue(Self.behaviorAssignments(in: multiline)[0].contains("fullScreenAuxiliary"))
+        // The list may start on the next line; the old length guard skipped this shape, so a
+        // missing .fullScreenAuxiliary there went unseen (CodeRabbit on #68).
+        let wrapped = "window.collectionBehavior =\n        [.canJoinAllSpaces, .stationary]"
+        XCTAssertEqual(Self.behaviorAssignments(in: wrapped).count, 1)
+        XCTAssertFalse(Self.behaviorAssignments(in: wrapped)[0].contains("fullScreenAuxiliary"))
     }
 }

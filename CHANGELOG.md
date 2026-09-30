@@ -4,6 +4,18 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-01 - Act on CodeRabbit's review of #68
+- **Developer label:** "The clipboard panel shows its content again" — review follow-up
+- **Agent label:** CodeRabbit #68 — scanner separator check, main-actor manager
+- **Changes:**
+  - `WindowFullscreenRulesTests` recognised an assignment only when at most four characters sat
+    between `collectionBehavior` and its `[`, so a list starting on the next line
+    (`collectionBehavior =` then an indented `[...]`) was skipped and a missing
+    `.fullScreenAuxiliary` there went unseen. It now accepts any whitespace around the `=`, and a
+    self-test pins that shape.
+  - `ClipboardPanelManager` is `@MainActor`: it owns an `NSPanel` and every caller is already on
+    the main actor, as AGENTS.md's manager rule asks.
+
 ### 2026-10-01 - The clipboard panel shows its content again: the container fills every panel
 - **Developer label:** "doesnt work can you really look at swift components and use something common, also please note the regression, add logs if you cant figure out"
 - **Agent label:** Clipboard v4 — root cause measured in the shared hosting container (cc4f50d regression), REGRESSIONS entry 19, geometry logs

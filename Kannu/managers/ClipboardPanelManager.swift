@@ -20,6 +20,7 @@ import AppKit
 import os
 import SwiftUI
 
+@MainActor
 class ClipboardPanelManager: ObservableObject {
     static let shared = ClipboardPanelManager()
 
