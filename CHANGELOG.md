@@ -4,6 +4,42 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-30 - The notch comes back to a fullscreen app after a sleep or lock
+- **Developer label:** "did app crash again" — then: the notch is gone or blank
+- **Agent label:** Follow-up 63 - a notch stranded off the current space
+- **Changes:**
+  - **No crash.** Kannu 1.3.3 had run for 21 hours since the Sparkle install (downloaded 14:18:41,
+    installed 14:18:55, relaunched 14:19:04 on Sep 29), with no crash or hang report. The "quit
+    unexpectedly" dialog on screen was a `gunicorn` server in another Claude Code session, killed by
+    macOS's fork-safety check; unrelated to Kannu.
+  - **What was wrong:** after the morning's sleep / DarkWake / display-off -> lock -> unlock cycles,
+    the notch window was ordered in, opaque and correctly placed, but not on the space the user was in
+    (Claude, fullscreen). `CGSCopySpacesForWindows` put it in 2 of 11 spaces — the desktop and
+    Safari's fullscreen space — and **every** app's all-spaces window was in the same two (Slack,
+    Claude, Control Center). macOS reset them around the sleep or lock. A fresh panel with the notch's
+    exact collection behaviour gets all 11.
+  - **What does not fix it, measured:** `orderFrontRegardless`, re-assigning `collectionBehavior`
+    (as-is, or cleared and set again), and ordering out and back in all leave the membership stuck.
+    Re-adding the window to the managed spaces restores it, and so does a fresh window.
+  - **The fix:** `rejoinNotchSpacesIfNeeded` runs on every space switch (deferred 0.4 s so
+    `isOnActiveSpace` describes the new space), on wake, on screen wake and at the end of the unlock
+    restore. For a notch that is ordered in, off the active space, and neither hidden for the lock
+    screen nor under a locked screen (`ClosedNotchVisibility.shouldRejoinSpaces`, tested), it re-adds
+    the window to every managed space through `CGSSpace.rejoinAllManagedSpaces`, beside Kannu's
+    existing private Spaces calls. "Never hide" users' windows are re-synced into Kannu's own
+    top-level space as well, since the membership diff would otherwise skip a window it believes is
+    already there. It logs one `NotchSpaces` line when it acts, so the next occurrence leaves
+    evidence, which this one did not.
+  - **Proven end to end** with a DEBUG-only launch switch, `--kannu-strand-notch`: the app strands its
+    real notch off the current space, logs `onActive=[false]`, delivers the space-change
+    notification, then logs "Put 1 notch window(s) back on 11 spaces after space change". The window
+    was back on all 11 spaces and on screen.
+  - The user's running copy was relaunched to restore the notch immediately; a relaunch is the
+    workaround on 1.3.3 until this ships.
+  - `docs/REGRESSIONS.md` entry 17 gets a dated addendum, the third way the notch lifecycle hid the
+    notch. Full suite: **835 tests, 0 failures**.
+
+
 ### 2026-09-28 - Ship 1.3.3 "Heimdall"
 - **Developer label:** "release 1.3.3"
 - **Agent label:** Follow-up 62 - 1.3.3 release mechanics

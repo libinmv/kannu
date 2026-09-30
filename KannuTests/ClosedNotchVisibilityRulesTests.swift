@@ -139,6 +139,26 @@ final class ClosedNotchVisibilityRulesTests: XCTestCase {
 
     /// The text of a function body, from its declaration to the next declaration at the same indent.
     /// Crude on purpose: enough to scope a pin to one function without parsing Swift.
+    /// The stranded-notch repair has to stay wired to where it shows: a space switch, a wake, an
+    /// unlock. Unhooking any of them brings back "the notch is gone in this fullscreen app until I
+    /// relaunch" (2026-09-30), and nothing else in the app would notice.
+    func testAStrandedNotchIsCheckedOnSpaceChangeWakeAndUnlock() throws {
+        let text = try XCTUnwrap(Self.appSources()["Kannu/KannuApp.swift"])
+        let launch = try XCTUnwrap(Self.body(ofFunction: "continueLaunch", in: text))
+        XCTAssertTrue(launch.contains("NSWorkspace.activeSpaceDidChangeNotification"),
+                      "the launch no longer watches space switches for a stranded notch")
+        XCTAssertTrue(launch.contains("NSWorkspace.didWakeNotification"),
+                      "the launch no longer checks the notch after a wake")
+        let restore = try XCTUnwrap(Self.body(ofFunction: "restoreWindowsAfterLock", in: text))
+        XCTAssertTrue(restore.contains("rejoinNotchSpacesIfNeeded("),
+                      "unlocking no longer checks whether the notch was stranded")
+        let repair = try XCTUnwrap(Self.body(ofFunction: "rejoinNotchSpacesIfNeeded", in: text))
+        XCTAssertTrue(repair.contains("ClosedNotchVisibility.shouldRejoinSpaces("),
+                      "the repair no longer asks the tested decision")
+        XCTAssertTrue(repair.contains("CGSSpace.rejoinAllManagedSpaces("),
+                      "the repair no longer re-adds the window to the spaces — ordering it front was measured not to work")
+    }
+
     private static func body(ofFunction name: String, in text: String) -> String? {
         guard let start = text.range(of: "func \(name)(") else { return nil }
         let rest = text[start.upperBound...]

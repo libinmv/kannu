@@ -120,6 +120,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// shelf once the terms are accepted, rather than being dropped; after a Decline they go nowhere.
     private var shelfURLsAwaitingAcceptance: [URL] = []
     private var windowsHiddenForLock = false
+    /// The pending post-space-switch check, so a burst of switches runs one.
+    private var spaceCheckWorkItem: DispatchWorkItem?
     private var optionalShortcutHandlersRegistered = false
     private weak var focusWithoutDevToolsMenuItem: NSMenuItem?
     private weak var focusUseDevToolsMenuItem: NSMenuItem?
@@ -388,6 +390,59 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             window.orderFrontRegardless()
             window.alphaValue = 1
         }
+        // Ordering front does not undo what the lock may have done to the notch's spaces.
+        rejoinNotchSpacesIfNeeded(after: "unlock")
+    }
+
+    private static let spacesLog = os.Logger(subsystem: "com.kannu.app", category: "NotchSpaces")
+
+    /// Puts the notch back on every space if macOS has left it off the one the user is on.
+    ///
+    /// Around a sleep or a lock macOS can reset every app's all-spaces windows to a couple of spaces,
+    /// which left the notch missing from every other fullscreen app until relaunch — alive, ordered
+    /// in, opaque, and invisible (2026-09-30). `ClosedNotchVisibility.shouldRejoinSpaces` is the
+    /// decision; re-adding to the managed spaces is the only repair that works (ordering front and
+    /// re-assigning `collectionBehavior` were both measured to leave the membership stuck). Runs on
+    /// each space change, wake and unlock, so it costs nothing while the notch is where it belongs.
+    @MainActor
+    private func rejoinNotchSpacesIfNeeded(after reason: String) {
+        let notchWindows = Defaults[.displayPlacement].usesOneWindowPerDisplay
+            ? Array(windows.values)
+            : [window].compactMap { $0 }
+        let stranded = notchWindows.filter {
+            ClosedNotchVisibility.shouldRejoinSpaces(
+                isOnActiveSpace: $0.isOnActiveSpace,
+                isOrderedIn: $0.isVisible,
+                hiddenForLock: windowsHiddenForLock,
+                screenLocked: LockScreenManager.shared.isLocked
+            )
+        }
+        guard !stranded.isEmpty else { return }
+        let spaces = CGSSpace.rejoinAllManagedSpaces(stranded)
+        // "Never hide" also pins the notch into Kannu's own top-level space. Clearing first makes
+        // the membership diff actually re-add windows it believes are already there.
+        if Defaults[.hideNotchOption] == .never {
+            NotchSpaceManager.shared.notchSpace.windows = []
+            syncNotchSpaceMembership()
+        }
+        Self.spacesLog.notice(
+            "Put \(stranded.count, privacy: .public) notch window(s) back on \(spaces, privacy: .public) spaces after \(reason, privacy: .public)"
+        )
+    }
+
+    /// A space switch is where a stranded notch shows. Deferred a beat: during the switch animation
+    /// `isOnActiveSpace` can still describe the space being left.
+    @objc private func activeSpaceDidChange(_ notification: Notification) {
+        spaceCheckWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            Task { @MainActor in self?.rejoinNotchSpacesIfNeeded(after: "space change") }
+        }
+        spaceCheckWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+    }
+
+    @objc private func didWakeFromSleep(_ notification: Notification) {
+        Task { @MainActor [weak self] in self?.rejoinNotchSpacesIfNeeded(after: "wake") }
     }
     
     /// Drops one display's window, the way `tearDownAllWindows` drops all of them.
@@ -1207,6 +1262,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             Task { @MainActor in self?.adjustWindowPosition(changeAlpha: true) }
         }
+
+        // The notch can be stranded off the current space by a sleep or lock (see
+        // rejoinNotchSpacesIfNeeded); a space switch, a wake and an unlock are where to check.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(activeSpaceDidChange(_:)),
+            name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(didWakeFromSleep(_:)),
+            name: NSWorkspace.didWakeNotification, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(didWakeFromSleep(_:)),
+            name: NSWorkspace.screensDidWakeNotification, object: nil)
+
+        #if DEBUG
+        // `--kannu-strand-notch`: strand the notch off the current space the way a sleep or lock
+        // can, then deliver the space-change notification, so the repair runs on the real window.
+        if CommandLine.arguments.contains("--kannu-strand-notch") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+                guard let self else { return }
+                let notch = [self.window].compactMap { $0 } + Array(self.windows.values)
+                CGSSpace.debugStrandFromActiveSpace(notch)
+                Self.spacesLog.notice("DEBUG stranded \(notch.count, privacy: .public) notch window(s); onActive=\(notch.map(\.isOnActiveSpace).description, privacy: .public)")
+                NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: NSWorkspace.shared)
+            }
+        }
+        #endif
 
         DistributedNotificationCenter.default().addObserver(
             self, selector: #selector(onScreenLocked(_:)),
