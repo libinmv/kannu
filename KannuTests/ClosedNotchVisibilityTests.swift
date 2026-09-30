@@ -153,4 +153,27 @@ final class ClosedNotchVisibilityTests: XCTestCase {
             notchHeight
         )
     }
+
+    // MARK: - A notch stranded off the current space
+
+    /// The state measured on 2026-09-30: ordered in, opaque, but no longer on the space the user is
+    /// in, because macOS reset every all-spaces window across a sleep or lock. That — and only
+    /// that — is repaired.
+    func testOnlyAStrandedNotchIsPutBack() {
+        XCTAssertTrue(ClosedNotchVisibility.shouldRejoinSpaces(
+            isOnActiveSpace: false, isOrderedIn: true, hiddenForLock: false, screenLocked: false),
+            "ordered in but off the active space is exactly the stranded notch")
+        XCTAssertFalse(ClosedNotchVisibility.shouldRejoinSpaces(
+            isOnActiveSpace: true, isOrderedIn: true, hiddenForLock: false, screenLocked: false),
+            "a notch already where it belongs costs nothing")
+        XCTAssertFalse(ClosedNotchVisibility.shouldRejoinSpaces(
+            isOnActiveSpace: false, isOrderedIn: false, hiddenForLock: false, screenLocked: false),
+            "a window that is not ordered in has nothing to rejoin")
+        XCTAssertFalse(ClosedNotchVisibility.shouldRejoinSpaces(
+            isOnActiveSpace: false, isOrderedIn: true, hiddenForLock: true, screenLocked: false),
+            "hidden for the lock screen is off every space on purpose")
+        XCTAssertFalse(ClosedNotchVisibility.shouldRejoinSpaces(
+            isOnActiveSpace: false, isOrderedIn: true, hiddenForLock: false, screenLocked: true),
+            "never put the notch back over the lock screen")
+    }
 }

@@ -835,6 +835,29 @@ seeding the screen before it hands off, the Accessibility fallback not answering
 `lockStateDidClear` round trip. First occurrence, so this is an addendum rather than a numbered
 entry — one commit, and an entry without hashes is an opinion.
 
+**2026-09-30 addendum — the notch alive, opaque, and on the wrong spaces.** The third way this danger
+zone has hidden the notch. After a night of sleep / DarkWake / display-off → lock → unlock cycles,
+the notch window was ordered in, alpha 1 and correctly placed, yet absent from the fullscreen app the
+user was in. `CGSCopySpacesForWindows` put it in two of eleven spaces: the desktop and Safari's
+fullscreen space. **Every** app's all-spaces window was in the same two (Slack, Claude, Control
+Center) — macOS itself had reset them — so this is not a Kannu ordering bug, and nothing Kannu did
+would have undone it: an experiment showed `orderFrontRegardless`, re-assigning
+`collectionBehavior`, and ordering out and back in all leave the membership stuck, while re-adding
+the window to the managed spaces (or building a fresh window) restores it.
+
+**Rule this adds:** the notch must not rely on `.canJoinAllSpaces` holding for the life of the
+process. `rejoinNotchSpacesIfNeeded` checks `isOnActiveSpace` on every space change, wake and unlock
+(`ClosedNotchVisibility.shouldRejoinSpaces` is the decision) and re-adds a stranded window with
+`CGSSpace.rejoinAllManagedSpaces`; it costs nothing while the notch is where it belongs. A notch
+hidden for the lock screen is off every space on purpose and is never touched.
+
+**Guard — exists.** `ClosedNotchVisibilityTests.testOnlyAStrandedNotchIsPutBack` (the decision) and
+`ClosedNotchVisibilityRulesTests.testAStrandedNotchIsCheckedOnSpaceChangeWakeAndUnlock` (the three
+triggers, and that the repair re-adds rather than re-orders). End to end with the DEBUG launch switch
+`--kannu-strand-notch`: the app strands its own notch and delivers the space-change notification; the
+log must read "Put 1 notch window(s) back on N spaces after space change" and the window must be back
+on every space.
+
 ---
 
 ## 18. Another app's click never opens the notch

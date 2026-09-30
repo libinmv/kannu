@@ -71,4 +71,26 @@ enum ClosedNotchVisibility {
         let noNotchAndFullscreen = hideOnClosed && topSafeAreaInset <= 0
         return noNotchAndFullscreen ? 0 : closedHeight
     }
+
+    /// Whether a notch window has fallen off the space the user is on and must be put back.
+    ///
+    /// The notch is a `.canJoinAllSpaces` panel, so it belongs on every space, fullscreen ones
+    /// included. Around a sleep or a lock, macOS can reset **every** app's all-spaces windows to just
+    /// the desktop and whichever fullscreen space was current (measured 2026-09-30: Kannu's notch,
+    /// Slack, Claude and Control Center windows all left at the same two of eleven spaces). The
+    /// window stays ordered in and fully opaque, so nothing in Kannu notices, yet in any other
+    /// fullscreen app there is simply no notch until relaunch. Ordering it front again, or
+    /// re-assigning its collection behaviour, does not bring the membership back; re-adding it to
+    /// the spaces does.
+    ///
+    /// Only a window that should be on screen qualifies: one hidden for the lock screen is off
+    /// every space on purpose.
+    static func shouldRejoinSpaces(
+        isOnActiveSpace: Bool,
+        isOrderedIn: Bool,
+        hiddenForLock: Bool,
+        screenLocked: Bool
+    ) -> Bool {
+        !isOnActiveSpace && isOrderedIn && !hiddenForLock && !screenLocked
+    }
 }
