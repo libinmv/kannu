@@ -1301,54 +1301,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
-        // `--kannu-clipboard-deactivate-probe`: the hidesOnDeactivate proof. Activate Kannu,
-        // show the panel, deactivate by activating Finder, and log isVisible before/after.
-        // An NSPanel left at its default hidesOnDeactivate=true is ordered out on deactivation,
-        // which a fullscreen app forces instantly (the 2026-09-30 clipboard report).
-        if CommandLine.arguments.contains("--kannu-clipboard-deactivate-probe") {
-            // Window-server ground truth over a REAL fullscreen space: our own test window goes
-            // native fullscreen, then the fixed clipboard panel AND a legacy-config control
-            // panel (.floating, default hidesOnDeactivate) open over it. CGWindowList says what
-            // is actually on screen and in what order - no screenshots needed.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                let fs = NSWindow(contentRect: NSRect(x: 200, y: 200, width: 600, height: 400),
-                                  styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-                fs.title = "KannuFSProbe"
-                fs.isReleasedWhenClosed = false
-                fs.makeKeyAndOrderFront(nil)
-                fs.toggleFullScreen(nil)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                    ClipboardPanelManager.shared.showClipboardPanel()
-                    let legacy = NSPanel(contentRect: NSRect(x: 300, y: 300, width: 200, height: 120),
-                                         styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-                    legacy.isReleasedWhenClosed = false
-                    legacy.level = .floating
-                    legacy.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
-                    legacy.backgroundColor = .red
-                    legacy.orderFrontRegardless()
-                    func snapshot(_ tag: String) {
-                        let pid = ProcessInfo.processInfo.processIdentifier
-                        let info = (CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]]) ?? []
-                        let panelNum = ClipboardPanelManager.shared.debugVisiblePanel?.windowNumber ?? -1
-                        var rows: [String] = []
-                        for (index, window) in info.enumerated() {
-                            guard let owner = window[kCGWindowOwnerPID as String] as? Int32, owner == pid,
-                                  let number = window[kCGWindowNumber as String] as? Int else { continue }
-                            let layer = window[kCGWindowLayer as String] as? Int ?? -999
-                            let name = number == panelNum ? "PANEL" : (number == legacy.windowNumber ? "LEGACY" : (number == fs.windowNumber ? "FSWIN" : "other"))
-                            rows.append("#\(index) \(name) layer=\(layer)")
-                        }
-                        let panel = ClipboardPanelManager.shared.debugVisiblePanel
-                        Self.spacesLog.notice("PROBE2 \(tag, privacy: .public): active=\(NSApp.isActive, privacy: .public) panel[visible=\(panel?.isVisible ?? false, privacy: .public) hides=\(panel?.hidesOnDeactivate ?? true, privacy: .public) onSpace=\(panel?.isOnActiveSpace ?? false, privacy: .public)] legacy[visible=\(legacy.isVisible, privacy: .public) onSpace=\(legacy.isOnActiveSpace, privacy: .public)] onscreen=[\(rows.joined(separator: ", "), privacy: .public)]")
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                        snapshot("over-fullscreen")
-                        NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first?.activate(options: [])
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { snapshot("after-deactivate") }
-                    }
-                }
-            }
-        }
         #endif
 
         DistributedNotificationCenter.default().addObserver(
@@ -1756,7 +1708,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             switch Defaults[.clipboardDisplayMode] {
             case .panel:
-                ClipboardPanelManager.shared.toggleClipboardPanel()
+                ClipboardPanelManager.shared.toggleClipboardPanel(trigger: "shortcut")
             case .popover:
                 if vm.notchState == .closed {
                     vm.open()

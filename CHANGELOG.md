@@ -4,6 +4,35 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-01 - The clipboard panel shows its content again: the container fills every panel
+- **Developer label:** "doesnt work can you really look at swift components and use something common, also please note the regression, add logs if you cant figure out"
+- **Agent label:** Clipboard v4 — root cause measured in the shared hosting container (cc4f50d regression), REGRESSIONS entry 19, geometry logs
+- **Changes:**
+  - Root cause, measured before any change: `cc4f50d` (2026-09-17) moved `ClipboardPanel` onto
+    `setHostedContent`, and the clipboard was the only panel built at 0×0 and sized afterwards. The
+    shared `HostingContainerView` was born 0×0; growing it added the full delta to its child, leaving
+    a **640×800 hosting view in a 320×400 panel** — header off the top, content offset. A replay of the
+    exact sequence with a real `NSPanel` + `NSHostingView` printed `MISMATCH` for the current code and
+    an exact fit for the fix. The three earlier fixes (`4b848ce`, `b90919c`, `9b6547b`) chased the
+    window, which was on screen the whole time.
+  - Fixed in the common component: `HostingContainerView.resizeSubviews(withOldSize:)` keeps every
+    subview at `bounds` on every resize — the helper's documented contract, now enforced for all 21
+    callers regardless of build order (every one of them already sets its hosting view to full size).
+    `ClipboardPanel` is created at its real size like every other panel, and its level returns to
+    `.floating` (the window-server probe showed it renders over fullscreen; `.screenSaver` covered
+    system UI for no reason).
+  - Logs: every clipboard show writes one `ClipboardPanel` line — trigger (`shortcut`/`header-button`),
+    frame, content bounds, hosting frame, screen, level, visibility, space — and an `.error`
+    `GEOMETRY MISMATCH` if hosting ≠ content; every hide logs its reason. The large DEBUG deactivate
+    probe from the previous commit is removed; this log replaces it.
+  - Tests: `HostingContainerViewTests` (child added to a 0×0 container then grown, repeated resizes,
+    the exact zero-frame-panel sequence through the real helper), run red on the old container (4
+    failures) and green after. `HostedContent.swift` joins the logic test target (pbxproj ids B8/B9),
+    the first AppKit/SwiftUI source there; AGENTS.md's test-target sentence now says why that is
+    allowed.
+  - `docs/REGRESSIONS.md` entry 19, "A panel on screen is not content on screen", with the regression
+    commit, the three misdiagnoses and the guards; `HostedContent.swift` added to Danger zones.
+
 ### 2026-09-30 - One overlay configuration for every panel, proven at the window server
 - **Developer label:** "actually properly research why the UI issue happens, fix that and do unit test … see if any common functions is used or can be used"
 - **Agent label:** Clipboard fullscreen v3 — shared `configureAsOverlay`, window-server probes, invariant tests over every panel

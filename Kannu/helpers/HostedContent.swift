@@ -40,6 +40,16 @@ import SwiftUI
 final class HostingContainerView: NSView {
     override var isOpaque: Bool { false }
 
+    /// Full-size on every resize, whatever the history. Autoresizing alone was not enough: a
+    /// container created while its window was still 0×0 (the clipboard panel) added the whole
+    /// growth to its child and left a 640×800 hosting view in a 320×400 panel — on screen, at
+    /// the right level, on the right space, and showing the wrong part of its content
+    /// (docs/REGRESSIONS.md entry 19). Sizing still flows window → container → hosting view,
+    /// never from SwiftUI, so entry 17 is untouched.
+    override func resizeSubviews(withOldSize oldSize: NSSize) {
+        for subview in subviews { subview.frame = bounds }
+    }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         subviews.first?.acceptsFirstMouse(for: event) ?? false
     }

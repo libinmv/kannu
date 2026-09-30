@@ -80,7 +80,7 @@ struct KannuHeader: View {
                             // Switch behavior based on display mode
                             switch clipboardDisplayMode {
                             case .panel:
-                                ClipboardPanelManager.shared.toggleClipboardPanel()
+                                ClipboardPanelManager.shared.toggleClipboardPanel(trigger: "header-button")
                             case .popover:
                                 showClipboardPopover.toggle()
                             case .separateTab:

@@ -29,8 +29,10 @@ class ClipboardPanelManager: ObservableObject {
 
     private static let spacesLog = os.Logger(subsystem: "com.kannu.app", category: "ClipboardSpaces")
 
-    func showClipboardPanel() {
-        hideClipboardPanel() // Close any existing panel
+    private static let panelLog = os.Logger(subsystem: "com.kannu.app", category: "ClipboardPanel")
+
+    func showClipboardPanel(trigger: String = "unknown") {
+        hideClipboardPanel(reason: "reopen") // Close any existing panel
 
         let panel = ClipboardPanel()
         panel.positionNearNotch()
@@ -45,6 +47,7 @@ class ClipboardPanelManager: ObservableObject {
         panel.makeKeyAndOrderFront(nil)
         panel.orderFrontRegardless()
         repairVisiblePanelSpaces(context: "show")
+        logGeometry(of: panel, trigger: trigger)
 
         // Ensure the panel becomes the key window for text input
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -75,16 +78,32 @@ class ClipboardPanelManager: ObservableObject {
     var debugVisiblePanel: NSPanel? { clipboardPanel }
     #endif
 
-    func hideClipboardPanel() {
+    /// One line per show: what opened the panel and where everything actually is. A hosting
+    /// view that does not fill its panel is logged as an error - the failure that stayed
+    /// invisible to three window-level fixes (docs/REGRESSIONS.md entry 19).
+    private func logGeometry(of panel: ClipboardPanel, trigger: String) {
+        let content = panel.contentView?.bounds ?? .zero
+        let hosted = panel.hostedContentView?.frame ?? .zero
+        let screen = panel.screen?.localizedName ?? "none"
+        Self.panelLog.notice("show trigger=\(trigger, privacy: .public) frame=\(NSStringFromRect(panel.frame), privacy: .public) content=\(NSStringFromRect(content), privacy: .public) hosting=\(NSStringFromRect(hosted), privacy: .public) screen=\(screen, privacy: .public) level=\(panel.level.rawValue, privacy: .public) visible=\(panel.isVisible, privacy: .public) onActiveSpace=\(panel.isOnActiveSpace, privacy: .public)")
+        if hosted != content {
+            Self.panelLog.error("GEOMETRY MISMATCH hosting=\(NSStringFromRect(hosted), privacy: .public) content=\(NSStringFromRect(content), privacy: .public)")
+        }
+    }
+
+    func hideClipboardPanel(reason: String = "unknown") {
+        if clipboardPanel != nil {
+            Self.panelLog.notice("hide reason=\(reason, privacy: .public)")
+        }
         clipboardPanel?.close()
         clipboardPanel = nil
     }
 
-    func toggleClipboardPanel() {
+    func toggleClipboardPanel(trigger: String = "unknown") {
         if let panel = clipboardPanel, panel.isVisible {
-            hideClipboardPanel()
+            hideClipboardPanel(reason: "toggle:\(trigger)")
         } else {
-            showClipboardPanel()
+            showClipboardPanel(trigger: trigger)
         }
     }
 

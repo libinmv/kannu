@@ -32,9 +32,13 @@ private func applyClipboardCornerMask(_ view: NSView, radius: CGFloat) {
 
 class ClipboardPanel: NSPanel {
     
+    static let preferredSize = CGSize(width: 320, height: 400)
+
     init() {
+        // Created at its real size, like every other panel: installing content into a 0x0
+        // window and sizing it afterwards is what doubled the hosting view (REGRESSIONS 19).
         super.init(
-            contentRect: .zero,
+            contentRect: NSRect(origin: .zero, size: Self.preferredSize),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: true
@@ -58,7 +62,7 @@ class ClipboardPanel: NSPanel {
         // One shared invariant set (hidesOnDeactivate = false included): panels that
         // omitted it vanished the moment the app deactivated, which a fullscreen app
         // forces instantly (2026-09-30).
-        configureAsOverlay(level: .screenSaver)
+        configureAsOverlay(level: .floating)
         backgroundColor = .clear
         isOpaque = false
         hasShadow = true
@@ -84,11 +88,6 @@ class ClipboardPanel: NSPanel {
         hostingView.sizingOptions = []
         applyClipboardCornerMask(hostingView, radius: 12)
         setHostedContent(hostingView)
-        
-        // Set initial size
-        let preferredSize = CGSize(width: 320, height: 400)
-        hostingView.setFrameSize(preferredSize)
-        setContentSize(preferredSize)
     }
     
     func positionNearNotch() {
