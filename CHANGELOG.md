@@ -4,6 +4,32 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-30 - The clipboard panel opens on the screen you are looking at
+- **Developer label:** "clipboard broken … doesn't show up correctly in full screens, now its running, but not visible; make sure to add tests to ensure maximum things have tests covering cases like these"
+- **Agent label:** Clipboard placement fix + window fullscreen-flags invariant, both test-pinned
+- **Changes:**
+  - The panel restored any saved origin that merely *intersected* `NSScreen.main`'s visible
+    frame — and `NSScreen.main` is the key window's screen, not the one under the pointer.
+    Summoned over a fullscreen app on another display it opened on the wrong screen or almost
+    entirely off-screen: running, and not visible. It now opens on the screen under the pointer
+    (the same rule the notch toggle uses), and a saved origin is reused only when at least 60
+    points of the panel land inside that screen's visible frame per axis, else it recentres.
+    The decision is pure geometry in `ClipboardPanelPlacement` (Foundation-only, in the test
+    target) with the reported multi-display case as a named test.
+  - The old `setFrameOrigin` override saved *every* move — programmatic placement and AppKit
+    constraining included — so one bad placement persisted forever. Only user moves of a
+    visible panel are saved now, through the `Defaults` keys `clipboardPanelPositionSaved/X/Y`
+    (`Constants.swift`, replacing raw `UserDefaults` strings); `Saved` also retires the
+    "(0, 0) means nothing saved" sentinel, since bottom-left is a legitimate spot. Previously
+    saved positions are ignored once after upgrade.
+  - Dead `positionNearMouse()` — an uncalled copy of the same buggy pattern — is deleted.
+  - New `WindowFullscreenRulesTests` scans every `collectionBehavior` assignment in `Kannu/`
+    the way `ModalPresentationRulesTests` polices `runModal`: a window that joins all spaces
+    without `.fullScreenAuxiliary` is invisible the moment any app goes fullscreen, which is
+    exactly the "running but not visible" shape (and the sibling of the stranded-spaces bug
+    fixed in #67). All existing windows already pass; the scanner has self-tests so a regex
+    that rots fails loudly, plus a floor of 10 scanned sites so it cannot go quietly blind.
+
 ### 2026-09-30 - The notch comes back to a fullscreen app after a sleep or lock
 - **Developer label:** "did app crash again" — then: the notch is gone or blank
 - **Agent label:** Follow-up 63 - a notch stranded off the current space

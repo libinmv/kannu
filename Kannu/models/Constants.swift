@@ -1222,6 +1222,11 @@ extension Defaults.Keys {
     static let enableClipboardManager = Key<Bool>("enableClipboardManager", default: false)
     static let clipboardHistorySize = Key<Int>("clipboardHistorySize", default: 3)
     static let showClipboardIcon = Key<Bool>("showClipboardIcon", default: true)
+    /// Where the user last dragged the clipboard panel. `Saved` distinguishes "never
+    /// dragged" from a legitimate origin at 0 — the old sentinel conflated the two.
+    static let clipboardPanelPositionSaved = Key<Bool>("clipboardPanelPositionSaved", default: false)
+    static let clipboardPanelPositionX = Key<Double>("clipboardPanelPositionX", default: 0)
+    static let clipboardPanelPositionY = Key<Double>("clipboardPanelPositionY", default: 0)
     static let clipboardDisplayMode = Key<ClipboardDisplayMode>("clipboardDisplayMode", default: .panel)
     
     // MARK: Agent Status Feature (Cursor)

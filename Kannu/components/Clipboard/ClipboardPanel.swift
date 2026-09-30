@@ -17,6 +17,7 @@
  */
 
 import AppKit
+import Defaults
 import SwiftUI
 
 private func applyClipboardCornerMask(_ view: NSView, radius: CGFloat) {
@@ -95,69 +96,35 @@ class ClipboardPanel: NSPanel {
     }
     
     func positionNearNotch() {
-        guard let screen = NSScreen.main else { return }
-        
-        let screenFrame = screen.visibleFrame
-        let panelFrame = frame
-        
-        // Check if we have a saved position
-        if let savedPosition = getSavedPosition() {
-            // Validate saved position is still on screen
-            let savedFrame = NSRect(origin: savedPosition, size: panelFrame.size)
-            if screenFrame.intersects(savedFrame) {
-                setFrameOrigin(savedPosition)
-                return
-            }
-        }
-        
-        // Default to center of screen (not top center)
-        let xPosition = (screenFrame.width - panelFrame.width) / 2 + screenFrame.minX
-        let yPosition = (screenFrame.height - panelFrame.height) / 2 + screenFrame.minY
-        
-        setFrameOrigin(NSPoint(x: xPosition, y: yPosition))
+        // The screen the user is looking at is the one under the pointer. NSScreen.main is the
+        // key window's screen, which — summoned over a fullscreen app on another display — is
+        // the wrong one: the panel opened there instead, running and not visible (2026-09-30).
+        let pointer = NSEvent.mouseLocation
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(pointer) }) ?? NSScreen.main else { return }
+        let saved: NSPoint? = Defaults[.clipboardPanelPositionSaved]
+            ? NSPoint(x: Defaults[.clipboardPanelPositionX], y: Defaults[.clipboardPanelPositionY])
+            : nil
+        let origin = ClipboardPanelPlacement.origin(saved: saved, panelSize: frame.size,
+                                                    visibleFrame: screen.visibleFrame)
+        withoutSavingPosition { setFrameOrigin(origin) }
     }
-    
-    private func getSavedPosition() -> NSPoint? {
-        let defaults = UserDefaults.standard
-        let x = defaults.double(forKey: "clipboardPanelPositionX")
-        let y = defaults.double(forKey: "clipboardPanelPositionY")
-        
-        // Check if we have valid saved coordinates (not default 0.0)
-        if x != 0.0 || y != 0.0 {
-            return NSPoint(x: x, y: y)
-        }
-        return nil
+
+    /// Origin changes Kannu makes itself are not the user's chosen spot. The old override saved
+    /// *every* move — programmatic placement and AppKit constraining the frame included — so one
+    /// bad placement persisted and was restored forever after.
+    private var isProgrammaticMove = false
+    private func withoutSavingPosition(_ body: () -> Void) {
+        isProgrammaticMove = true
+        body()
+        isProgrammaticMove = false
     }
-    
-    private func saveCurrentPosition() {
-        let currentOrigin = frame.origin
-        let defaults = UserDefaults.standard
-        defaults.set(currentOrigin.x, forKey: "clipboardPanelPositionX")
-        defaults.set(currentOrigin.y, forKey: "clipboardPanelPositionY")
-    }
-    
+
     override func setFrameOrigin(_ point: NSPoint) {
         super.setFrameOrigin(point)
-        // Save position whenever it changes (user dragging)
-        saveCurrentPosition()
-    }
-    
-    func positionNearMouse() {
-        let mouseLocation = NSEvent.mouseLocation
-        let panelFrame = frame
-        
-        // Position near mouse but ensure it stays on screen
-        guard let screen = NSScreen.main else { return }
-        let screenFrame = screen.visibleFrame
-        
-        var xPosition = mouseLocation.x - panelFrame.width / 2
-        var yPosition = mouseLocation.y - panelFrame.height - 20
-        
-        // Keep within screen bounds
-        xPosition = max(screenFrame.minX + 10, min(xPosition, screenFrame.maxX - panelFrame.width - 10))
-        yPosition = max(screenFrame.minY + 10, min(yPosition, screenFrame.maxY - panelFrame.height - 10))
-        
-        setFrameOrigin(NSPoint(x: xPosition, y: yPosition))
+        guard !isProgrammaticMove, isVisible else { return }
+        Defaults[.clipboardPanelPositionSaved] = true
+        Defaults[.clipboardPanelPositionX] = frame.origin.x
+        Defaults[.clipboardPanelPositionY] = frame.origin.y
     }
     
 }
