@@ -58,7 +58,7 @@ class ClipboardPanel: NSPanel {
         backgroundColor = .clear
         isOpaque = false
         hasShadow = true
-        level = .floating
+        level = .screenSaver  // above fullscreen apps, like every other over-fullscreen panel here
         isMovableByWindowBackground = true  // Enable dragging
         titlebarAppearsTransparent = true
         titleVisibility = .hidden

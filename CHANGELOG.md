@@ -4,6 +4,31 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-30 - The clipboard panel survives fullscreen: level, spaces, and no activation
+- **Developer label:** "clipboard bug still present … avoid regressions like this" — the placement fix was real but not the mechanism; this is the show path itself
+- **Agent label:** Clipboard fullscreen fix v2 — #67's space repair applied to the panel, proven with a strand switch
+- **Changes:**
+  - `ClipboardPanel` moves from `level = .floating` to `.screenSaver` — every other
+    over-fullscreen panel in this app (`CircularHUD`, `CustomOSD`, and the retired clipboard
+    window whose comment said "to appear above fullscreen apps") already sits there; the live
+    panel was the odd one out.
+  - `showClipboardPanel()` no longer calls `NSApp.activate(ignoringOtherApps:)`: a
+    `.nonactivatingPanel` takes key without activating the app, and activating from inside
+    another app's fullscreen space is a space disturbance. Text input keeps working through
+    `canBecomeKey` and the existing `makeKey()` calls.
+  - The show path now applies #67's space repair to the panel: after ordering front,
+    `ClosedNotchVisibility.shouldRejoinSpaces` (reused, already test-pinned) decides and
+    `CGSSpace.rejoinAllManagedSpaces` re-adds — macOS can strip an all-spaces window's
+    membership (REGRESSIONS 2026-09-30 addendum) and #67 repaired only the notch windows. One
+    `os.Logger` line (category `ClipboardSpaces`) records any repair, so the next report is
+    diagnosable from `/usr/bin/log show` instead of guesswork.
+  - Proven end to end with DEBUG `--kannu-strand-clipboard` (sibling of `--kannu-strand-notch`):
+    the live panel was stranded and the repair re-added it to all 11 managed spaces; the
+    immediate `isOnActiveSpace` reads lag the CGS state, the same cache lag #67 defers around.
+  - `WindowFullscreenRulesTests` pins the lesson: `ClipboardPanelManager.swift` must contain
+    `rejoinAllManagedSpaces` and must not contain `NSApp.activate` — the pin caught its own
+    first false positive (the API named in a comment) during development, which is it working.
+
 ### 2026-09-30 - The clipboard panel opens on the screen you are looking at
 - **Developer label:** "clipboard broken … doesn't show up correctly in full screens, now its running, but not visible; make sure to add tests to ensure maximum things have tests covering cases like these"
 - **Agent label:** Clipboard placement fix + window fullscreen-flags invariant, both test-pinned

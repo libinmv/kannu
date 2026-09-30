@@ -80,6 +80,18 @@ final class WindowFullscreenRulesTests: XCTestCase {
         }
     }
 
+    func testTheClipboardShowPathRepairsSpacesAndNeverActivates() throws {
+        // 2026-09-30, second report: right coordinates, wrong space. The show path must keep
+        // #67's membership repair, and must never activate the app — a .nonactivatingPanel
+        // summoned inside another app's fullscreen space loses its spot exactly that way.
+        let url = Self.root.appendingPathComponent("managers/ClipboardPanelManager.swift")
+        let source = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(source.contains("rejoinAllManagedSpaces"),
+                      "the clipboard show path lost the space repair; the panel can strand invisible over fullscreen")
+        XCTAssertFalse(source.contains("NSApp.activate"),
+                       "activating from a fullscreen space is how the panel vanished; the panel takes key without it")
+    }
+
     // MARK: - The scanner's own failure modes, so a regex that rots fails loudly
 
     func testTheScannerCatchesAMissingFlag() {
