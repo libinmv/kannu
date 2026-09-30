@@ -71,6 +71,7 @@ class ModelSelectionPanel: NSPanel {
         titlebarAppearsTransparent = true
         titleVisibility = .hidden
         isFloatingPanel = true
+        hidesOnDeactivate = false  // NSPanel defaults true: ordered out on app deactivation (WindowFullscreenRulesTests)
         
         styleMask.insert(.fullSizeContentView)
         

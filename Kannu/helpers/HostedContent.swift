@@ -67,3 +67,20 @@ extension NSWindow {
         return contentView
     }
 }
+
+extension NSPanel {
+    /// The invariant set a Kannu overlay panel needs to survive fullscreen, in one place.
+    ///
+    /// `NSPanel` defaults `hidesOnDeactivate` to **true**: AppKit orders the panel out the
+    /// moment the app deactivates, and a fullscreen app re-asserts activation instantly — so a
+    /// panel summoned over fullscreen flashed and vanished (the 2026-09-30 clipboard report).
+    /// Only the two windows that hand-set it false (the notch, Settings) survived. Every
+    /// overlay panel adopts this or sets the flag itself; `WindowFullscreenRulesTests` pins it.
+    func configureAsOverlay(level: NSWindow.Level) {
+        isFloatingPanel = true
+        hidesOnDeactivate = false
+        isReleasedWhenClosed = false
+        collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        self.level = level
+    }
+}

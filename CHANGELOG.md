@@ -4,6 +4,30 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-09-30 - One overlay configuration for every panel, proven at the window server
+- **Developer label:** "actually properly research why the UI issue happens, fix that and do unit test … see if any common functions is used or can be used"
+- **Agent label:** Clipboard fullscreen v3 — shared `configureAsOverlay`, window-server probes, invariant tests over every panel
+- **Changes:**
+  - Research was done with instruments, not theories. A DEBUG probe (`--kannu-clipboard-deactivate-probe`)
+    puts Kannu's own test window into **real native fullscreen**, opens the fixed panel and a
+    legacy-config control panel over it, and dumps `CGWindowListCopyWindowInfo` — the window
+    server's own on-screen list. Measured: the fixed panel sits on-screen at layer 1000 over the
+    fullscreen Space and stays visible after the app deactivates; and in a *healthy* Space state
+    even the legacy config renders over fullscreen — so the reproducing mechanism for
+    "running but not visible" is the **stateful macOS spaces-reset** documented by #67
+    (post-sleep/lock, cleared by relaunch, hence intermittent), which the show-path repair from
+    the previous entry handles and logs under `ClipboardSpaces`.
+  - The common function the working windows always implied: `NSPanel.configureAsOverlay(level:)`
+    in `HostedContent.swift` — `isFloatingPanel`, `hidesOnDeactivate = false`,
+    `isReleasedWhenClosed = false`, the four-flag `collectionBehavior`, and the level, in one
+    place. `ClipboardPanel` adopts it; `MusicControlWindowManager`, `TimerControlWindowManager`
+    and the three ScreenAssistant panels — which all shared the documented
+    `hidesOnDeactivate` default hazard — get the explicit flag.
+  - Unit tests (`WindowFullscreenRulesTests`): every `NSPanel` subclass file must set
+    `hidesOnDeactivate = false` or adopt `configureAsOverlay` (floor of 5 subclasses so the
+    scanner cannot go blind); the helper must keep its full flag set; `ClipboardPanel` must keep
+    using it; the earlier pins (space repair present, no `NSApp.activate`, flag pairing) stay.
+
 ### 2026-09-30 - The clipboard panel survives fullscreen: level, spaces, and no activation
 - **Developer label:** "clipboard bug still present … avoid regressions like this" — the placement fix was real but not the mechanism; this is the show path itself
 - **Agent label:** Clipboard fullscreen fix v2 — #67's space repair applied to the panel, proven with a strand switch

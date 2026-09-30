@@ -55,24 +55,20 @@ class ClipboardPanel: NSPanel {
     }
     
     private func setupWindow() {
+        // One shared invariant set (hidesOnDeactivate = false included): panels that
+        // omitted it vanished the moment the app deactivated, which a fullscreen app
+        // forces instantly (2026-09-30).
+        configureAsOverlay(level: .screenSaver)
         backgroundColor = .clear
         isOpaque = false
         hasShadow = true
-        level = .screenSaver  // above fullscreen apps, like every other over-fullscreen panel here
         isMovableByWindowBackground = true  // Enable dragging
         titlebarAppearsTransparent = true
         titleVisibility = .hidden
-        isFloatingPanel = true  // Mark as floating panel for proper behavior
         
         // Allow dragging from any part of the window
         styleMask.insert(.fullSizeContentView)
         
-        collectionBehavior = [
-            .canJoinAllSpaces,
-            .stationary,
-            .fullScreenAuxiliary  // Float above full-screen apps
-        ]
-
         ScreenCaptureVisibilityManager.shared.register(self, scope: .panelsOnly)
         
         // Accept mouse moved events for proper hover behavior

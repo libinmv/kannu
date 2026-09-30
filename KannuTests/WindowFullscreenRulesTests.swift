@@ -73,11 +73,30 @@ final class WindowFullscreenRulesTests: XCTestCase {
 
     func testTheNotchAndClipboardWindowsDeclareTheirBehavior() throws {
         let sources = Dictionary(uniqueKeysWithValues: try Self.swiftSources())
-        for file in ["KannuWindow.swift", "ClipboardPanel.swift"] {
-            let source = try XCTUnwrap(sources[file], "\(file) is gone; update this list")
-            let lists = Self.behaviorAssignments(in: source).filter { $0.contains("canJoinAllSpaces") }
-            XCTAssertFalse(lists.isEmpty, "\(file) no longer assigns an all-spaces collectionBehavior")
+        let notch = try XCTUnwrap(sources["KannuWindow.swift"], "KannuWindow.swift is gone; update this list")
+        XCTAssertFalse(Self.behaviorAssignments(in: notch).filter { $0.contains("canJoinAllSpaces") }.isEmpty,
+                       "the notch no longer assigns an all-spaces collectionBehavior")
+        // The clipboard panel gets its flags from the shared overlay function, which must carry
+        // the full set — one place to break them all is also one place to test them all.
+        let clipboard = try XCTUnwrap(sources["ClipboardPanel.swift"])
+        XCTAssertTrue(clipboard.contains("configureAsOverlay("), "ClipboardPanel stopped using the shared overlay configuration")
+        let helper = try XCTUnwrap(sources["HostedContent.swift"], "the overlay helper moved; update this test")
+        for flag in ["canJoinAllSpaces", "fullScreenAuxiliary", "hidesOnDeactivate = false", "isReleasedWhenClosed = false"] {
+            XCTAssertTrue(helper.contains(flag), "configureAsOverlay lost \(flag)")
         }
+    }
+
+    func testEveryPanelSurvivesAppDeactivation() throws {
+        // NSPanel documents hidesOnDeactivate as defaulting to true. Whatever a given macOS
+        // build does in practice, an overlay panel's survival must not depend on it: every
+        // NSPanel subclass sets the flag itself or adopts configureAsOverlay (2026-09-30).
+        var checked = 0
+        for (path, source) in try Self.swiftSources() where source.contains(": NSPanel {") {
+            checked += 1
+            XCTAssertTrue(source.contains("hidesOnDeactivate = false") || source.contains("configureAsOverlay("),
+                          "\(path): an NSPanel subclass that may vanish when the app deactivates")
+        }
+        XCTAssertGreaterThanOrEqual(checked, 5, "the scanner stopped seeing Kannu's panels; fix the scan, not the rule")
     }
 
     func testTheClipboardShowPathRepairsSpacesAndNeverActivates() throws {
