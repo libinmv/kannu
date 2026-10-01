@@ -4,6 +4,19 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-01 - Quit Kannu has a row in Settings, and searching "quit" or "exit" finds it
+- **Developer label:** "the settings should have a quit app, or at least on search of quit or exit i should get the tab with that button to come up as result"
+- **Agent label:** Settings Quit row + search entry, pinned by the highlight inventory
+- **Changes:**
+  - The only Quit in Settings was a toolbar button on the General tab. Search can only land on
+    rows inside the form, and no entry mentioned quitting, so "quit" and "exit" found nothing. It
+    is now a **Quit Kannu** row (`SettingsActionRow`) in General's first section, right after
+    Launch at login, with its own highlight id. The toolbar button is gone, so the tab has one Quit.
+  - A search entry with the keywords quit, exit, close, stop, shut down and terminate opens
+    General and pulses the row.
+  - `SettingsHighlightInventoryTests`: counts move by one each (208 entries, 257 registrations,
+    251 ids), and `testQuitIsFindableBySearch` pins both words and the row's highlight id.
+
 ### 2026-10-01 - Act on CodeRabbit's review of #68
 - **Developer label:** "The clipboard panel shows its content again" — review follow-up
 - **Agent label:** CodeRabbit #68 — scanner separator check, main-actor manager

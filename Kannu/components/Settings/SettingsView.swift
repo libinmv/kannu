@@ -731,6 +731,7 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .general, title: "Enable Minimalistic UI", keywords: ["minimalistic", "ui mode", "general"], highlightID: SettingsTab.general.highlightID(for: "Enable Minimalistic UI")),
             SettingsSearchEntry(tab: .general, title: "Menubar icon", keywords: ["menu bar", "status bar", "icon"], highlightID: SettingsTab.general.highlightID(for: "Menubar icon")),
             SettingsSearchEntry(tab: .general, title: "Launch at login", keywords: ["autostart", "startup"], highlightID: SettingsTab.general.highlightID(for: "Launch at login")),
+            SettingsSearchEntry(tab: .general, title: "Quit Kannu", keywords: ["quit", "exit", "close", "stop", "shut down", "terminate"], highlightID: SettingsTab.general.highlightID(for: "Quit Kannu")),
             SettingsSearchEntry(tab: .general, title: "Where Kannu appears", keywords: ["display", "displays", "monitor", "external", "built-in", "all displays", "multi-display", "screen", "placement", "switch", "move", "second screen"], highlightID: SettingsTab.general.highlightID(for: "Where Kannu appears")),
             SettingsSearchEntry(tab: .general, title: "Display", keywords: ["preferred screen", "display picker", "specific display", "choose display"], highlightID: SettingsTab.general.highlightID(for: "Display")),
             SettingsSearchEntry(tab: .general, title: "Hide Kannu during screenshots & recordings", keywords: ["privacy", "screenshot", "recording"], highlightID: SettingsTab.general.highlightID(for: "Hide Kannu during screenshots & recordings")),
@@ -1170,6 +1171,14 @@ struct GeneralSettings: View {
                     .disabled(true)
                     .settingsHighlight(id: highlightID("Launch at login"))
                 }
+                // A row, not the toolbar button it replaces: search can only land on rows inside
+                // the form, and "quit" or "exit" found nothing when the only Quit sat in the toolbar.
+                SettingsActionRow("Quit Kannu", description: "Stops Kannu and its notch until you open it again.") {
+                    Button("Quit") {
+                        NSApp.terminate(nil)
+                    }
+                }
+                .settingsHighlight(id: highlightID("Quit Kannu"))
                 SettingsRow("Where Kannu appears", description: displayPlacement.description) {
                     Picker("", selection: $displayPlacement) {
                         ForEach(DisplayPlacement.allCases) { placement in
@@ -1268,12 +1277,6 @@ struct GeneralSettings: View {
             NotchBehaviour()
 
             gestureControls()
-        }
-        .toolbar {
-            Button("Quit app") {
-                NSApp.terminate(self)
-            }
-            .controlSize(.extraLarge)
         }
         .navigationTitle("General")
         .onChange(of: openNotchOnHover) {
