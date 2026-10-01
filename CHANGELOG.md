@@ -4,6 +4,22 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-01 - Ship 1.3.4 "Heimdall"
+- **Developer label:** "release .4 with all these changes we made since .3"
+- **Agent label:** 1.3.4 release mechanics
+- **Changes:**
+  - `MARKETING_VERSION` 1.3.3 -> **1.3.4** and `CURRENT_PROJECT_VERSION` 7 -> **8** in both
+    configurations. Last published is 1.3.3 (build 7), and the live feed's newest item is build 7,
+    so 8 is offered to everyone. The codename stays **Heimdall** for a patch.
+  - Carries #67 (the notch goes back on screen when macOS strands it off the current Space after
+    sleep or lock), #68 (the clipboard panel shows its content again: the shared hosting container
+    now fills every panel; broken since 1.3.0; REGRESSIONS entry 19) and #69 (a Quit Kannu row in
+    Settings that searching "quit" or "exit" finds).
+  - `origin/main` (the v1.3.3 appcast item and the pricing-data commits) merged into the release
+    branch first, so the release PR cannot drop the build-7 item from the feed.
+  - Curated notes at `docs/release-notes/1.3.4.md`. They lead with the clipboard fix, because it
+    was visibly broken for every user of the clipboard panel since 1.3.0.
+
 ### 2026-10-01 - Quit Kannu has a row in Settings, and searching "quit" or "exit" finds it
 - **Developer label:** "the settings should have a quit app, or at least on search of quit or exit i should get the tab with that button to come up as result"
 - **Agent label:** Settings Quit row + search entry, pinned by the highlight inventory
