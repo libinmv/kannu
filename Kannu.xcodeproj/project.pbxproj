@@ -78,6 +78,8 @@
 		AA100000000000000000008F /* DiagnosticScrub.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000008E /* DiagnosticScrub.swift */; };
 		AA1000000000000000000091 /* DisplayPlacementResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000090 /* DisplayPlacementResolver.swift */; };
 		AA10000000000000000000B1 /* ClosedNotchVisibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000AF /* ClosedNotchVisibility.swift */; };
+		AA10000000000000000000B7 /* ClipboardPanelPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B6 /* ClipboardPanelPlacement.swift */; };
+		AA10000000000000000000B9 /* HostedContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B8 /* HostedContent.swift */; };
 		AA10000000000000000000B3 /* AgentSecurityFindingGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B2 /* AgentSecurityFindingGroup.swift */; };
 		AA10000000000000000000B5 /* SecurityFindingAcknowledgement.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B4 /* SecurityFindingAcknowledgement.swift */; };
 		AA1000000000000000000093 /* GitHubIssue.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000092 /* GitHubIssue.swift */; };
@@ -174,6 +176,8 @@
 		AA100000000000000000008E /* DiagnosticScrub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DiagnosticScrub.swift; path = Kannu/managers/DiagnosticScrub.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000090 /* DisplayPlacementResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DisplayPlacementResolver.swift; path = Kannu/managers/Display/DisplayPlacementResolver.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000AF /* ClosedNotchVisibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClosedNotchVisibility.swift; path = Kannu/managers/Display/ClosedNotchVisibility.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000B6 /* ClipboardPanelPlacement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClipboardPanelPlacement.swift; path = Kannu/managers/Display/ClipboardPanelPlacement.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000B8 /* HostedContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HostedContent.swift; path = Kannu/helpers/HostedContent.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000B2 /* AgentSecurityFindingGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentSecurityFindingGroup.swift; path = Kannu/managers/AgentStatus/AgentSecurityFindingGroup.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000B4 /* SecurityFindingAcknowledgement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SecurityFindingAcknowledgement.swift; path = Kannu/managers/AgentStatus/SecurityFindingAcknowledgement.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000092 /* GitHubIssue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GitHubIssue.swift; path = Kannu/managers/GitHubIssue.swift; sourceTree = SOURCE_ROOT; };
@@ -620,6 +624,8 @@
 				AA100000000000000000008F /* DiagnosticScrub.swift in Sources */,
 				AA1000000000000000000091 /* DisplayPlacementResolver.swift in Sources */,
 				AA10000000000000000000B1 /* ClosedNotchVisibility.swift in Sources */,
+				AA10000000000000000000B7 /* ClipboardPanelPlacement.swift in Sources */,
+				AA10000000000000000000B9 /* HostedContent.swift in Sources */,
 				AA100000000000000000F008 /* TermsOfUse.swift in Sources */,
 				AA10000000000000000000B3 /* AgentSecurityFindingGroup.swift in Sources */,
 				AA10000000000000000000B5 /* SecurityFindingAcknowledgement.swift in Sources */,
@@ -833,7 +839,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Kannu/Preview Content\"";
 				DEVELOPMENT_TEAM = 3Z7WX43G8Q;
@@ -871,7 +877,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.3.3;
+				MARKETING_VERSION = 1.3.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.kannu.app.dev;
 				PRODUCT_NAME = Kannu;
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -901,7 +907,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Kannu/Preview Content\"";
 				DEVELOPMENT_TEAM = S2WWHQQH2V;
@@ -939,7 +945,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.3.3;
+				MARKETING_VERSION = 1.3.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.kannu.app;
 				PRODUCT_NAME = Kannu;
 				PROVISIONING_PROFILE_SPECIFIER = "";

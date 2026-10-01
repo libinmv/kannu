@@ -835,6 +835,29 @@ seeding the screen before it hands off, the Accessibility fallback not answering
 `lockStateDidClear` round trip. First occurrence, so this is an addendum rather than a numbered
 entry — one commit, and an entry without hashes is an opinion.
 
+**2026-09-30 addendum — the notch alive, opaque, and on the wrong spaces.** The third way this danger
+zone has hidden the notch. After a night of sleep / DarkWake / display-off → lock → unlock cycles,
+the notch window was ordered in, alpha 1 and correctly placed, yet absent from the fullscreen app the
+user was in. `CGSCopySpacesForWindows` put it in two of eleven spaces: the desktop and Safari's
+fullscreen space. **Every** app's all-spaces window was in the same two (Slack, Claude, Control
+Center) — macOS itself had reset them — so this is not a Kannu ordering bug, and nothing Kannu did
+would have undone it: an experiment showed `orderFrontRegardless`, re-assigning
+`collectionBehavior`, and ordering out and back in all leave the membership stuck, while re-adding
+the window to the managed spaces (or building a fresh window) restores it.
+
+**Rule this adds:** the notch must not rely on `.canJoinAllSpaces` holding for the life of the
+process. `rejoinNotchSpacesIfNeeded` checks `isOnActiveSpace` on every space change, wake and unlock
+(`ClosedNotchVisibility.shouldRejoinSpaces` is the decision) and re-adds a stranded window with
+`CGSSpace.rejoinAllManagedSpaces`; it costs nothing while the notch is where it belongs. A notch
+hidden for the lock screen is off every space on purpose and is never touched.
+
+**Guard — exists.** `ClosedNotchVisibilityTests.testOnlyAStrandedNotchIsPutBack` (the decision) and
+`ClosedNotchVisibilityRulesTests.testAStrandedNotchIsCheckedOnSpaceChangeWakeAndUnlock` (the three
+triggers, and that the repair re-adds rather than re-orders). End to end with the DEBUG launch switch
+`--kannu-strand-notch`: the app strands its own notch and delivers the space-change notification; the
+log must read "Put 1 notch window(s) back on N spaces after space change" and the window must be back
+on every space.
+
 ---
 
 ## 18. Another app's click never opens the notch
@@ -928,6 +951,46 @@ an idle-wakeup count out of all proportion to CPU is the signature.
 
 ---
 
+## 19. A panel on screen is not content on screen
+
+**Rule:** a view installed with `setHostedContent` fills its panel after every resize, whatever
+order the panel was built in — and a "the panel is not visible" report is checked against the
+*content's* geometry, not only the window's state.
+
+**Broken once, then misdiagnosed three times.** `cc4f50d` (2026-09-17, the entry 17 crash fix)
+moved `ClipboardPanel` from `contentView = hostingView` to `setHostedContent(hostingView)`. The
+clipboard was the one panel created at `contentRect: .zero` and sized *after* installing content,
+so `HostingContainerView` was born 0×0 and, when the window grew to 320×400, autoresizing added the
+whole delta to its child: a **640×800 hosting view in a 320×400 panel** — header above the visible
+area, content offset, the corner mask outside the window. Measured with a real `NSPanel` and
+`NSHostingView` replaying the exact sequence (CURRENT → `MISMATCH`, both fixes → exact fit).
+
+The report was "running, but not visible in full screens", and three fixes chased the window
+instead: `4b848ce` (placement and screen choice), `b90919c` (level, spaces repair, activation),
+`9b6547b` (`hidesOnDeactivate`, `configureAsOverlay`). Each was verified — by a window-server probe
+that honestly showed the panel on screen at layer 1000, on the active space, visible after
+deactivation — and each changed nothing the user could see.
+
+**Why it keeps happening:** the failure is silent at every level anyone checks. The window
+exists, is ordered in, is opaque, has the right level and the right spaces; `CGWindowList` lists
+it. Only the hosting view's frame is wrong, and nothing reads it. A fix verified against window
+state answers a different question than the one the user is asking. And the helper's own
+contract ("holds a hosting view full-size") was implemented with an autoresizing mask, which only
+holds when the container starts at its final size — an assumption no caller was told about.
+
+**Guard — exists.** `HostingContainerView.resizeSubviews(withOldSize:)` now sets every subview to
+`bounds` on every resize, so the contract holds for all 21 callers regardless of call order;
+`ClipboardPanel` is created at its real size like the others. `HostingContainerViewTests` pins it
+with the real helper — a child added to a 0×0 container, repeated resizes, and the exact
+zero-frame-panel sequence — and was run **red** against the old container before the fix. The
+clipboard now logs every show (category `ClipboardPanel`: trigger, frame, content, hosting frame,
+screen, level, space) and an `.error` `GEOMETRY MISMATCH` whenever hosting ≠ content, so the next
+report is answered by `/usr/bin/log show`, not by another theory. `HostedContent.swift` is in the
+logic test target now — the first AppKit/SwiftUI source there, allowed because it depends on system
+frameworks only.
+
+---
+
 ## Danger zones
 
 Commit counts across all branches (`--follow`, so pre-rename history counts):
@@ -938,6 +1001,7 @@ Commit counts across all branches (`--follow`, so pre-rename history counts):
 | `AgentTrafficLightState.swift` | 18 | The state ladder — staleness thresholds and verdict→colour mapping. Mostly *tuning numbers*, which is exactly how entry 2 happened, how the yellow clock became its only exit (entry 12), and how a demotion came to read as a request ending (entry 15). |
 | `AgentHookInstaller.swift` | 17 | Embedded script + event table + install/uninstall/migration. Grows monotonically; every growth episode has broken `checkInstalled` or a migration (entries 1 and 6). |
 | `CursorAgentStatusMonitor.swift` (usage spawn) | — | The `/usage` fetch invocation. Two silent breakages in one day from added flags/env (entry 8). |
+| `HostedContent.swift` | 3 | `setHostedContent` / `HostingContainerView` holds the content of 21 panels. Entry 17's crash fix introduced it; its sizing contract silently failed for a panel built at 0×0 and doubled the clipboard's content (entry 19). |
 | `ModalPresenter.swift` | 2 | The only place allowed to stop the main run loop. Every site in the app funnels through it, and the hang watchdog trusts it to declare a deliberate stall (entry 14). |
 | `KannuApp.swift` (`createKannuWindow`, `adjustWindowPosition`) and every panel manager | — | Window creation **and the screen assignment that feeds the view model**. A hosting view installed as a panel's content view gets SwiftUI's window-size bridge and fights Kannu's sizing until AppKit aborts; and an early return that skips `vm.screen` leaves a correctly-sized window that paints nothing and has zero height, permanently (entry 17 and its 2026-09-26 addendum). Use `setHostedContent`, and keep identity ahead of every guard. |
 | `BluetoothAudioManager.swift` | 19 | Battery collection. Spawns `system_profiler` and `pmset` and waits, on whatever thread calls it — moved off main four separate times: twice re-landing there in the same change that was meant to fix it, once leaving the connect path itself on main (entry 11, 2026-09-13 and 2026-09-16 addenda). |
