@@ -175,6 +175,7 @@ struct AgentSessionStatus: Identifiable, Equatable {
         case "antigravity": return "Antigravity"
         case "warp": return "Warp"
         case "claudedesktop": return "Claude Desktop"
+        case "claudecloud": return "Claude Cloud"
         case "copilot": return "Copilot CLI"
         case "gemini": return "Gemini CLI"
         case "qwen": return "Qwen Code"

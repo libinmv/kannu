@@ -195,40 +195,14 @@ final class AgentHookInstaller: ObservableObject {
     /// VS Code Copilot / Codex hook events — see `AgentHookLayout.claudeStyleEvents`.
     private static var claudeStyleEvents: [(event: String, state: String)] { AgentHookLayout.claudeStyleEvents }
 
-    /// Claude Code hook coverage. Richer than `claudeStyleEvents` because Claude supports
-    /// matcher-scoped groups, which is the only way to reach the states that matter:
-    /// `Notification/agent_completed` is the real "it's done", and matching `PreToolUse` on
-    /// the plan-approval tools is the only signal for "waiting on you to approve a plan".
-    ///
-    /// `matcherKey` is a short token handed to the script so it knows the state is already
-    /// unambiguous and does not re-derive it from the event name.
-    private static let claudeHookEntries: [(event: String, matcher: String?, matcherKey: String, state: String)] = [
-        // idle, not thinking: opening a session must not paint the green "running" light.
-        ("SessionStart", nil, "", "idle"),
-        ("UserPromptSubmit", nil, "", "thinking"),
-        // Must come before the generic PreToolUse entry for readability; Claude runs matcher
-        // groups in parallel with no ordering guarantee, so the script also derives this
-        // state from tool_name as a backstop.
-        ("PreToolUse", "ExitPlanMode|AskUserQuestion", "gated", "awaiting_input"),
-        ("PreToolUse", nil, "", "executing"),
-        // `thinking`, matching what the script derives for this event and what
-        // `claudeStyleEvents` passes. The argument is only a fallback for the no-python
-        // branch, but a value the script contradicts is a trap for the next reader.
-        ("PostToolUse", nil, "", "thinking"),
-        // Counted into `tool_errors` (reset on UserPromptSubmit) for diagnostics only: a failure
-        // the agent recovered from is not the turn's outcome. The card's verdict comes from
-        // StopFailure below and from the transcript's API-error record, never from this count.
-        ("PostToolUseFailure", nil, "", "thinking"),
-        ("PermissionRequest", nil, "", "awaiting_input"),
-        ("Notification", "agent_completed", "completed", "stopped"),
-        ("Notification", "permission_prompt|idle_prompt|agent_needs_input", "needs_input", "awaiting_input"),
-        ("Stop", nil, "", "stopped"),
-        ("StopFailure", nil, "", "stopped"),
-        ("SessionEnd", nil, "", "session_end")
-    ]
+    /// Claude Code hook coverage lives in `AgentHookLayout.claudeHookEntries`, shared with the
+    /// cloud-session relay's settings snippet so the two can never disagree.
+    private static var claudeHookEntries: [(event: String, matcher: String?, matcherKey: String, state: String)] {
+        AgentHookLayout.claudeHookEntries
+    }
 
     /// The subset that defines "Claude hooks are installed". Kept intentionally small so the
-    /// table above can grow without invalidating existing installs — see `checkInstalled`.
+    /// table can grow without invalidating existing installs — see `checkInstalled`.
     private static let claudeCoreInstalledEvents = ["SessionStart", "UserPromptSubmit", "PreToolUse", "Stop"]
 
     /// Antigravity hook events (PascalCase).
