@@ -64,6 +64,26 @@ final class AgentHookLayoutTests: XCTestCase {
                        "outside plugins/, which opencode loads wholesale")
     }
 
+    func testTheClaudeTableKeepsEveryEventMatcherAndState() {
+        // Moved here from the installer so the cloud-session relay's settings snippet reads the
+        // same rows. Any change to a row changes both installs at once: make it deliberately.
+        let rows = AgentHookLayout.claudeHookEntries.map { "\($0.event)|\($0.matcher ?? "-")|\($0.matcherKey)|\($0.state)" }
+        XCTAssertEqual(rows, [
+            "SessionStart|-||idle",
+            "UserPromptSubmit|-||thinking",
+            "PreToolUse|ExitPlanMode|AskUserQuestion|gated|awaiting_input",
+            "PreToolUse|-||executing",
+            "PostToolUse|-||thinking",
+            "PostToolUseFailure|-||thinking",
+            "PermissionRequest|-||awaiting_input",
+            "Notification|agent_completed|completed|stopped",
+            "Notification|permission_prompt|idle_prompt|agent_needs_input|needs_input|awaiting_input",
+            "Stop|-||stopped",
+            "StopFailure|-||stopped",
+            "SessionEnd|-||session_end"
+        ])
+    }
+
     func testVSCodeTableGainsNotificationButCodexDoesNot() {
         let vscode = AgentHookLayout.vscodeEvents.map(\.event)
         XCTAssertTrue(vscode.contains("Notification"))

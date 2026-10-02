@@ -184,6 +184,38 @@ struct AgentHookLayout: Equatable {
         ("Stop", "stopped")
     ]
 
+    /// Claude Code hook coverage. Richer than `claudeStyleEvents` because Claude supports
+    /// matcher-scoped groups, which is the only way to reach the states that matter:
+    /// `Notification/agent_completed` is the real "it's done", and matching `PreToolUse` on
+    /// the plan-approval tools is the only signal for "waiting on you to approve a plan".
+    ///
+    /// `matcherKey` is a short token handed to the script so it knows the state is already
+    /// unambiguous and does not re-derive it from the event name.
+    static let claudeHookEntries: [(event: String, matcher: String?, matcherKey: String, state: String)] = [
+        // idle, not thinking: opening a session must not paint the green "running" light.
+        ("SessionStart", nil, "", "idle"),
+        ("UserPromptSubmit", nil, "", "thinking"),
+        // Must come before the generic PreToolUse entry for readability; Claude runs matcher
+        // groups in parallel with no ordering guarantee, so the script also derives this
+        // state from tool_name as a backstop.
+        ("PreToolUse", "ExitPlanMode|AskUserQuestion", "gated", "awaiting_input"),
+        ("PreToolUse", nil, "", "executing"),
+        // `thinking`, matching what the script derives for this event and what
+        // `claudeStyleEvents` passes. The argument is only a fallback for the no-python
+        // branch, but a value the script contradicts is a trap for the next reader.
+        ("PostToolUse", nil, "", "thinking"),
+        // Counted into `tool_errors` (reset on UserPromptSubmit) for diagnostics only: a failure
+        // the agent recovered from is not the turn's outcome. The card's verdict comes from
+        // StopFailure below and from the transcript's API-error record, never from this count.
+        ("PostToolUseFailure", nil, "", "thinking"),
+        ("PermissionRequest", nil, "", "awaiting_input"),
+        ("Notification", "agent_completed", "completed", "stopped"),
+        ("Notification", "permission_prompt|idle_prompt|agent_needs_input", "needs_input", "awaiting_input"),
+        ("Stop", nil, "", "stopped"),
+        ("StopFailure", nil, "", "stopped"),
+        ("SessionEnd", nil, "", "session_end")
+    ]
+
     /// Kannu's own `~/.copilot/hooks` file, read by VS Code and by Copilot CLI. The CLI's yellow
     /// comes from `Notification` (permission_prompt, elicitation_dialog); the script ignores its
     /// `PermissionRequest`, which fires before the CLI's own rules decide anything.
