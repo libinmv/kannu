@@ -133,6 +133,24 @@ final class CaffeinateDecisionTests: XCTestCase {
                      "a running session has no window to recheck")
     }
 
+    /// A cloud session runs on Anthropic's machines: its work never needs this Mac awake.
+    func testACloudSessionNeverKeepsTheMacAwake() {
+        let cloud = AgentSessionStatus(
+            id: "claudecloud-session_01AbC", provider: "claudecloud", conversationID: "claudecloud.session_01AbC",
+            chatName: nil, projectName: nil, rawState: "executing", displayState: .executing,
+            updatedAt: Date(timeIntervalSince1970: 1_000), isVisible: true, executionStartedAt: nil,
+            cwd: nil, hostPID: nil
+        )
+        XCTAssertTrue(AgentTrafficLightMapper.runsElsewhere(cloud))
+        XCTAssertFalse(AgentTrafficLightMapper.runsElsewhere(session()))
+        XCTAssertFalse(AgentTrafficLightMapper.hasCaffeinateWorthySession([cloud]))
+        let waiting = cloud.withDisplayState(.awaitingInput, visible: true)
+        XCTAssertFalse(AgentTrafficLightMapper.hasCaffeinateWorthySession([waiting], now: Date(timeIntervalSince1970: 1_100)))
+        XCTAssertNil(AgentTrafficLightMapper.caffeinateRecheckDate([waiting], now: Date(timeIntervalSince1970: 1_100)))
+        XCTAssertTrue(AgentTrafficLightMapper.hasCaffeinateWorthySession([cloud, session()]),
+                      "a local run beside it still holds")
+    }
+
     func testInvisibleSessionDoesNotQualify() {
         XCTAssertFalse(AgentTrafficLightMapper.hasCaffeinateWorthySession([session(visible: false)]))
     }

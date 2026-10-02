@@ -262,6 +262,17 @@ enum ClaudeCloudRelay {
         return components.url
     }
 
+    /// Where a stream resumes. The first connection replays the stale window, so every session
+    /// still worth a card is rebuilt from the relay's cache; later ones resume from the last
+    /// message's relay time, never further back than that window. A message seen twice changes
+    /// nothing (`applying`), so the overlap at the boundary is harmless.
+    static func resumePoint(lastMessageTime: Int?, staleMinutes: Int, now: Date) -> Since {
+        let minutes = max(1, staleMinutes)
+        let windowStart = Int(now.timeIntervalSince1970) - minutes * 60
+        guard let lastMessageTime, lastMessageTime > windowStart else { return .minutes(minutes) }
+        return .unixTime(lastMessageTime)
+    }
+
     /// Doubles from 1 s to a 60 s cap; a client error (a refused topic, a used-up quota) waits
     /// five minutes, since retrying sooner cannot change the answer.
     static func nextBackoff(after current: TimeInterval, httpStatus: Int?) -> TimeInterval {

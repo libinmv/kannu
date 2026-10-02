@@ -220,7 +220,7 @@ enum UsageAlertPolicy {
 
     static func usageProvider(forSessionProvider provider: String) -> String? {
         switch provider.lowercased() {
-        case "claude", "claudedesktop": return "claude"
+        case "claude", "claudedesktop", "claudecloud": return "claude"
         case "codex": return "codex"
         case "cursor": return "cursor"
         default: return nil

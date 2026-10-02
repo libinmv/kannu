@@ -960,6 +960,12 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .agentSecurity, title: "Context servers", keywords: ["adr", "detection", "context", "mcp", "threat intelligence", "source code", "policy store"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Context servers")),
             SettingsSearchEntry(tab: .agentSecurity, title: "Confirm before every analysis", keywords: ["adr", "detection", "confirm", "consent"], highlightID: SettingsTab.agentSecurity.highlightID(for: "Confirm before every analysis")),
             SettingsSearchEntry(tab: .agentStatus, title: "Mobile notifications", keywords: ["mobile", "push", "ntfy", "pushover", "webhook", "iphone", "android"], highlightID: SettingsTab.agentStatus.highlightID(for: "Mobile notifications")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Claude Code cloud sessions", keywords: ["cloud", "claude code", "claude.ai", "web", "remote", "relay", "session"], highlightID: SettingsTab.agentStatus.highlightID(for: "Show cloud sessions")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Cloud relay server", keywords: ["relay", "server", "ntfy", "self-host", "cloud"], highlightID: SettingsTab.agentStatus.highlightID(for: "Relay server")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Cloud relay key", keywords: ["key", "secret", "environment", "variables", "regenerate", "revoke", "cloud"], highlightID: SettingsTab.agentStatus.highlightID(for: "Relay key")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Prepare a repository for cloud sessions", keywords: ["repository", "repo", "hook", "settings.json", "cloud", "agent"], highlightID: SettingsTab.agentStatus.highlightID(for: "Prepare a repository")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Cloud environment network access", keywords: ["network", "allowlist", "custom", "environment", "cloud"], highlightID: SettingsTab.agentStatus.highlightID(for: "Cloud environment")),
+            SettingsSearchEntry(tab: .agentStatus, title: "Cloud relay status", keywords: ["status", "test", "check", "connection", "cloud", "relay"], highlightID: SettingsTab.agentStatus.highlightID(for: "Cloud relay status")),
             SettingsSearchEntry(tab: .agentStatus, title: "Send test notification", keywords: ["test", "mobile", "push", "notification"], highlightID: SettingsTab.agentStatus.highlightID(for: "Send test notification")),
             SettingsSearchEntry(tab: .about, title: "Watch for freezes", keywords: ["freeze", "frozen", "hang", "stuck", "unresponsive", "beachball", "spinning", "crash", "report", "diagnostics", "developer"], highlightID: SettingsTab.about.highlightID(for: "Watch for freezes")),
             SettingsSearchEntry(tab: .about, title: "Terms of Use", keywords: ["terms", "legal", "agreement", "warranty", "liability", "accept"], highlightID: SettingsTab.about.highlightID(for: "Terms of Use")),
@@ -7468,6 +7474,8 @@ struct AgentStatusSettings: View {
                 } footer: {
                     SettingsFooter("Install hooks for Cursor, VS Code and Copilot CLI, Codex CLI, Claude Code, Antigravity, Gemini CLI, Qwen Code or opencode. Each hook writes agent status into ~/.kannu/agent-status for the notch traffic light and Recent chats list. Copilot CLI uses the VS Code hook; opencode gets a small plugin.")
                 }
+
+                AgentCloudSessionsSettings()
 
                 mobileNotificationSections
             }

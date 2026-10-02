@@ -574,11 +574,14 @@ struct SettingsErrorText: View {
 /// "Copy for agent": puts a request about a finding on the clipboard, then reads "Copied" for two
 /// seconds without changing width (the hidden label keeps the size), so the row never reflows.
 struct CopyForAgentButton: View {
+    private let help: LocalizedStringKey
     private let copy: () -> Void
     @State private var copied = false
     @State private var resetTask: Task<Void, Never>?
 
-    init(copy: @escaping () -> Void) {
+    init(help: LocalizedStringKey = "Copies a request about this finding, ready to paste into your agent. Nothing is sent.",
+         copy: @escaping () -> Void) {
+        self.help = help
         self.copy = copy
     }
 
@@ -598,7 +601,7 @@ struct CopyForAgentButton: View {
                 .overlay { if copied { Text("Copied") } }
         }
         .accessibilityLabel(copied ? Text("Copied") : Text("Copy for agent"))
-        .help("Copies a request about this finding, ready to paste into your agent. Nothing is sent.")
+        .help(help)
         .onDisappear { resetTask?.cancel() }
     }
 }

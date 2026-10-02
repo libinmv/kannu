@@ -17,6 +17,7 @@ Kannu is a fork of [Atoll](https://github.com/Ebullioscopic/Atoll), which itself
 - **Jump to the session** — click a chat row to activate the app that owns it (terminal, IDE, or a resumable Claude session). Rows that cannot be located offer no affordance rather than a dead click.
 - **Custom notch skins** — upload a background image clipped to the notch shape, with optional dark scrim for readability.
 - **Mobile notifications (optional)** — push agent state changes to iPhone, Apple Watch, or Android via ntfy, Pushover, or a custom webhook.
+- **Claude Code cloud sessions (optional)** — sessions running in the cloud report their light through a relay you choose, from repositories that carry Kannu's relay hook. Reports carry state only, never prompts or output, and are signed with a key that stays in your Keychain and cloud environment. See [docs/CLOUD-SESSIONS.md](docs/CLOUD-SESSIONS.md).
 - Media controls, live activities, lock screen widgets, stats, timers, clipboard, and shelf.
 - **Keyboard shortcuts off by default** — enable globally in Settings → Shortcuts when you want hotkeys.
 

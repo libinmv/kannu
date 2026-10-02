@@ -62,7 +62,7 @@ final class LaunchGateRulesTests: XCTestCase {
         let launch = Self.code(try XCTUnwrap(Self.body(ofFunction: "applicationDidFinishLaunching", in: source)))
         let invariants = Self.code(try XCTUnwrap(Self.body(ofFunction: "startLaunchInvariants", in: source)))
         let preGate = launch + invariants
-        for forbidden in ["AgentHookInstaller", "CursorAgentStatusMonitor", "SecurityFindingsStore",
+        for forbidden in ["AgentHookInstaller", "CursorAgentStatusMonitor", "ClaudeCloudRelayManager", "SecurityFindingsStore",
                           "createKannuWindow", "adjustWindowPosition", "syncStatusItem",
                           "autoEnableLaunchAtLogin", "showOnboardingWindow", "LockScreenWeatherManager",
                           "SystemHUDManager", "configureProviderDefaultsIfNeeded", "installTopMenuItems"] {

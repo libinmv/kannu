@@ -70,6 +70,8 @@ enum AgentSessionOpener {
             /// A specific Claude Code chat, via a Claude Desktop deep link: the session route
             /// (focus) or `resume` (import).
             case claudeDeepLink(url: URL)
+            /// A cloud session's page on claude.ai, in the default browser.
+            case webPage(url: URL)
         }
 
         /// Tooltip text: a deep link lands on the chat itself, the others on its app.
@@ -130,6 +132,10 @@ enum AgentSessionOpener {
             // provider bundle id intentionally isn't used — it points at an unrelated desktop app.
             if let pid = session.hostPID { return terminalTarget(for: hostChain(agentPID: pid)) }
             return liveTerminalChain(session.terminal).flatMap(terminalTarget(for:))
+        case .claudeCloud:
+            // A cloud session runs nowhere on this Mac: its page on claude.ai is the way back.
+            return AgentClickThroughPolicy.claudeCloudSessionURL(conversationID: session.conversationID)
+                .map { OpenTarget(appName: "claude.ai", kind: .webPage(url: $0)) }
         case .copilotCLI, .gemini, .qwen, .opencode, .unknown:
             // Terminal agents: the terminal their hook reported (v35) is the way back.
             return liveTerminalChain(session.terminal).flatMap(terminalTarget(for:))
@@ -147,6 +153,7 @@ enum AgentSessionOpener {
         case .terminalHost: destination = .terminal
         case .tmuxPane: destination = .tmuxPane
         case .ide(let running, _, _): destination = running != nil ? .runningApp : .coldLaunch
+        case .webPage: destination = .webPage
         }
         return AgentClickThroughPolicy.findingMayOpen(destination) ? target : nil
     }
@@ -194,6 +201,11 @@ enum AgentSessionOpener {
                 raiseMatchingWindow(in: host, session: session)
             }
             return true
+
+        case .webPage(let url):
+            guard AgentClickThroughPolicy.isClaudeCloudSessionURL(url) else { return false }
+            log.notice("opening a cloud session on claude.ai")
+            return NSWorkspace.shared.open(url)
 
         case .tmuxPane(let tty):
             log.notice("focusing tmux pane")

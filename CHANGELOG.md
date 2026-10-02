@@ -4,6 +4,40 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-02 - Claude Code cloud sessions show in the notch, opt-in, through a relay
+- **Developer label:** "cloud sessions are not detected by us, nor cowork, what can be done to cover that in our claude detection?" — build the relay (opt-in)
+- **Agent label:** Cloud relay, part 3 of 3 — the listener, the cards and the Settings section
+- **Changes:**
+  - `ClaudeCloudRelayManager` keeps one stream open to the relay while **Settings › Agents › Cloud
+    Sessions** is on: its own ephemeral `URLSession` (150 s request timeout against ntfy's 45 s
+    keepalive, never `URLSession.shared`), redirects refused because the URL carries the topic,
+    parsing off the main actor, a replay of the stale window on the first connection and a resume
+    from the last message after that, backoff from 1 s to 60 s (5 minutes after a refusal), and a
+    reconnect on wake and on a setting change. Logs never name the key, the topic, the URL, a
+    session or a repository. It starts and stops with the agent monitor, after the Terms of Use
+    (`LaunchGateRulesTests`).
+  - The monitor maps the relay's snapshot into **Claude Cloud** cards on full rescans
+    (`buildExtraPassiveSessions`, `cloudRelayDidChange`). A card's yellow holds only while the stream
+    is healthy: one quick reconnect keeps it, a second failure or a refusal drops it to the 5-minute
+    clock (REGRESSIONS entries 2 and 12, dated addenda).
+  - A cloud card has a cloud icon, opens `https://claude.ai/code/session_…` and nothing else
+    (`AgentClickThroughPolicy`, checked again when opening), never keeps the Mac awake
+    (`runsElsewhere`, docs/CAFFEINATE.md), and counts against the Claude plan in the usage forecast.
+  - Settings: an opt-in toggle behind a consent alert that names every field a report carries; the
+    relay server, refused unless it is a public https address the script also accepts
+    (`SecurityURLPolicy.isAllowedCloudRelayServerURL`, now in the logic target); the relay key
+    (generated into the Keychain, copied as the cloud environment's variables marked concealed, so
+    clipboard managers skip it, and replaceable with **New key…**); "Prepare a repository", a
+    request for the user's own agent that carries the script and hooks and never a key; the cloud
+    environment's network note; and a status line. Six search entries; the inventory counts move to
+    214 entries, 263 registrations and 257 ids. `CopyForAgentButton` takes its tooltip as a parameter.
+  - `NSPasteboard.setConcealedString(_:)` writes the nspasteboard.org concealed marker that
+    `ClipboardCapturePolicy` honours.
+  - docs/CLOUD-SESSIONS.md gains setup, the listener and troubleshooting; README lists the feature.
+  - Tests: `ClaudeCloudRelayManagerRulesTests` (source scans with a planted-offender self-test),
+    `SecurityURLPolicyTests`, and additions to `ClaudeCloudRelayTests`, `AgentClickThroughPolicyTests`,
+    `CaffeinateDecisionTests` and `UsageForecastTests`.
+
 ### 2026-10-02 - The cloud-session relay's protocol: the script, Kannu's parser and their tests
 - **Developer label:** "cloud sessions are not detected by us, nor cowork, what can be done to cover that in our claude detection?" — build the relay (opt-in)
 - **Agent label:** Cloud relay, part 2 of 3 — signed ntfy protocol, relay script and parser; not wired into the app yet

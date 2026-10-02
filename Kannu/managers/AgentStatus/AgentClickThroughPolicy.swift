@@ -59,6 +59,8 @@ enum AgentClickThroughPolicy {
         case runningApp
         /// The provider's app is not running and would be launched.
         case coldLaunch
+        /// A cloud session's own page on claude.ai.
+        case webPage
     }
 
     /// A finding goes back to its chat only where the chat already is. Never an import — it would
@@ -66,9 +68,22 @@ enum AgentClickThroughPolicy {
     /// never a cold launch from a Settings row.
     static func findingMayOpen(_ destination: FindingDestination) -> Bool {
         switch destination {
-        case .desktopRoute, .terminal, .tmuxPane, .runningApp: return true
+        case .desktopRoute, .terminal, .tmuxPane, .runningApp, .webPage: return true
         case .desktopImport, .coldLaunch: return false
         }
+    }
+
+    /// Where a cloud card opens: its session's page on claude.ai, and nothing else whatever the
+    /// relay sent — the id has already passed `ClaudeCloudRelay.sessionID(conversationID:)`.
+    static func claudeCloudSessionURL(conversationID: String) -> URL? {
+        ClaudeCloudRelay.sessionID(conversationID: conversationID).flatMap { URL(string: "https://claude.ai/code/" + $0) }
+    }
+
+    /// Checked again at the moment of opening: exactly `https://claude.ai/code/session_…`.
+    static func isClaudeCloudSessionURL(_ url: URL) -> Bool {
+        url.scheme == "https" && url.host == "claude.ai" && url.port == nil && url.user == nil
+            && url.query == nil && url.fragment == nil
+            && url.path.range(of: "^/code/session_[A-Za-z0-9]{1,64}$", options: .regularExpression) != nil
     }
 
     /// Terminal agents without a Desktop app to fall back on: their terminal, or nothing.

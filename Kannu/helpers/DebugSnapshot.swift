@@ -66,6 +66,9 @@ enum DebugSnapshots {
         if request.tabs == nil || request.tabs?.contains("notifications") == true {
             boards.append(("notifications", AgentStatusSettings.snapshotNotificationRows()))
         }
+        if request.tabs == nil || request.tabs?.contains("cloudSessions") == true {
+            boards.append(("cloudSessions", AgentCloudSessionsSettings.snapshotSetupRows()))
+        }
         if request.tabs == nil || request.tabs?.contains("displays") == true {
             boards.append(("displays", GeneralSettings.snapshotPerDisplayRows()))
         }
@@ -364,6 +367,15 @@ enum DebugSnapshotFixtures {
                           turn: HookTurn(startedAt: now.addingTimeInterval(-42), toolCalls: 1)))
         cards.append(card("esc", "claude", "Interrupted chat", "executing", .inactive, ago: 50,
                           turn: HookTurn(startedAt: now.addingTimeInterval(-900), toolCalls: 9)))
+        // A cloud session, mapped the way the relay's reports are (docs/CLOUD-SESSIONS.md).
+        let askedAt: Date = now.addingTimeInterval(-60)
+        let report = ClaudeCloudRelay.Event(sessionID: "session_01SnapA4f2", state: "awaiting_input",
+                                            event: "PermissionRequest", note: "", repo: "kannu-web",
+                                            ts: askedAt, receivedAt: askedAt)
+        var relay = ClaudeCloudRelay.applying(report, to: ClaudeCloudRelay.Snapshot(), now: now)
+        relay.connected = true
+        cards += ClaudeCloudRelay.sessions(snapshot: relay, staleMinutes: 30, collapseSeconds: 5,
+                                           inactiveSeconds: 5, now: now)
         return cards
     }
 

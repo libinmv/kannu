@@ -259,11 +259,12 @@ enum AgentTrafficLightMapper {
     static let awaitingInputCaffeinateSeconds: TimeInterval = TimeInterval(awaitingInputStaleMs) / 1000
 
     /// Whether any session justifies smart caffeinate holding the Mac awake: visible, not a
-    /// simulation, and in an active run — the same definition the traffic light uses, except
-    /// that a wait on the user only counts for its first five minutes.
+    /// simulation, running on this Mac, and in an active run — the same definition the traffic
+    /// light uses, except that a wait on the user only counts for its first five minutes.
     static func hasCaffeinateWorthySession(_ sessions: [AgentSessionStatus], now: Date = Date()) -> Bool {
         sessions.contains { session in
-            guard session.isVisible, !isSimulationSession(session), session.displayState.isActiveRun else { return false }
+            guard session.isVisible, !isSimulationSession(session), !runsElsewhere(session),
+                  session.displayState.isActiveRun else { return false }
             if session.displayState == .awaitingInput {
                 return now.timeIntervalSince(session.updatedAt) <= awaitingInputCaffeinateSeconds
             }
@@ -275,10 +276,16 @@ enum AgentTrafficLightMapper {
     /// session list does not republish at that moment, so the caffeinate manager arms a recheck.
     static func caffeinateRecheckDate(_ sessions: [AgentSessionStatus], now: Date = Date()) -> Date? {
         sessions
-            .filter { $0.isVisible && !isSimulationSession($0) && $0.displayState == .awaitingInput }
+            .filter { $0.isVisible && !isSimulationSession($0) && !runsElsewhere($0) && $0.displayState == .awaitingInput }
             .map { $0.updatedAt.addingTimeInterval(awaitingInputCaffeinateSeconds) }
             .filter { $0 > now }
             .min()
+    }
+
+    /// A session that runs on another machine — a Claude Code cloud session, reported through the
+    /// relay. Its work never needs this Mac awake (docs/CAFFEINATE.md).
+    static func runsElsewhere(_ session: AgentSessionStatus) -> Bool {
+        session.provider.lowercased() == ClaudeCloudRelay.providerKey
     }
 
     /// Merges Claude hook sessions with passive transcript/PID evidence. Pure — lives here

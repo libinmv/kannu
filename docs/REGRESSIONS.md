@@ -166,6 +166,16 @@ same lesson on the yellow light: its clock became the only exit, and a true yell
 **Guard — exists.** `RegressionGuardTests.testHookOnlyProviderMidToolCallStaysActiveAt*`.
 Verified to fail when the default is set back to `15_000`.
 
+**2026-10-02 addendum — a cloud session's window is the relay's refresh.** A Claude Code cloud
+session (docs/CLOUD-SESSIONS.md) has no file and no process on this Mac: its only news is the relay
+script's reports, and to stay inside ntfy's per-IP quota the script re-sends an unchanged colour
+only every 240 s (`ClaudeCloudRelaySetup.refreshIntervalMs`, the script's `REFRESH_MS`). That
+refresh has to land inside this window: lengthen it past 360 s, or shorten `activeStaleMs` under
+it, and every long cloud run drops out of green between reports. **Guard:**
+`RegressionGuardTests.testTheCloudRefreshKeepsALongRunGreen` (the refresh plus a minute of delivery
+delay still resolves active); `ClaudeCloudRelaySetupTests` pins the script's `REFRESH_MS` to the
+Swift constant.
+
 ---
 
 ## 3. `.unknown` on a live process means working, never idle
@@ -636,6 +646,18 @@ target — manual check: the waiting session's file survives past 30 min in `~/.
 **Never** fix a false yellow by shortening `awaitingInputStaleMs` or by refreshing `ts` in the
 script. Add or remove evidence.
 
+**2026-10-02 addendum — a cloud session's evidence is a listening stream.** A cloud card's yellow
+(`ClaudeCloudRelay.sessions`) is held only while Kannu's stream from the relay is healthy
+(`Snapshot.connected`): any newer report would have arrived, and a reconnect replays what it
+missed. With the stream down the 5-minute clock rules; `idle_prompt` is always on the clock, as for
+a local Claude session; the stale cap ends every card. One quick reconnect keeps the hold, and a
+second failure in a row or a refusal drops it (`ClaudeCloudRelayManager.handle`). A cloud session
+never holds caffeinate (`AgentTrafficLightMapper.runsElsewhere`). **Guards:**
+`RegressionGuardTests.testACloudYellowIsHeldOnlyWhileTheRelayIsListening`, the card tests in
+`ClaudeCloudRelayTests`, `CaffeinateDecisionTests.testACloudSessionNeverKeepsTheMacAwake`.
+**Missing:** the manager's connected and disconnected transitions are not reachable from the logic
+target; the manual check is in docs/CLOUD-SESSIONS.md.
+
 ---
 
 ## 13. A live Claude session is never resumed
@@ -1007,6 +1029,7 @@ Commit counts across all branches (`--follow`, so pre-rename history counts):
 | `BluetoothAudioManager.swift` | 19 | Battery collection. Spawns `system_profiler` and `pmset` and waits, on whatever thread calls it — moved off main four separate times: twice re-landing there in the same change that was meant to fix it, once leaving the connect path itself on main (entry 11, 2026-09-13 and 2026-09-16 addenda). |
 | `AGENTS.md` / `CLAUDE.md` | — | The instruction files every agent reads. One rule stated in both drifts silently; the split and the import are pinned by `ChangelogRuleDocsTests` (entry 16). |
 | `Kannu/MediaControllers/` | — | Every controller owns something outside itself — a `mediaremote-adapter.pl` child, a timer, a WebSocket — and the protocol no longer defaults the teardown. Read entry 19 before adding a controller or changing how one is released; a missing `stop()` leaks one helper or socket per Music Source change and is invisible from inside the app. |
+| `ClaudeCloudRelay.swift`, `ClaudeCloudRelayManager.swift`, `scripts/kannu-cloud-relay.sh` | new | The cloud-session relay. Everything it reads comes from a public server, so the parser's checks are the security boundary, and its light is the cloud's version of entries 2 and 12: the script's 240 s refresh against the 360 s window, and a yellow held only while the stream is listening. Read docs/CLOUD-SESSIONS.md first. |
 | `AgentSessionLogParser.swift` | 8 | `readTrailingLines` and the tail verdict. 4 of 8 commits touch the reader; **2 of those 4 fix the same failure mode** — the reader returning nil and silently sending callers down a wrong path (entry 4). |
 
 If you are changing a *constant* in `AgentTrafficLightState.swift`, assume it is load-bearing

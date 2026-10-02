@@ -26,8 +26,10 @@ these docs, and the tests in the same commit.**
 | yes | off | on | – | **yes** |
 | yes | off | off | – | **no** |
 
-"Active session" = visible, not a simulation, and in an active run (thinking / executing /
-awaiting input) — `hasCaffeinateWorthySession`, the same definition the traffic light uses.
+"Active session" = visible, not a simulation, running on this Mac, and in an active run
+(thinking / executing / awaiting input) — `hasCaffeinateWorthySession`, the same definition the
+traffic light uses. A Claude Code cloud session (`runsElsewhere`, docs/CLOUD-SESSIONS.md) never
+counts: its work runs on Anthropic's machines and never needs this Mac awake.
 
 ## Transition table
 

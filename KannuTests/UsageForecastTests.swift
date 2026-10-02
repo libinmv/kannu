@@ -178,4 +178,12 @@ final class UsageForecastTests: XCTestCase {
         XCTAssertEqual(readings.map(\.label), ["5-hour", "weekly", "Fable weekly"])
         XCTAssertEqual(UsageWindowReading.label(provider: "cursor", key: "week"), "billing-cycle")
     }
+
+    /// Desktop and cloud sessions spend the same Claude plan as the CLI.
+    func testEveryClaudeSurfaceSpendsTheClaudePlan() {
+        for provider in ["claude", "claudedesktop", "claudecloud"] {
+            XCTAssertEqual(UsageAlertPolicy.usageProvider(forSessionProvider: provider), "claude", provider)
+        }
+        XCTAssertNil(UsageAlertPolicy.usageProvider(forSessionProvider: "warp"))
+    }
 }

@@ -1362,6 +1362,13 @@ extension Defaults.Keys {
     /// "Still waiting on you": one more push after this many minutes of unanswered yellow; 0 = off.
     static let agentWaitReminderMinutes = Key<Int>("agentWaitReminderMinutes", default: 0)
 
+    // MARK: Claude Code cloud sessions (docs/CLOUD-SESSIONS.md)
+    /// Opt-in, behind a consent alert: listen to the cloud-session relay. The relay key lives in the
+    /// Keychain (`SecureSecretKey.claudeCloudRelaySecret`), never here.
+    static let claudeCloudRelayEnabled = Key<Bool>("claudeCloudRelayEnabled", default: false)
+    static let claudeCloudRelayConsentedAt = Key<Date?>("claudeCloudRelayConsentedAt", default: nil)
+    static let claudeCloudRelayServerURL = Key<String>("claudeCloudRelayServerURL", default: ClaudeCloudRelay.defaultServerURL)
+
     // MARK: Screen Assistant Feature
     static let enableScreenAssistant = Key<Bool>("enableScreenAssistant", default: false)
     static let screenAssistantDisplayMode = Key<ScreenAssistantDisplayMode>("screenAssistantDisplayMode", default: .panel)

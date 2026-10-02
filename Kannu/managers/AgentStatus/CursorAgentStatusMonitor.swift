@@ -2015,9 +2015,10 @@ final class CursorAgentStatusMonitor: ObservableObject {
         return nil
     }
 
-    /// Passive-only providers with no hook and no session file: Warp (SQLite) and Claude
-    /// Desktop's agent mode (audit logs). Built on full rescans only; the hook-triggered quick
-    /// rescan retains the previous cycle's non-hook sessions, so they persist between them.
+    /// Passive-only providers with no hook and no session file: Warp (SQLite), Claude Desktop's
+    /// agent mode (audit logs) and Claude Code cloud sessions (the relay's snapshot, kept by
+    /// `ClaudeCloudRelayManager`). Built on full rescans only; the hook-triggered quick rescan
+    /// retains the previous cycle's non-hook sessions, so they persist between them.
     private func buildExtraPassiveSessions(
         staleMinutes: Int,
         collapseSeconds: Int,
@@ -2038,7 +2039,20 @@ final class CursorAgentStatusMonitor: ObservableObject {
             warpRunning: isWarpRunning(),
             now: now
         )
+        results += ClaudeCloudRelay.sessions(
+            snapshot: ClaudeCloudRelayManager.shared.snapshot,
+            staleMinutes: staleMinutes,
+            collapseSeconds: collapseSeconds,
+            inactiveSeconds: inactiveSeconds,
+            now: now
+        )
         return results
+    }
+
+    /// The cloud relay's reports or its connection changed: map them on a full rescan, coalesced
+    /// with any other pending one.
+    func cloudRelayDidChange() {
+        scheduleRescan(delay: 0)
     }
 
     /// Warp's database lives in its group container, so the first open raises the macOS

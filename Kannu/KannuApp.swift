@@ -1202,6 +1202,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             CursorAgentStatusMonitor.shared.start()
+            ClaudeCloudRelayManager.shared.start()
             UsageAlertManager.shared.start()
             // The store before the bridge: the bridge subscribes to `$findings` and prunes the
             // persisted "already pushed" ids against whatever it receives first. Started the other
@@ -1214,11 +1215,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in
                 if change.newValue {
                     CursorAgentStatusMonitor.shared.start()
+                    ClaudeCloudRelayManager.shared.start()
                     UsageAlertManager.shared.start()
                     AgentStatusNotificationBridge.shared.start()
                     SecurityFindingsStore.shared.start()
                 } else {
                     CursorAgentStatusMonitor.shared.stop()
+                    ClaudeCloudRelayManager.shared.stop()
                     UsageAlertManager.shared.stop()
                     AgentStatusNotificationBridge.shared.stop()
                     SecurityFindingsStore.shared.stop()

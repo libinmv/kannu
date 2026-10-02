@@ -56,4 +56,27 @@ final class AgentClickThroughPolicyTests: XCTestCase {
         XCTAssertEqual(P.cli(host: .app), .terminalHost)
         XCTAssertEqual(P.cli(host: .tmux), .tmuxPane)
     }
+
+    // MARK: - Cloud sessions (docs/CLOUD-SESSIONS.md)
+
+    /// A cloud card opens its session's page on claude.ai, and nothing else, whatever the relay sent.
+    func testACloudCardOpensOnlyItsClaudeAiPage() throws {
+        let url = try XCTUnwrap(P.claudeCloudSessionURL(conversationID: "claudecloud.session_01AbC"))
+        XCTAssertEqual(url.absoluteString, "https://claude.ai/code/session_01AbC")
+        XCTAssertTrue(P.isClaudeCloudSessionURL(url))
+        for conversationID in ["session_01AbC", "claude.session_01AbC", "claudecloud.session_../x",
+                               "claudecloud.session_a?b", "claudecloud.cse_01AbC", "claudecloud."] {
+            XCTAssertNil(P.claudeCloudSessionURL(conversationID: conversationID), conversationID)
+        }
+        for other in ["https://claude.ai/code/session_01AbC?x=1", "https://claude.ai/code/session_01AbC#top",
+                      "https://claude.ai.evil.example/code/session_01AbC", "http://claude.ai/code/session_01AbC",
+                      "https://claude.ai:8443/code/session_01AbC", "https://user@claude.ai/code/session_01AbC",
+                      "https://claude.ai/code/session_01AbC/../../settings", "https://claude.ai/settings"] {
+            XCTAssertFalse(P.isClaudeCloudSessionURL(try XCTUnwrap(URL(string: other))), other)
+        }
+    }
+
+    func testAFindingMayOpenACloudSessionsPage() {
+        XCTAssertTrue(P.findingMayOpen(.webPage), "the page is where the chat already is: nothing is imported or launched")
+    }
 }

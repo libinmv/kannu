@@ -296,6 +296,17 @@ final class ClaudeCloudRelayTests: XCTestCase {
         XCTAssertNil(Relay.subscribeURL(server: "https://ntfy.sh?x=1", topic: credentials.topic, since: .minutes(1)))
     }
 
+    func testAStreamResumesFromItsLastMessageWithinTheStaleWindow() {
+        XCTAssertEqual(Relay.resumePoint(lastMessageTime: nil, staleMinutes: 30, now: now), .minutes(30),
+                       "the first connection replays every session still worth a card")
+        let recent = Int(now.timeIntervalSince1970) - 120
+        XCTAssertEqual(Relay.resumePoint(lastMessageTime: recent, staleMinutes: 30, now: now), .unixTime(recent))
+        let old = Int(now.timeIntervalSince1970) - 31 * 60
+        XCTAssertEqual(Relay.resumePoint(lastMessageTime: old, staleMinutes: 30, now: now), .minutes(30),
+                       "never further back than the stale window, after a long sleep")
+        XCTAssertEqual(Relay.resumePoint(lastMessageTime: nil, staleMinutes: 0, now: now), .minutes(1))
+    }
+
     func testBackoffIsCapped() {
         XCTAssertEqual(Relay.nextBackoff(after: 0, httpStatus: nil), 1)
         XCTAssertEqual(Relay.nextBackoff(after: 8, httpStatus: 500), 16)
