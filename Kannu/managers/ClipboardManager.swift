@@ -348,7 +348,12 @@ class ClipboardManager: ObservableObject {
         
         guard currentChangeCount != lastChangeCount else { return }
         lastChangeCount = currentChangeCount
-        
+
+        // A copy its app marked private (a password manager's secret, Kannu's own relay key)
+        // must never reach the history, which is persisted in plain text.
+        let types = NSPasteboard.general.types?.map(\.rawValue) ?? []
+        guard ClipboardCapturePolicy.shouldRecord(types: types) else { return }
+
         guard let clipboardItem = getCurrentClipboardItem() else { return }
         
         // Don't add duplicate items
