@@ -355,6 +355,15 @@ class ClipboardManager: ObservableObject {
         guard ClipboardCapturePolicy.shouldRecord(types: types) else { return }
 
         guard let clipboardItem = getCurrentClipboardItem() else { return }
+        // The pasteboard is not a snapshot: if it changed while it was read, the types checked above
+        // may belong to another copy, possibly a concealed one. Drop this read; the next poll reads
+        // the new contents and checks them afresh.
+        guard NSPasteboard.general.changeCount == currentChangeCount else {
+            if let fileName = clipboardItem.imageFileName {
+                try? FileManager.default.removeItem(at: ClipboardManager.clipboardDataDirectory.appendingPathComponent(fileName))
+            }
+            return
+        }
         
         // Don't add duplicate items
         if !clipboardHistory.contains(where: { isSameContent($0, clipboardItem) }) {

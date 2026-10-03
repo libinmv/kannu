@@ -71,6 +71,21 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
     exactly the payload's fields) and two `RegressionGuardTests` (the refresh stays inside the green
     window; a cloud yellow is held only while the relay is listening).
 
+### 2026-10-02 - Act on CodeRabbit's review of #71
+- **Developer label:** "cloud sessions are not detected by us, nor cowork, what can be done to cover that in our claude detection?" — review follow-up
+- **Agent label:** CodeRabbit #71 — recheck the pasteboard after reading it
+- **Changes:**
+  - `ClipboardManager.checkClipboard()` checked a copy's privacy markers and then read its
+    contents, and the pasteboard is no snapshot: a concealed copy landing between the two reads
+    could be recorded under the earlier decision. It now rechecks `changeCount` after reading and
+    drops the read if anything changed (deleting the temporary image file a read may have
+    written); the next poll checks the new contents afresh.
+  - Not taken: a second recheck right before the deferred insert. Once the count matched after
+    the read, the item belongs to the copy whose markers were checked, so a later change cannot
+    make it private; that check would only drop a genuine copy made in quick succession.
+  - `ClipboardCapturePolicyTests.testTheCaptureChecksTypesFirstAndRechecksAfterReading` pins the
+    order from the source: markers, read, recheck, record.
+
 ### 2026-10-02 - Kannu's clipboard history skips copies their app marked private
 - **Developer label:** "cloud sessions are not detected by us, nor cowork, what can be done to cover that in our claude detection?" — prerequisite: the relay key Kannu will copy must not persist in its own clipboard history
 - **Agent label:** Cloud relay PR A — honour nspasteboard.org's concealed and transient markers
