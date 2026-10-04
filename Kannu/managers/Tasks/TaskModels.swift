@@ -20,9 +20,9 @@ import Foundation
 
 // The task list as it is stored in `tasks.json`. Pure Foundation, so the logic target tests it.
 //
-// Today every task is local. `TaskSource`, `RemoteTaskInfo`, `LogPolicy` and `WorklogDraft` are
-// here so a file written now still reads once Jira and GitLab tasks arrive, and so the draft rules
-// in `WorklogDrafts` can be tested before anything can send one.
+// A task is local, or comes from Jira or GitLab (`TaskSource`, `RemoteTaskInfo`). `LogPolicy` and
+// `WorklogDraft` are here so the draft rules in `WorklogDrafts` can be tested before anything can
+// send one.
 
 enum TaskSource: String, Codable, Equatable {
     case local
@@ -49,13 +49,23 @@ enum TaskVisibility: String, Codable, Equatable {
     case gone
 }
 
+/// Which kind of GitLab item a task is. Issues and merge requests number their global ids
+/// separately, so the kind is part of a GitLab task's `remoteID` too (`GitLabAPI.remoteID`).
+enum GitLabKind: String, Codable, Equatable {
+    case issue
+    case mergeRequest
+}
+
 /// What Kannu knows about a task that lives in Jira or GitLab. Nil for a local task.
 struct RemoteTaskInfo: Codable, Equatable {
-    /// The Jira issue id or GitLab global id: the stable key a sync matches on.
+    /// The Jira issue id, or the GitLab global id with its kind (`issue:76`, `mr:31`): the stable
+    /// key a sync matches on.
     var remoteID: String
-    /// "PROJ-123" or "group/app#45". Refreshed on every sync, because an issue can move.
+    /// "PROJ-123", "group/app#45" or "group/app!12". Refreshed on every sync, because an item can
+    /// move.
     var key: String
-    /// The site or host the task came from.
+    /// The Jira site's host, or the GitLab server's base URL (`https://gitlab.com`), the task came
+    /// from.
     var hostScope: String
     var status: String
     var isDoneRemotely: Bool
@@ -65,6 +75,37 @@ struct RemoteTaskInfo: Codable, Equatable {
     var gitlabProjectID: Int?
     var gitlabIID: Int?
     var lastSeenAt: Date
+    /// GitLab only: an issue or a merge request. Nil for Jira, and in a file written before GitLab.
+    var gitlabKind: GitLabKind? = nil
+    /// GitLab only: the item's page, kept only when it is on the server the task came from
+    /// (`GitLabHost.isWebURL`), and checked again before it is opened.
+    var gitlabWebURL: String? = nil
+
+    private enum CodingKeys: String, CodingKey {
+        case remoteID, key, hostScope, status, isDoneRemotely, remoteEstimateSeconds, remoteSpentSeconds
+        case gitlabProjectID, gitlabIID, lastSeenAt, gitlabKind, gitlabWebURL
+    }
+}
+
+extension RemoteTaskInfo {
+    /// The GitLab fields came after the first version and default instead of failing, so a file
+    /// written before them still reads. A kind this version does not know (a newer Kannu's) reads
+    /// as nil rather than costing the user the whole file.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        remoteID = try container.decode(String.self, forKey: .remoteID)
+        key = try container.decode(String.self, forKey: .key)
+        hostScope = try container.decode(String.self, forKey: .hostScope)
+        status = try container.decode(String.self, forKey: .status)
+        isDoneRemotely = try container.decode(Bool.self, forKey: .isDoneRemotely)
+        remoteEstimateSeconds = try container.decodeIfPresent(Int.self, forKey: .remoteEstimateSeconds)
+        remoteSpentSeconds = try container.decodeIfPresent(Int.self, forKey: .remoteSpentSeconds)
+        gitlabProjectID = try container.decodeIfPresent(Int.self, forKey: .gitlabProjectID)
+        gitlabIID = try container.decodeIfPresent(Int.self, forKey: .gitlabIID)
+        lastSeenAt = try container.decode(Date.self, forKey: .lastSeenAt)
+        gitlabKind = (try? container.decodeIfPresent(GitLabKind.self, forKey: .gitlabKind)) ?? nil
+        gitlabWebURL = try container.decodeIfPresent(String.self, forKey: .gitlabWebURL)
+    }
 }
 
 /// One stretch of actual work on a task.

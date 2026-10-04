@@ -13,6 +13,9 @@ enum SecureSecretKey: String, CaseIterable {
     /// Brain › Tasks › Sources › Jira Cloud: `JiraCredential` as JSON (`{email, site, token}`), so
     /// the token and the one host it may be sent to are stored, and read, together.
     case jiraCredential = "jira-credential"
+    /// Brain › Tasks › Sources › GitLab: `GitLabCredential` as JSON (`{baseURL, token}`), so the
+    /// personal access token and the one server it may be sent to are stored, and read, together.
+    case gitlabCredential = "gitlab-credential"
 }
 
 enum SecureSecretsStore {

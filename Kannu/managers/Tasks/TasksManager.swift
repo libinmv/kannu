@@ -43,6 +43,11 @@ import os
 /// Refresh, and right after Connect: no timer, no polling, nothing at launch. The credential is read
 /// from the Keychain off the main actor (`JiraCredentialStore`), non-interactively unless the user
 /// clicked something, and the host it is used with is the Keychain's own, never a Defaults copy.
+///
+/// **GitLab.** The same, for the user's open GitLab issues and, with Include merge requests on, the
+/// open merge requests assigned to them or waiting for their review (`GitLabClient`,
+/// `GitLabCredentialStore`). Each source keeps its own sync state, generation and in-flight marker,
+/// and merges only its own tasks: one failing or being slow never shows on, or holds up, the other.
 @MainActor
 final class TasksManager: ObservableObject {
     static let shared = TasksManager()
@@ -74,9 +79,12 @@ final class TasksManager: ObservableObject {
     @Published private(set) var timing: Timing?
     /// Set when the file could not be decoded and was moved aside: names the kept copy.
     @Published private(set) var movedAsideFileName: String?
-    @Published private(set) var jiraSync: JiraSyncState = .idle
+    @Published private(set) var jiraSync: SourceSyncState = .idle
     /// Disconnect could not delete the saved token from the Keychain, so it is still there.
     @Published private(set) var jiraTokenRemovalFailed = false
+    @Published private(set) var gitlabSync: SourceSyncState = .idle
+    /// Disconnect could not delete the saved GitLab token from the Keychain, so it is still there.
+    @Published private(set) var gitlabTokenRemovalFailed = false
 
     private struct Link {
         let session: UUID
@@ -98,7 +106,7 @@ final class TasksManager: ObservableObject {
     private var revision = 0
     private var savedRevision = 0
 
-    /// A sync older than this is refreshed when the Tasks page appears.
+    /// A sync older than this is refreshed when the Tasks page appears (Jira and GitLab alike).
     static let jiraStaleAfter: TimeInterval = 5 * 60
     /// The last sync that succeeded.
     private var lastJiraSync: Date?
@@ -109,6 +117,12 @@ final class TasksManager: ObservableObject {
     private var jiraSyncInFlight: Int?
     /// The page appeared before the task file was read: sync once it is.
     private var pendingJiraSyncWhenReady = false
+    /// The same four, for GitLab. Its generation also moves when Include merge requests is switched
+    /// during a sync, which read the old setting.
+    private var lastGitLabSync: Date?
+    private var gitlabGeneration = 0
+    private var gitlabSyncInFlight: Int?
+    private var pendingGitLabSyncWhenReady = false
 
     private init() {
         store = TaskFileStore(directory: { AppSupportPaths.child("Tasks") })
@@ -127,10 +141,13 @@ final class TasksManager: ObservableObject {
         }
         // Which tasks the order lists depends on these; the views read it through `activeTasks`.
         // `options: []`, so subscribing does not fire.
-        Publishers.Merge3(
-            Defaults.publisher(.showLocalTasks, options: []).map { _ in () },
-            Defaults.publisher(.jiraEnabled, options: []).map { _ in () },
-            Defaults.publisher(.jiraSiteHost, options: []).map { _ in () }
+        Publishers.MergeMany(
+            Defaults.publisher(.showLocalTasks, options: []).map { _ in () }.eraseToAnyPublisher(),
+            Defaults.publisher(.jiraEnabled, options: []).map { _ in () }.eraseToAnyPublisher(),
+            Defaults.publisher(.jiraSiteHost, options: []).map { _ in () }.eraseToAnyPublisher(),
+            Defaults.publisher(.gitlabEnabled, options: []).map { _ in () }.eraseToAnyPublisher(),
+            Defaults.publisher(.gitlabHost, options: []).map { _ in () }.eraseToAnyPublisher(),
+            Defaults.publisher(.gitlabIncludeMergeRequests, options: []).map { _ in () }.eraseToAnyPublisher()
         )
         .receive(on: DispatchQueue.main)
         .sink { [weak self] in
@@ -147,14 +164,17 @@ final class TasksManager: ObservableObject {
     /// The task order, top first: active tasks of the sources that are switched on.
     var activeTasks: [TaskItem] { TaskOrdering.active(tasks, listed: listed) }
 
-    /// Whether the task order shows this task: Local tasks and Sync Jira decide by source. The
-    /// moves use the same filter, so a task the user cannot see never shifts one.
+    /// Whether the task order shows this task: Local tasks, Sync Jira and Sync GitLab decide by
+    /// source, and Include merge requests for GitLab's merge requests. The moves use the same
+    /// filter, so a task the user cannot see never shifts one.
     func isListed(_ task: TaskItem) -> Bool { listed(task) }
 
     private var listed: TaskOrdering.Listed {
         TaskOrdering.listedFilter(
             showLocal: Defaults[.showLocalTasks],
             showJira: Defaults[.jiraEnabled] || !isJiraConnected,
+            showGitLab: Defaults[.gitlabEnabled] || !isGitLabConnected,
+            showGitLabMergeRequests: Defaults[.gitlabIncludeMergeRequests] || !isGitLabConnected,
             alwaysListed: timing?.taskID
         )
     }
@@ -393,7 +413,7 @@ final class TasksManager: ObservableObject {
     var isJiraSyncing: Bool { jiraSyncInFlight == jiraGeneration }
 
     /// The page appeared. Syncs when Jira is on, nothing is in flight, and
-    /// `JiraSyncState.allowsSyncOnAppear` agrees: the last sync is over 5 minutes old, no rate limit
+    /// `SourceSyncState.allowsSyncOnAppear` agrees: the last sync is over 5 minutes old, no rate limit
     /// is running, and Jira has not refused the token (a refused token is only ever retried by the
     /// user). Never shows the Keychain dialog: a read that would need it ends in
     /// `.needsKeychainApproval`, and the user's click retries.
@@ -545,7 +565,7 @@ final class TasksManager: ObservableObject {
         }
     }
 
-    private func finishJiraSync(_ generation: Int, _ state: JiraSyncState) {
+    private func finishJiraSync(_ generation: Int, _ state: SourceSyncState) {
         guard generation == jiraGeneration else { return }
         jiraSyncInFlight = nil
         jiraSync = state
@@ -575,7 +595,7 @@ final class TasksManager: ObservableObject {
         logger.info("Jira sync: \(fetch.issues.count, privacy: .public) issues, complete \(fetch.complete, privacy: .public), \(merged.added, privacy: .public) added, \(merged.updated, privacy: .public) updated, \(merged.gone, privacy: .public) gone")
     }
 
-    private static func syncState(for failure: JiraClient.Failure?, now: Date) -> JiraSyncState {
+    private static func syncState(for failure: JiraClient.Failure?, now: Date) -> SourceSyncState {
         switch failure {
         case .http(.offline):
             return .offline
@@ -642,6 +662,299 @@ final class TasksManager: ObservableObject {
         }
     }
 
+    // MARK: - GitLab
+
+    /// Connected, as far as the display copies say. The Keychain has the final word at sync time.
+    var isGitLabConnected: Bool { !Defaults[.gitlabHost].isEmpty }
+
+    /// Connected and "Sync GitLab" on.
+    var isGitLabSyncOn: Bool { isGitLabConnected && Defaults[.gitlabEnabled] }
+
+    var isGitLabSyncing: Bool { gitlabSyncInFlight == gitlabGeneration }
+
+    /// The page appeared. Syncs when GitLab is on, nothing is in flight, and
+    /// `SourceSyncState.allowsSyncOnAppear` agrees: the last sync is over 5 minutes old, no rate
+    /// limit is running, and GitLab has not refused the token. Never shows the Keychain dialog: a
+    /// read that would need it ends in `.needsKeychainApproval`, and the user's click retries.
+    func syncGitLabIfStale(now: Date = Date()) {
+        guard isGitLabSyncOn, !isGitLabSyncing else { return }
+        guard isReady else {
+            if loadState == .loading { pendingGitLabSyncWhenReady = true }
+            return
+        }
+        guard gitlabSync.allowsSyncOnAppear(lastSuccess: lastGitLabSync, now: now, staleAfter: Self.jiraStaleAfter) else { return }
+        syncGitLab(interactive: false, using: nil)
+    }
+
+    /// Refresh, Allow Keychain Access, and Include merge requests switched: the user asked, so the
+    /// Keychain may ask them too.
+    func refreshGitLab(now: Date = Date()) {
+        guard isGitLabSyncOn, isReady, !isGitLabSyncing else { return }
+        if case .rateLimited(let until) = gitlabSync, until > now { return }
+        syncGitLab(interactive: true, using: nil)
+    }
+
+    /// Include merge requests was switched. The task order follows at once (`listed`); what is
+    /// fetched follows with a sync, started now when one can run. A sync already in flight read the
+    /// old setting, so its result is dropped and a new one starts. Until a sync succeeds with the new
+    /// setting, the next page visit syncs again: offline, a rate limit or Sync GitLab off only delay
+    /// it.
+    func gitlabMergeRequestsSwitched(now: Date = Date()) {
+        if isGitLabSyncing {
+            gitlabGeneration += 1
+            gitlabSyncInFlight = nil
+            gitlabSync = .idle
+        }
+        lastGitLabSync = nil
+        refreshGitLab(now: now)
+    }
+
+    /// Checks the server and token with GitLab, then stores them and syncs. Nil on success, or what
+    /// to tell the user. Nothing is stored until GitLab has accepted the token, and a token that can
+    /// list nothing is refused.
+    func connectGitLab(serverInput: String, token: String) async -> String? {
+        let base: String
+        switch GitLabHost.normalize(serverInput) {
+        case .success(let normalized): base = normalized
+        case .failure(let error): return Self.message(for: error)
+        }
+        let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else {
+            return String(localized: "Paste a personal access token from your GitLab profile.")
+        }
+        guard GitLabAPI.isPlausibleToken(token) else {
+            return String(localized: "A personal access token has no spaces in it. Copy it again from GitLab.")
+        }
+        let credential = GitLabCredential(baseURL: base, token: token)
+        let server = GitLabHost.displayName(base)
+        let user: GitLabUser
+        let access: GitLabAccess
+        switch await GitLabClient().verify(credential) {
+        case .verified(let verified, let scopes):
+            user = verified
+            access = GitLabAPI.access(scopes: scopes)
+        case .failed(let failure):
+            return Self.gitlabConnectMessage(for: failure, server: server)
+        }
+        guard access != .cannotList else {
+            return String(localized: "This token cannot list your issues. Create one with the read_api scope, or api to log time later.")
+        }
+        guard GitLabAPI.isUsername(user.username) else {
+            return String(localized: "\(server) answered, but not the way GitLab does. Check the server.")
+        }
+        guard !Task.isCancelled else { return String(localized: "Cancelled.") }
+        guard await GitLabCredentialStore.save(credential) else {
+            return String(localized: "GitLab accepted the token, but Kannu could not save it in your Keychain.")
+        }
+        Defaults[.gitlabHost] = base
+        Defaults[.gitlabUsername] = user.username
+        Defaults[.gitlabAccountDisplayName] = user.name ?? ""
+        Defaults[.gitlabCanLogTime] = access == .canLogTime
+        Defaults[.gitlabEnabled] = true
+        gitlabGeneration += 1
+        gitlabSyncInFlight = nil
+        lastGitLabSync = nil
+        gitlabSync = .idle
+        // The save replaced whatever a failed Disconnect left in the Keychain.
+        gitlabTokenRemovalFailed = false
+        logger.info("GitLab connected, can log time: \(access == .canLogTime, privacy: .public)")
+        if isReady {
+            // The credential is in hand: no Keychain read for the first sync.
+            syncGitLab(interactive: false, using: credential)
+        } else if loadState == .loading {
+            pendingGitLabSyncWhenReady = true
+        }
+        return nil
+    }
+
+    /// Forgets the token and stops syncing. With `removeTasks`, the GitLab tasks and their unlogged
+    /// time go too (timing one stops first); without, they stay in the order as they are.
+    func disconnectGitLab(removeTasks: Bool) {
+        gitlabGeneration += 1
+        gitlabSyncInFlight = nil
+        pendingGitLabSyncWhenReady = false
+        lastGitLabSync = nil
+        gitlabSync = .idle
+        Defaults[.gitlabEnabled] = false
+        Defaults[.gitlabHost] = ""
+        Defaults[.gitlabUsername] = ""
+        Defaults[.gitlabAccountDisplayName] = ""
+        Defaults[.gitlabCanLogTime] = false
+        removeGitLabToken()
+        logger.info("GitLab disconnected, tasks removed: \(removeTasks, privacy: .public)")
+        guard removeTasks, isReady else { return }
+        if let timed = timing?.taskID, tasks.first(where: { $0.id == timed })?.source == .gitlab {
+            stopTiming()
+        }
+        let removed = Set(tasks.filter { $0.source == .gitlab }.map(\.id))
+        guard !removed.isEmpty else { return }
+        if let pending = pendingLink, removed.contains(pending.taskID) { pendingLink = nil }
+        tasks.removeAll { removed.contains($0.id) }
+        drafts.removeAll { removed.contains($0.taskID) }
+        persist()
+    }
+
+    /// Disconnect could not delete the saved token: the user asks again, off the main actor.
+    func retryRemovingGitLabToken() {
+        guard !isGitLabConnected else { return }
+        removeGitLabToken()
+    }
+
+    /// Deletes the saved token off the main actor, and says so when it could not. A result that
+    /// lands after a new Connect is dropped: that Connect saved a token of its own.
+    private func removeGitLabToken() {
+        let generation = gitlabGeneration
+        gitlabTokenRemovalFailed = false
+        Task { [weak self] in
+            let removed = await GitLabCredentialStore.remove()
+            guard let self, generation == self.gitlabGeneration else { return }
+            self.gitlabTokenRemovalFailed = !removed
+            if !removed { self.logger.error("GitLab: the saved sign-in could not be removed from the Keychain") }
+        }
+    }
+
+    /// The item's page, only when it is on the server the task came from.
+    func gitlabBrowseURL(for task: TaskItem) -> URL? {
+        guard task.source == .gitlab, let remote = task.remote, let link = remote.gitlabWebURL,
+              GitLabHost.isWebURL(link, onServer: remote.hostScope) else { return nil }
+        return URL(string: link)
+    }
+
+    private func syncGitLab(interactive: Bool, using known: GitLabCredential?) {
+        let generation = gitlabGeneration
+        gitlabSyncInFlight = generation
+        gitlabSync = .syncing
+        let expectedBase = Defaults[.gitlabHost]
+        let username = Defaults[.gitlabUsername]
+        let includeMergeRequests = Defaults[.gitlabIncludeMergeRequests]
+        Task { [weak self] in
+            let credential: GitLabCredential
+            if let known {
+                credential = known
+            } else {
+                switch await GitLabCredentialStore.load(allowInteraction: interactive) {
+                case .found(let stored):
+                    credential = stored
+                case .needsApproval:
+                    self?.finishGitLabSync(generation, .needsKeychainApproval)
+                    return
+                case .missing, .broken:
+                    self?.finishGitLabSync(generation, .needsReconnect)
+                    return
+                }
+            }
+            // The Keychain's server is the only one a token is sent to. A Defaults copy that
+            // disagrees means the setup changed under Kannu: reconnect, never a request elsewhere.
+            guard credential.baseURL == expectedBase, GitLabHost.isValidBase(credential.baseURL) else {
+                self?.finishGitLabSync(generation, .needsReconnect)
+                return
+            }
+            let fetch = await GitLabClient().fetchItems(credential, username: username, includeMergeRequests: includeMergeRequests)
+            self?.didFetchGitLab(fetch, base: credential.baseURL, generation: generation)
+        }
+    }
+
+    private func finishGitLabSync(_ generation: Int, _ state: SourceSyncState) {
+        guard generation == gitlabGeneration else { return }
+        gitlabSyncInFlight = nil
+        gitlabSync = state
+    }
+
+    private func didFetchGitLab(_ fetched: GitLabReader.Fetch, base: String, generation: Int) {
+        // Connected again or disconnected meanwhile: this result belongs to a setup that is gone.
+        guard generation == gitlabGeneration else { return }
+        let now = Date()
+        guard case .fetched(let fetch) = fetched.outcome else {
+            finishGitLabSync(generation, Self.gitlabSyncState(for: fetched.failure, now: now))
+            logger.notice("GitLab sync failed")
+            return
+        }
+        guard isReady else {
+            finishGitLabSync(generation, .failed(String(localized: "Kannu could not read its task list, so GitLab items cannot be added to it.")))
+            return
+        }
+        // The task being timed stays in the order however the item changed: its row holds the
+        // list's Stop button. The first sync after its timing ends decides.
+        let timed = Set([timing?.taskID, pendingLink?.taskID].compactMap { $0 })
+        let merged = TaskMerge.apply(fetched.outcome, source: .gitlab, hostScope: base, to: tasks, now: now, keepingActive: timed)
+        tasks = merged.tasks
+        if merged.changed { persist() }
+        lastGitLabSync = now
+        finishGitLabSync(generation, .synced(at: now, count: fetch.issues.count, complete: fetch.complete))
+        logger.info("GitLab sync: \(fetched.issueCount, privacy: .public) issues, \(fetched.mergeRequestCount, privacy: .public) merge requests, complete \(fetch.complete, privacy: .public), \(merged.added, privacy: .public) added, \(merged.updated, privacy: .public) updated, \(merged.gone, privacy: .public) gone")
+    }
+
+    private static func gitlabSyncState(for failure: GitLabReader.Failure?, now: Date) -> SourceSyncState {
+        switch failure {
+        case .http(.offline):
+            return .offline
+        case .http(.rateLimited(let seconds)):
+            return .rateLimited(until: now.addingTimeInterval(seconds))
+        case .http(.auth(let status)):
+            return .authFailed(status: status)
+        case .http(.rejected(403)):
+            return .failed(String(localized: "GitLab refused the request (403). The token may lack the read_api scope, or have lost access."))
+        case .http(.rejected(let status)):
+            return .failed(String(localized: "GitLab refused the request (\(status))."))
+        case .http(.redirected(let status)):
+            return .failed(String(localized: "The server answered with a redirect (\(status)), which Kannu never follows."))
+        case .http(.failedBeforeSend):
+            return .failed(String(localized: "Kannu could not reach the GitLab server over a trusted HTTPS connection. Check your connection."))
+        case .http(.ambiguous(let status?)):
+            return .failed(String(localized: "GitLab did not answer properly (\(status)). Try again later."))
+        case .http(.ambiguous(nil)), .http(.ok):
+            return .failed(String(localized: "GitLab did not answer in time. Try again later."))
+        case .decode:
+            return .failed(String(localized: "GitLab's answer could not be read."))
+        case .badServer, .badUsername, nil:
+            return .needsReconnect
+        }
+    }
+
+    private static func message(for error: GitLabHostError) -> String {
+        switch error {
+        case .empty:
+            return String(localized: "Type your GitLab server, such as https://gitlab.com or https://gitlab.example.com.")
+        case .notHTTPS:
+            return String(localized: "Kannu connects to GitLab over HTTPS only.")
+        case .userInfo:
+            return String(localized: "The server has a name and @ before the host. Type just the server, such as https://gitlab.example.com.")
+        case .queryOrFragment, .badPath:
+            return String(localized: "Type the server's address, not a page on it, such as https://gitlab.example.com or https://example.com/gitlab.")
+        case .port:
+            return String(localized: "That port is not a valid one.")
+        case .malformed:
+            return String(localized: "That is not a server address. It looks like https://gitlab.example.com.")
+        }
+    }
+
+    private static func gitlabConnectMessage(for failure: GitLabReader.Failure, server: String) -> String {
+        switch failure {
+        case .badServer:
+            return message(for: GitLabHostError.malformed)
+        case .badUsername, .decode, .http(.ok):
+            return String(localized: "\(server) answered, but not the way GitLab does. Check the server.")
+        case .http(.auth(let status)):
+            return String(localized: "GitLab did not accept that token (\(status)). It may have expired or been revoked: create a new one.")
+        case .http(.rejected(403)):
+            return String(localized: "GitLab refused the token (403). Create one with the read_api scope, or api to log time later.")
+        case .http(.rejected(404)):
+            return String(localized: "No GitLab answered at \(server) (404). Check the server, and its path if it has one.")
+        case .http(.rejected(let status)):
+            return String(localized: "GitLab refused the request (\(status)).")
+        case .http(.redirected(let status)):
+            return String(localized: "\(server) answered with a redirect (\(status)), which Kannu never follows. Check the server, and its path if it has one.")
+        case .http(.rateLimited):
+            return String(localized: "GitLab is limiting requests right now. Try again in a minute.")
+        case .http(.offline):
+            return String(localized: "This Mac is offline.")
+        case .http(.failedBeforeSend):
+            return String(localized: "Kannu could not reach \(server) over a trusted HTTPS connection. Check the server and your connection. A certificate macOS does not trust, such as a self-signed one, is refused.")
+        case .http(.ambiguous):
+            return String(localized: "GitLab did not answer. Try again.")
+        }
+    }
+
     // MARK: - Loading and saving
 
     private func load() async {
@@ -672,6 +985,10 @@ final class TasksManager: ObservableObject {
         if pendingJiraSyncWhenReady {
             pendingJiraSyncWhenReady = false
             syncJiraIfStale()
+        }
+        if pendingGitLabSyncWhenReady {
+            pendingGitLabSyncWhenReady = false
+            syncGitLabIfStale()
         }
     }
 

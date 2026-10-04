@@ -18,9 +18,10 @@
 
 import Foundation
 
-/// One issue as a source returned it, already reduced to what a task keeps.
+/// One issue (or GitLab merge request) as a source returned it, already reduced to what a task keeps.
 struct RemoteIssue: Equatable {
-    /// The source's stable id (a Jira issue id), never the key: a key changes when an issue moves.
+    /// The source's stable id (a Jira issue id; a GitLab global id with its kind), never the key: a
+    /// key changes when an issue moves.
     var remoteID: String
     var key: String
     var title: String
@@ -28,6 +29,17 @@ struct RemoteIssue: Equatable {
     var isDoneRemotely: Bool
     var estimateSeconds: Int?
     var spentSeconds: Int?
+    /// GitLab only.
+    var gitlab: GitLabRef? = nil
+
+    /// Where a GitLab item lives: what the next PR needs to log time to it, and its page.
+    struct GitLabRef: Equatable {
+        var kind: GitLabKind
+        var projectID: Int
+        var iid: Int
+        /// Already checked to be on the connected server (`GitLabHost.isWebURL`); nil otherwise.
+        var webURL: String?
+    }
 }
 
 /// What a sync brought back. `complete` is false when the source had more than Kannu fetched (the
@@ -46,15 +58,16 @@ enum SyncOutcome: Equatable {
 /// Folding a sync into the task list. Pure, and applied on the main actor to the list as it is
 /// *now* — never a wholesale replace — so an edit made while the request was out survives it.
 ///
-/// - A task matches an issue on (source, remote id) within the same site. A match refreshes what
-///   the source owns (key, title, status, estimate, logged time, last seen) and keeps what the user
+/// - A task matches an issue on (source, remote id) within the same site or server. A match
+///   refreshes what the source owns (key, title, status, estimate, logged time, last seen, and a
+///   GitLab item's kind, project, number and page) and keeps what the user
 ///   owns: Kannu's id, the place in the order, the local estimate, the recorded time, the log
 ///   policy and whether it is done or hidden. A task that had gone and came back is active again.
 /// - A new issue is appended at the end of the order. An issue listed twice counts once: the first.
 /// - A complete fetch turns the *active* tasks it did not return into `.gone`. A capped one marks
 ///   nothing gone. A failed one changes nothing.
-/// - Tasks of this source from another site become `.gone` on any successful fetch: the user
-///   connected a different site, and the old site's issues are not theirs to work on here.
+/// - Tasks of this source from another site or server become `.gone` on any successful fetch: the
+///   user connected a different one, and its issues are not theirs to work on here.
 /// - A task in `keepingActive` (the one being timed) never becomes `.gone`, for either reason: its
 ///   row holds the only Stop button in the list. The first sync after its timing ends decides.
 enum TaskMerge {
@@ -103,6 +116,12 @@ enum TaskMerge {
                 remote.isDoneRemotely = issue.isDoneRemotely
                 remote.remoteEstimateSeconds = issue.estimateSeconds
                 remote.remoteSpentSeconds = issue.spentSeconds
+                if let gitlab = issue.gitlab {
+                    remote.gitlabKind = gitlab.kind
+                    remote.gitlabProjectID = gitlab.projectID
+                    remote.gitlabIID = gitlab.iid
+                    remote.gitlabWebURL = gitlab.webURL
+                }
                 task.title = title
                 if task.visibility == .gone { task.visibility = .active }
                 task.remote = remote
@@ -119,9 +138,11 @@ enum TaskMerge {
                     isDoneRemotely: issue.isDoneRemotely,
                     remoteEstimateSeconds: issue.estimateSeconds,
                     remoteSpentSeconds: issue.spentSeconds,
-                    gitlabProjectID: nil,
-                    gitlabIID: nil,
-                    lastSeenAt: now
+                    gitlabProjectID: issue.gitlab?.projectID,
+                    gitlabIID: issue.gitlab?.iid,
+                    lastSeenAt: now,
+                    gitlabKind: issue.gitlab?.kind,
+                    gitlabWebURL: issue.gitlab?.webURL
                 )
                 appended.append(TaskItem(id: newID(), source: source, title: title, remote: remote, createdAt: now))
                 added += 1

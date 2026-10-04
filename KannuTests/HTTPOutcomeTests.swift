@@ -73,6 +73,27 @@ final class HTTPOutcomeTests: XCTestCase {
         XCTAssertEqual(HTTPOutcome.retryAfterSeconds("Sun, 06 Nov 1994 08:51:07 GMT", now: now), 90, "an HTTP-date")
     }
 
+    func testGitLabsRateLimitReset() {
+        // A present-day clock: GitLab's value is a Unix time, told apart from seconds by its size.
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let epoch = Int(now.timeIntervalSince1970)
+        func wait(retryAfter: String? = nil, reset: String?) -> TimeInterval {
+            HTTPOutcome.rateLimitWait(retryAfter: retryAfter, rateLimitReset: reset, now: now)
+        }
+        XCTAssertEqual(wait(reset: String(epoch + 120)), 120, "GitLab: the Unix time the quota resets")
+        XCTAssertEqual(wait(reset: "45"), 45, "the IETF draft: seconds from now")
+        XCTAssertEqual(wait(retryAfter: "30", reset: String(epoch + 900)), 30, "Retry-After wins")
+        XCTAssertEqual(wait(retryAfter: "soon", reset: String(epoch + 90)), 90, "an unreadable Retry-After falls through")
+        XCTAssertEqual(wait(reset: nil), 60)
+        XCTAssertEqual(wait(reset: "tomorrow"), 60)
+        XCTAssertEqual(wait(reset: String(epoch - 500)), 1, "a reset in the past")
+        XCTAssertEqual(wait(reset: String(epoch + 86_400)), 3600, "clamped")
+        XCTAssertEqual(HTTPOutcome.classify(status: 429, retryAfter: nil, rateLimitReset: String(epoch + 120), now: now),
+                       .rateLimited(retryAfter: 120))
+        XCTAssertEqual(HTTPOutcome.classify(status: 503, retryAfter: nil, rateLimitReset: String(epoch + 120), now: now),
+                       .ambiguous(503), "only a 429 reads it: a bare 503 may have done the work")
+    }
+
     func testRetryAfterIsClamped() {
         XCTAssertEqual(HTTPOutcome.retryAfterSeconds("0", now: now), 1)
         XCTAssertEqual(HTTPOutcome.retryAfterSeconds("-5", now: now), 1)

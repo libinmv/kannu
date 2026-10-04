@@ -194,6 +194,82 @@ final class TaskMergeTests: XCTestCase {
         XCTAssertEqual(result.added, 1)
     }
 
+    // MARK: - GitLab
+
+    private let gitlabServer = "https://gitlab.example.com"
+
+    private func gitlabItem(_ id: Int, kind: GitLabKind, iid: Int = 1, status: String = "opened",
+                            webURL: String? = nil) -> RemoteIssue {
+        let mark = kind == .issue ? "#" : "!"
+        return RemoteIssue(remoteID: GitLabAPI.remoteID(kind: kind, id: id), key: "group/app\(mark)\(iid)", title: "Item \(id)",
+                           status: status, isDoneRemotely: false, estimateSeconds: nil, spentSeconds: nil,
+                           gitlab: RemoteIssue.GitLabRef(kind: kind, projectID: 8, iid: iid, webURL: webURL))
+    }
+
+    private func mergeGitLab(_ items: [RemoteIssue], complete: Bool = true, server: String? = nil,
+                             into tasks: [TaskItem]) -> TaskMerge.Result {
+        TaskMerge.apply(.fetched(RemoteFetch(issues: items, complete: complete)), source: .gitlab,
+                        hostScope: server ?? gitlabServer, to: tasks, now: now, keepingActive: [])
+    }
+
+    func testAGitLabItemKeepsWhereItLives() {
+        let link = "https://gitlab.example.com/group/app/-/merge_requests/12"
+        let result = mergeGitLab([gitlabItem(31, kind: .mergeRequest, iid: 12, webURL: link)], into: [])
+        let remote = result.tasks.first?.remote
+        XCTAssertEqual(result.tasks.first?.source, .gitlab)
+        XCTAssertEqual(remote?.gitlabKind, .mergeRequest)
+        XCTAssertEqual(remote?.gitlabProjectID, 8)
+        XCTAssertEqual(remote?.gitlabIID, 12)
+        XCTAssertEqual(remote?.gitlabWebURL, link)
+        XCTAssertEqual(remote?.hostScope, gitlabServer)
+
+        let moved = mergeGitLab([gitlabItem(31, kind: .mergeRequest, iid: 14, status: "review requested")], into: result.tasks)
+        XCTAssertEqual(moved.tasks.map(\.id), result.tasks.map(\.id), "matched on the global id")
+        XCTAssertEqual(moved.tasks.first?.remote?.gitlabIID, 14, "a moved merge request gets its new number")
+        XCTAssertEqual(moved.tasks.first?.remote?.key, "group/app!14")
+        XCTAssertNil(moved.tasks.first?.remote?.gitlabWebURL, "a page the answer no longer vouches for is dropped")
+        XCTAssertEqual(moved.updated, 1)
+    }
+
+    func testAnIssueAndAMergeRequestWithTheSameGlobalIDAreTwoTasks() {
+        let result = mergeGitLab([gitlabItem(31, kind: .issue), gitlabItem(31, kind: .mergeRequest)], into: [])
+        XCTAssertEqual(result.added, 2)
+        XCTAssertEqual(result.tasks.compactMap { $0.remote?.gitlabKind }, [.issue, .mergeRequest])
+    }
+
+    func testAMergeRequestListedTwiceIsOneTask() {
+        let result = mergeGitLab([gitlabItem(31, kind: .mergeRequest, status: "assigned to you"),
+                                  gitlabItem(31, kind: .mergeRequest, status: "review requested")], into: [])
+        XCTAssertEqual(result.tasks.count, 1)
+        XCTAssertEqual(result.tasks.first?.remote?.status, "assigned to you", "the first listing wins")
+    }
+
+    func testSwitchingGitLabServerMakesTheOldServersTasksGone() {
+        let first = mergeGitLab([gitlabItem(76, kind: .issue), gitlabItem(31, kind: .mergeRequest)], into: [])
+        let switched = mergeGitLab([gitlabItem(76, kind: .issue)], complete: false, server: "https://gitlab.com", into: first.tasks)
+        XCTAssertEqual(switched.tasks.count, 3, "the same id on another server is a different item")
+        XCTAssertEqual(switched.tasks.prefix(2).map(\.visibility), [.gone, .gone], "even a capped fetch: that server is not connected")
+        XCTAssertEqual(switched.tasks[2].remote?.hostScope, "https://gitlab.com")
+        XCTAssertEqual(switched.gone, 2)
+    }
+
+    func testGitLabAndJiraNeverTouchEachOther() {
+        let jira = jiraTask("76")
+        let gitlab = mergeGitLab([gitlabItem(76, kind: .issue)], into: [jira])
+        XCTAssertEqual(gitlab.tasks.first, jira, "a GitLab sync leaves Jira tasks alone, even with a complete fetch")
+        let jiraAgain = merge([], into: gitlab.tasks)
+        XCTAssertEqual(jiraAgain.tasks.map(\.visibility), [.gone, .active], "and a complete Jira fetch leaves GitLab tasks alone")
+    }
+
+    func testIncludeMergeRequestsOffTakesThemOutAndOnBringsThemBack() {
+        let both = mergeGitLab([gitlabItem(76, kind: .issue), gitlabItem(31, kind: .mergeRequest)], into: [])
+        let issuesOnly = mergeGitLab([gitlabItem(76, kind: .issue)], into: both.tasks)
+        XCTAssertEqual(issuesOnly.tasks.map(\.visibility), [.active, .gone])
+        let back = mergeGitLab([gitlabItem(76, kind: .issue), gitlabItem(31, kind: .mergeRequest)], into: issuesOnly.tasks)
+        XCTAssertEqual(back.tasks.map(\.visibility), [.active, .active])
+        XCTAssertEqual(back.tasks.map(\.id), both.tasks.map(\.id), "the same task, in its place, with its recorded time")
+    }
+
     func testAnEditMadeDuringTheRequestSurvives() {
         // The merge runs against the list as it is when the answer lands, not as it was when the
         // request went out: a task added and a task reordered meanwhile are both still there.

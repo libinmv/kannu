@@ -90,7 +90,8 @@
 		AA10000000000000000000E5 /* JiraAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000E4 /* JiraAPI.swift */; };
 		AA10000000000000000000E7 /* TaskMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000E6 /* TaskMerge.swift */; };
 		AA10000000000000000000E9 /* IntegrationHTTP.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000E8 /* IntegrationHTTP.swift */; };
-		AA10000000000000000000EB /* JiraSyncState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000EA /* JiraSyncState.swift */; };
+		AA10000000000000000000EB /* SourceSyncState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000EA /* SourceSyncState.swift */; };
+		AA10000000000000000000F1 /* GitLabAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000F0 /* GitLabAPI.swift */; };
 		AA10000000000000000000B7 /* ClipboardPanelPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B6 /* ClipboardPanelPlacement.swift */; };
 		AA10000000000000000000B9 /* HostedContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B8 /* HostedContent.swift */; };
 		AA10000000000000000000B3 /* AgentSecurityFindingGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B2 /* AgentSecurityFindingGroup.swift */; };
@@ -201,7 +202,8 @@
 		AA10000000000000000000E4 /* JiraAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JiraAPI.swift; path = Kannu/managers/Tasks/JiraAPI.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000E6 /* TaskMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TaskMerge.swift; path = Kannu/managers/Tasks/TaskMerge.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000E8 /* IntegrationHTTP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = IntegrationHTTP.swift; path = Kannu/managers/Tasks/IntegrationHTTP.swift; sourceTree = SOURCE_ROOT; };
-		AA10000000000000000000EA /* JiraSyncState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JiraSyncState.swift; path = Kannu/managers/Tasks/JiraSyncState.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000EA /* SourceSyncState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SourceSyncState.swift; path = Kannu/managers/Tasks/SourceSyncState.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000F0 /* GitLabAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GitLabAPI.swift; path = Kannu/managers/Tasks/GitLabAPI.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000B6 /* ClipboardPanelPlacement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClipboardPanelPlacement.swift; path = Kannu/managers/Display/ClipboardPanelPlacement.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000B8 /* HostedContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HostedContent.swift; path = Kannu/helpers/HostedContent.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000B2 /* AgentSecurityFindingGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentSecurityFindingGroup.swift; path = Kannu/managers/AgentStatus/AgentSecurityFindingGroup.swift; sourceTree = SOURCE_ROOT; };
@@ -662,7 +664,8 @@
 				AA10000000000000000000E5 /* JiraAPI.swift in Sources */,
 				AA10000000000000000000E7 /* TaskMerge.swift in Sources */,
 				AA10000000000000000000E9 /* IntegrationHTTP.swift in Sources */,
-				AA10000000000000000000EB /* JiraSyncState.swift in Sources */,
+				AA10000000000000000000EB /* SourceSyncState.swift in Sources */,
+				AA10000000000000000000F1 /* GitLabAPI.swift in Sources */,
 				AA10000000000000000000B7 /* ClipboardPanelPlacement.swift in Sources */,
 				AA10000000000000000000B9 /* HostedContent.swift in Sources */,
 				AA100000000000000000F008 /* TermsOfUse.swift in Sources */,

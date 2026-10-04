@@ -1529,6 +1529,20 @@ extension Defaults.Keys {
     static let jiraAccountDisplayName = Key<String>("jiraAccountDisplayName", default: "")
     /// The issue filter. Empty means the default (`JiraAPI.defaultJQL`).
     static let jiraJQL = Key<String>("jiraJQL", default: JiraAPI.defaultJQL)
+    // GitLab (Brain › Tasks › Sources). Display copies too: the token and the one server it may be
+    // sent to live together in the Keychain (`SecureSecretKey.gitlabCredential`). A server here that
+    // differs from the Keychain's means "reconnect", never a request to this server.
+    /// "Sync GitLab": GitLab issues (and merge requests) are fetched and listed in the task order.
+    static let gitlabEnabled = Key<Bool>("gitlabEnabled", default: false)
+    /// The connected server's base URL (`https://gitlab.com`); empty when not connected.
+    static let gitlabHost = Key<String>("gitlabHost", default: "")
+    /// The token owner's user name, for the "waiting for my review" list. Checked before each use.
+    static let gitlabUsername = Key<String>("gitlabUsername", default: "")
+    static let gitlabAccountDisplayName = Key<String>("gitlabAccountDisplayName", default: "")
+    /// The token has the `api` scope. Off for `read_api`, and when the server did not say.
+    static let gitlabCanLogTime = Key<Bool>("gitlabCanLogTime", default: false)
+    /// Open merge requests assigned to the user or waiting for their review join the task order.
+    static let gitlabIncludeMergeRequests = Key<Bool>("gitlabIncludeMergeRequests", default: true)
 
     // Use Now Playing as the default media controller for new installs.
     static var defaultMediaController: MediaControllerType {

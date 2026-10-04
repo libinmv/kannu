@@ -25,22 +25,24 @@ import Foundation
 /// it was. The moves below therefore step over them: Move Up swaps with the previous *active* task,
 /// so one click always changes what the user sees.
 ///
-/// The same goes for tasks of a source the user switched off (Local tasks, Sync Jira): `listed`
+/// The same goes for tasks of a source the user switched off (Local tasks, Sync Jira, Sync GitLab): `listed`
 /// says which active tasks are on screen, and every move and drag offset counts only those. Its
 /// default lists every active task.
 enum TaskOrdering {
     typealias Listed = (TaskItem) -> Bool
 
     /// Which tasks the task order shows, by source. The task being timed always shows, so it can be
-    /// stopped from the list. Jira tasks show while Jira is synced, and also while it is not
-    /// connected at all: tasks kept after a disconnect stay where the user can see them.
-    static func listedFilter(showLocal: Bool, showJira: Bool, alwaysListed: UUID?) -> Listed {
+    /// stopped from the list. Jira and GitLab tasks show while their source is synced, and also
+    /// while it is not connected at all: tasks kept after a disconnect stay where the user can see
+    /// them. `showGitLabMergeRequests` (Include merge requests) narrows the GitLab tasks the same way,
+    /// so switching it off takes the merge requests out at once, without waiting for a sync.
+    static func listedFilter(showLocal: Bool, showJira: Bool, showGitLab: Bool, showGitLabMergeRequests: Bool, alwaysListed: UUID?) -> Listed {
         { task in
             if task.id == alwaysListed { return true }
             switch task.source {
             case .local: return showLocal
             case .jira: return showJira
-            case .gitlab: return true
+            case .gitlab: return showGitLab && (showGitLabMergeRequests || task.remote?.gitlabKind != .mergeRequest)
             }
         }
     }

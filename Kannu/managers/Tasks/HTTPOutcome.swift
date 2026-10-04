@@ -18,8 +18,8 @@
 
 import Foundation
 
-/// What an answer from Jira (and later GitLab) means for Kannu, from its status code or the error
-/// the request failed with. Pure, so the logic target tests every mapping.
+/// What an answer from Jira or GitLab means for Kannu, from its status code or the error the
+/// request failed with. Pure, so the logic target tests every mapping.
 ///
 /// The split that matters most is between "it never left this Mac" (`offline`, `failedBeforeSend`)
 /// and "it may have arrived" (`ambiguous`): a read can simply be tried again either way, but a write
@@ -46,7 +46,9 @@ enum HTTPOutcome: Equatable {
     static let defaultRetryAfter: TimeInterval = 60
     static let retryAfterRange: ClosedRange<TimeInterval> = 1...3600
 
-    static func classify(status: Int, retryAfter: String?, now: Date) -> HTTPOutcome {
+    /// `rateLimitReset` is GitLab's `RateLimit-Reset`, read on a 429 only when `Retry-After` says
+    /// nothing usable.
+    static func classify(status: Int, retryAfter: String?, rateLimitReset: String? = nil, now: Date) -> HTTPOutcome {
         switch status {
         case 200..<300:
             return .ok(status)
@@ -55,7 +57,7 @@ enum HTTPOutcome: Equatable {
         case 401:
             return .auth(status)
         case 429:
-            return .rateLimited(retryAfter: retryAfterSeconds(retryAfter, now: now))
+            return .rateLimited(retryAfter: rateLimitWait(retryAfter: retryAfter, rateLimitReset: rateLimitReset, now: now))
         case 503 where retryAfter != nil:
             return .rateLimited(retryAfter: retryAfterSeconds(retryAfter, now: now))
         case 400..<500:
@@ -85,16 +87,29 @@ enum HTTPOutcome: Equatable {
     /// `defaultRetryAfter`; the result is always within `retryAfterRange`, so a hostile header can
     /// neither lock Refresh out for a day nor turn it into a busy loop.
     static func retryAfterSeconds(_ value: String?, now: Date) -> TimeInterval {
-        let raw: TimeInterval
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if let seconds = Double(trimmed), seconds.isFinite {
-            raw = seconds
-        } else if let date = httpDate(trimmed) {
-            raw = date.timeIntervalSince(now)
-        } else {
-            raw = defaultRetryAfter
-        }
+        rateLimitWait(retryAfter: value, rateLimitReset: nil, now: now)
+    }
+
+    /// How long a 429 asks Kannu to wait: `Retry-After` when it is readable, else `RateLimit-Reset`,
+    /// else `defaultRetryAfter`; always within `retryAfterRange`.
+    static func rateLimitWait(retryAfter: String?, rateLimitReset: String?, now: Date) -> TimeInterval {
+        let raw = parsedRetryAfter(retryAfter, now: now) ?? parsedRateLimitReset(rateLimitReset, now: now) ?? defaultRetryAfter
         return min(max(raw, retryAfterRange.lowerBound), retryAfterRange.upperBound)
+    }
+
+    /// Delta-seconds or an HTTP-date; nil when missing or unreadable.
+    private static func parsedRetryAfter(_ value: String?, now: Date) -> TimeInterval? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if let seconds = Double(trimmed), seconds.isFinite { return seconds }
+        return httpDate(trimmed).map { $0.timeIntervalSince(now) }
+    }
+
+    /// GitLab sends the Unix time the quota resets at; the IETF draft that shares the name sends
+    /// seconds from now. A number past 10^9 can only be the first (a wait of 31 years is not one).
+    private static func parsedRateLimitReset(_ value: String?, now: Date) -> TimeInterval? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard let number = Double(trimmed), number.isFinite else { return nil }
+        return number > 1_000_000_000 ? number - now.timeIntervalSince1970 : number
     }
 
     /// RFC 9110's preferred date form: `Sun, 06 Nov 1994 08:49:37 GMT`.

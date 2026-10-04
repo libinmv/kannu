@@ -20,17 +20,19 @@
 
 import XCTest
 
-/// How the Jira token is handled, read from the source (the `TimerSessionEventRulesTests` idiom):
-/// `TasksManager`, `JiraClient` and the Tasks page are not in the logic target.
+/// How the Jira and GitLab tokens are handled, read from the source (the
+/// `TimerSessionEventRulesTests` idiom): `TasksManager`, `JiraClient`, `GitLabClient` and the Tasks
+/// page are not in the logic target.
 ///
 /// - The Tasks page never touches the Keychain — not when it appears, not anywhere. A Keychain read
 ///   can raise the SecurityAgent dialog and block the thread that asked (docs/REGRESSIONS.md
 ///   entry 11); the page shows the Defaults display copies instead.
 /// - No log line interpolates the token, the email, the filter, a title or a summary.
-/// - Only `JiraAPI.swift` sets an `Authorization` header.
-/// - The sync the page's appearance starts reads the Keychain non-interactively, and asks
-///   `JiraSyncState.allowsSyncOnAppear` first, so a refused token is never sent again from there.
-/// - Removing the saved token is never fire-and-forget: Disconnect tells the user it is gone, so a
+/// - Only `JiraAPI.swift` sets an `Authorization` header, and only `GitLabAPI.swift` a
+///   `PRIVATE-TOKEN` one.
+/// - The sync each source's row starts on appear reads the Keychain non-interactively, and asks
+///   `SourceSyncState.allowsSyncOnAppear` first, so a refused token is never sent again from there.
+/// - Removing a saved token is never fire-and-forget: Disconnect tells the user it is gone, so a
 ///   failed delete must be seen.
 ///
 /// Each detector has a planted-offender test, so a scanner that stops matching fails instead of
@@ -42,7 +44,9 @@ final class IntegrationSecretRulesTests: XCTestCase {
     private static let settingsPath = "Kannu/components/Settings/TasksSettings.swift"
     private static let tasksDirectory = "Kannu/managers/Tasks"
 
-    static let keychainAPIs = ["SecureSecretsStore", "KeychainReader", "SecItem", "JiraCredentialStore"]
+    static let keychainAPIs = ["SecureSecretsStore", "KeychainReader", "SecItem", "JiraCredentialStore", "GitLabCredentialStore"]
+    /// The functions a row's appearance calls, one per source.
+    static let onAppearSyncs = ["syncJiraIfStale", "syncGitLabIfStale"]
     static let secretWords = ["token", "email", "jql", "title", "summary", "credential", "displayname", "password", "authorization"]
 
     private static func read(_ path: String) throws -> String {
@@ -71,6 +75,8 @@ final class IntegrationSecretRulesTests: XCTestCase {
     func testNoLogLineInterpolatesASecret() throws {
         let sources = try Self.sources()
         XCTAssertNotNil(sources["JiraClient.swift"])
+        XCTAssertNotNil(sources["GitLabClient.swift"])
+        XCTAssertNotNil(sources["GitLabAPI.swift"])
         XCTAssertNotNil(sources["TasksManager.swift"])
         let calls = sources.values.flatMap(Self.logCalls(in:))
         XCTAssertGreaterThan(calls.count, 5, "the log scan found too few calls to mean anything")
@@ -86,20 +92,39 @@ final class IntegrationSecretRulesTests: XCTestCase {
         XCTAssertEqual(setters, ["JiraAPI.swift"])
     }
 
+    func testOnlyGitLabAPISetsThePrivateTokenHeader() throws {
+        let setters = try Self.sources().filter { $0.value.contains("\"PRIVATE-TOKEN\"") || $0.value.contains("tokenHeader") }.map(\.key)
+        XCTAssertEqual(setters, ["GitLabAPI.swift"])
+    }
+
     func testTheSyncOnAppearNeverAsksForKeychainAccess() throws {
         let manager = try Self.read("\(Self.tasksDirectory)/TasksManager.swift")
-        XCTAssertEqual(Self.interactiveProblems(in: manager), [])
+        for function in Self.onAppearSyncs {
+            XCTAssertEqual(Self.interactiveProblems(in: manager, function: function), [], function)
+        }
     }
 
     func testTheSyncOnAppearNeverRetriesARefusedToken() throws {
         let manager = try Self.read("\(Self.tasksDirectory)/TasksManager.swift")
-        XCTAssertEqual(Self.retryProblems(in: manager), [])
+        for function in Self.onAppearSyncs {
+            XCTAssertEqual(Self.retryProblems(in: manager, function: function), [], function)
+        }
+    }
+
+    func testEachSourceRowSyncsOnAppear() throws {
+        let page = try Self.read(Self.settingsPath)
+        let lifecycle = Self.lifecycleBlocks(in: page).joined(separator: "\n")
+        for function in Self.onAppearSyncs {
+            XCTAssertTrue(lifecycle.contains("\(function)()"), "\(function) is not called from a lifecycle block")
+        }
     }
 
     func testTheTokenRemovalResultIsAlwaysUsed() throws {
         let sources = try Self.sources()
-        let calls = sources.values.flatMap { $0.components(separatedBy: "\n") }.filter { $0.contains(Self.removeCall) }
-        XCTAssertFalse(calls.isEmpty, "no call removes the token: the scan is vacuous")
+        let lines = sources.values.flatMap { $0.components(separatedBy: "\n") }
+        for call in Self.removeCalls {
+            XCTAssertTrue(lines.contains { $0.contains(call) }, "no \(call)…) call: the scan is vacuous")
+        }
         var problems: [String] = []
         for (name, source) in sources {
             problems += Self.discardedRemovals(in: source).map { "\(name): \($0)" }
@@ -191,8 +216,33 @@ final class IntegrationSecretRulesTests: XCTestCase {
             guard await JiraCredentialStore.remove() else { return }
             if await JiraCredentialStore.remove() { done() }
             // Task { await JiraCredentialStore.remove() } in a comment is fine
+            Task { await GitLabCredentialStore.remove() }
+            let gone = await GitLabCredentialStore.remove()
             """)
-        XCTAssertEqual(Self.discardedRemovals(in: planted).count, 3, "\(Self.discardedRemovals(in: planted))")
+        XCTAssertEqual(Self.discardedRemovals(in: planted).count, 4, "\(Self.discardedRemovals(in: planted))")
+    }
+
+    func testTheGitLabScannersCatchPlantedOffenders() {
+        XCTAssertEqual(Self.interactiveProblems(in: """
+            func syncGitLabIfStale(now: Date = Date()) {
+                guard gitlabSync.allowsSyncOnAppear(lastSuccess: nil, now: now, staleAfter: 300) else { return }
+                syncGitLab(interactive: false, using: nil)
+            }
+            """, function: "syncGitLabIfStale"), [])
+        XCTAssertFalse(Self.interactiveProblems(in: """
+            func syncGitLabIfStale(now: Date = Date()) {
+                syncGitLab(interactive: true, using: nil)
+            }
+            """, function: "syncGitLabIfStale").isEmpty)
+        XCTAssertFalse(Self.retryProblems(in: """
+            func syncGitLabIfStale(now: Date = Date()) {
+                syncGitLab(interactive: false, using: nil)
+            }
+            """, function: "syncGitLabIfStale").isEmpty, "a sync on appear that never asks allowsSyncOnAppear")
+        XCTAssertFalse(Self.interactiveProblems(in: "func syncJiraIfStale() { syncJira(interactive: false, using: nil) }",
+                                                function: "syncGitLabIfStale").isEmpty, "a missing function is a problem")
+        XCTAssertEqual(Self.keychainUses(in: ".onAppear { _ = await GitLabCredentialStore.load(allowInteraction: false) }"),
+                       ["GitLabCredentialStore"])
     }
 
     // MARK: - Rules
@@ -246,33 +296,34 @@ final class IntegrationSecretRulesTests: XCTestCase {
         return found
     }
 
-    static func interactiveProblems(in source: String) -> [String] {
-        guard let body = functionBody("syncJiraIfStale", in: source) else {
-            return ["syncJiraIfStale: not found"]
+    static func interactiveProblems(in source: String, function: String = "syncJiraIfStale") -> [String] {
+        guard let body = functionBody(function, in: source) else {
+            return ["\(function): not found"]
         }
         var problems: [String] = []
         if body.contains("interactive: true") || body.contains("allowInteraction: true") {
-            problems.append("syncJiraIfStale: reads the Keychain interactively")
+            problems.append("\(function): reads the Keychain interactively")
         }
         if !body.contains("interactive: false") {
-            problems.append("syncJiraIfStale: does not say interactive: false")
+            problems.append("\(function): does not say interactive: false")
         }
         return problems
     }
 
-    static func retryProblems(in source: String) -> [String] {
-        guard let body = functionBody("syncJiraIfStale", in: source) else {
-            return ["syncJiraIfStale: not found"]
+    static func retryProblems(in source: String, function: String = "syncJiraIfStale") -> [String] {
+        guard let body = functionBody(function, in: source) else {
+            return ["\(function): not found"]
         }
-        return body.contains(".allowsSyncOnAppear(") ? [] : ["syncJiraIfStale: does not ask JiraSyncState.allowsSyncOnAppear"]
+        return body.contains(".allowsSyncOnAppear(") ? [] : ["\(function): does not ask SourceSyncState.allowsSyncOnAppear"]
     }
 
-    static let removeCall = "JiraCredentialStore.remove("
+    static let removeCalls = ["JiraCredentialStore.remove(", "GitLabCredentialStore.remove("]
 
-    /// Lines that call `JiraCredentialStore.remove()` and do nothing with its answer.
+    /// Lines that remove a saved token (`JiraCredentialStore.remove()`,
+    /// `GitLabCredentialStore.remove()`) and do nothing with its answer.
     static func discardedRemovals(in source: String) -> [String] {
         source.components(separatedBy: "\n").filter { line in
-            guard line.contains(removeCall) else { return false }
+            guard removeCalls.contains(where: { line.contains($0) }) else { return false }
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.contains("_ =") { return true }
             return !["let ", "var ", "guard ", "if ", "return ", "= await"].contains { trimmed.contains($0) }

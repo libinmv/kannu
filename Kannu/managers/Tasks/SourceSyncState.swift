@@ -18,11 +18,13 @@
 
 import Foundation
 
-/// Where Jira syncing stands, for the Sources section.
-enum JiraSyncState: Equatable {
+/// Where a source's syncing stands (Jira Cloud, GitLab), for the Sources section. Each source has
+/// its own, so one failing never shows on, or stops, the other.
+enum SourceSyncState: Equatable {
     case idle
     case syncing
-    /// `count` issues read; `complete` is false when there were more than Kannu fetches.
+    /// `count` issues (or GitLab items) read; `complete` is false when there were more than Kannu
+    /// fetches.
     case synced(at: Date, count: Int, complete: Bool)
     case offline
     /// Refresh is off until then.
@@ -38,11 +40,12 @@ enum JiraSyncState: Equatable {
     /// Whether the Tasks page appearing may start a sync on its own, `lastSuccess` being when the
     /// last sync succeeded: only when that is at least `staleAfter` ago, and no rate limit is running.
     ///
-    /// Never after Jira refused the token or the saved sign-in needs reconnecting. The page appears
-    /// often — each visit, and each time its row scrolls back into view — and sending a refused
-    /// token again every time can lock the Atlassian account behind a CAPTCHA, which also stops the
-    /// user's other API-token clients. Only the user's Refresh or Allow Keychain Access, or a new
-    /// Connect, tries again.
+    /// Never after the source refused the token or the saved sign-in needs reconnecting. The page
+    /// appears often — each visit, and each time its row scrolls back into view — and sending a
+    /// refused token again every time can lock the account: Atlassian puts it behind a CAPTCHA,
+    /// which also stops the user's other API-token clients, and GitLab bans the address after
+    /// repeated failed sign-ins. Only the user's Refresh or Allow Keychain Access, or a new Connect,
+    /// tries again.
     func allowsSyncOnAppear(lastSuccess: Date?, now: Date, staleAfter: TimeInterval) -> Bool {
         switch self {
         case .authFailed, .needsReconnect:

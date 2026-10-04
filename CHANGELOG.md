@@ -4,6 +4,72 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-04 - Brain › Tasks: GitLab as a source, with your issues and merge requests in the task order
+- **Developer label:** "not just jira, i want gotlab too"
+- **Agent label:** Brain Tasks PR4: GitLab read (gitlab.com and self-managed servers, issues and merge requests, token in the Keychain, read-only)
+- **Changes:**
+  - A GitLab row in Brain › Productivity › Tasks › Sources, below Jira Cloud and in the same shape:
+    "Connected as @dana · gitlab.com (can log time)", "(read-only)" or "Not connected", Connect… or
+    Disconnect…, Sync GitLab, Include merge requests (on by default), GitLab items with Refresh and
+    "Synced 10:42 · 5 items" / "Showing the first N" / "Offline" / "Rate limited until 10:52", Allow
+    Keychain Access when macOS asks, and Remove Token when a Disconnect could not delete it. The
+    Sources footer gains a GitLab line.
+  - Connect… opens a sheet: Server (starts at `https://gitlab.com`; any HTTPS server, with a port or a
+    path prefix, on a private or LAN address too), Personal access token in a `SecureField`, the
+    caption "`api` to log time; `read_api` lists only", and "Create token…" to
+    `<server>/-/user_settings/personal_access_tokens`. Kannu checks the token with `GET /api/v4/user`
+    and reads its scopes with `GET /api/v4/personal_access_tokens/self` before storing anything: a
+    token without `api` is shown read-only (`gitlabCanLogTime` off, also when the server will not
+    say: it refuses or redirects the scopes request, as before GitLab 15.5), and one that has neither
+    `api` nor `read_api` is refused. A scopes request that fails for a reason that may pass next time
+    (429, 5xx, timeout, offline, TLS) fails Connect with a try-again message instead of saving a
+    guess, since nothing reads the scopes again. Only then is `{baseURL, token}` saved
+    (`SecureSecretKey.gitlabCredential`) and the field cleared. Disconnect asks whether to keep or
+    remove the GitLab tasks on this Mac.
+  - Your open issues (`/issues?scope=assigned_to_me&state=opened`) and, with Include merge requests
+    on, the open merge requests assigned to you or waiting for your review
+    (`/merge_requests?scope=assigned_to_me…` and `?reviewer_username=<you>&state=opened&scope=all`)
+    join the task order: "group/app#45 · opened · 42m of 2h · GitLab spent 3h" and "group/app!12 · MR
+    · review requested", titles verbatim, with Open in GitLab and Hide in the ⋯ menu. Up to 2 pages
+    of 100 per list through `X-Next-Page` (6 requests a sync at most); more is reported as
+    incomplete and marks nothing gone. A merge request in both lists counts once. Turning Include
+    merge requests off takes the merge requests out of the task order at once, with no request (a
+    listing filter, as Sync GitLab is), and the next complete sync moves them to Done and hidden;
+    turning it on brings them back in place. Switching it during a sync drops that sync's result
+    and starts a new one; when no sync can run (offline, rate limited, Sync GitLab off), the next
+    page visit syncs.
+  - `RemoteTaskInfo` gains `gitlabKind` (issue or merge request) and `gitlabWebURL`, both optional, so
+    an existing `tasks.json` still reads, and an unknown kind reads as nil instead of costing the
+    file. A GitLab task matches on its global id with its kind (`issue:76`, `mr:31`), since issues and
+    merge requests number their ids separately. `TaskMerge` carries the project, number, kind and
+    page; switching server makes the old server's tasks gone.
+  - The token travels only in the `PRIVATE-TOKEN` header, never in a URL or a log, and only to the
+    Keychain item's own server (`GitLabHost.normalize`: HTTPS only, no user info, query, fragment,
+    `..`, percent escapes or IPv6 literals; checked again before every request). Requests use
+    `IntegrationHTTP` (ephemeral, 20 s, every redirect refused) with system trust only: a
+    self-signed certificate macOS does not trust fails the request. A `web_url` is kept and opened
+    only when it is on the same host, port and path prefix. A 429 honours `Retry-After`, else
+    GitLab's `RateLimit-Reset`, else 60 s (clamped to 1 s – 1 h).
+  - Each source syncs on its own: page appear (when over 5 minutes old, never after a refused token,
+    never with the Keychain dialog), Refresh, Connect, and switching Include merge requests. A Jira
+    failure never shows on or stops GitLab, and the other way round. Nothing at launch, no polling.
+  - `JiraSyncState` becomes `SourceSyncState`, shared by both sources. `TaskOrdering.listedFilter`
+    gains `showGitLab` and `showGitLabMergeRequests`. New pure file in the logic target: `GitLabAPI` (credential, decoders, request
+    builders, `X-Next-Page` paging, scopes, and `GitLabReader`, the fetch loop over `IntegrationHTTP`).
+    App file: `GitLabClient` (logging) with `GitLabCredentialStore` (Keychain off the main actor).
+    `HTTPOutcome` reads `RateLimit-Reset`; `HTTPExchange` carries the response for its headers.
+    Defaults: `gitlabEnabled`, `gitlabHost`, `gitlabUsername`, `gitlabAccountDisplayName`,
+    `gitlabCanLogTime`, `gitlabIncludeMergeRequests`. No time is logged to GitLab yet.
+  - Tests: GitLabHostTests, GitLabRequestTests, GitLabDecodingTests (handwritten fixtures, scope
+    detection), GitLabReaderTests (a `URLProtocol` stub: paging, the two-page cap, merge requests
+    counted once, a failed page failing the sync, `RateLimit-Reset`, scopes, a scopes request that
+    may pass next time failing Connect, a refused redirect), and GitLab cases in TaskMergeTests,
+    TaskModelCodingTests, HTTPOutcomeTests, TaskSourceFilterTests (Sync GitLab, and Include merge
+    requests hiding only merge requests) and IntegrationSecretRulesTests (`PRIVATE-TOKEN` set only in `GitLabAPI`,
+    the GitLab sync on appear non-interactive and never retrying a refused token, the token removal
+    result used). Highlight inventory 224 entries, 272 registrations, 266 ids; the TasksSettings
+    padding pin is 3 (the Connect GitLab sheet).
+
 ### 2026-10-04 - Brain › Tasks: Jira Cloud as a source, with your Jira issues in the task order
 - **Developer label:** "what about jira page, i want a section in main brain in productivity for task management"
 - **Agent label:** Brain Tasks PR3: Jira read inside Productivity › Tasks (Sources section, read-only sync, token in the Keychain)

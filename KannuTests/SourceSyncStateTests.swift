@@ -1,5 +1,5 @@
 //
-//  JiraSyncStateTests.swift
+//  SourceSyncStateTests.swift
 //  KannuTests
 //
 //  Copyright (C) 2026 Kannu contributors
@@ -20,14 +20,15 @@
 
 import XCTest
 
-/// When the Tasks page appearing may sync Jira by itself. The page appears often, so a refused
-/// token must never be sent again from here: repeated failed sign-ins can lock the Atlassian
-/// account behind a CAPTCHA. Only the user's own click retries one.
-final class JiraSyncStateTests: XCTestCase {
+/// When the Tasks page appearing may sync a source (Jira, GitLab) by itself. The page appears often,
+/// so a refused token must never be sent again from here: repeated failed sign-ins can lock the
+/// Atlassian account behind a CAPTCHA, or get the address banned by GitLab. Only the user's own
+/// click retries one.
+final class SourceSyncStateTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
     private let staleAfter: TimeInterval = 5 * 60
 
-    private func allows(_ state: JiraSyncState, lastSuccess: Date?) -> Bool {
+    private func allows(_ state: SourceSyncState, lastSuccess: Date?) -> Bool {
         state.allowsSyncOnAppear(lastSuccess: lastSuccess, now: now, staleAfter: staleAfter)
     }
 
@@ -57,7 +58,7 @@ final class JiraSyncStateTests: XCTestCase {
         // Offline, a refused filter, a slow answer and a Keychain read that needs approval send no
         // refused credential: the next appearance after the window may try again. A Keychain read
         // that needs approval stays non-interactive (IntegrationSecretRulesTests).
-        for state: JiraSyncState in [.offline, .failed("Jira did not answer in time."), .needsKeychainApproval] {
+        for state: SourceSyncState in [.offline, .failed("Jira did not answer in time."), .needsKeychainApproval] {
             XCTAssertTrue(allows(state, lastSuccess: nil), "\(state)")
             XCTAssertTrue(allows(state, lastSuccess: stale), "\(state)")
             XCTAssertFalse(allows(state, lastSuccess: fresh), "\(state)")

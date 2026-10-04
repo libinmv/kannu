@@ -92,6 +92,53 @@ final class TaskModelCodingTests: XCTestCase {
         XCTAssertEqual(decoded.drafts, [])
     }
 
+    func testAGitLabTaskReadsBackExactly() throws {
+        let mergeRequest = TaskItem(
+            source: .gitlab,
+            title: "Fix the redirect",
+            remote: RemoteTaskInfo(
+                remoteID: "mr:31", key: "group/app!12", hostScope: "https://gitlab.example.com", status: "review requested",
+                isDoneRemotely: false, remoteEstimateSeconds: 1800, remoteSpentSeconds: nil,
+                gitlabProjectID: 8, gitlabIID: 12, lastSeenAt: start, gitlabKind: .mergeRequest,
+                gitlabWebURL: "https://gitlab.example.com/group/app/-/merge_requests/12"
+            ),
+            createdAt: start
+        )
+        let file = TasksFile(tasks: [mergeRequest], drafts: [])
+        let data = try TasksFile.makeEncoder().encode(file)
+        XCTAssertEqual(try TasksFile.makeDecoder().decode(TasksFile.self, from: data), file)
+        XCTAssertTrue(String(decoding: data, as: UTF8.self).contains(#""gitlabKind" : "mergeRequest""#))
+    }
+
+    func testAFileWrittenBeforeGitLabStillReads() throws {
+        // The Jira task exactly as the previous version wrote it: no gitlabKind, no gitlabWebURL.
+        let id = UUID()
+        let json = """
+        {"version": 1, "tasks": [{"id": "\(id.uuidString)", "source": "jira", "title": "Fix the login redirect",
+          "remote": {"remoteID": "10042", "key": "PROJ-123", "hostScope": "acme.atlassian.net", "status": "In Progress",
+                     "isDoneRemotely": false, "remoteEstimateSeconds": 14400, "lastSeenAt": "2026-10-04T10:00:00Z"}}]}
+        """
+        let decoded = try TasksFile.makeDecoder().decode(TasksFile.self, from: Data(json.utf8))
+        let remote = try XCTUnwrap(decoded.tasks.first?.remote)
+        XCTAssertEqual(remote.key, "PROJ-123")
+        XCTAssertNil(remote.gitlabKind, "the default")
+        XCTAssertNil(remote.gitlabWebURL)
+        XCTAssertNil(remote.gitlabProjectID)
+        XCTAssertNil(remote.remoteSpentSeconds)
+    }
+
+    func testAKindFromANewerKannuDoesNotCostTheFile() throws {
+        let id = UUID()
+        let json = """
+        {"version": 1, "tasks": [{"id": "\(id.uuidString)", "source": "gitlab", "title": "An epic",
+          "remote": {"remoteID": "epic:9", "key": "group&9", "hostScope": "https://gitlab.com", "status": "opened",
+                     "isDoneRemotely": false, "lastSeenAt": "2026-10-04T10:00:00Z", "gitlabKind": "epic"}}]}
+        """
+        let decoded = try TasksFile.makeDecoder().decode(TasksFile.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.tasks.count, 1)
+        XCTAssertNil(decoded.tasks.first?.remote?.gitlabKind, "an unknown kind reads as nil, the rest of the file survives")
+    }
+
     func testTheLocalEstimateWinsOverTheRemoteOne() {
         var task = sampleFile().tasks[1]
         XCTAssertEqual(task.effectiveEstimateSeconds, 14400)

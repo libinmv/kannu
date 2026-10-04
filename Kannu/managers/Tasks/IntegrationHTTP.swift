@@ -33,17 +33,21 @@ final class RedirectRefusal: NSObject, URLSessionTaskDelegate {
     }
 }
 
-/// An answer: what it means, and its body when there is one small enough to read.
+/// An answer: what it means, its body when there is one small enough to read, and the response
+/// itself for the headers a source pages by (GitLab's `X-Next-Page`). Nil when no response came.
 struct HTTPExchange {
     let outcome: HTTPOutcome
     let data: Data?
+    var response: HTTPURLResponse? = nil
 }
 
 /// The one way Kannu's task integrations talk to a server. Foundation only, so the logic target
 /// runs the real redirect guard against a stubbed `URLProtocol`.
 ///
 /// - **Ephemeral.** No cookies stored or sent, no URL cache, no credential storage: nothing about
-///   the user's Jira session outlives the request.
+///   the user's Jira or GitLab session outlives the request.
+/// - **System trust only.** No `URLSessionDelegate` handles a server-trust challenge, so a
+///   certificate macOS does not trust (a self-signed one on a self-managed GitLab) fails the request.
 /// - **Bounded.** 20 s per request and per resource; bodies over 5 MB are dropped.
 /// - **No redirects** (`RedirectRefusal`, on the session and on each task).
 /// - **Off the main actor.** `send` is a nonisolated async function, so awaiting it from the main
@@ -82,9 +86,10 @@ enum IntegrationHTTP {
             let outcome = HTTPOutcome.classify(
                 status: http.statusCode,
                 retryAfter: http.value(forHTTPHeaderField: "Retry-After"),
+                rateLimitReset: http.value(forHTTPHeaderField: "RateLimit-Reset"),
                 now: now
             )
-            return HTTPExchange(outcome: outcome, data: data.count <= maxBodyBytes ? data : nil)
+            return HTTPExchange(outcome: outcome, data: data.count <= maxBodyBytes ? data : nil, response: http)
         } catch let error as URLError {
             return HTTPExchange(outcome: HTTPOutcome.classify(error), data: nil)
         } catch {
