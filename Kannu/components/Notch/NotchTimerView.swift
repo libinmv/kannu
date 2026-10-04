@@ -43,6 +43,20 @@ struct NotchTimerView: View {
     @State private var customSeconds: Int = 0
     @State private var isSyncingCustomDuration = false
     @State private var lockedAccentColor: Color?
+    /// The name typed for the next session (`TimerSessionName`); cleared once a session starts.
+    @State private var pendingSessionName = ""
+    @State private var isRenamingSession = false
+    @State private var renameDraft = ""
+    /// The session the rename began in (`TimerManager.sessionID`).
+    @State private var renamingSessionID: UUID?
+    /// Keeps the notch open while a name is being typed (`KannuViewModel.setAutoCloseSuppression`).
+    @State private var nameEditingToken = UUID()
+    @FocusState private var focusedNameField: NameField?
+
+    private enum NameField: Hashable {
+        case pending
+        case rename
+    }
 
     var body: some View {
         Group {
@@ -59,6 +73,12 @@ struct NotchTimerView: View {
                 .frame(maxHeight: maxTabContentHeight, alignment: .top)
                 .padding(.horizontal, 16)
                     .padding(.vertical, 6)
+                // A click anywhere in the tab that no control takes ends typing, which saves a rename.
+                .background(
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { focusedNameField = nil }
+                )
                 .transition(.opacity.combined(with: .blurReplace))
                 .onAppear { syncCustomDuration(with: customTimerDuration) }
                 .onChange(of: customTimerDuration) { _, newValue in syncCustomDuration(with: newValue) }
@@ -77,7 +97,28 @@ struct NotchTimerView: View {
                 lockAccentColorIfNeeded()
             } else {
                 lockedAccentColor = nil
+                isRenamingSession = false
             }
+        }
+        .onChange(of: focusedNameField) { previous, current in
+            vm.setAutoCloseSuppression(current != nil, token: nameEditingToken)
+            if previous == .rename, current != .rename {
+                commitRename()
+            }
+        }
+        .onChange(of: pendingSessionName) { _, newValue in
+            if newValue.count > TimerSessionName.maxLength {
+                pendingSessionName = String(newValue.prefix(TimerSessionName.maxLength))
+            }
+        }
+        // Closing the notch or switching tabs removes this view without a focus change.
+        .onDisappear {
+            commitRename()
+            vm.setAutoCloseSuppression(false, token: nameEditingToken)
+        }
+        // A click into another app leaves the field focused in a window that is no longer key.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { note in
+            if note.object is KannuWindow { commitRename() }
         }
         .onChange(of: timerManager.activePresetId) { _, _ in
             if timerManager.isTimerActive && lockedAccentColor == nil {
@@ -93,7 +134,10 @@ struct NotchTimerView: View {
                 activeTimerCard
                 Spacer(minLength: 0)
             } else {
-                customTimerComposer
+                VStack(alignment: .leading, spacing: 8) {
+                    sessionNameField
+                    customTimerComposer
+                }
                 Spacer(minLength: 0)
             }
         }
@@ -119,7 +163,7 @@ struct NotchTimerView: View {
                     List {
                         ForEach(timerPresets) { preset in
                             TimerPresetCard(preset: preset, isActive: timerManager.activePresetId == preset.id) {
-                                timerManager.startTimer(duration: preset.duration, name: preset.name, preset: preset)
+                                startSession(duration: preset.duration, preset: preset, fallback: preset.name)
                                 if !enableMinimalisticUI {
                                     coordinator.currentView = .timer
                                 }
@@ -212,15 +256,42 @@ struct NotchTimerView: View {
             let marqueeWidth = max(48, geometry.size.width - badgeWidth - spacing)
 
             HStack(alignment: .center, spacing: spacing) {
-                MarqueeText(
-                    .constant(timerDisplayName),
-                    font: .system(size: 20, weight: .semibold),
-                    nsFont: .title3,
-                    textColor: .white,
-                    minDuration: 0.2,
-                    frameWidth: marqueeWidth
-                )
-                .frame(width: marqueeWidth, height: 24, alignment: .leading)
+                if isRenamingSession {
+                    TextField(String(localized: "Session name"), text: $renameDraft)
+                        .font(.system(size: 20, weight: .semibold))
+                        .textFieldStyle(.plain)
+                        .foregroundColor(.white)
+                        .tint(.white)
+                        .frame(width: marqueeWidth, height: 24, alignment: .leading)
+                        .focused($focusedNameField, equals: .rename)
+                        .onSubmit { commitRename() }
+                        .onExitCommand { cancelRename() }
+                } else if timerManager.hasManualTimerRunning {
+                    MarqueeText(
+                        .constant(timerDisplayName),
+                        font: .system(size: 20, weight: .semibold),
+                        nsFont: .title3,
+                        textColor: .white,
+                        minDuration: 0.2,
+                        frameWidth: marqueeWidth
+                    )
+                    .frame(width: marqueeWidth, height: 24, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture { beginRename() }
+                    .hoverTooltip(String(localized: "Click to rename"), pointingHandCursor: true)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityHint(Text("Renames this timer session"))
+                } else {
+                    MarqueeText(
+                        .constant(timerDisplayName),
+                        font: .system(size: 20, weight: .semibold),
+                        nsFont: .title3,
+                        textColor: .white,
+                        minDuration: 0.2,
+                        frameWidth: marqueeWidth
+                    )
+                    .frame(width: marqueeWidth, height: 24, alignment: .leading)
+                }
 
                 if let status {
                     statusBadge(status)
@@ -518,11 +589,61 @@ struct NotchTimerView: View {
 
     private func startCustomTimer() {
         withAnimation(.smooth) {
-            timerManager.startTimer(duration: customDurationInSeconds, name: String(localized: "Custom Timer"))
+            startSession(duration: customDurationInSeconds, fallback: String(localized: "Custom Timer"))
             if !enableMinimalisticUI {
                 coordinator.currentView = .timer
             }
         }
+    }
+
+    /// One line above the composer: the name the next session starts with, from a preset or Start.
+    private var sessionNameField: some View {
+        TextField(String(localized: "Name this session (optional)"), text: $pendingSessionName)
+            .font(.system(size: 13, weight: .medium))
+            .textFieldStyle(.plain)
+            .foregroundColor(.white)
+            .tint(.white)
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(Color.white.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .focused($focusedNameField, equals: .pending)
+            .onSubmit { focusedNameField = nil }
+            .accessibilityLabel(Text("Session name"))
+    }
+
+    /// Every session started from this tab: the typed name, or the preset's or "Custom Timer".
+    private func startSession(duration: TimeInterval, preset: TimerPreset? = nil, fallback: String) {
+        timerManager.startTimer(
+            duration: duration,
+            name: TimerSessionName.resolved(typed: pendingSessionName, fallback: fallback),
+            preset: preset,
+            fallbackName: fallback
+        )
+        pendingSessionName = ""
+        focusedNameField = nil
+    }
+
+    private func beginRename() {
+        guard timerManager.hasManualTimerRunning else { return }
+        renameDraft = timerManager.timerName
+        renamingSessionID = timerManager.sessionID
+        isRenamingSession = true
+        DispatchQueue.main.async { focusedNameField = .rename }
+    }
+
+    private func commitRename() {
+        guard isRenamingSession, let session = renamingSessionID else { return }
+        isRenamingSession = false
+        renamingSessionID = nil
+        timerManager.renameSession(to: renameDraft, session: session)
+        focusedNameField = nil
+    }
+
+    private func cancelRename() {
+        isRenamingSession = false
+        renamingSessionID = nil
+        focusedNameField = nil
     }
 
     private func resetCustomTimerInputs() {

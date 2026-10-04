@@ -4,6 +4,28 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-04 - Name a timer session before it starts, and rename it while it runs
+- **Developer label:** "in promod timer i need to able to name a timer session"
+- **Agent label:** Timer session names: an optional field before Start, click-to-rename while running
+- **Changes:**
+  - The timer tab in the notch, and the popover, have a one-line "Name this session (optional)"
+    field. The next session takes that name, whether it starts from a preset card (Focus, Break,
+    Deep Work) or from the custom Start. Without one it keeps the preset's name or "Custom Timer",
+    as before, and the field clears once the session starts. The notch stays open while you type.
+  - Clicking a running session's name in the notch or the popover turns it into a text field.
+    Return saves the new name, and so does anything else that ends the edit: a click elsewhere in
+    the tab or the popover card, a click into another app, closing the notch or the popover, or
+    switching tabs. Escape keeps the old name, and clearing it goes back to the default. The closed
+    notch shows the new name for a few seconds. Clock-app timers keep the Clock app's name.
+  - `TimerSessionName` (pure, in the logic target) makes a typed name one clean line of at most
+    40 characters, counting an emoji once, and never empty. `TimerManager.renameSession(to:session:)`
+    renames only timers started in Kannu, and only the session the rename began in
+    (`TimerManager.sessionID`), because a save on close can land after a new session started.
+  - Tests: `TimerSessionNameTests`, and `TimerNamingRulesTests`, which pins from the source that
+    every start path in both views takes the typed name, both views can rename a running session,
+    both save a rename when they go away and pass its session, and the notch saves when its window
+    goes to the background, with planted-offender self-tests for both scanners.
+
 ### 2026-10-04 - Settings is now Brain, with a brain icon in the notch and ⌘, to open it
 - **Developer label:** "rename settings to brain and use that icon, it is more going to be a place where do all the management"
 - **Agent label:** Brain rename (user-visible text only), notch brain icon, live ⌘, command, BrainNamingRulesTests
