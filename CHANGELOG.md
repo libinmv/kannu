@@ -4,6 +4,23 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-04 - Kannu stays light while several agents work at once
+- **Developer label:** "how did we end up using so much memory i had to restart app"
+- **Agent label:** Rescan storm: filter watched-file events, pace rescans, cache the Desktop audit-log walk
+- **Changes:**
+  - Changes inside a Claude session's own folder no longer trigger a rescan: subagent
+    transcripts, tool-output spills and workflow files, which Kannu never reads. Neither do the
+    hook status folder's per-file writes, which its kqueue watcher already handles; before, each
+    write cost two rescans. Lost-event flags still always rescan (`AgentWatchEvents`).
+  - Rescans are at least 0.3 s apart (hook-only) or 0.5 s apart (full), and a new request never
+    postpones the one already pending (`AgentRescanPacing`). A steady storm of writes used to
+    postpone the light instead of bounding the work.
+  - Claude Desktop's audit-log listing is cached for 2 s, and dropped when a log is added, removed
+    or renamed. The cache hands out fresh `URL`s, so a grown log is never read with its old size.
+  - `docs/REGRESSIONS.md` entry 11: a dated addendum.
+  - Tests: `RescanStormTests` (the filter, the pacing, and a simulated 20 ms write storm that must
+    keep rescanning, at a bounded rate).
+
 ### 2026-10-01 - Quit Kannu has a row in Settings, and searching "quit" or "exit" finds it
 - **Developer label:** "the settings should have a quit app, or at least on search of quit or exit i should get the tab with that button to come up as result"
 - **Agent label:** Settings Quit row + search entry, pinned by the highlight inventory

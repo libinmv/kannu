@@ -69,6 +69,11 @@ final class CursorAgentStatusMonitor: ObservableObject {
     private var statusDirectoryFD: Int32 = -1
     private var rescanTask: Task<Void, Never>?
     private var quickRescanTask: Task<Void, Never>?
+    /// `AgentRescanPacing`: when the last rescan of either kind started, and when each kind's
+    /// pending one will (nil once it has started).
+    private var lastRescanStartedAt: Date?
+    private var pendingRescanAt: Date?
+    private var pendingQuickRescanAt: Date?
     private var pollTimer: Timer?
     private var isRunning = false
     private var watchedPaths: [String] = []
@@ -122,6 +127,8 @@ final class CursorAgentStatusMonitor: ObservableObject {
         isRunning = false
         rescanTask?.cancel()
         rescanTask = nil
+        pendingRescanAt = nil
+        pendingQuickRescanAt = nil
         pollTimer?.invalidate()
         pollTimer = nil
         if let statusDirectorySource {
@@ -202,14 +209,26 @@ final class CursorAgentStatusMonitor: ObservableObject {
             let monitor = Unmanaged<CursorAgentStatusMonitor>.fromOpaque(info).takeUnretainedValue()
             // kFSEventStreamCreateFlagUseCFTypes: the paths arrive as a CFArray of CFString.
             let paths = (Unmanaged<CFArray>.fromOpaque(eventPaths).takeUnretainedValue() as NSArray) as? [String] ?? []
-            let events = (0..<min(numEvents, paths.count)).map { (path: paths[$0], flags: UInt32(eventFlags[$0])) }
+            let allEvents = (0..<min(numEvents, paths.count)).map { (path: paths[$0], flags: UInt32(eventFlags[$0])) }
             Task { @MainActor in
+                // Subagent transcripts, tool-output spills and workflow files inside a session's
+                // folder, and hook writes the kqueue watcher already handles, are not worth a
+                // rescan (AgentWatchEvents; REGRESSIONS entry 11, 2026-10-04 addendum).
+                let events = AgentWatchEvents.worthARescan(
+                    allEvents,
+                    claudeProjectsRoot: AgentSessionLogParser.claudeProjectsDirectory.path,
+                    statusDirectory: AgentHookInstaller.statusDirectory.path
+                )
+                guard !events.isEmpty else { return }
                 // Appends and hook writes leave the transcript lists valid (see
                 // TranscriptListingInvalidation); dropping them on every event re-walked both
                 // project trees on the main actor several times a second while agents worked.
                 if TranscriptListingInvalidation.shouldInvalidate(events: events, transcriptRoots: CursorAgentStatusMonitor.transcriptRootPaths) {
                     CursorTranscriptParser.invalidatePathCache()
                     AgentSessionLogParser.invalidatePathCache()
+                }
+                if TranscriptListingInvalidation.shouldInvalidate(events: events, transcriptRoots: [ClaudeDesktopAgentSessionStore.defaultRoot.path]) {
+                    ClaudeDesktopAgentSessionStore.invalidateListingCache()
                 }
                 monitor.scheduleRescan(delay: 0.35)
             }
@@ -269,23 +288,33 @@ final class CursorAgentStatusMonitor: ObservableObject {
 
     private func scheduleQuickRescan() {
         guard isRunning else { return }
+        let start = AgentRescanPacing.startDate(requestedAt: Date(), delay: 0.05, lastStart: lastRescanStartedAt,
+                                                floor: AgentRescanPacing.hookOnlyFloor)
+        guard AgentRescanPacing.needsScheduling(start: start, pending: pendingQuickRescanAt) else { return }
+        pendingQuickRescanAt = start
         quickRescanTask?.cancel()
         quickRescanTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 50_000_000)
-            guard !Task.isCancelled else { return }
-            await self?.rescan(hooksOnly: true)
+            let wait = start.timeIntervalSinceNow
+            if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
+            guard !Task.isCancelled, let self else { return }
+            self.pendingQuickRescanAt = nil
+            await self.rescan(hooksOnly: true)
         }
     }
 
     private func scheduleRescan(delay: TimeInterval) {
         guard isRunning else { return }
+        let start = AgentRescanPacing.startDate(requestedAt: Date(), delay: delay, lastStart: lastRescanStartedAt,
+                                                floor: AgentRescanPacing.fullFloor)
+        guard AgentRescanPacing.needsScheduling(start: start, pending: pendingRescanAt) else { return }
+        pendingRescanAt = start
         rescanTask?.cancel()
         rescanTask = Task { [weak self] in
-            if delay > 0 {
-                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            }
-            guard !Task.isCancelled else { return }
-            await self?.rescan(hooksOnly: false)
+            let wait = start.timeIntervalSinceNow
+            if wait > 0 { try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
+            guard !Task.isCancelled, let self else { return }
+            self.pendingRescanAt = nil
+            await self.rescan(hooksOnly: false)
         }
     }
 
@@ -295,6 +324,7 @@ final class CursorAgentStatusMonitor: ObservableObject {
     private func rescan(hooksOnly: Bool = false) async {
         guard isRunning else { return }
         let now = Date()
+        lastRescanStartedAt = now
         let previousStateByConversationID = latestDisplayStateByConversationID(from: sessions)
 
         let staleMinutes = Defaults[.agentStatusStaleMinutes]

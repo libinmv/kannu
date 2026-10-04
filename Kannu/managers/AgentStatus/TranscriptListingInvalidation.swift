@@ -51,3 +51,54 @@ enum TranscriptListingInvalidation {
         }
     }
 }
+
+/// Which watched-file events are worth a rescan at all (docs/REGRESSIONS.md entry 11, 2026-10-04
+/// addendum). A rescan runs on the main actor and reads every hook file, session record and live
+/// transcript tail, and while agents work two kinds of event used to cost one each, several times a
+/// second:
+/// - **Files inside a Claude session's own folder** (`<project>/<session>/subagents/…`,
+///   `tool-results/…`, `workflows/…`). Every subagent message, tool-output spill and workflow
+///   script lands there. Kannu reads none of them; the main transcript is `<project>/<session>.jsonl`.
+/// - **Per-file writes in the hook status folder.** The kqueue watcher on that folder already runs
+///   a rescan for each, so the same write through FSEvents was a second one.
+/// Lost-event flags (`TranscriptListingInvalidation.lostEventFlags`) always count: they say
+/// nothing about where the change was.
+enum AgentWatchEvents {
+    static func worthARescan(_ events: [(path: String, flags: UInt32)], claudeProjectsRoot: String,
+                             statusDirectory: String) -> [(path: String, flags: UInt32)] {
+        let claudeRoot = trimmed(claudeProjectsRoot)
+        let statusRoot = trimmed(statusDirectory)
+        return events.filter { event in
+            if event.flags & TranscriptListingInvalidation.lostEventFlags != 0 { return true }
+            if event.path.hasPrefix(statusRoot + "/") { return false }
+            guard event.path.hasPrefix(claudeRoot + "/") else { return true }
+            let relative = event.path.dropFirst(claudeRoot.count + 1)
+            return relative.split(separator: "/", omittingEmptySubsequences: true).count < 3
+        }
+    }
+
+    private static func trimmed(_ path: String) -> String {
+        path.hasSuffix("/") ? String(path.dropLast()) : path
+    }
+}
+
+/// When a requested rescan may start. Every rescan is at least a floor apart from the last one, a
+/// full rescan's floor longer than a hook-only one's, and a request never postpones one already
+/// pending: the pending rescan reads the files when it runs, so it covers the request, and
+/// re-arming it on every event starved the light during a storm of writes.
+enum AgentRescanPacing {
+    static let hookOnlyFloor: TimeInterval = 0.3
+    static let fullFloor: TimeInterval = 0.5
+
+    static func startDate(requestedAt now: Date, delay: TimeInterval, lastStart: Date?, floor: TimeInterval) -> Date {
+        let wanted = now.addingTimeInterval(max(0, delay))
+        guard let lastStart else { return wanted }
+        return max(wanted, lastStart.addingTimeInterval(floor))
+    }
+
+    /// Whether a request starting at `start` needs a new rescan scheduled, given the one pending.
+    static func needsScheduling(start: Date, pending: Date?) -> Bool {
+        guard let pending else { return true }
+        return start < pending
+    }
+}
