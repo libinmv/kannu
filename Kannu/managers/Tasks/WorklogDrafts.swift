@@ -154,6 +154,26 @@ enum WorklogDrafts {
         }
     }
 
+    // MARK: - What the notch asks about
+
+    /// Whether the notch's Tasks popover shows the draft's card: open, and not put off with Not now.
+    /// A put-off entry waits in Brain › Tasks › Time to log until more time is added to it.
+    static func isAskingNow(_ draft: WorklogDraft) -> Bool {
+        isOpen(draft.state) && !(draft.state == .awaiting && draft.deferredAt != nil)
+    }
+
+    /// Whether the draft waits for the user's answer — Log, Retry, Mark Logged or Keep local only —
+    /// which lights the yellow dot on the notch's Tasks button. One being sent does not wait for
+    /// anything, and Not now is an answer.
+    static func needsAnswer(_ draft: WorklogDraft) -> Bool {
+        isAskingNow(draft) && draft.state != .sending
+    }
+
+    /// How many entries wait for an answer: the dot, and the Tasks button's VoiceOver label.
+    static func waitingCount(_ drafts: [WorklogDraft]) -> Int {
+        drafts.reduce(0) { $0 + (needsAnswer($1) ? 1 : 0) }
+    }
+
     // MARK: - The length sent
 
     /// A length as it is sent: rounded to whole minutes (GitLab takes nothing finer), at least a

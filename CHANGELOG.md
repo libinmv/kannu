@@ -4,6 +4,58 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-04 - The notch has a Tasks button: what you are timing, what to log, and what is next
+- **Developer label:** "maybe a button with integration toggle for people to switch and then getting a click through to a tab in settings to manage integrations"
+- **Agent label:** Brain Tasks PR6: notch Tasks button and popover (Now, Log time?, Up next, source toggles, Manage tasks… to Brain › Tasks › Sources)
+- **Changes:**
+  - A Tasks button (SF Symbol `checklist`) in the open notch's header, after the timer button and
+    before the Brain button, shown only with Enable tasks on and the minimalistic UI off. A yellow
+    dot shows while a Time to log entry waits for an answer (asked, refused, or maybe logged; not
+    while it is being sent, nor after Not now). VoiceOver reads "Tasks" or "Tasks, 2 entries
+    waiting to be logged"; the tooltip is `.hoverTooltip`, never `.help`. It is its own view
+    (`TasksHeaderButton`), so `TasksManager` is created only with tasks on.
+  - Clicking it opens `TasksPopover` (the `TimerPopover` pattern): a header with the source menu,
+    Refresh with one caption line per synced source ("Jira · Synced 10:42", "GitLab · Offline",
+    "Rate limited until 10:52"), and a Brain glyph; Now (the task being timed: key, title, its
+    recorded time as a running clock, "42m of 2h" with "10m over" in orange, Pause/Resume and
+    Stop); Log time? (up to two cards, then "N more in Brain"); Up next (Add a task…, which adds a
+    local task at the top of the order, then the task order without the timed task: key, title,
+    "42m of 2h" and ▶, at most 6 rows, fewer under a Now card or Log time? cards); an empty state
+    ("Connect Jira or GitLab in Brain"); and Show all in Brain.
+  - The source menu (`TaskSourceMenu`) has check items Jira, GitLab and Local, bound to
+    `jiraEnabled`, `gitlabEnabled` and `showLocalTasks` (the Sources toggles in Brain). A source
+    that is not connected shows "Connect Jira…" / "Connect GitLab…" instead. Those, "Manage
+    tasks…" and the Brain glyph close the popover and open Brain › Productivity › Tasks at Sources
+    through the existing deep link (`SettingsDeepLink.tasksSourcesHighlightID`). A token is typed
+    only in Brain's Connect sheet, never in the notch.
+  - Opening the popover sets `vm.isTasksPopoverActive`, which `ContentView.hasAnyActivePopovers()`
+    now includes, so the notch does not auto-close under it. The button clears it when it leaves
+    (the notch closing, tasks or the minimalistic UI switched), and `KannuHeader` clears it when
+    tasks are turned off.
+  - The live time ticks only through `TimelineView(.periodic(from: .now, by: 1))`, while the Now
+    card is on screen and running; Refresh comes back on time after a rate limit through an explicit
+    `TimelineView`, with no polling. Opening the popover syncs Jira and GitLab only when their last
+    sync is stale, without the Keychain dialog; Refresh is the user's click and may ask for it.
+  - Log time? reuses Brain's Time to log card: `TimeToLogSection.swift` gains `WorklogDraftCard`,
+    which both places show (in the popover, stacked by a `LabeledContentStyle`), so Log, Retry and
+    Send Again still go only through `TasksManager.confirmWorklog`.
+  - `TasksManager` gains `pauseTiming()` and `resumeTiming()` (guarded like `stopTiming()`: only the
+    session timing a task). `SettingsDeepLink` gains `tasksOrderHighlightID` (Show all in Brain) and
+    `tasksTimeToLogHighlightID` (N more in Brain), both rows already registered: highlight inventory
+    unchanged at 225 entries, 273 registrations, 267 ids.
+  - Pure helpers in the logic target: `WorklogDrafts.isAskingNow` / `needsAnswer` /
+    `waitingCount`, `TaskOrdering.upNext` / `upNextRows`, `TaskTimeMath.progress` (Brain › Tasks'
+    task rows now use it too, unchanged), `WorkDuration.clock`, and `SourceSyncState.shortCaption` /
+    `rateLimitEnd`.
+  - Tests: TasksPopoverRulesTests (source scan with planted offenders: the popover sets the flag and
+    leaving clears it, `hasAnyActivePopovers` includes it, the button has `accessibilityLabel` and
+    `hoverTooltip` and sits after the timer button only with tasks on, no `.help(` in any
+    `components/Notch` or `components/AgentStatus` file — the CI side of the pre-commit check —
+    Manage tasks…, Connect… and the Brain glyph use the Sources deep link, no Keychain access and no
+    timers in the new views) and TasksPopoverLogicTests (the dot and the cards, Up next and its row
+    budget, "42m of 2h" and overtime from a whole minute, the clock, the sync captions).
+    docs/REGRESSIONS.md entry 9 names the new CI guard.
+
 ### 2026-10-04 - Brain › Tasks: Time to log asks before your recorded time goes to Jira or GitLab
 - **Developer label:** "task will have option to add estimate and also record the actual time, work on how we could manage jira tickets well"
 - **Agent label:** Brain Tasks PR5: ask, then log — Jira worklogs and GitLab spent time, sent only from the user's click, written ahead, reconciled once

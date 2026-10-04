@@ -25,9 +25,10 @@ import os
 /// The user's tasks, their order and estimates, and the actual time recorded when one is timed with
 /// Kannu's timer.
 ///
-/// **Lazy.** Nothing creates this at launch: the first touch is Brain › Tasks with tasks turned on,
-/// so `continueLaunch()` and the Terms gate are untouched (`LaunchGateRulesTests`). Creating it
-/// reads `tasks.json` on `TaskFileStore`, off the main actor.
+/// **Lazy.** Nothing creates this at launch: the first touch is Brain › Tasks or the open notch's
+/// Tasks button, both only with tasks turned on, so `continueLaunch()` and the Terms gate are
+/// untouched (`LaunchGateRulesTests`). Creating it reads `tasks.json` on `TaskFileStore`, off the
+/// main actor.
 ///
 /// **How time is recorded.** `start(_:)` starts an ordinary timer session and remembers which task
 /// it is for. From then on `TimerManager.sessionEvents` drives everything: started opens a segment,
@@ -228,6 +229,21 @@ final class TasksManager: ObservableObject {
     func stopTiming() {
         guard let link, TimerManager.shared.sessionID == link.session, TimerManager.shared.hasManualTimerRunning else { return }
         TimerManager.shared.forceStopTimer()
+    }
+
+    /// Pauses the timer when it is timing a task (the notch popover's Now card). The session's
+    /// `.paused` closes the task's time; nothing is offered for logging until timing ends.
+    func pauseTiming() {
+        guard let link, !link.isPaused, TimerManager.shared.sessionID == link.session,
+              TimerManager.shared.hasManualTimerRunning else { return }
+        TimerManager.shared.pauseTimer()
+    }
+
+    /// Resumes it. The session's `.resumed` opens the task's time again.
+    func resumeTiming() {
+        guard let link, link.isPaused, TimerManager.shared.sessionID == link.session,
+              TimerManager.shared.hasManualTimerRunning else { return }
+        TimerManager.shared.resumeTimer()
     }
 
     private func handle(_ event: TimerSessionEvent) {

@@ -773,17 +773,10 @@ private struct TaskListSections: View {
         if let timing = manager.timing, timing.taskID == task.id {
             parts.append(timing.isPaused ? String(localized: "Paused") : String(localized: "Timing now"))
         }
-        let trackedText = WorkDuration.format(tracked)
-        if let estimate {
-            parts.append(String(localized: "\(trackedText) of \(WorkDuration.format(estimate))"))
-        } else if tracked > 0 {
-            parts.append(String(localized: "\(trackedText) tracked"))
-        } else {
-            parts.append(String(localized: "No estimate"))
-        }
+        let progress = TaskTimeMath.progress(tracked: tracked, estimate: estimate)
+        parts.append(progress.text)
         var text = Text(verbatim: parts.joined(separator: " · "))
-        let over = TaskTimeMath.overtimeSeconds(estimate: estimate, tracked: tracked)
-        if over >= 60 {
+        if let over = progress.over {
             text = text
                 + Text(verbatim: " · ")
                 + Text(verbatim: String(localized: "\(WorkDuration.format(over)) over")).foregroundStyle(.orange)

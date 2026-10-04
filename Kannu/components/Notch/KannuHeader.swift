@@ -40,7 +40,8 @@ struct KannuHeader: View {
     @Default(.showBatteryPercentInside) var showBatteryPercentInside
     @Default(.showMinimalisticBatteryIndicator) var showMinimalisticBatteryIndicator
     @Default(.enableMinimalisticUI) var enableMinimalisticUI
-    
+    @Default(.enableTasks) var enableTasks
+
     var body: some View {
         HStack(spacing: 0) {
             HStack {
@@ -173,7 +174,12 @@ struct KannuHeader: View {
                             }
                         }
                     }
-                    
+
+                    // Its own view, so TasksManager (and the task file) is touched only with tasks on.
+                    if enableTasks {
+                        TasksHeaderButton()
+                    }
+
                     if Defaults[.settingsIconInNotch] {
                         Button(action: {
                             SettingsWindowController.shared.showWindow()
@@ -266,6 +272,12 @@ struct KannuHeader: View {
             if mode == .tab {
                 showTimerPopover = false
                 vm.isTimerPopoverActive = false
+            }
+        }
+        .onChange(of: enableTasks) { _, isOn in
+            // The button goes with the setting; a popover that vanished with it never says it closed.
+            if !isOn {
+                vm.isTasksPopoverActive = false
             }
         }
     }

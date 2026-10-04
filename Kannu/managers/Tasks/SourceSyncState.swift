@@ -37,6 +37,40 @@ enum SourceSyncState: Equatable {
     case needsReconnect
     case failed(String)
 
+    /// One short line for the notch's Tasks popover, beside its Refresh: "Synced 10:42", "Offline",
+    /// "Rate limited until 10:52". A problem the user has to act on points at Brain, whose Sources
+    /// row says what to do. The popover's Refresh may ask macOS for the Keychain, so that is what a
+    /// pending approval suggests.
+    func shortCaption(now: Date) -> String {
+        switch self {
+        case .idle:
+            return String(localized: "Not synced yet")
+        case .syncing:
+            return String(localized: "Syncing…")
+        case .synced(let at, _, _):
+            return String(localized: "Synced \(at.formatted(date: .omitted, time: .shortened))")
+        case .offline:
+            return String(localized: "Offline")
+        case .rateLimited(let until):
+            guard until > now else { return String(localized: "You can refresh again") }
+            return String(localized: "Rate limited until \(until.formatted(date: .omitted, time: .shortened))")
+        case .authFailed:
+            return String(localized: "Token rejected: reconnect in Brain")
+        case .needsKeychainApproval:
+            return String(localized: "Refresh to allow Keychain access")
+        case .needsReconnect:
+            return String(localized: "Reconnect in Brain")
+        case .failed:
+            return String(localized: "Not synced: see Brain")
+        }
+    }
+
+    /// When a running rate limit ends, so a view can redraw then, and only then.
+    var rateLimitEnd: Date? {
+        if case .rateLimited(let until) = self { return until }
+        return nil
+    }
+
     /// Whether the Tasks page appearing may start a sync on its own, `lastSuccess` being when the
     /// last sync succeeded: only when that is at least `staleAfter` ago, and no rate limit is running.
     ///

@@ -74,6 +74,26 @@ enum TaskTimeMath {
         return ((max(0, seconds) + increment / 2) / increment) * increment
     }
 
+    // MARK: - How the task lists show it
+
+    /// A task's time against its estimate, as Brain › Tasks and the notch's Tasks popover show it:
+    /// "42m of 2h"; "42m tracked" without an estimate; "No estimate" before any time. `over` is the
+    /// time past the estimate once it is a minute or more, which the lists show apart, in orange,
+    /// as "10m over".
+    static func progress(tracked: Int, estimate: Int?) -> (text: String, over: Int?) {
+        let trackedText = WorkDuration.format(tracked)
+        let text: String
+        if let estimate {
+            text = String(localized: "\(trackedText) of \(WorkDuration.format(estimate))")
+        } else if tracked > 0 {
+            text = String(localized: "\(trackedText) tracked")
+        } else {
+            text = String(localized: "No estimate")
+        }
+        let over = overtimeSeconds(estimate: estimate, tracked: tracked)
+        return (text, over >= 60 ? over : nil)
+    }
+
     // MARK: - Opening and closing segments
 
     /// Opens a live segment at `date`. Nothing changes when one is already open, so a repeated
@@ -146,6 +166,18 @@ enum WorkDuration {
         if hours == 0 { return "\(rest)m" }
         if rest == 0 { return "\(hours)h" }
         return "\(hours)h \(rest)m"
+    }
+
+    /// A running clock, for the task being timed: "0:05", "42:05", "1:02:03". Whole seconds.
+    static func clock(_ seconds: Int) -> String {
+        let total = max(0, seconds)
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let rest = total % 60
+        let paddedSeconds = rest < 10 ? "0\(rest)" : "\(rest)"
+        if hours == 0 { return "\(minutes):\(paddedSeconds)" }
+        let paddedMinutes = minutes < 10 ? "0\(minutes)" : "\(minutes)"
+        return "\(hours):\(paddedMinutes):\(paddedSeconds)"
     }
 
     private static func clamp(_ seconds: Double) -> Int? {

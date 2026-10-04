@@ -33,9 +33,6 @@ import SwiftUI
 /// server reasons render verbatim.
 struct TimeToLogSection: View {
     @ObservedObject private var manager = TasksManager.shared
-    @Default(.jiraSiteHost) private var jiraSiteHost
-    @Default(.gitlabHost) private var gitlabHost
-    @Default(.gitlabCanLogTime) private var gitlabCanLogTime
 
     private func highlightID(_ title: String) -> String { "tasks-\(title)" }
 
@@ -51,18 +48,7 @@ struct TimeToLogSection: View {
                 .settingsHighlight(id: highlightID("Time to log"))
 
                 ForEach(open) { draft in
-                    let task = manager.task(for: draft)
-                    WorklogDraftRow(
-                        draft: draft,
-                        task: task,
-                        availability: WorklogDrafts.availability(
-                            of: draft, task: task,
-                            jiraHost: jiraSiteHost, gitlabHost: gitlabHost, gitlabCanLogTime: gitlabCanLogTime
-                        ),
-                        openLink: openLink(for: task)
-                    )
-                    // A new length (more time folded in, or the one just sent) starts the fields again.
-                    .id("\(draft.id.uuidString)-\(draft.seconds)")
+                    WorklogDraftCard(draft: draft)
                 }
             } header: {
                 SettingsSectionHeader("Time to log")
@@ -70,6 +56,34 @@ struct TimeToLogSection: View {
                 SettingsFooter("Jira entries are logged without emailing the issue's watchers, and take the time off its remaining estimate. GitLab records the time when you log it. Not now keeps an entry until more time is added to it; Keep local only keeps the time on this Mac.")
             }
         }
+    }
+}
+
+/// One Time to log entry, wherever Kannu asks about it: here, and in the notch's Tasks popover
+/// ("Log time?"). It works out whether the entry can be sent from here and where Open in… goes,
+/// then draws `WorklogDraftRow` — so both places show one card, with one set of answers and one
+/// path to `TasksManager.confirmWorklog`. The card is a `LabeledContent`: a Form lays it out as a
+/// row, and the popover stacks it with a `LabeledContentStyle` of its own.
+struct WorklogDraftCard: View {
+    @ObservedObject private var manager = TasksManager.shared
+    @Default(.jiraSiteHost) private var jiraSiteHost
+    @Default(.gitlabHost) private var gitlabHost
+    @Default(.gitlabCanLogTime) private var gitlabCanLogTime
+    let draft: WorklogDraft
+
+    var body: some View {
+        let task = manager.task(for: draft)
+        WorklogDraftRow(
+            draft: draft,
+            task: task,
+            availability: WorklogDrafts.availability(
+                of: draft, task: task,
+                jiraHost: jiraSiteHost, gitlabHost: gitlabHost, gitlabCanLogTime: gitlabCanLogTime
+            ),
+            openLink: openLink(for: task)
+        )
+        // A new length (more time folded in, or the one just sent) starts the fields again.
+        .id("\(draft.id.uuidString)-\(draft.seconds)")
     }
 
     private func openLink(for task: TaskItem?) -> WorklogDraftRow.Link? {

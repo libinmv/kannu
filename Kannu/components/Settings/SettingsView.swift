@@ -188,8 +188,13 @@ private struct SettingsSearchEntry: Identifiable {
 enum SettingsDeepLink {
     static let smartCaffeinateHighlightID = SettingsTab.agentStatus.highlightID(for: "Smart caffeinate")
     static let securityFindingsHighlightID = SettingsTab.agentSecurity.highlightID(for: "Security findings")
-    /// Brain › Tasks › Sources, on its Jira Cloud row: where a later "Manage tasks…" lands.
+    /// Brain › Tasks › Sources, on its Jira Cloud row: where the notch Tasks popover's "Manage
+    /// tasks…", "Connect Jira…" / "Connect GitLab…" and Brain glyph land.
     static let tasksSourcesHighlightID = SettingsTab.tasks.highlightID(for: "Sources")
+    /// Brain › Tasks › Task order: the popover's "Show all in Brain".
+    static let tasksOrderHighlightID = SettingsTab.tasks.highlightID(for: "Task order")
+    /// Brain › Tasks › Time to log, shown while an entry waits: the popover's "… more in Brain".
+    static let tasksTimeToLogHighlightID = SettingsTab.tasks.highlightID(for: "Time to log")
 }
 
 final class SettingsHighlightCoordinator: ObservableObject {

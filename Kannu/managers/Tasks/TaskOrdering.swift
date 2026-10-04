@@ -52,6 +52,22 @@ enum TaskOrdering {
         tasks.filter { $0.visibility == .active && listed($0) }
     }
 
+    /// How many rows the notch's Tasks popover lists under Up next. The rest are in Brain.
+    static let upNextLimit = 6
+
+    /// The notch popover's Up next: the task order without the task being timed, which has its own
+    /// Now card, at most `limit` rows, top first.
+    static func upNext(_ active: [TaskItem], excluding timed: UUID?, limit: Int = upNextLimit) -> [TaskItem] {
+        Array(active.lazy.filter { $0.id != timed }.prefix(max(0, limit)))
+    }
+
+    /// How many Up next rows fit: `upNextLimit` on their own, two fewer under a Now card and under
+    /// each Log time? card, so the popover stays shorter than the smallest screen it opens on.
+    /// Never fewer than 2.
+    static func upNextRows(showingNow: Bool, cards: Int) -> Int {
+        max(2, upNextLimit - (showingNow ? 2 : 0) - 2 * max(0, cards))
+    }
+
     /// A new task goes to the top.
     static func inserting(_ task: TaskItem, into tasks: [TaskItem]) -> [TaskItem] {
         [task] + tasks
