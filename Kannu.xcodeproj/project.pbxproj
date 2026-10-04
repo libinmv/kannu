@@ -80,6 +80,7 @@
 		AA10000000000000000000B1 /* ClosedNotchVisibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000AF /* ClosedNotchVisibility.swift */; };
 		AA10000000000000000000B7 /* ClipboardPanelPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B6 /* ClipboardPanelPlacement.swift */; };
 		AA10000000000000000000B9 /* HostedContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B8 /* HostedContent.swift */; };
+		AA10000000000000000002B1 /* KeychainWritePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000002B0 /* KeychainWritePlan.swift */; };
 		AA10000000000000000000B3 /* AgentSecurityFindingGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B2 /* AgentSecurityFindingGroup.swift */; };
 		AA10000000000000000000B5 /* SecurityFindingAcknowledgement.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B4 /* SecurityFindingAcknowledgement.swift */; };
 		AA1000000000000000000093 /* GitHubIssue.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000092 /* GitHubIssue.swift */; };
@@ -178,6 +179,7 @@
 		AA10000000000000000000AF /* ClosedNotchVisibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClosedNotchVisibility.swift; path = Kannu/managers/Display/ClosedNotchVisibility.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000B6 /* ClipboardPanelPlacement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClipboardPanelPlacement.swift; path = Kannu/managers/Display/ClipboardPanelPlacement.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000B8 /* HostedContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HostedContent.swift; path = Kannu/helpers/HostedContent.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000002B0 /* KeychainWritePlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = KeychainWritePlan.swift; path = Kannu/managers/LLMUsage/Quota/KeychainWritePlan.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000B2 /* AgentSecurityFindingGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentSecurityFindingGroup.swift; path = Kannu/managers/AgentStatus/AgentSecurityFindingGroup.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000B4 /* SecurityFindingAcknowledgement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SecurityFindingAcknowledgement.swift; path = Kannu/managers/AgentStatus/SecurityFindingAcknowledgement.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000092 /* GitHubIssue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GitHubIssue.swift; path = Kannu/managers/GitHubIssue.swift; sourceTree = SOURCE_ROOT; };
@@ -626,6 +628,7 @@
 				AA10000000000000000000B1 /* ClosedNotchVisibility.swift in Sources */,
 				AA10000000000000000000B7 /* ClipboardPanelPlacement.swift in Sources */,
 				AA10000000000000000000B9 /* HostedContent.swift in Sources */,
+				AA10000000000000000002B1 /* KeychainWritePlan.swift in Sources */,
 				AA100000000000000000F008 /* TermsOfUse.swift in Sources */,
 				AA10000000000000000000B3 /* AgentSecurityFindingGroup.swift in Sources */,
 				AA10000000000000000000B5 /* SecurityFindingAcknowledgement.swift in Sources */,

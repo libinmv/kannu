@@ -4,6 +4,42 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-04 - A saved secret always gets a fresh keychain item that only Kannu can read
+- **Developer label:** "do we write now save these tokens in a secure way right, noone can just come and read it from us right"
+- **Agent label:** Keychain saves delete-then-add through `KeychainWritePlan`; other apps' items stay read-only
+- **Changes:**
+  - Audit of every keychain write: the only saver is `SecureSecretsStore` (service
+    `com.kannu.app.secure-secrets` — the AI provider API keys, Pushover keys, webhook URL and
+    Spotify cookie), and the only other delete is the one-time cleanup of
+    `com.kannu.app.llm-credentials`. Kannu writes no other app's item; Codex's `Codex Auth` and
+    Cursor's `cursor-access-token` are only ever read, so no write path had to stay as it was.
+  - `KeychainReader.setGenericPassword` used to update an existing item in place and add one only
+    when none existed. An update keeps the item's access list, so an item pre-planted under Kannu's
+    service and account with a list that lets any app read it would have received the secret. A save
+    now deletes the item and adds it fresh, and `SecItemAdd` gives the new item an access list that
+    trusts only Kannu. Same attributes (`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`), same `Bool`
+    result for callers.
+  - New `KeychainWritePlan` (pure; joins the logic test target, pbxproj ids 2B0/2B1): `.recreate` for
+    a `com.kannu.app.` service, `.refuse` for anything else, and `deleteLeftNothing(_:)` — the add runs
+    only after a delete that returned success or not-found, so a denied or failed delete stops the save
+    instead of falling back to an update. `deleteGenericPassword` also refuses a service Kannu does not
+    own.
+  - Delete-then-add is not atomic, so a failed add after a successful delete would have left no item
+    and lost the secret the user already had (the in-place update left it untouched on failure). The
+    save now reads the prior value first, silently (`allowInteraction: false`, so a save never raises a
+    keychain prompt), and when the add fails re-adds it through the same fresh add
+    (`KeychainWritePlan.valueToRestore(afterAdd:prior:)`). The add lives in a private
+    `addGenericPassword` that only the save calls. Failures log the account name and `OSStatus`
+    through `os.Logger` (category `Keychain`), never the value. A save still returns `false` on failure.
+  - `KeychainWritePlanTests` (13 tests): the plan for Kannu and foreign services, the delete-status
+    rule, the restore rule, every write call site names a Kannu service, no
+    `SecItemUpdate`/`SecKeychainItemModify` in any non-comment line under `Kannu/`, `SecItemAdd` only in
+    `KeychainReader.swift` and only inside the private add the save calls, the save's order (plan, read
+    prior, delete, add, restore on failure), and self-tests that catch the old in-place save and a
+    delete-then-add save that cannot restore.
+  - No `docs/REGRESSIONS.md` entry covers this, so the dated note lives at the code
+    (`KeychainWritePlan.swift`, `KeychainReader.swift`).
+
 ### 2026-10-01 - Quit Kannu has a row in Settings, and searching "quit" or "exit" finds it
 - **Developer label:** "the settings should have a quit app, or at least on search of quit or exit i should get the tab with that button to come up as result"
 - **Agent label:** Settings Quit row + search entry, pinned by the highlight inventory
