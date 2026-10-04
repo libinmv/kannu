@@ -38,7 +38,12 @@ class TimerManager: ObservableObject {
     @Published var lastUpdated: Date = .distantPast
     @Published var activePresetId: UUID?
     @Published private(set) var activeSource: TimerSource = .none
-    
+    /// What a renamed session goes back to when its name is cleared: the preset's name, or
+    /// "Custom Timer" (`TimerSessionName`).
+    private(set) var sessionDefaultName: String = "Timer"
+    /// New for every session, so a rename begun in one session never lands on the next.
+    private(set) var sessionID = UUID()
+
     // Timer progress (0.0 to 1.0, or >1.0 for overtime)
     var progress: Double {
         guard totalDuration > 0 else { return 0.0 }
@@ -137,7 +142,9 @@ class TimerManager: ObservableObject {
     }
     
     // MARK: - Timer Methods
-    func startTimer(duration: TimeInterval, name: String = "Timer", preset: TimerPreset? = nil) {
+    /// `name` is what the session shows; `fallbackName`, when given, is the default a cleared name
+    /// returns to (the user may have typed `name` over it).
+    func startTimer(duration: TimeInterval, name: String = "Timer", preset: TimerPreset? = nil, fallbackName: String? = nil) {
         if activeSource == .external {
             endExternalTimer(triggerSmoothClose: false)
         }
@@ -153,6 +160,8 @@ class TimerManager: ObservableObject {
         isFinished = false
         isOvertime = false
         timerName = name
+        sessionDefaultName = fallbackName ?? name
+        sessionID = UUID()
         totalDuration = duration
         remainingTime = duration
         elapsedTime = 0
@@ -346,6 +355,8 @@ class TimerManager: ObservableObject {
             isTimerActive = false
         }
         timerName = "Timer"
+        sessionDefaultName = "Timer"
+        sessionID = UUID()
         totalDuration = 0
         remainingTime = 0
         elapsedTime = 0
@@ -354,6 +365,21 @@ class TimerManager: ObservableObject {
         isOvertime = false
         activePresetId = nil
         activeSource = .none
+    }
+
+    /// Renames the running session. Only a timer started in Kannu: a Clock-app timer's name is the
+    /// Clock app's (`SystemTimerBridge`). A cleared name goes back to the session's default.
+    /// `session` is the `sessionID` the rename began in; a later session is left alone.
+    func renameSession(to text: String, session: UUID) {
+        guard activeSource == .manual, isTimerActive,
+              let name = TimerSessionName.renamed(
+                text,
+                begunIn: session,
+                current: sessionID,
+                currentName: timerName,
+                fallback: sessionDefaultName
+              ) else { return }
+        timerName = name
     }
 
     // MARK: - Derived State
