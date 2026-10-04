@@ -4,6 +4,27 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-04 - The paired-activity badge sits beside the album art, not over it
+- **Developer label:** "if you look at the timer placing, its over the small thumbnail adjust that"
+- **Agent label:** Closed music wing: badge beside the art via `ClosedMusicWingLayout`, hidden during inline sneak peek
+- **Changes:**
+  - In the closed notch, while music plays alongside a timer, a recording, Focus, Caps Lock, an
+    extension or the shelf, that activity's badge now sits 4 pt to the right of the album art,
+    vertically centred. It used to cover the art's bottom-right quarter. The left wing grows by the
+    badge and its gap (17 pt at the default notch height) only while a badge is shown.
+  - The art keeps its size and position from the wing's edge, so the open/close animation and the
+    pull-down gesture are unchanged.
+  - New `ClosedMusicWingLayout` (`Kannu/sizing/`) gives one width to both the wing's frame and the
+    notch, so the black shape always fits what it holds. It is in the logic test target
+    (pbxproj ids CA/CB).
+  - No badge during an inline sneak peek: that window is a fixed 460 pt, and a wider wing would be
+    cut off at both edges.
+  - Removed the unused `badgeOverlayOffset` and `badgeDisplaySize`.
+  - Tests: `ClosedMusicWingLayoutTests` (the art never moves, the badge never overlaps it, widths
+    and sizes) and `ClosedMusicWingRulesTests` (source pins: the badge is a child of the art's
+    HStack with no `.offset`, and the notch and the wing share one width), with planted offenders
+    including the old shape.
+
 ### 2026-10-01 - Quit Kannu has a row in Settings, and searching "quit" or "exit" finds it
 - **Developer label:** "the settings should have a quit app, or at least on search of quit or exit i should get the tab with that button to come up as result"
 - **Agent label:** Settings Quit row + search entry, pinned by the highlight inventory

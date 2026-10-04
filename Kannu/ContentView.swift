@@ -1503,13 +1503,18 @@ struct ContentView: View {
         // In pill mode the capsule's rounded ends clip flush content (album art / spectrum),
         // so give the wings breathing room from the curved edges.
         let wingEdgeInset: CGFloat = isDynamicIslandMode ? 6 : 0
-        let notchWidth = wingBaseWidth + effectiveCenterWidth + rightWingWidth + wingEdgeInset * 2
-        let badgeBaseSize = max(13, notchContentHeight * 0.36)
-        let badgeDisplaySize = badgeDisplaySize(for: secondary, baseSize: badgeBaseSize)
-        let badgeOffset = badgeOverlayOffset(for: secondary, badgeSize: badgeDisplaySize)
+        // The art, and beside it (never over it) the paired activity's badge. One width for the
+        // wing's frame and the notch, so the black shape always fits what it holds.
+        let leftWing = ClosedMusicWingLayout(
+            artSlotWidth: wingBaseWidth,
+            contentHeight: notchContentHeight,
+            hasPairedActivity: secondary != nil,
+            inlineSneakPeekActive: inlineSneakPeekActive
+        )
+        let notchWidth = leftWing.width + effectiveCenterWidth + rightWingWidth + wingEdgeInset * 2
 
         HStack(spacing: 0) {
-            ZStack(alignment: .bottomTrailing) {
+            HStack(alignment: .center, spacing: ClosedMusicWingLayout.badgeSpacing) {
                 Color.clear
                     .aspectRatio(1, contentMode: .fit)
                     .background(
@@ -1521,12 +1526,14 @@ struct ContentView: View {
                     .clipped()
                     .matchedGeometryEffect(id: "albumArt", in: albumArtNamespace)
                     .albumArtFlip(angle: musicManager.flipAngle)
-                albumArtBadge(for: secondary, badgeSize: badgeDisplaySize)
-                    .offset(x: badgeOffset.width, y: badgeOffset.height)
-                    .id(secondary?.id ?? "music-badge")
-                    .contentTransition(.symbolEffect(.replace))
+                    .frame(width: leftWing.artSlotWidth, height: notchContentHeight)
+                if leftWing.showsBadge, let secondary {
+                    albumArtBadge(for: secondary, badgeSize: leftWing.badgeSize)
+                        .id(secondary.id)
+                        .contentTransition(.symbolEffect(.replace))
+                }
             }
-            .frame(width: wingBaseWidth, height: notchContentHeight)
+            .frame(width: leftWing.width, height: notchContentHeight, alignment: .leading)
             .padding(.leading, wingEdgeInset)
             .contentShape(Rectangle())
             .onHover { hovering in
@@ -1745,66 +1752,46 @@ struct ContentView: View {
         max(baseWidth, max(centerBaseWidth * factor, baseWidth + extra))
     }
 
-    @ViewBuilder
-    private func albumArtBadge(for secondary: MusicSecondaryLiveActivity?, badgeSize: CGFloat) -> some View {
-        if let secondary, badgeSize > 0 {
-            ZStack {
+    /// The paired activity's badge, drawn beside the closed notch's album art (`ClosedMusicWingLayout`).
+    private func albumArtBadge(for secondary: MusicSecondaryLiveActivity, badgeSize: CGFloat) -> some View {
+        ZStack {
+            Circle()
+                .fill(Color.black)
+
+            switch secondary {
+            case .timer:
+                Image(systemName: "timer")
+                    .font(.system(size: badgeSize * 0.55, weight: .semibold))
+                    .foregroundStyle(timerAccentColor)
+            case .focus(let mode):
+                mode.resolvedActiveIcon(usePrivateSymbol: true)
+                    .renderingMode(.template)
+                    .font(.system(size: badgeSize * 0.5, weight: .semibold))
+                    .foregroundStyle(mode.accentColor)
+            case .recording:
                 Circle()
-                    .fill(Color.black)
-
-                switch secondary {
-                case .timer:
-                    Image(systemName: "timer")
-                        .font(.system(size: badgeSize * 0.55, weight: .semibold))
-                        .foregroundStyle(timerAccentColor)
-                case .focus(let mode):
-                    mode.resolvedActiveIcon(usePrivateSymbol: true)
-                        .renderingMode(.template)
-                        .font(.system(size: badgeSize * 0.5, weight: .semibold))
-                        .foregroundStyle(mode.accentColor)
-                case .recording:
-                    Circle()
-                        .fill(Color.red)
-                        .frame(width: badgeSize * 0.45, height: badgeSize * 0.45)
-                        .modifier(PulsingModifier())
-                case .capsLock:
-                    Image(systemName: "capslock.fill")
-                        .font(.system(size: badgeSize * 0.5, weight: .semibold))
-                        .foregroundStyle(capsLockTintMode.color)
-                case .extensionPayload(let payload):
-                    ExtensionBadgeIconView(
-                        descriptor: payload.descriptor.leadingIcon,
-                        accent: payload.descriptor.accentColor.swiftUIColor,
-                        size: badgeSize
-                    )
-                case .shelf:
-                    Image(systemName: "tray.and.arrow.down.fill")
-                        .font(.system(size: badgeSize * 0.50, weight: .semibold))
-                        .foregroundStyle(notchFillColor.contrastingForeground)
-                }
+                    .fill(Color.red)
+                    .frame(width: badgeSize * 0.45, height: badgeSize * 0.45)
+                    .modifier(PulsingModifier())
+            case .capsLock:
+                Image(systemName: "capslock.fill")
+                    .font(.system(size: badgeSize * 0.5, weight: .semibold))
+                    .foregroundStyle(capsLockTintMode.color)
+            case .extensionPayload(let payload):
+                ExtensionBadgeIconView(
+                    descriptor: payload.descriptor.leadingIcon,
+                    accent: payload.descriptor.accentColor.swiftUIColor,
+                    size: badgeSize
+                )
+            case .shelf:
+                Image(systemName: "tray.and.arrow.down.fill")
+                    .font(.system(size: badgeSize * 0.50, weight: .semibold))
+                    .foregroundStyle(notchFillColor.contrastingForeground)
             }
-            .frame(width: badgeSize, height: badgeSize)
-            .shadow(color: .black.opacity(0.35), radius: 3, x: 0, y: 1)
-            .transition(.opacity.combined(with: .scale))
-        } else {
-            EmptyView()
         }
-    }
-
-    private func badgeDisplaySize(for secondary: MusicSecondaryLiveActivity?, baseSize: CGFloat) -> CGFloat {
-        guard let secondary else { return baseSize }
-        switch secondary {
-        default:
-            return baseSize
-        }
-    }
-
-    private func badgeOverlayOffset(for secondary: MusicSecondaryLiveActivity?, badgeSize: CGFloat) -> CGSize {
-        guard let secondary else { return CGSize(width: badgeSize * 0.2, height: badgeSize * 0.25) }
-        switch secondary {
-        default:
-            return CGSize(width: badgeSize * 0.2, height: badgeSize * 0.25)
-        }
+        .frame(width: badgeSize, height: badgeSize)
+        .shadow(color: .black.opacity(0.35), radius: 3, x: 0, y: 1)
+        .transition(.opacity.combined(with: .scale))
     }
 
     @ViewBuilder
