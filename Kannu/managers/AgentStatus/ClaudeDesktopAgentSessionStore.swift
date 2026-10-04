@@ -195,6 +195,30 @@ enum ClaudeDesktopAgentSessionStore {
     private static var parseCache: [String: (mtime: Date, size: Int, parsed: Parsed)] = [:]
     private static let parseCacheCap = 48
 
+    /// `listRecentAuditLogs` for the rescans in the next two seconds. The walk enumerates the whole
+    /// tree (hundreds of entries on a Mac that uses Cowork) and ran on every full rescan, several a
+    /// second while agents worked. Dropped early when FSEvents reports a file added, removed or
+    /// renamed under the root (`invalidateListingCache`); a log that moves into the window by being
+    /// appended to waits at most this long.
+    private static var listingCache: (root: String, maxAgeMinutes: Int, at: Date, urls: [URL])?
+    static let listingCacheTTL: TimeInterval = 2
+
+    static func invalidateListingCache() {
+        listingCache = nil
+    }
+
+    static func cachedRecentAuditLogs(root: URL, maxAgeMinutes: Int, now: Date = Date()) -> [URL] {
+        if let cached = listingCache, cached.root == root.path, cached.maxAgeMinutes == maxAgeMinutes,
+           now >= cached.at, now.timeIntervalSince(cached.at) < listingCacheTTL {
+            // New URL instances: a URL keeps the resource values it has read, so a cached one would
+            // report a grown log's old size and mtime, and the parse cache would never see it change.
+            return cached.urls.map { URL(fileURLWithPath: $0.path) }
+        }
+        let urls = listRecentAuditLogs(root: root, maxAgeMinutes: maxAgeMinutes, now: now)
+        listingCache = (root.path, maxAgeMinutes, now, urls)
+        return urls
+    }
+
     /// `parse(head:tail:)` for a file, remembered against `(mtime, size)`.
     ///
     /// `sessions(...)` runs on the main actor from every full rescan, and an appending session
@@ -229,7 +253,7 @@ enum ClaudeDesktopAgentSessionStore {
         let collapseMs = Int64(collapseSeconds) * 1_000
         let inactiveMs = Int64(inactiveSeconds) * 1_000
 
-        return listRecentAuditLogs(root: root, maxAgeMinutes: staleMinutes, now: now).compactMap { url in
+        return cachedRecentAuditLogs(root: root, maxAgeMinutes: staleMinutes, now: now).compactMap { url in
             guard let identity = sessionIdentity(forAuditLog: url) else { return nil }
             let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
             let mtime = values?.contentModificationDate ?? now
