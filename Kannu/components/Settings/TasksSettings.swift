@@ -83,7 +83,7 @@ struct TasksSettings: View {
             } header: {
                 SettingsSectionHeader("Tasks")
             } footer: {
-                SettingsFooter("Tasks and their recorded time stay on this Mac. Nothing is sent anywhere.")
+                SettingsFooter("Tasks and their recorded time stay on this Mac. Time on a Jira or GitLab task is sent there only when you choose Log in Time to log.")
             }
 
             if enableTasks {
@@ -231,8 +231,8 @@ private struct TaskSourcesSection: View {
             SettingsSectionHeader("Sources")
         } footer: {
             SettingsFooterStack {
-                SettingsFooter("Kannu reads your Jira issues from your Jira site only, over HTTPS, and writes nothing to Jira. The API token is kept in your Keychain. A classic API token carries all of your Jira permissions, so create one just for Kannu and revoke it when you stop using it.")
-                SettingsFooter("Kannu reads your GitLab issues and merge requests from your GitLab server only, over HTTPS with a certificate macOS trusts, and writes nothing to GitLab. The personal access token is kept in your Keychain. A read_api token is enough to list; create one just for Kannu, with an expiry date.")
+                SettingsFooter("Kannu reads your Jira issues from your Jira site only, over HTTPS, and writes to Jira only when you log time from Time to log. The API token is kept in your Keychain. A classic API token carries all of your Jira permissions, so create one just for Kannu and revoke it when you stop using it.")
+                SettingsFooter("Kannu reads your GitLab issues and merge requests from your GitLab server only, over HTTPS with a certificate macOS trusts, and writes to GitLab only when you log time from Time to log, which needs a token with the api scope. The personal access token is kept in your Keychain. A read_api token is enough to list; create one just for Kannu, with an expiry date.")
             }
         }
     }
@@ -555,6 +555,7 @@ private struct TaskListSections: View {
                 SettingsSectionHeader("Task list")
             }
         }
+        TimeToLogSection()
         interruptedSection
         taskOrderSection
         doneAndHiddenSection
@@ -733,6 +734,12 @@ private struct TaskListSections: View {
             // bring it back on the next sync.
             if let link = openLink(for: task) {
                 Button(link.title) { NSWorkspace.shared.open(link.url) }
+            }
+            // Whether the time recorded on it is offered in Time to log. Never asking keeps it here.
+            if task.logPolicy == .ask {
+                Button("Never Ask to Log Time") { manager.setAsksToLogTime(false, for: task.id) }
+            } else {
+                Button("Ask to Log Time") { manager.setAsksToLogTime(true, for: task.id) }
             }
             Button("Hide") { manager.hide(task.id) }
         }
@@ -1029,7 +1036,7 @@ private struct JiraConnectSheet: View {
         VStack(alignment: .leading, spacing: SettingsMetrics.rowContent) {
             Text("Connect Jira Cloud")
                 .font(.headline)
-            Text("Kannu checks the token with your Jira site before saving it in your Keychain, then lists your issues. It writes nothing to Jira.")
+            Text("Kannu checks the token with your Jira site before saving it in your Keychain, then lists your issues. It writes to Jira only when you log time.")
                 .settingsDescriptionStyle()
             TextField("Site", text: $site, prompt: Text(verbatim: "acme.atlassian.net"))
             TextField("Email", text: $email, prompt: Text(verbatim: "you@example.com"))
@@ -1104,7 +1111,7 @@ private struct GitLabConnectSheet: View {
         VStack(alignment: .leading, spacing: SettingsMetrics.rowContent) {
             Text("Connect GitLab")
                 .font(.headline)
-            Text("Kannu checks the token with your GitLab server before saving it in your Keychain, then lists your open issues and merge requests. It writes nothing to GitLab.")
+            Text("Kannu checks the token with your GitLab server before saving it in your Keychain, then lists your open issues and merge requests. It writes to GitLab only when you log time.")
                 .settingsDescriptionStyle()
             TextField("Server", text: $server, prompt: Text(verbatim: GitLabHost.defaultServer))
                 .onChange(of: server) { _, _ in problem = nil }

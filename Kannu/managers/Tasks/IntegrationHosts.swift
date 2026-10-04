@@ -92,15 +92,16 @@ enum JiraSite {
         }
     }
 
-    /// `https://<host><path>`, or nil when the host is not a Jira Cloud site or the path is not a
-    /// plain absolute path.
-    static func apiURL(host: String, path: String) -> URL? {
+    /// `https://<host><path>?<query>`, or nil when the host is not a Jira Cloud site or the path is
+    /// not a plain absolute path. The query is built here, from Kannu's own values.
+    static func apiURL(host: String, path: String, query: [URLQueryItem] = []) -> URL? {
         guard isValidHost(host), path.hasPrefix("/"), !path.contains("?"), !path.contains("#"),
               !path.contains(".."), !path.contains("//"), !path.contains("\\") else { return nil }
         var components = URLComponents()
         components.scheme = "https"
         components.host = host
         components.path = path
+        if !query.isEmpty { components.queryItems = query }
         return components.url
     }
 

@@ -48,6 +48,12 @@ import os
 /// open merge requests assigned to them or waiting for their review (`GitLabClient`,
 /// `GitLabCredentialStore`). Each source keeps its own sync state, generation and in-flight marker,
 /// and merges only its own tasks: one failing or being slow never shows on, or holds up, the other.
+///
+/// **Ask, then log.** When timing a Jira or GitLab task ends, its unlogged time is folded into one
+/// draft (`WorklogDrafts.folding`, rounded to the nearest 15 minutes) that Brain › Tasks › Time to
+/// log asks about. Kannu always asks first: only `confirmWorklog`, from the user's Log, Retry or
+/// Send Again, builds a write request (`WorklogConsentRulesTests`), and it saves the draft as
+/// `.sending` before the request goes out, so a relaunch knows to check instead of sending twice.
 @MainActor
 final class TasksManager: ObservableObject {
     static let shared = TasksManager()
@@ -105,6 +111,8 @@ final class TasksManager: ObservableObject {
     private var terminateObserver: NSObjectProtocol?
     private var revision = 0
     private var savedRevision = 0
+    /// Drafts whose send is under way, so a second click cannot start another.
+    private var sendsInFlight = Set<UUID>()
 
     /// A sync older than this is refreshed when the Tasks page appears (Jira and GitLab alike).
     static let jiraStaleAfter: TimeInterval = 5 * 60
@@ -235,7 +243,8 @@ final class TasksManager: ObservableObject {
             guard var current = link, current.session == event.session else { return }
             current.isPaused = true
             link = current
-            close(current.taskID, at: event.at)
+            // A pause is not the end of the work: the time is offered for logging when timing ends.
+            close(current.taskID, at: event.at, offeringTime: false)
         case .resumed:
             guard var current = link, current.session == event.session else { return }
             current.isPaused = false
@@ -247,7 +256,8 @@ final class TasksManager: ObservableObject {
             if pendingLink?.session == event.session { pendingLink = nil }
             guard let current = link, current.session == event.session else { return }
             unlink()
-            close(current.taskID, at: event.at)
+            // Timing ended: a Jira or GitLab task's unlogged time becomes its Time to log card.
+            close(current.taskID, at: event.at, offeringTime: true)
         }
     }
 
@@ -277,7 +287,7 @@ final class TasksManager: ObservableObject {
     private func systemWillSleep() {
         guard let link, !isAsleep else { return }
         isAsleep = true
-        if !link.isPaused { close(link.taskID, at: Date()) }
+        if !link.isPaused { close(link.taskID, at: Date(), offeringTime: false) }
     }
 
     private func systemDidWake() {
@@ -288,14 +298,19 @@ final class TasksManager: ObservableObject {
         }
     }
 
-    /// Closes the task's live segment and offers the finished time for logging where that applies.
-    private func close(_ taskID: UUID, at date: Date) {
+    /// Closes the task's live segment. With `offeringTime` (timing ended), a Jira or GitLab task's
+    /// unlogged time is folded into the draft its Time to log card asks about; a pause or a sleep
+    /// only closes the segment, so the card does not appear while the task is still being timed.
+    private func close(_ taskID: UUID, at date: Date, offeringTime: Bool) {
         guard let index = tasks.firstIndex(where: { $0.id == taskID }) else { return }
         var task = tasks[index]
         task.segments = TaskTimeMath.closing(task.segments, at: date)
-        let folded = WorklogDrafts.folding(task, into: drafts)
-        tasks[index] = folded.task
-        drafts = folded.drafts
+        if offeringTime {
+            let folded = WorklogDrafts.folding(task, into: drafts)
+            task = folded.task
+            drafts = folded.drafts
+        }
+        tasks[index] = task
         persist()
     }
 
@@ -402,6 +417,263 @@ final class TasksManager: ObservableObject {
         persist()
     }
 
+    // MARK: - Time to log
+
+    /// What Time to log shows, oldest first: entries waiting for an answer (asked, or put off with
+    /// Not now), being sent, refused, or perhaps already logged.
+    var openDrafts: [WorklogDraft] { drafts.filter { WorklogDrafts.isOpen($0.state) } }
+
+    func task(for draft: WorklogDraft) -> TaskItem? {
+        tasks.first { $0.id == draft.taskID }
+    }
+
+    /// The user's Log, Retry or Send Again: the one way Kannu writes time to Jira or GitLab. Nothing
+    /// else builds a write request, and this is called only from a view, on a click
+    /// (`WorklogConsentRulesTests`). `seconds` is what the card's duration field says, rounded to
+    /// whole minutes; `comment` is sent to Jira only, as typed.
+    ///
+    /// 1. **Write-ahead.** The draft becomes `.sending` and the list is written to disk, and waited
+    ///    for, before any request. A save that fails sends nothing. A relaunch that finds `.sending`
+    ///    treats it as uncertain.
+    /// 2. The token is read from the Keychain (interactive: the user clicked) and used only with
+    ///    the site or server the time was recorded against.
+    /// 3. **Jira:** a retry first asks Jira, read-only, whether the entry is already there (its
+    ///    `kannu` marker), and sends only if it is not. Then `POST …/worklog?adjustEstimate=auto&
+    ///    notifyUsers=false`; a lost answer is checked once more, read-only.
+    ///    **GitLab:** `POST …/add_spent_time?duration=`; a lost answer is uncertain, and the user
+    ///    chooses Mark Logged or Send Again.
+    /// 4. Immediately before either request is built, after the last wait, `canStillSend` looks
+    ///    again: a Disconnect during the save or the Keychain dialog sends nothing.
+    func confirmWorklog(_ draftID: UUID, seconds typedSeconds: Int, comment typedComment: String?) {
+        guard isReady, !sendsInFlight.contains(draftID),
+              let index = drafts.firstIndex(where: { $0.id == draftID }),
+              let task = tasks.first(where: { $0.id == drafts[index].taskID }), let remote = task.remote,
+              WorklogDrafts.availability(
+                of: drafts[index], task: task,
+                jiraHost: Defaults[.jiraSiteHost], gitlabHost: Defaults[.gitlabHost],
+                gitlabCanLogTime: Defaults[.gitlabCanLogTime]
+              ) == .ready,
+              let seconds = WorklogDrafts.loggableSeconds(typedSeconds) else { return }
+        let previous = drafts[index].state
+        let event: WorklogDrafts.Event = previous == .awaiting ? .send : .retry
+        guard let sending = WorklogDrafts.transition(previous, on: event) else { return }
+        let source = task.source
+        drafts[index].seconds = seconds
+        drafts[index].comment = source == .jira ? JiraAPI.cleanedComment(typedComment) : nil
+        drafts[index].state = sending
+        drafts[index].message = nil
+        drafts[index].deferredAt = nil
+        let draft = drafts[index]
+        let accountID = Defaults[.jiraAccountID]
+        sendsInFlight.insert(draftID)
+        logger.info("Logging time to \(source.rawValue, privacy: .public): \(event == .send ? "first send" : "retry", privacy: .public)")
+
+        Task { [weak self] in
+            guard let self else { return }
+            // 1. Write-ahead: on disk as .sending before anything leaves this Mac.
+            guard await self.saveNow() else {
+                self.restoreUnsent(draftID, to: previous, message: String(localized: "Kannu could not save its task list, so nothing was sent. Try again."))
+                return
+            }
+            let poster = WorklogPoster()
+            switch source {
+            case .jira:
+                // 2. The Keychain's own site, and only the one the time was recorded against.
+                let credential: JiraCredential
+                switch await JiraCredentialStore.load(allowInteraction: true) {
+                case .found(let stored) where stored.site == draft.hostScope && JiraSite.isValidHost(stored.site):
+                    credential = stored
+                case .found, .missing, .broken:
+                    self.restoreUnsent(draftID, to: previous, message: String(localized: "The saved Jira sign-in is missing, or is for another site. Reconnect Jira to \(draft.hostScope) in Sources. Nothing was sent."))
+                    return
+                case .needsApproval:
+                    self.restoreUnsent(draftID, to: previous, message: String(localized: "macOS did not let Kannu read the saved Jira token, so nothing was sent."))
+                    return
+                }
+                let lookup = JiraWorklogLookup(
+                    credential: credential, issueID: remote.remoteID, entry: draft.id,
+                    accountID: accountID, started: draft.started, seconds: draft.seconds
+                )
+                // 3. A retry may follow a send that arrived: check, read-only, before sending again.
+                if event == .retry {
+                    switch await poster.findJiraWorklog(lookup) {
+                    case .found(let remoteID):
+                        self.finishSend(draftID, verdict: .logged(remoteID: remoteID), source: source)
+                        return
+                    case .notFound:
+                        break
+                    case .failed(let outcome):
+                        let failure = WorklogDrafts.checkFailure(outcome, mayAlreadyBeLogged: previous == .uncertain)
+                        self.finishSend(draftID, event: failure.event, message: failure.message)
+                        return
+                    }
+                }
+                // 4. The waits above (the save, the Keychain dialog, the check) are where a Disconnect
+                //    lands: look again, with nothing awaited between this and the request.
+                guard self.canStillSend(draftID) else {
+                    self.restoreUnsent(draftID, to: previous, message: String(localized: "Jira was disconnected, or connected to another site, before Kannu could send this, so nothing was sent."))
+                    return
+                }
+                guard let request = JiraAPI.addWorklogRequest(
+                    credential, issueID: remote.remoteID, entry: draft.id, seconds: draft.seconds,
+                    started: draft.started, comment: draft.comment
+                ) else {
+                    self.restoreUnsent(draftID, to: previous, message: String(localized: "Kannu could not build the request for this issue. Nothing was sent."))
+                    return
+                }
+                let verdict = await poster.postJiraWorklog(request, lookup: lookup)
+                self.finishSend(draftID, verdict: verdict, source: source)
+            case .gitlab:
+                let credential: GitLabCredential
+                switch await GitLabCredentialStore.load(allowInteraction: true) {
+                case .found(let stored) where stored.baseURL == draft.hostScope && GitLabHost.isValidBase(stored.baseURL):
+                    credential = stored
+                case .found, .missing, .broken:
+                    self.restoreUnsent(draftID, to: previous, message: String(localized: "The saved GitLab sign-in is missing, or is for another server. Reconnect GitLab to \(GitLabHost.displayName(draft.hostScope)) in Sources. Nothing was sent."))
+                    return
+                case .needsApproval:
+                    self.restoreUnsent(draftID, to: previous, message: String(localized: "macOS did not let Kannu read the saved GitLab token, so nothing was sent."))
+                    return
+                }
+                guard self.canStillSend(draftID) else {
+                    self.restoreUnsent(draftID, to: previous, message: String(localized: "GitLab was disconnected, or connected to another server, before Kannu could send this, so nothing was sent."))
+                    return
+                }
+                guard let kind = remote.gitlabKind, let projectID = remote.gitlabProjectID, let iid = remote.gitlabIID,
+                      let request = GitLabAPI.addSpentTimeRequest(credential, kind: kind, projectID: projectID, iid: iid, seconds: draft.seconds) else {
+                    self.restoreUnsent(draftID, to: previous, message: String(localized: "Kannu could not build the request for this item. Nothing was sent."))
+                    return
+                }
+                let verdict = await poster.postGitLabSpend(request)
+                self.finishSend(draftID, verdict: verdict, source: source)
+            case .local:
+                self.restoreUnsent(draftID, to: previous, message: nil)
+            }
+        }
+    }
+
+    /// Not now: the card folds into one line until more time is added to the draft.
+    func deferWorklog(_ draftID: UUID) {
+        updateDraft(draftID) { draft in
+            guard draft.state == .awaiting else { return }
+            draft.deferredAt = Date()
+        }
+    }
+
+    /// Opens a put-off card again.
+    func askAboutWorklogAgain(_ draftID: UUID) {
+        updateDraft(draftID) { $0.deferredAt = nil }
+    }
+
+    /// Keep local only: the time stays recorded here and is never offered again.
+    func keepWorklogLocal(_ draftID: UUID) {
+        guard !sendsInFlight.contains(draftID) else { return }
+        updateDraft(draftID) { draft in
+            guard let next = WorklogDrafts.transition(draft.state, on: .keepLocal) else { return }
+            draft.state = next
+            draft.message = nil
+        }
+    }
+
+    /// Mark Logged: the user checked the server and found the entry Kannu could not confirm.
+    /// Nothing is sent.
+    func markWorklogLogged(_ draftID: UUID) {
+        guard !sendsInFlight.contains(draftID) else { return }
+        updateDraft(draftID) { draft in
+            guard draft.state == .uncertain, let next = WorklogDrafts.transition(draft.state, on: .succeeded) else { return }
+            draft.state = next
+            draft.message = nil
+        }
+    }
+
+    /// Never Ask to Log Time (`false`): the task's time stays on this Mac, and its open entries are
+    /// kept local. Ask to Log Time (`true`) offers its unlogged time again.
+    func setAsksToLogTime(_ asks: Bool, for taskID: UUID) {
+        guard isReady, let index = tasks.firstIndex(where: { $0.id == taskID }), tasks[index].source != .local else { return }
+        var task = tasks[index]
+        task.logPolicy = asks ? .ask : .localOnly
+        if asks {
+            let folded = WorklogDrafts.folding(task, into: drafts)
+            task = folded.task
+            drafts = folded.drafts
+        } else {
+            for draftIndex in drafts.indices where drafts[draftIndex].taskID == taskID && !sendsInFlight.contains(drafts[draftIndex].id) {
+                if let next = WorklogDrafts.transition(drafts[draftIndex].state, on: .keepLocal) {
+                    drafts[draftIndex].state = next
+                    drafts[draftIndex].message = nil
+                }
+            }
+        }
+        tasks[index] = task
+        persist()
+    }
+
+    private func updateDraft(_ draftID: UUID, _ change: (inout WorklogDraft) -> Void) {
+        guard isReady, let index = drafts.firstIndex(where: { $0.id == draftID }) else { return }
+        var draft = drafts[index]
+        change(&draft)
+        guard draft != drafts[index] else { return }
+        drafts[index] = draft
+        persist()
+    }
+
+    /// Whether a send under way may still go out: its draft is still here and still `.sending` (a
+    /// Disconnect that removed the tasks took it), and it can still be sent from here — the source is
+    /// connected to the site or server it was recorded against, and a GitLab token can log time.
+    /// Read from the current state, after every wait, immediately before the request is built.
+    private func canStillSend(_ draftID: UUID) -> Bool {
+        guard let draft = drafts.first(where: { $0.id == draftID }), draft.state == .sending else { return false }
+        return WorklogDrafts.availability(
+            of: draft, task: task(for: draft),
+            jiraHost: Defaults[.jiraSiteHost], gitlabHost: Defaults[.gitlabHost],
+            gitlabCanLogTime: Defaults[.gitlabCanLogTime]
+        ) == .ready
+    }
+
+    /// Nothing left this Mac: the draft goes back to where it was, with what to tell the user.
+    private func restoreUnsent(_ draftID: UUID, to state: WorklogState, message: String?) {
+        sendsInFlight.remove(draftID)
+        guard let index = drafts.firstIndex(where: { $0.id == draftID }), drafts[index].state == .sending else { return }
+        drafts[index].state = state
+        drafts[index].message = message
+        persist()
+        logger.notice("Logging time: nothing sent")
+    }
+
+    private func finishSend(_ draftID: UUID, verdict: WorklogDrafts.Verdict, source: TaskSource) {
+        let resolution = WorklogDrafts.resolution(of: verdict, source: source)
+        var remoteID: String?
+        if case .logged(let id) = verdict { remoteID = id }
+        if case .authRejected(let status) = verdict {
+            // The token was refused: the Sources row says so, and no sync re-sends it on its own.
+            switch source {
+            case .jira where !isJiraSyncing: jiraSync = .authFailed(status: status)
+            case .gitlab where !isGitLabSyncing: gitlabSync = .authFailed(status: status)
+            default: break
+            }
+        }
+        finishSend(draftID, event: resolution.event, message: resolution.message, remoteID: remoteID)
+    }
+
+    private func finishSend(_ draftID: UUID, event: WorklogDrafts.Event, message: String?, remoteID: String? = nil) {
+        sendsInFlight.remove(draftID)
+        guard let index = drafts.firstIndex(where: { $0.id == draftID }) else {
+            // Its task was removed (Disconnect › Remove) while the request was already out.
+            logger.notice("Logging time: an answer came for an entry that was removed meanwhile")
+            return
+        }
+        guard drafts[index].state == .sending, let next = WorklogDrafts.transition(.sending, on: event) else { return }
+        drafts[index].state = next
+        drafts[index].message = message
+        if let remoteID { drafts[index].remoteWorklogID = remoteID }
+        // The source's own total catches up at the next sync; until then it includes this entry.
+        if next == .logged, let taskIndex = tasks.firstIndex(where: { $0.id == drafts[index].taskID }), tasks[taskIndex].remote != nil {
+            tasks[taskIndex].remote?.remoteSpentSeconds = (tasks[taskIndex].remote?.remoteSpentSeconds ?? 0) + drafts[index].seconds
+        }
+        persist()
+        logger.info("Logging time ended: \(next.rawValue, privacy: .public)")
+    }
+
     // MARK: - Jira
 
     /// Connected, as far as the display copies say. The Keychain has the final word at sync time.
@@ -481,7 +753,10 @@ final class TasksManager: ObservableObject {
     }
 
     /// Forgets the token and stops syncing. With `removeTasks`, the Jira tasks and their unlogged
-    /// time go too (timing one stops first); without, they stay in the order as they are.
+    /// time go too (timing one stops first); without, they stay in the order as they are, and their
+    /// Time to log entries stay: kept local, or sent once Jira is connected to the same site again.
+    /// A Log still saving or waiting for the Keychain sends nothing (`canStillSend`); one whose
+    /// request is already out cannot be recalled, and its answer is dropped with the entry.
     func disconnectJira(removeTasks: Bool) {
         jiraGeneration += 1
         jiraSyncInFlight = nil
@@ -768,7 +1043,10 @@ final class TasksManager: ObservableObject {
     }
 
     /// Forgets the token and stops syncing. With `removeTasks`, the GitLab tasks and their unlogged
-    /// time go too (timing one stops first); without, they stay in the order as they are.
+    /// time go too (timing one stops first); without, they stay in the order as they are, and their
+    /// Time to log entries stay: kept local, or sent once GitLab is connected to the same server.
+    /// A Log still saving or waiting for the Keychain sends nothing (`canStillSend`); one whose
+    /// request is already out cannot be recalled, and its answer is dropped with the entry.
     func disconnectGitLab(removeTasks: Bool) {
         gitlabGeneration += 1
         gitlabSyncInFlight = nil
@@ -976,12 +1254,25 @@ final class TasksManager: ObservableObject {
     private func apply(_ loaded: TasksFile) {
         var file = loaded
         let interrupted = file.markOpenSegmentsInterrupted()
-        let normalized = WorklogDrafts.normalizedAtLoad(file.drafts)
-        tasks = file.tasks
+        // A draft still being sent when Kannu stopped may have arrived: it is uncertain now, and
+        // is never sent again without a check (Jira) or the user's say-so (GitLab).
+        var normalized = WorklogDrafts.normalizedAtLoad(file.drafts) { draft in
+            file.tasks.first { $0.id == draft.taskID }?.source
+        }
+        // Nothing is being timed at launch, so time a crash left unfolded (closed by a pause or a
+        // sleep, never ended) is offered now. Folding a task already folded changes nothing.
+        var loadedTasks = file.tasks
+        for index in loadedTasks.indices {
+            let folded = WorklogDrafts.folding(loadedTasks[index], into: normalized)
+            loadedTasks[index] = folded.task
+            normalized = folded.drafts
+        }
+        tasks = loadedTasks
         drafts = normalized
         loadState = .ready
-        logger.info("Loaded \(file.tasks.count, privacy: .public) tasks, \(interrupted, privacy: .public) interrupted sessions")
-        if interrupted > 0 || normalized != file.drafts { persist() }
+        let uncertain = normalized.filter { $0.state == .uncertain }.count
+        logger.info("Loaded \(file.tasks.count, privacy: .public) tasks, \(interrupted, privacy: .public) interrupted sessions, \(uncertain, privacy: .public) uncertain entries")
+        if interrupted > 0 || normalized != file.drafts || loadedTasks != file.tasks { persist() }
         if pendingJiraSyncWhenReady {
             pendingJiraSyncWhenReady = false
             syncJiraIfStale()
@@ -1009,6 +1300,17 @@ final class TasksManager: ObservableObject {
         }
     }
 
+    /// Writes the list now and waits until it is on disk: the write-ahead before a send. A newer
+    /// revision already written counts too — it was taken after this state, so it holds it.
+    private func saveNow() async -> Bool {
+        guard isReady else { return false }
+        revision += 1
+        let revision = revision
+        let outcome = await store.save(snapshot, revision: revision)
+        didSave(outcome, revision: revision)
+        return outcome == .written || outcome == .stale
+    }
+
     private func didSave(_ outcome: TaskFileStore.SaveOutcome, revision: Int) {
         switch outcome {
         case .written:
@@ -1026,13 +1328,16 @@ final class TasksManager: ObservableObject {
         guard isReady else { return }
         var changed = false
         if let current = link {
-            if !current.isPaused && !isAsleep, let index = tasks.firstIndex(where: { $0.id == current.taskID }) {
+            // Quitting ends the timing, paused or not: its time is offered for logging next launch.
+            if let index = tasks.firstIndex(where: { $0.id == current.taskID }) {
                 var task = tasks[index]
-                task.segments = TaskTimeMath.closing(task.segments, at: Date())
+                if !current.isPaused && !isAsleep {
+                    task.segments = TaskTimeMath.closing(task.segments, at: Date())
+                }
                 let folded = WorklogDrafts.folding(task, into: drafts)
+                changed = folded.task != tasks[index] || folded.drafts != drafts
                 tasks[index] = folded.task
                 drafts = folded.drafts
-                changed = true
             }
             unlink()
         }

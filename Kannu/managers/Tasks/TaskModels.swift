@@ -20,9 +20,9 @@ import Foundation
 
 // The task list as it is stored in `tasks.json`. Pure Foundation, so the logic target tests it.
 //
-// A task is local, or comes from Jira or GitLab (`TaskSource`, `RemoteTaskInfo`). `LogPolicy` and
-// `WorklogDraft` are here so the draft rules in `WorklogDrafts` can be tested before anything can
-// send one.
+// A task is local, or comes from Jira or GitLab (`TaskSource`, `RemoteTaskInfo`). Time recorded on a
+// remote task becomes a `WorklogDraft` that waits for the user's answer (`WorklogDrafts`); only
+// `TasksManager.confirmWorklog` ever sends one.
 
 enum TaskSource: String, Codable, Equatable {
     case local
@@ -237,8 +237,13 @@ struct WorklogDraft: Codable, Identifiable, Equatable {
     var comment: String?
     var hostScope: String
     var state: WorklogState
+    /// What the last attempt ended with, for the card: a refusal's reason, "may already be
+    /// logged". Nil while nothing needs saying.
     var message: String?
     var remoteWorklogID: String?
+    /// When the user answered Not now. The card folds into one line until more time is added to
+    /// the draft, which asks again. Optional, so a file written before it still reads.
+    var deferredAt: Date?
 
     init(
         id: UUID = UUID(),
@@ -249,7 +254,8 @@ struct WorklogDraft: Codable, Identifiable, Equatable {
         hostScope: String,
         state: WorklogState = .awaiting,
         message: String? = nil,
-        remoteWorklogID: String? = nil
+        remoteWorklogID: String? = nil,
+        deferredAt: Date? = nil
     ) {
         self.id = id
         self.taskID = taskID
@@ -260,6 +266,7 @@ struct WorklogDraft: Codable, Identifiable, Equatable {
         self.state = state
         self.message = message
         self.remoteWorklogID = remoteWorklogID
+        self.deferredAt = deferredAt
     }
 }
 

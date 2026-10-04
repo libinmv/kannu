@@ -98,7 +98,7 @@ struct GitLabItem: Decodable, Equatable {
 
 /// What a verified token may do, from its scopes.
 enum GitLabAccess: Equatable {
-    /// `api`: lists, and (in a later version) logs time.
+    /// `api`: lists, and logs time (`add_spent_time`).
     case canLogTime
     /// `read_api`, or scopes the server did not say: lists only.
     case readOnly
@@ -168,11 +168,11 @@ enum GitLabAPI {
     // MARK: - Requests
 
     static func userRequest(_ credential: GitLabCredential) -> URLRequest? {
-        GitLabHost.apiURL(base: credential.baseURL, path: "/user").map { request(url: $0, credential: credential) }
+        GitLabHost.apiURL(base: credential.baseURL, path: "/user").map { request(url: $0, method: "GET", credential: credential) }
     }
 
     static func tokenInfoRequest(_ credential: GitLabCredential) -> URLRequest? {
-        GitLabHost.apiURL(base: credential.baseURL, path: "/personal_access_tokens/self").map { request(url: $0, credential: credential) }
+        GitLabHost.apiURL(base: credential.baseURL, path: "/personal_access_tokens/self").map { request(url: $0, method: "GET", credential: credential) }
     }
 
     /// One page of a list, or nil for a page Kannu never reads, a user name it would not send, or a
@@ -198,12 +198,66 @@ enum GitLabAPI {
             ]
         }
         query += [URLQueryItem(name: "per_page", value: String(pageSize)), URLQueryItem(name: "page", value: String(page))]
-        return GitLabHost.apiURL(base: credential.baseURL, path: path, query: query).map { request(url: $0, credential: credential) }
+        return GitLabHost.apiURL(base: credential.baseURL, path: path, query: query).map { request(url: $0, method: "GET", credential: credential) }
     }
 
-    private static func request(url: URL, credential: GitLabCredential) -> URLRequest {
+    /// The length GitLab's `add_spent_time` takes: hours and minutes only, `1h15m`, `45m`, `2h`.
+    /// Never days or weeks, which GitLab counts as 8 hours and 5 days. Whole minutes, rounded
+    /// down; nil under a minute.
+    static func spentTimeDuration(_ seconds: Int) -> String? {
+        let minutes = seconds / 60
+        guard minutes > 0 else { return nil }
+        let hours = minutes / 60
+        let rest = minutes % 60
+        if hours == 0 { return "\(rest)m" }
+        if rest == 0 { return "\(hours)h" }
+        return "\(hours)h\(rest)m"
+    }
+
+    /// `POST /projects/:id/issues/:iid/add_spent_time?duration=1h15m`, or
+    /// `/merge_requests/:iid/add_spent_time` for a merge request: the one write to GitLab. It needs
+    /// a token with the `api` scope. GitLab records the time at the moment of the request; it
+    /// returns no entry id, so an entry whose answer was lost cannot be found again. Nil for a
+    /// project or number that is not one, a length under a minute or over
+    /// `WorkDuration.maxSeconds`, or a server Kannu would not send to.
+    ///
+    /// Called from `TasksManager.confirmWorklog` only (`WorklogConsentRulesTests`).
+    static func addSpentTimeRequest(_ credential: GitLabCredential, kind: GitLabKind, projectID: Int, iid: Int, seconds: Int) -> URLRequest? {
+        guard projectID > 0, iid > 0, seconds <= WorkDuration.maxSeconds, let duration = spentTimeDuration(seconds) else { return nil }
+        let collection = kind == .issue ? "issues" : "merge_requests"
+        return GitLabHost.apiURL(
+            base: credential.baseURL,
+            path: "/projects/\(projectID)/\(collection)/\(iid)/add_spent_time",
+            query: [URLQueryItem(name: "duration", value: duration)]
+        ).map { request(url: $0, method: "POST", credential: credential) }
+    }
+
+    /// GitLab's own reason for refusing a request: its `message` (a string, or a field-to-errors
+    /// object) or its `error`, as one cleaned line (`WorklogDrafts.displayReason`).
+    static func refusalReason(_ data: Data?) -> String? {
+        guard let data, let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        var parts: [String] = []
+        switch object["message"] {
+        case let text as String:
+            parts.append(text)
+        case let fields as [String: Any]:
+            for key in fields.keys.sorted() {
+                if let messages = fields[key] as? [Any] {
+                    parts += messages.compactMap { $0 as? String }.map { "\(key) \($0)" }
+                } else if let message = fields[key] as? String {
+                    parts.append("\(key) \(message)")
+                }
+            }
+        default:
+            break
+        }
+        if let error = object["error"] as? String { parts.append(error) }
+        return WorklogDrafts.displayReason(parts.joined(separator: " "))
+    }
+
+    private static func request(url: URL, method: String, credential: GitLabCredential) -> URLRequest {
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: requestTimeout)
-        request.httpMethod = "GET"
+        request.httpMethod = method
         request.httpShouldHandleCookies = false
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(credential.token, forHTTPHeaderField: tokenHeader)

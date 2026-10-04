@@ -4,6 +4,66 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-04 - Brain › Tasks: Time to log asks before your recorded time goes to Jira or GitLab
+- **Developer label:** "task will have option to add estimate and also record the actual time, work on how we could manage jira tickets well"
+- **Agent label:** Brain Tasks PR5: ask, then log — Jira worklogs and GitLab spent time, sent only from the user's click, written ahead, reconciled once
+- **Changes:**
+  - When timing a Jira or GitLab task ends (stop, a replaced session, or quitting Kannu), its
+    unlogged time is folded into one draft per task, rounded to the nearest 15 minutes (a total
+    that rounds to 0 carries over). A pause or a sleep only closes the segment, so no card appears
+    while the task is still being timed; time a crash left unfolded is offered at the next launch.
+  - New "Time to log" section in Brain › Productivity › Tasks, shown only while entries wait, with a
+    search entry and highlight. One card per entry: "Log 1h 15m to PROJ-123?" / "Log 45m to
+    group/app!12?", "started today 14:02 · Jira", an editable length (`WorkDuration.parse`, sent in
+    whole minutes), an optional comment for Jira, Log to Jira / Log to GitLab, Not now (the card
+    folds into one line until more time is added to it), and ⋯ with Keep local only, Never ask for
+    this task and Open in Jira / GitLab. Return in the length field does not send: only Log does. A
+    length typed for a Log that sent nothing survives the next fold and a relaunch: new time is
+    added to it instead of replacing it with the rounded total. A remote task's ⋯ in the task order
+    gains Never Ask to Log Time / Ask to Log Time.
+  - Only `TasksManager.confirmWorklog` sends anything, from Log, Retry or Send Again. It marks the
+    draft `.sending` and waits for `tasks.json` to be written before any request (a failed save
+    sends nothing); a relaunch that finds `.sending` treats it as uncertain, and its card says so
+    ("May already be logged — check GitLab", or for Jira that Retry checks Jira first). The token is
+    read from the Keychain off the main actor and used only with the site or server the time was
+    recorded against. After the last wait (the save, the Keychain dialog, Jira's check), Kannu looks
+    again immediately before building the request, so a Disconnect meanwhile sends nothing; a
+    request already out cannot be recalled, and an answer for an entry removed meanwhile is only
+    logged.
+  - Jira: `POST /rest/api/3/issue/{id}/worklog?adjustEstimate=auto&notifyUsers=false` with
+    `timeSpentSeconds`, `started` as `yyyy-MM-dd'T'HH:mm:ss.SSSZ` (`en_US_POSIX`, the Mac's offset),
+    an ADF comment only when one was typed, and `properties [{key:"kannu", value:{entry:<draft id>}}]`.
+    2xx is logged with the worklog id; 400/403/404 fail with Jira's own reason; 401 asks to
+    reconnect (and the Sources row shows the refused token); 429 and offline fail, retryable; a lost
+    answer (timeout, dropped connection, 502/504) is checked with one read-only `GET
+    …/worklog?startedAfter=…&startedBefore=…&expand=properties`, matching the marker, then author,
+    start and length: found is logged, missing fails retryable, a failed check stays uncertain. A
+    Jira retry always checks first, so an entry is never logged twice.
+  - GitLab: `POST /api/v4/projects/:id/issues/:iid/add_spent_time?duration=1h15m`, or
+    `merge_requests/:iid/add_spent_time` for a merge request, token only in `PRIVATE-TOKEN`. A
+    read_api token offers only Keep local only, and says why. A lost answer reads "May already be
+    logged — check GitLab" with Mark Logged and Send Again, since GitLab cannot identify one entry.
+  - Disconnect keeps the entries: kept local, or sent once reconnected to the same site or server.
+    Footers and the Connect sheets now say Kannu writes only when you log time; both Sources footers
+    still say the token is kept in your Keychain.
+  - New pure file in the logic target: `WorklogPoster` (the send and the one read-only check over
+    `IntegrationHTTP`). `JiraAPI` gains the worklog and check request builders, the marker match and
+    Jira's refusal reason; `GitLabAPI` the spend request and duration; `WorklogDrafts` the verdicts,
+    availability, card text and `deferredAt`; `JiraSite.apiURL` takes a query. App file:
+    `TimeToLogSection`.
+  - Tests: JiraWorklogRequestTests (`started` at +0000, +0530 and across DST, the marker, ADF,
+    `notifyUsers=false`, `adjustEstimate=auto`, the check request and matching),
+    GitLabSpendRequestTests (issue vs merge request path, duration format, `PRIVATE-TOKEN` only),
+    WorklogPosterTests (a `URLProtocol` stub: every outcome, exactly one check on Jira, none on
+    GitLab), WorklogDraftTests extended (15-minute rounding, `.sending` saved then relaunched is
+    uncertain with its card's reason, a typed length surviving the next fold, reconcile found is
+    logged, Not now, availability), WorklogConsentRulesTests (source scan with planted offenders:
+    the request builders and senders only inside `confirmWorklog`, it only from
+    `Kannu/components/`, write-ahead before the request, `canStillSend` after the last wait before
+    each request, no `.onSubmit` in a view that sends), and IntegrationSecretRulesTests
+    (Time to log never touches the Keychain). Highlight inventory 225 entries, 273 registrations, 267
+    ids.
+
 ### 2026-10-04 - Brain › Tasks: GitLab as a source, with your issues and merge requests in the task order
 - **Developer label:** "not just jira, i want gotlab too"
 - **Agent label:** Brain Tasks PR4: GitLab read (gitlab.com and self-managed servers, issues and merge requests, token in the Keychain, read-only)

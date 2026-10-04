@@ -72,6 +72,13 @@ final class IntegrationSecretRulesTests: XCTestCase {
         XCTAssertEqual(Self.keychainUses(in: page), [])
     }
 
+    func testTimeToLogNeverTouchesTheKeychain() throws {
+        // Log reads the token in TasksManager.confirmWorklog, off the main actor; the cards never do.
+        let section = try Self.read("Kannu/components/Settings/TimeToLogSection.swift")
+        XCTAssertTrue(section.contains("confirmWorklog("), "the section no longer logs anything: the scan is vacuous")
+        XCTAssertEqual(Self.keychainUses(in: section), [])
+    }
+
     func testNoLogLineInterpolatesASecret() throws {
         let sources = try Self.sources()
         XCTAssertNotNil(sources["JiraClient.swift"])
