@@ -4,6 +4,32 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-04 - A chat stays lit while the agents it started are still running
+- **Developer label:** "now we have background taks right, but kannu doesnt show that as chat still running"
+- **Agent label:** Background-agent detection: hook v44 counts what a Stop leaves running, Claude's session record confirms it
+- **Changes:**
+  - A Claude chat whose turn ended with background agents or a workflow still running stays green,
+    with "agents in background" beside its state and its clock still running from your prompt. It
+    turns red the moment Claude reports all of them finished. Before, it went red at the turn's
+    end while Claude went on working and spending tokens.
+  - Hook v44 records how many agents and workflows a Claude `Stop` leaves running (its
+    `background_tasks`), as a count only: the tasks' descriptions and commands are never written.
+    Kannu reads Claude Code's own session record (`~/.claude/sessions/<pid>.json`), which says
+    `busy` until the last of them finishes. Neither signal alone lights the chat. A fresh `idle`
+    counts for 3 s, and Kannu rescans when that ends, so the chat never flashes finished between
+    an agent ending and Claude reading its result.
+  - While that background work runs, a background agent's own light counts again: one waiting on
+    permission turns the chat yellow. The chat's status file is kept past the stale cap, so a long
+    workflow does not lose its card.
+  - Hook v44 also listens for `SubagentStart` and `SubagentStop`, so a finished agent's file says
+    `stopped` instead of "thinking" until the stale cap. Existing installs upgrade through the
+    hook version migration.
+  - `docs/REGRESSIONS.md`: a dated addendum to entry 5, whose rule changes on purpose, and a v44
+    note on entry 1.
+  - Tests: `BackgroundWorkTests` (Claude's status, the reconciler, the fold, the clock, the stale
+    cap and the turn parse) and four `HookScriptTests` cases (the count, what clears it, an older
+    Claude, and a subagent's own start and stop).
+
 ### 2026-10-01 - Quit Kannu has a row in Settings, and searching "quit" or "exit" finds it
 - **Developer label:** "the settings should have a quit app, or at least on search of quit or exit i should get the tab with that button to come up as result"
 - **Agent label:** Settings Quit row + search entry, pinned by the highlight inventory

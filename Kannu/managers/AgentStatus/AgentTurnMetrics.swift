@@ -34,19 +34,25 @@ struct HookTurn: Equatable {
     var transcriptPath: String?
     /// The transcript's size when the turn began; nil when unknown (tokens are then hidden).
     var transcriptOffset: Int64?
+    /// Agents and workflows Claude's Stop left running in the background (hook v44); 0 while the
+    /// turn is open. Claude Code goes on working, and spending tokens, until they finish.
+    var backgroundAgents: Int
 
     static let maxToolCalls = 99_999
     /// The hook refuses a clock more than this far ahead; so does Kannu.
     static let futureSlackMs: Int64 = 60_000
     static let maxPathLength = 1024
     static let maxOffset: Int64 = 9_007_199_254_740_992
+    static let maxBackgroundAgents = 999
 
-    init(startedAt: Date, endedAt: Date? = nil, toolCalls: Int = 0, transcriptPath: String? = nil, transcriptOffset: Int64? = nil) {
+    init(startedAt: Date, endedAt: Date? = nil, toolCalls: Int = 0, transcriptPath: String? = nil,
+         transcriptOffset: Int64? = nil, backgroundAgents: Int = 0) {
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.toolCalls = toolCalls
         self.transcriptPath = transcriptPath
         self.transcriptOffset = transcriptOffset
+        self.backgroundAgents = endedAt == nil ? 0 : min(max(backgroundAgents, 0), Self.maxBackgroundAgents)
     }
 
     /// The turn a hook status file carries (untrusted input, re-checked as the hook does); nil
@@ -62,6 +68,8 @@ struct HookTurn: Equatable {
             endedAt = nil
         }
         toolCalls = Int(min(max(Self.integer(json["turn_tool_calls"]) ?? 0, 0), Int64(Self.maxToolCalls)))
+        backgroundAgents = endedAt == nil
+            ? 0 : Int(min(max(Self.integer(json["turn_bg_agents"]) ?? 0, 0), Int64(Self.maxBackgroundAgents)))
         if let path = json["transcript_path"] as? String, Self.isFollowableTranscript(path, home: home) {
             transcriptPath = path
             if let offset = Self.integer(json["turn_transcript_offset"]), offset >= 0, offset <= Self.maxOffset {
@@ -128,11 +136,16 @@ enum AgentTurnDisplay: Equatable {
     ///   stopped without a Stop (Esc, a killed process) shows no time rather than a wrong one.
     /// - Without a turn (hooks before v39, passive sources), the in-memory run start is the best
     ///   there is, shown only while running.
+    /// - A turn that ended with agents left running, on a card still lit because Claude says they
+    ///   are (`isClaudeBackgroundWork`), is still the user's request: it ticks from the prompt.
     static func duration(turn: HookTurn?, executionStartedAt: Date?, state: AgentTrafficLightState,
                          hookReportsWork: Bool, updatedAt: Date) -> AgentTurnDisplay? {
         guard let turn else {
             guard state.isActiveRun, let executionStartedAt else { return nil }
             return .live(since: executionStartedAt)
+        }
+        if turn.endedAt != nil, turn.backgroundAgents > 0, state.isActiveRun || state == .awaitingInput {
+            return .live(since: turn.startedAt)
         }
         if let end = turn.endedAt, !(hookReportsWork && updatedAt.timeIntervalSince(end) > supersededAfter) {
             return .ended(max(0, end.timeIntervalSince(turn.startedAt)))

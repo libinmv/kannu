@@ -28,7 +28,7 @@ final class AgentHookInstaller: ObservableObject {
     private static let logger = os.Logger(subsystem: "com.kannu.app", category: "AgentHookInstaller")
 
     static let scriptName = AgentHookLayout.scriptName
-    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=43"
+    private static let scriptVersionMarker = "KANNU_HOOK_SCRIPT_VERSION=44"
 
     private static var home: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -224,6 +224,10 @@ final class AgentHookInstaller: ObservableObject {
         ("Notification", "permission_prompt|idle_prompt|agent_needs_input", "needs_input", "awaiting_input"),
         ("Stop", nil, "", "stopped"),
         ("StopFailure", nil, "", "stopped"),
+        // A subagent's own start and end, in its own file (v38 `parent_id` names the chat). Without
+        // SubagentStop a finished agent's file said "thinking" until the stale cap.
+        ("SubagentStart", nil, "", "thinking"),
+        ("SubagentStop", nil, "", "stopped"),
         ("SessionEnd", nil, "", "session_end")
     ]
 
@@ -1415,11 +1419,12 @@ final class AgentHookInstaller: ObservableObject {
         # while the request is still running joins it, so the time still counts from the first prompt. Kannu shows how long the turn ran and how many tools it called, and for Claude adds
         # up the tokens the transcript gained after the size recorded at the start. Carried on every
         # write; never touches state or ts.
-        TURN_KEYS = ("turn_started_ms", "turn_ended_ms", "turn_tool_calls", "turn_tool_ids", "turn_transcript_offset")
+        TURN_KEYS = ("turn_started_ms", "turn_ended_ms", "turn_tool_calls", "turn_tool_ids", "turn_transcript_offset",
+                     "turn_bg_agents")
         TURN_PROMPT_EVENTS = {"UserPromptSubmit", "beforeSubmitPrompt", "BeforeAgent"}
         TURN_WAKE_EVENTS = {"PreToolUse", "preToolUse", "beforeShellExecution", "beforeMCPExecution",
                             "BeforeTool", "PreInvocation", "PermissionRequest"}
-        TURN_END_EVENTS = {"Stop", "StopFailure", "stop", "AfterAgent"}
+        TURN_END_EVENTS = {"Stop", "StopFailure", "stop", "AfterAgent", "SubagentStop"}
         TURN_DONE_EVENTS = HT_POST_EVENTS
         TURN_MAX_IDS = 16
         TURN_MAX_CALLS = 99999
@@ -1427,6 +1432,13 @@ final class AgentHookInstaller: ObservableObject {
         TURN_PATH_MAX = 1024
         TURN_NOID_WINDOW_MS = 2000
         TURN_ROOT = os.path.expanduser("~") + "/.claude/projects/"
+        # v44: the agents a Claude Stop leaves running (its background_tasks), counted into the ended turn.
+        # Claude Code goes on working while they run, so the chat is not finished. Count only: a task's
+        # description and command are free text and never reach the file.
+        TURN_BG_AGENT_TYPES = {"subagent", "workflow", "remote_agent", "in_process_teammate", "teammate",
+                               "local_agent", "local_workflow"}
+        TURN_BG_DONE = {"completed", "failed", "killed", "cancelled", "canceled", "stopped", "error"}
+        TURN_MAX_BG_AGENTS = 999
 
         def turn_path(value):
             # Claude's main transcript only: under ~/.claude/projects, a .jsonl, never a subagent's.
@@ -1471,6 +1483,9 @@ final class AgentHookInstaller: ObservableObject {
             end = ht_int(doc.get("turn_ended_ms"))
             if start <= end <= now_ms + 60000:
                 turn["turn_ended_ms"] = end
+                agents = min(max(ht_int(doc.get("turn_bg_agents")), 0), TURN_MAX_BG_AGENTS)
+                if agents:
+                    turn["turn_bg_agents"] = agents
             offset = ht_int(doc.get("turn_transcript_offset"), -1)
             if 0 <= offset <= TURN_MAX_OFFSET:
                 turn["turn_transcript_offset"] = offset
@@ -1496,6 +1511,20 @@ final class AgentHookInstaller: ObservableObject {
                 if tail.isdigit() and now_ms - int(tail) <= TURN_NOID_WINDOW_MS:
                     return "", True
             return stem + str(now_ms), False
+
+        def background_agents():
+            # v44: how many in-flight tasks a Claude Stop lists are agents or workflows.
+            tasks = data.get("background_tasks")
+            if not isinstance(tasks, list):
+                return 0
+            count = 0
+            for task in tasks[:TURN_MAX_BG_AGENTS]:
+                if not isinstance(task, dict) or not isinstance(task.get("type"), str):
+                    continue
+                status = task.get("status") if isinstance(task.get("status"), str) else ""
+                if task["type"] in TURN_BG_AGENT_TYPES and status.lower() not in TURN_BG_DONE:
+                    count += 1
+            return count
 
         def next_turn(existing, now_ms):
             # (turn keys, transcript path) for this write.
@@ -1536,6 +1565,7 @@ final class AgentHookInstaller: ObservableObject {
             elif turn and hook_event in TURN_WAKE_EVENTS:
                 # Working again after the Stop without a new prompt: still the same request.
                 turn.pop("turn_ended_ms", None)
+                turn.pop("turn_bg_agents", None)
             if turn and hook_event in TURN_DONE_EVENTS:
                 key, seen = turn_call_key(turn, now_ms)
                 if not seen:
@@ -1544,6 +1574,13 @@ final class AgentHookInstaller: ObservableObject {
             if turn and hook_event in TURN_END_EVENTS and ("turn_ended_ms" not in turn or data.get("stop_hook_active") is True):
                 # The first Stop ends the turn; a Stop after a stop hook's continuation moves the end.
                 turn["turn_ended_ms"] = now_ms
+            if turn and main_thread and hook_event == "Stop" and "turn_ended_ms" in turn:
+                # v44: every Stop restates what it leaves running; none clears it.
+                agents = background_agents()
+                if agents:
+                    turn["turn_bg_agents"] = agents
+                else:
+                    turn.pop("turn_bg_agents", None)
             return turn, transcript
 
         tool = pick_str(
@@ -1699,7 +1736,8 @@ final class AgentHookInstaller: ObservableObject {
             state = "stopped"
         elif hook_event in {"postToolUse", "postToolUseFailure", "PostToolUse", "PostToolUseFailure", "PostInvocation"}:
             state = "thinking"
-        elif hook_event in {"stop", "Stop", "StopFailure"}:
+        elif hook_event in {"stop", "Stop", "StopFailure", "SubagentStop"}:
+            # SubagentStop (v44) ends a subagent's own file: it names the agent, not the chat.
             state = "stopped"
             # Antigravity's Stop payload carries terminationReason/error instead of a
             # separate "quota exceeded" event — there's no other signal that a run ended

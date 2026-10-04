@@ -290,9 +290,11 @@ enum AgentTrafficLightMapper {
         deadPIDConversationIDs: Set<String>,
         collapseMs: Int64,
         inactiveMs: Int64,
-        nowMs: Int64
+        nowMs: Int64,
+        claudeWorkOngoingIDs: Set<String> = []
     ) -> [AgentSessionStatus] {
-        guard !passiveSessions.isEmpty || !deadPIDConversationIDs.isEmpty else { return hookSessions }
+        guard !passiveSessions.isEmpty || !deadPIDConversationIDs.isEmpty || !claudeWorkOngoingIDs.isEmpty
+        else { return hookSessions }
 
         let passiveByConversationID = Dictionary(
             passiveSessions.map { ($0.conversationID, $0) },
@@ -341,6 +343,16 @@ enum AgentTrafficLightMapper {
                 // passive-only, like hostPID — fills in when the hook side has none.
                 repaired = repaired.carryingExtras(from: passive)
                 return repaired
+            }
+
+            // Background work: the turn ended with agents still running and Claude's own record
+            // says its work goes on (`isClaudeBackgroundWork`). The chat is not finished — it is
+            // still spending tokens — so it stays lit: a subagent's light the fold let through, or
+            // green. Ahead of the demote arm, whose newer-transcript test is exactly what a finished
+            // main turn looks like. Yellow is still only the hooks' to give (entry 12).
+            if !processDead, isClaudeBackgroundWork(session, workOngoingIDs: claudeWorkOngoingIDs) {
+                let lit = session.displayState.isActiveRun || session.displayState == .awaitingInput
+                return inheritingPassiveData(session.withDisplayState(lit ? session.displayState : .thinking, visible: true))
             }
 
             // Demote: the hook file still claims active work — Stop never fires on a
@@ -600,16 +612,20 @@ enum AgentTrafficLightMapper {
     /// still reports work in progress and something proves the work is real: the process is alive,
     /// or a subagent file written within the cap names it as its parent. A subagent's own file is
     /// kept while its chat's turn is open and it belongs to that turn, so its tool calls stay in the
-    /// count. A stopped file is never kept. What the card shows is unchanged: an aged active file
-    /// is invisible on its own, and the reconciler promotes it only on live passive evidence.
+    /// count. A stopped file is never kept, except one whose chat has background work
+    /// (`isClaudeBackgroundWork`: Claude says agents it left running go on), which a long workflow
+    /// would otherwise lose at the cap. What the card shows is unchanged: an aged active file is
+    /// invisible on its own, and the reconciler promotes it only on live passive evidence.
     static func hookFileOutlivesStaleCap(
         provider: String,
         rawState: String,
         processAlive: Bool,
         namedByFreshSubagent: Bool,
-        subagentOfOpenTurn: Bool
+        subagentOfOpenTurn: Bool,
+        backgroundWork: Bool = false
     ) -> Bool {
         guard provider.lowercased() == "claude" else { return false }
+        if backgroundWork { return true }
         switch rawState.lowercased() {
         case "executing", "thinking": return processAlive || namedByFreshSubagent || subagentOfOpenTurn
         default: return false
@@ -941,6 +957,15 @@ extension AgentSessionStatus {
     var runOutcomeSuffix: String {
         guard displayState == .stopped || displayState == .inactive, let runError else { return "" }
         return " · " + runError.label
+    }
+
+    /// " · agents in background" on a chat whose turn ended with agents still running, while it is
+    /// lit because Claude says they are (`isClaudeBackgroundWork`). The chat looks done in Claude, but
+    /// it is still working and spending tokens. No count: the hook's is a snapshot taken at the Stop.
+    var backgroundWorkSuffix: String {
+        guard let turn, turn.endedAt != nil, turn.backgroundAgents > 0,
+              displayState.isActiveRun || displayState == .awaitingInput else { return "" }
+        return " · " + String(localized: "agents in background")
     }
 
     /// Copies the fields a memberwise reconstruction silently drops — the tool-error count, the
