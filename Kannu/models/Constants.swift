@@ -418,7 +418,7 @@ enum ADRHighAlertMode: String, CaseIterable, Defaults.Serializable, Identifiable
         case .glyphOnly:
             return String(localized: "Only a small shield beside the traffic light; no pill.")
         case .off:
-            return String(localized: "Nothing in the closed notch. Findings still appear in the panel and in Settings.")
+            return String(localized: "Nothing in the closed notch. Findings still appear in the panel and in Brain.")
         }
     }
 

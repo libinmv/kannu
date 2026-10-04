@@ -304,7 +304,7 @@ private struct PresetList: View {
                 .padding(.leading, 4)
             
             if presets.isEmpty {
-                Text("Configure presets in Settings")
+                Text("Configure presets in Brain")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .padding(12)

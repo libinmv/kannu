@@ -105,7 +105,7 @@ struct NotchTimerView: View {
     private var presetColumn: some View {
         VStack(spacing: 6) {
             if timerPresets.isEmpty {
-                Text("Configure presets in Settings to see them here.")
+                Text("Configure presets in Brain to see them here.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -356,7 +356,7 @@ struct NotchTimerView: View {
                 .font(.title2)
                 .fontWeight(.medium)
 
-            Text("Enable the timer feature in Settings to access this tab.")
+            Text("Enable the timer feature in Brain to access this tab.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

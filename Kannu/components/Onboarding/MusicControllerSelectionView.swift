@@ -46,7 +46,7 @@ struct MusicControllerSelectionView: View {
                 .fontWeight(.bold)
                 .padding(.top, 24)
 
-            Text("Select the music source you want to use. You can change this later in the app settings.")
+            Text("Select the music source you want to use. You can change this later in Brain.")
                 .multilineTextAlignment(.center)
                 .font(.body)
                 .foregroundColor(.secondary)
