@@ -613,7 +613,7 @@ struct SettingsView: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(Color.secondary)
 
-                TextField("Search Settings", text: $text)
+                TextField("Search Brain", text: $text)
                     .textFieldStyle(.plain)
                     .focused($isFocused)
                     .onSubmit(triggerFirstSuggestion)
@@ -829,7 +829,7 @@ struct SettingsView: View {
 
             // Appearance
             SettingsSearchEntry(tab: .appearance, title: "Main screen style", keywords: ["dynamic island", "pill", "non-notch", "display style", "notch style"], highlightID: SettingsTab.appearance.highlightID(for: "Main screen style")),
-            SettingsSearchEntry(tab: .appearance, title: "Settings icon in notch", keywords: ["settings button", "toolbar"], highlightID: SettingsTab.appearance.highlightID(for: "Settings icon in notch")),
+            SettingsSearchEntry(tab: .appearance, title: "Brain icon in notch", keywords: ["brain", "settings", "gear", "settings button", "toolbar"], highlightID: SettingsTab.appearance.highlightID(for: "Brain icon in notch")),
             SettingsSearchEntry(tab: .appearance, title: "Enable window shadow", keywords: ["shadow", "appearance"], highlightID: SettingsTab.appearance.highlightID(for: "Enable window shadow")),
             SettingsSearchEntry(tab: .appearance, title: "Corner radius scaling", keywords: ["corner radius", "shape"], highlightID: SettingsTab.appearance.highlightID(for: "Corner radius scaling")),
             SettingsSearchEntry(tab: .appearance, title: "Use simpler close animation", keywords: ["close animation", "notch"], highlightID: SettingsTab.appearance.highlightID(for: "Use simpler close animation")),
@@ -1139,7 +1139,7 @@ struct GeneralSettings: View {
             }
 
             Section {
-                SettingsRow("Menubar icon", description: "The eye in the menu bar. Click it to open the notch on the display you are on; right-click for Settings, updates, restart and quit.") {
+                SettingsRow("Menubar icon", description: "The eye in the menu bar. Click it to open the notch on the display you are on; right-click for Brain, updates, restart and quit.") {
                     Defaults.Toggle(key: .menubarIcon) {
                         Text("Menubar icon")
                     }
@@ -3883,9 +3883,9 @@ struct Appearance: View {
             Section {
                 Toggle("Always show tabs", isOn: $coordinator.alwaysShowTabs)
                 Defaults.Toggle(key: .settingsIconInNotch) {
-                    Text("Settings icon in notch")
+                    Text("Brain icon in notch")
                 }
-                .settingsHighlight(id: highlightID("Settings icon in notch"))
+                .settingsHighlight(id: highlightID("Brain icon in notch"))
                 Defaults.Toggle(key: .enableShadow) {
                     Text("Enable window shadow")
                 }
