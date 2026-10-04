@@ -3,6 +3,8 @@ import Foundation
 struct ClaudeUsageProvider: UsageProvider {
     let id: ProviderID = .claude
     let root: URL
+    /// A reference shared by every copy of this provider, so what was read survives between refreshes.
+    private let usageCache = JSONLUsageCache(label: "claude")
 
     init(root: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")) {
         self.root = root
@@ -19,9 +21,10 @@ struct ClaudeUsageProvider: UsageProvider {
                 // actually read would tell somebody who has not run Claude for eight days that their
                 // logs are unavailable, with a fix-it button for a problem they do not have, instead
                 // of an honest zero.
-                snapshot = JSONLUsageParser.aggregate(
+                snapshot = await JSONLUsageParser.aggregate(
                     files: UsageWindows.recentlyModified(files, now: now),
-                    now: now
+                    now: now,
+                    cache: usageCache
                 )
             } else {
                 snapshot.logsUnavailable = true
