@@ -4,6 +4,41 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-04 - Kannu's clipboard history skips copied access tokens
+- **Developer label:** "do we write now save these tokens in a secure way right, noone can just come and read it from us right"
+- **Agent label:** Clipboard history skips token-shaped text — the hook script's secret formats plus Atlassian
+- **Changes:**
+  - The clipboard history (off by default) persists what it records to UserDefaults in plain text,
+    and a token page's copy button carries no concealed marker: a GitLab or Atlassian token copied
+    from its settings page was recorded in Kannu's preferences file. `ClipboardManager.checkClipboard()`
+    now drops a copy whose text, URL or rich text's plain text holds a token-shaped secret, after
+    the read and before anything is recorded.
+  - The decision is pure `ClipboardCapturePolicy.shouldRecord(text:)` / `secretKind(in:)`. Its
+    format list is the hook script's `SEC_PATTERNS` character for character (private keys,
+    Anthropic, OpenAI, AWS, GitHub, GitLab, Slack, Stripe, Google, npm, Hugging Face) plus
+    Atlassian `ATATT` API tokens (100+ characters), with the hook's acceptance rules: a whole token
+    (no word character just before it), the vendors' minimum lengths, no placeholder words
+    (`EXAMPLE`, `XXXXXXXX`, …), and at least 8 distinct characters after the vendor prefix. So
+    `task-…`, `risk-…`, `xoxo` and AWS's documentation key are still recorded.
+  - Two deliberate differences from the hook, both because a missed token is persisted in plain
+    text while a false alarm only drops one history entry. The body must hold a digit **or** both
+    upper and lower case (an AWS key ID, upper case by format, neither): the hook's digit rule
+    misses about 1 GitLab token in 20 to 30, 1 AWS key ID in 30 and every Hugging Face token
+    (letters only), while lower-case words such as `glpat-your-token-goes-here` still fail it. And a
+    private key needs one base64 run of 64+ characters after its header, footer or not: raw or
+    written-out `\n` line breaks continue the run, anything else ends it, so a copy cut short of
+    its footer or a service-account JSON is caught, and prose or code that only names the header
+    is not.
+  - `ClipboardCapturePolicyTests` covers every format alone and inside a sentence, tokens on one
+    line of a multi-line `.env`, script, JSON or URL copy, tokens with no digit, private keys
+    without a footer, with CRLF, encrypted or inside JSON, near misses one character short, glued to
+    a word or made of lower-case words, prose and code that name a key header, ordinary prose and
+    identifiers, a 1 MB scan of near misses under a second, and pins the list to the hook's: every
+    `SEC_PATTERNS` kind with identical anchors and pattern, `SEC_LITERAL_PREFIXES` and
+    `SEC_PLACEHOLDER_WORDS`, read from `AgentHookInstaller.swift`. The
+    capture-order test now also pins the text check between the read and the record. Fixture
+    tokens are assembled at run time, so no token-shaped literal is committed.
+
 ### 2026-10-02 - Act on CodeRabbit's review of #71
 - **Developer label:** "cloud sessions are not detected by us, nor cowork, what can be done to cover that in our claude detection?" — review follow-up
 - **Agent label:** CodeRabbit #71 — recheck the pasteboard after reading it

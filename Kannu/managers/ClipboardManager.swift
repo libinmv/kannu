@@ -364,7 +364,10 @@ class ClipboardManager: ObservableObject {
             }
             return
         }
-        
+        // A token page's copy button carries no marker, so text holding an access token (GitLab,
+        // Atlassian, GitHub, an API key) is skipped by its shape.
+        if let text = clipboardItem.stringData, !ClipboardCapturePolicy.shouldRecord(text: text) { return }
+
         // Don't add duplicate items
         if !clipboardHistory.contains(where: { isSameContent($0, clipboardItem) }) {
             addToHistory(clipboardItem)
