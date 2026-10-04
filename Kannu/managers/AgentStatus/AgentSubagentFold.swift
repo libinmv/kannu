@@ -27,7 +27,10 @@ extension AgentTrafficLightMapper {
     ///   shows on the parent's card: a subagent waiting on permission turns it yellow, and the
     ///   parent's own progress cannot hide that prompt.
     /// - Once the parent's turn has ended, a leftover subagent file changes nothing — it used to
-    ///   relight the whole light green for up to six minutes after the chat finished.
+    ///   relight the whole light green for up to six minutes after the chat finished. The one
+    ///   exception is background work (`isClaudeBackgroundWork`): the turn ended with agents still
+    ///   running and Claude itself says they are, so the chat is not finished and its subagents'
+    ///   lights count again — a background agent waiting on permission turns the chat yellow.
     /// - With no parent file this scan, a stand-in carries the parent's id — inactive and
     ///   invisible, because the usual reason a parent file is missing is that the chat ended
     ///   (SessionEnd unlinks only the parent's own file). The reconciler promotes it from the
@@ -39,7 +42,8 @@ extension AgentTrafficLightMapper {
     /// source` would hand a parent without a turn the subagent's. Returns the folded
     /// subagent conversation ids so retention does not bring a pre-v38 card back.
     static func foldSubagentHookSessions(_ sessions: [AgentSessionStatus],
-                                         parentByKey: [String: String]) -> (sessions: [AgentSessionStatus], folded: Set<String>) {
+                                         parentByKey: [String: String],
+                                         claudeWorkOngoingIDs: Set<String> = []) -> (sessions: [AgentSessionStatus], folded: Set<String>) {
         guard !parentByKey.isEmpty else { return (sessions, []) }
         var out: [AgentSessionStatus] = []
         var indexByKey: [String: Int] = [:]
@@ -58,7 +62,8 @@ extension AgentTrafficLightMapper {
             folded.insert(sub.conversationID)
             let parentKey = sub.provider.lowercased() + "|" + parentID
             if let index = indexByKey[parentKey] {
-                out[index] = folding(sub, into: out[index])
+                out[index] = folding(sub, into: out[index],
+                                     backgroundWork: isClaudeBackgroundWork(out[index], workOngoingIDs: claudeWorkOngoingIDs))
             } else {
                 // Not the subagent's light: a leftover file after the chat ended showed the ended
                 // chat as running until the stale sweep. The raw state stays so the reconciler's
@@ -86,6 +91,43 @@ extension AgentTrafficLightMapper {
         return (out, folded)
     }
 
+    // MARK: - Background work (hook v44, Claude Code's session record)
+
+    /// How long after Claude reports `idle` a chat that had background agents stays lit. Between an
+    /// agent finishing and Claude waking to read its result, the record can say `idle` for a moment;
+    /// without this the chat would flash finished, and notify, in between.
+    static let claudeIdleGraceMs: Int64 = 3_000
+
+    /// Whether Claude Code says this session's work goes on, from its own record
+    /// (`~/.claude/sessions/<pid>.json`, read only while the process is alive). Claude writes
+    /// `busy` while a turn runs **or** any background agent, workflow or teammate it started is
+    /// unfinished, `waiting` while a prompt or dialog is up, `shell` when only a background command
+    /// runs and `idle` when nothing does. Untrusted input: anything else is not ongoing.
+    static func claudeWorkOngoing(status: String?, statusUpdatedAtMs: Int64?, nowMs: Int64) -> Bool {
+        switch status {
+        case "busy", "waiting": return true
+        case "idle": return claudeIdleGraceEndMs(status: status, statusUpdatedAtMs: statusUpdatedAtMs, nowMs: nowMs) != nil
+        default: return false
+        }
+    }
+
+    /// When a fresh `idle` stops counting as ongoing; nil once it has (or for any other status).
+    /// The monitor rescans then, since nothing else may write.
+    static func claudeIdleGraceEndMs(status: String?, statusUpdatedAtMs: Int64?, nowMs: Int64) -> Int64? {
+        guard status == "idle", let since = statusUpdatedAtMs, since <= nowMs else { return nil }
+        let end = since + claudeIdleGraceMs
+        return end > nowMs ? end : nil
+    }
+
+    /// A Claude chat whose turn ended with background agents in flight (the hook's count at Stop)
+    /// while Claude says its work goes on. Neither alone is enough: the count is a snapshot at the
+    /// Stop, and `busy` is also how Claude spends the moments before it writes `idle`.
+    static func isClaudeBackgroundWork(_ session: AgentSessionStatus, workOngoingIDs: Set<String>) -> Bool {
+        guard session.provider.lowercased() == "claude", let turn = session.turn,
+              turn.endedAt != nil, turn.backgroundAgents > 0 else { return false }
+        return workOngoingIDs.contains(session.conversationID)
+    }
+
     /// A conversation id as the hook writes it: 1–64 of `[A-Za-z0-9_-]`. The status file is
     /// untrusted input.
     static func isHookConversationID(_ value: String) -> Bool {
@@ -109,8 +151,9 @@ extension AgentTrafficLightMapper {
         }
     }
 
-    private static func folding(_ sub: AgentSessionStatus, into parent: AgentSessionStatus) -> AgentSessionStatus {
-        let turnOpen = parent.hasActiveRawState || isAwaitingInputRawState(parent.rawState)
+    private static func folding(_ sub: AgentSessionStatus, into parent: AgentSessionStatus,
+                                backgroundWork: Bool) -> AgentSessionStatus {
+        let turnOpen = parent.hasActiveRawState || isAwaitingInputRawState(parent.rawState) || backgroundWork
         let subWins = turnOpen && sub.isVisible
             && (!parent.isVisible || turnUrgency(sub.displayState) > turnUrgency(parent.displayState))
         let turn = HookTurn.folding(sub.turn, into: parent.turn)

@@ -1540,3 +1540,67 @@ final class HookScriptTests: XCTestCase {
     }
 }
 
+
+// MARK: - v44: what a Stop leaves running, and a subagent's own end
+
+extension HookScriptTests {
+    private func backgroundTask(_ type: String, _ status: String = "running") -> [String: Any] {
+        ["id": "task-" + type, "type": type, "status": status,
+         "description": "SECRET-DESCRIPTION", "command": "SECRET-COMMAND"]
+    }
+
+    func testAStopCountsTheAgentsItLeavesRunningAndNothingElse() throws {
+        try turnEvent("UserPromptSubmit", "bg1")
+        tick()
+        let tasks: [Any] = [backgroundTask("subagent"), backgroundTask("workflow"), backgroundTask("shell"),
+                            backgroundTask("monitor"), backgroundTask("subagent", "completed"),
+                            "not a task", ["type": ["subagent"]], ["status": "running"]]
+        let ended = try turnEvent("Stop", "bg1", state: "stopped", extra: ["background_tasks": tasks])
+        XCTAssertNotNil(ended["turn_ended_ms"])
+        XCTAssertEqual(int(ended["turn_bg_agents"]), 2, "agents and workflows; not shells, monitors or finished agents")
+        XCTAssertEqual(try readState("bg1"), "stopped", "the light is still the Stop's")
+        let raw = try String(contentsOf: statusFile("bg1"), encoding: .utf8)
+        XCTAssertFalse(raw.contains("SECRET"), "a task's description and command never reach the file")
+    }
+
+    func testWorkAfterTheStopOrAStopWithNothingLeftClearsTheCount() throws {
+        try turnEvent("UserPromptSubmit", "bg2")
+        tick()
+        try turnEvent("Stop", "bg2", state: "stopped", extra: ["background_tasks": [backgroundTask("subagent")]])
+        XCTAssertEqual(int(try turn("bg2")["turn_bg_agents"]), 1)
+        tick()
+        let woke = try turnEvent("PreToolUse", "bg2", state: "executing", extra: ["tool_use_id": "w1"])
+        XCTAssertNil(woke["turn_ended_ms"])
+        XCTAssertNil(woke["turn_bg_agents"], "working again: the turn is open and the snapshot is over")
+        tick()
+        try turnEvent("Stop", "bg2", state: "stopped", extra: ["background_tasks": [backgroundTask("subagent")]])
+        XCTAssertEqual(int(try turn("bg2")["turn_bg_agents"]), 1)
+        tick()
+        let done = try turnEvent("Stop", "bg2", state: "stopped", extra: ["background_tasks": [] as [Any]])
+        XCTAssertNil(done["turn_bg_agents"], "every Stop restates what it leaves running")
+    }
+
+    func testAStopFromAnOlderClaudeCountsNothing() throws {
+        try turnEvent("UserPromptSubmit", "bg3")
+        tick()
+        XCTAssertNil(try turnEvent("Stop", "bg3", state: "stopped")["turn_bg_agents"])
+        tick()
+        XCTAssertNil(try turnEvent("Stop", "bg3", state: "stopped", extra: ["background_tasks": "3"])["turn_bg_agents"])
+    }
+
+    func testASubagentsStartAndStopWriteItsOwnFileNotTheChats() throws {
+        try turnEvent("UserPromptSubmit", "bg4")
+        tick()
+        try run(state: "thinking", event: "SubagentStart", conversation: "bg4",
+                extra: ["agent_id": "sub44", "agent_type": "Explore"])
+        XCTAssertEqual(try readState("sub44"), "thinking")
+        XCTAssertEqual(try readJSON("sub44")?["parent_id"] as? String, "bg4")
+        tick()
+        try run(state: "stopped", event: "SubagentStop", conversation: "bg4",
+                extra: ["agent_id": "sub44", "agent_type": "Explore", "agent_transcript_path": "/tmp/sub44.jsonl",
+                        "stop_hook_active": false, "background_tasks": [backgroundTask("subagent")]])
+        XCTAssertEqual(try readState("sub44"), "stopped", "a finished agent says so instead of thinking until the stale cap")
+        XCTAssertNil(try turn("sub44")["turn_bg_agents"], "only the chat's own Stop counts what it leaves running")
+        XCTAssertEqual(try readState("bg4"), "thinking", "the chat's own file is untouched")
+    }
+}

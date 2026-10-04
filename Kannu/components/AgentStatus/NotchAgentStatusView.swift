@@ -589,7 +589,7 @@ struct NotchAgentStatusView: View {
     /// here instead.
     @ViewBuilder
     private func statusText(for session: AgentSessionStatus, font: Font) -> some View {
-        let suffix = session.runOutcomeSuffix + resumeSuffix(for: session)
+        let suffix = session.runOutcomeSuffix + session.backgroundWorkSuffix + resumeSuffix(for: session)
         if isMinimalistic, let display = AgentTurnMetricsView.display(for: session) {
             switch display {
             case let .live(since):
