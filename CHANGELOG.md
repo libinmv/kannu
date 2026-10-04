@@ -4,6 +4,46 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-04 - Token usage no longer drives Kannu past a gigabyte: transcripts are read once, then only what was appended
+- **Developer label:** "how did we end up using so much memory i had to restart app"
+- **Agent label:** Incremental usage aggregator — per-file offset cache, `"usage"` pre-filter, chunked reads off the cooperative pool
+- **Changes:**
+  - Root cause: `JSONLUsageParser.aggregate` loaded every transcript whole with
+    `String(contentsOf:)`, split it as a `String` and JSON-parsed every line, on every refresh, for
+    Claude and Codex at once. `ClaudeUsageProvider` lists subagent transcripts too (they are real
+    usage), so on this Mac that is 131 files and 659 MB, the largest 233.5 MB. Replayed on a clone of
+    those transcripts, one pass of the old code peaked at **1.1 GB** footprint, took 14 s, and left
+    887 MB resident afterwards.
+  - New `JSONLUsageCache`, one per provider: per file (keyed by path) the device + inode, the offset
+    just past the last newline consumed, and the in-week records those lines produced. A refresh
+    reads only appended bytes, in 4 MB `pread` chunks into one reused buffer, each chunk inside an
+    `autoreleasepool`. An unfinished last line is read again next time (it counts meanwhile only if
+    it already parses, as the old split counted it, and is never committed, so never twice). A new
+    inode or a file shorter than the offset is re-read from 0; a file that leaves the listing is
+    forgotten; a clock set back starts over.
+  - Only lines containing the bytes `"usage"` are JSON-parsed: `ClaudeUsageLine` reads tokens from a
+    `usage` object only (Claude's `message.usage`, the Codex-shaped top-level `usage`), so no other
+    line can be a record. 47,827 of 204,308 lines on this Mac.
+  - De-duplication unchanged: listing order, then line order, the week guard before the key claim,
+    first message id + request id wins. `JSONLUsageParser.snapshot(counting:now:)` folds the counted
+    records into the totals exactly as before.
+  - The work runs on the cache's own serial utility queue (`records(files:now:)`); the provider
+    awaits it instead of holding a cooperative-pool thread for the whole pass. One `os.Logger` line
+    per refresh (`com.kannu.app` / `UsageAggregator`): files, files read, bytes, lines parsed,
+    records, ms — counts only.
+  - Same transcripts, new code: **29.9 MB** peak, 3.9 s for the first pass, and an unchanged second
+    pass reads 0 bytes in 4 ms. The counted records are identical to the old parse (4,121 records,
+    same tokens, same digest).
+  - Tests: `JSONLUsageCacheTests` (13) — an unchanged refresh reads nothing, an append reads only the
+    delta and equals a full re-parse, truncated and replaced files are re-read without double
+    counting, a partial last line waits for its newline, the pre-filter matches parsing every line for
+    every shape, cross-file de-duplication and the week guard hold, lines straddling a chunk boundary.
+    The old algorithm is kept in the test as the oracle. `JSONLUsageCache.swift` joins the logic test
+    target (pbxproj ids C8/C9).
+  - Not covered, on purpose: a file rewritten in place under the same inode to an equal or larger size
+    between two refreshes is not noticed (transcripts are append-only). Lines in a file that is not
+    valid UTF-8, or that ends lines with CRLF, now count; the old `String` split dropped them.
+
 ### 2026-10-01 - Quit Kannu has a row in Settings, and searching "quit" or "exit" finds it
 - **Developer label:** "the settings should have a quit app, or at least on search of quit or exit i should get the tab with that button to come up as result"
 - **Agent label:** Settings Quit row + search entry, pinned by the highlight inventory

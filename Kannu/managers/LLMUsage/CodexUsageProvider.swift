@@ -4,6 +4,8 @@ struct CodexUsageProvider: UsageProvider {
     let id: ProviderID = .codex
     let root: URL
     let quotaClient: CodexQuotaClient
+    /// A reference shared by every copy of this provider, so what was read survives between refreshes.
+    private let usageCache = JSONLUsageCache(label: "codex")
 
     init(root: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions"), quotaClient: CodexQuotaClient = CodexQuotaClient()) {
         self.root = root
@@ -20,9 +22,10 @@ struct CodexUsageProvider: UsageProvider {
             if !files.isEmpty {
                 // Same rule as the Claude provider, from the same constant: skip files too old to
                 // contribute, but decide `logsUnavailable` from the unfiltered listing.
-                snapshot = JSONLUsageParser.aggregate(
+                snapshot = await JSONLUsageParser.aggregate(
                     files: UsageWindows.recentlyModified(files, now: now),
-                    now: now
+                    now: now,
+                    cache: usageCache
                 )
             } else {
                 snapshot.logsUnavailable = true
