@@ -85,6 +85,12 @@
 		AA10000000000000000000D9 /* TaskOrdering.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000D8 /* TaskOrdering.swift */; };
 		AA10000000000000000000DB /* WorklogDrafts.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000DA /* WorklogDrafts.swift */; };
 		AA10000000000000000000DD /* TaskFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000DC /* TaskFileStore.swift */; };
+		AA10000000000000000000E1 /* IntegrationHosts.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000E0 /* IntegrationHosts.swift */; };
+		AA10000000000000000000E3 /* HTTPOutcome.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000E2 /* HTTPOutcome.swift */; };
+		AA10000000000000000000E5 /* JiraAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000E4 /* JiraAPI.swift */; };
+		AA10000000000000000000E7 /* TaskMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000E6 /* TaskMerge.swift */; };
+		AA10000000000000000000E9 /* IntegrationHTTP.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000E8 /* IntegrationHTTP.swift */; };
+		AA10000000000000000000EB /* JiraSyncState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000EA /* JiraSyncState.swift */; };
 		AA10000000000000000000B7 /* ClipboardPanelPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B6 /* ClipboardPanelPlacement.swift */; };
 		AA10000000000000000000B9 /* HostedContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B8 /* HostedContent.swift */; };
 		AA10000000000000000000B3 /* AgentSecurityFindingGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B2 /* AgentSecurityFindingGroup.swift */; };
@@ -190,6 +196,12 @@
 		AA10000000000000000000D8 /* TaskOrdering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TaskOrdering.swift; path = Kannu/managers/Tasks/TaskOrdering.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000DA /* WorklogDrafts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WorklogDrafts.swift; path = Kannu/managers/Tasks/WorklogDrafts.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000DC /* TaskFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TaskFileStore.swift; path = Kannu/managers/Tasks/TaskFileStore.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000E0 /* IntegrationHosts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = IntegrationHosts.swift; path = Kannu/managers/Tasks/IntegrationHosts.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000E2 /* HTTPOutcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HTTPOutcome.swift; path = Kannu/managers/Tasks/HTTPOutcome.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000E4 /* JiraAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JiraAPI.swift; path = Kannu/managers/Tasks/JiraAPI.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000E6 /* TaskMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TaskMerge.swift; path = Kannu/managers/Tasks/TaskMerge.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000E8 /* IntegrationHTTP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = IntegrationHTTP.swift; path = Kannu/managers/Tasks/IntegrationHTTP.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000EA /* JiraSyncState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JiraSyncState.swift; path = Kannu/managers/Tasks/JiraSyncState.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000B6 /* ClipboardPanelPlacement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClipboardPanelPlacement.swift; path = Kannu/managers/Display/ClipboardPanelPlacement.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000B8 /* HostedContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HostedContent.swift; path = Kannu/helpers/HostedContent.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000B2 /* AgentSecurityFindingGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentSecurityFindingGroup.swift; path = Kannu/managers/AgentStatus/AgentSecurityFindingGroup.swift; sourceTree = SOURCE_ROOT; };
@@ -645,6 +657,12 @@
 				AA10000000000000000000D9 /* TaskOrdering.swift in Sources */,
 				AA10000000000000000000DB /* WorklogDrafts.swift in Sources */,
 				AA10000000000000000000DD /* TaskFileStore.swift in Sources */,
+				AA10000000000000000000E1 /* IntegrationHosts.swift in Sources */,
+				AA10000000000000000000E3 /* HTTPOutcome.swift in Sources */,
+				AA10000000000000000000E5 /* JiraAPI.swift in Sources */,
+				AA10000000000000000000E7 /* TaskMerge.swift in Sources */,
+				AA10000000000000000000E9 /* IntegrationHTTP.swift in Sources */,
+				AA10000000000000000000EB /* JiraSyncState.swift in Sources */,
 				AA10000000000000000000B7 /* ClipboardPanelPlacement.swift in Sources */,
 				AA10000000000000000000B9 /* HostedContent.swift in Sources */,
 				AA100000000000000000F008 /* TermsOfUse.swift in Sources */,

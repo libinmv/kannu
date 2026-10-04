@@ -36,6 +36,13 @@ import os
 /// `TimerSessionEventRulesTests` pins that). Every way of stopping the timer — the notch, the
 /// popover, the control overlay, the lock-screen widget — ends the task's time the same way,
 /// because they all end the session.
+///
+/// **Jira.** Jira Cloud is a source of tasks (Brain › Tasks › Sources). A sync reads the user's
+/// issues and folds them into the list with `TaskMerge`, on the main actor, against the list as it
+/// is then. It runs only when the Tasks page appears and the last sync is over 5 minutes old, on
+/// Refresh, and right after Connect: no timer, no polling, nothing at launch. The credential is read
+/// from the Keychain off the main actor (`JiraCredentialStore`), non-interactively unless the user
+/// clicked something, and the host it is used with is the Keychain's own, never a Defaults copy.
 @MainActor
 final class TasksManager: ObservableObject {
     static let shared = TasksManager()
@@ -67,6 +74,9 @@ final class TasksManager: ObservableObject {
     @Published private(set) var timing: Timing?
     /// Set when the file could not be decoded and was moved aside: names the kept copy.
     @Published private(set) var movedAsideFileName: String?
+    @Published private(set) var jiraSync: JiraSyncState = .idle
+    /// Disconnect could not delete the saved token from the Keychain, so it is still there.
+    @Published private(set) var jiraTokenRemovalFailed = false
 
     private struct Link {
         let session: UUID
@@ -88,6 +98,18 @@ final class TasksManager: ObservableObject {
     private var revision = 0
     private var savedRevision = 0
 
+    /// A sync older than this is refreshed when the Tasks page appears.
+    static let jiraStaleAfter: TimeInterval = 5 * 60
+    /// The last sync that succeeded.
+    private var lastJiraSync: Date?
+    /// Bumped by Connect and Disconnect: a sync started before carries the old value, and its result
+    /// is dropped instead of landing on a list that has moved on.
+    private var jiraGeneration = 0
+    /// The generation of the sync in flight, if any.
+    private var jiraSyncInFlight: Int?
+    /// The page appeared before the task file was read: sync once it is.
+    private var pendingJiraSyncWhenReady = false
+
     private init() {
         store = TaskFileStore(directory: { AppSupportPaths.child("Tasks") })
         TimerManager.shared.sessionEvents
@@ -103,6 +125,18 @@ final class TasksManager: ObservableObject {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.saveBeforeQuit() }
         }
+        // Which tasks the order lists depends on these; the views read it through `activeTasks`.
+        // `options: []`, so subscribing does not fire.
+        Publishers.Merge3(
+            Defaults.publisher(.showLocalTasks, options: []).map { _ in () },
+            Defaults.publisher(.jiraEnabled, options: []).map { _ in () },
+            Defaults.publisher(.jiraSiteHost, options: []).map { _ in () }
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] in
+            MainActor.assumeIsolated { self?.objectWillChange.send() }
+        }
+        .store(in: &cancellables)
         Task { await load() }
     }
 
@@ -110,8 +144,20 @@ final class TasksManager: ObservableObject {
 
     var isReady: Bool { loadState == .ready }
 
-    /// The task order, top first.
-    var activeTasks: [TaskItem] { TaskOrdering.active(tasks) }
+    /// The task order, top first: active tasks of the sources that are switched on.
+    var activeTasks: [TaskItem] { TaskOrdering.active(tasks, listed: listed) }
+
+    /// Whether the task order shows this task: Local tasks and Sync Jira decide by source. The
+    /// moves use the same filter, so a task the user cannot see never shifts one.
+    func isListed(_ task: TaskItem) -> Bool { listed(task) }
+
+    private var listed: TaskOrdering.Listed {
+        TaskOrdering.listedFilter(
+            showLocal: Defaults[.showLocalTasks],
+            showJira: Defaults[.jiraEnabled] || !isJiraConnected,
+            alwaysListed: timing?.taskID
+        )
+    }
 
     var doneAndHiddenTasks: [TaskItem] { tasks.filter { $0.visibility != .active } }
 
@@ -261,17 +307,33 @@ final class TasksManager: ObservableObject {
     }
 
     func moveToTop(_ taskID: UUID) { reorder { TaskOrdering.movingToTop(taskID, in: $0) } }
-    func moveUp(_ taskID: UUID) { reorder { TaskOrdering.movingUp(taskID, in: $0) } }
-    func moveDown(_ taskID: UUID) { reorder { TaskOrdering.movingDown(taskID, in: $0) } }
+
+    func moveUp(_ taskID: UUID) {
+        let listed = listed
+        reorder { TaskOrdering.movingUp(taskID, in: $0, listed: listed) }
+    }
+
+    func moveDown(_ taskID: UUID) {
+        let listed = listed
+        reorder { TaskOrdering.movingDown(taskID, in: $0, listed: listed) }
+    }
 
     func move(activeOffsets: IndexSet, toActiveOffset destination: Int) {
-        reorder { TaskOrdering.moving(activeOffsets: activeOffsets, toActiveOffset: destination, in: $0) }
+        let listed = listed
+        reorder { TaskOrdering.moving(activeOffsets: activeOffsets, toActiveOffset: destination, in: $0, listed: listed) }
     }
 
     /// Marking the task being timed done stops the timer first, which ends its time.
     func markDone(_ taskID: UUID) {
         if timing?.taskID == taskID { stopTiming() }
         update(taskID) { $0.visibility = .done }
+    }
+
+    /// Out of the task order, into Done and hidden; Show puts it back. A remote task is hidden, never
+    /// deleted: the next sync would only bring it back.
+    func hide(_ taskID: UUID) {
+        if timing?.taskID == taskID { stopTiming() }
+        update(taskID) { $0.visibility = .hidden }
     }
 
     /// Back into the task order, where it was.
@@ -320,6 +382,266 @@ final class TasksManager: ObservableObject {
         persist()
     }
 
+    // MARK: - Jira
+
+    /// Connected, as far as the display copies say. The Keychain has the final word at sync time.
+    var isJiraConnected: Bool { !Defaults[.jiraSiteHost].isEmpty }
+
+    /// Connected and "Sync Jira" on.
+    var isJiraSyncOn: Bool { isJiraConnected && Defaults[.jiraEnabled] }
+
+    var isJiraSyncing: Bool { jiraSyncInFlight == jiraGeneration }
+
+    /// The page appeared. Syncs when Jira is on, nothing is in flight, and
+    /// `JiraSyncState.allowsSyncOnAppear` agrees: the last sync is over 5 minutes old, no rate limit
+    /// is running, and Jira has not refused the token (a refused token is only ever retried by the
+    /// user). Never shows the Keychain dialog: a read that would need it ends in
+    /// `.needsKeychainApproval`, and the user's click retries.
+    func syncJiraIfStale(now: Date = Date()) {
+        guard isJiraSyncOn, !isJiraSyncing else { return }
+        guard isReady else {
+            if loadState == .loading { pendingJiraSyncWhenReady = true }
+            return
+        }
+        guard jiraSync.allowsSyncOnAppear(lastSuccess: lastJiraSync, now: now, staleAfter: Self.jiraStaleAfter) else { return }
+        syncJira(interactive: false, using: nil)
+    }
+
+    /// Refresh, and Allow Keychain Access: the user asked, so the Keychain may ask them too.
+    func refreshJira(now: Date = Date()) {
+        guard isJiraSyncOn, isReady, !isJiraSyncing else { return }
+        if case .rateLimited(let until) = jiraSync, until > now { return }
+        syncJira(interactive: true, using: nil)
+    }
+
+    /// Checks the site, email and token with Jira, then stores them and syncs. Nil on success, or
+    /// what to tell the user. Nothing is stored until Jira has accepted the token.
+    func connectJira(siteInput: String, email: String, token: String) async -> String? {
+        let host: String
+        switch JiraSite.normalize(siteInput) {
+        case .success(let normalized): host = normalized
+        case .failure(let error): return Self.message(for: error)
+        }
+        let email = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !email.isEmpty, !token.isEmpty else {
+            return String(localized: "Type the email of your Atlassian account and an API token.")
+        }
+        guard !token.contains(where: { $0.isWhitespace || $0.isNewline }) else {
+            return String(localized: "An API token has no spaces in it. Copy it again from Atlassian.")
+        }
+        let credential = JiraCredential(site: host, email: email, token: token)
+        let verified: JiraMyself
+        switch await JiraClient().verify(credential) {
+        case .verified(let myself): verified = myself
+        case .failed(let failure): return Self.connectMessage(for: failure, host: host)
+        }
+        guard !Task.isCancelled else { return String(localized: "Cancelled.") }
+        guard await JiraCredentialStore.save(credential) else {
+            return String(localized: "Jira accepted the token, but Kannu could not save it in your Keychain.")
+        }
+        Defaults[.jiraSiteHost] = host
+        Defaults[.jiraAccountID] = verified.accountId
+        Defaults[.jiraAccountDisplayName] = verified.displayName ?? ""
+        Defaults[.jiraEnabled] = true
+        jiraGeneration += 1
+        jiraSyncInFlight = nil
+        lastJiraSync = nil
+        jiraSync = .idle
+        // The save replaced whatever a failed Disconnect left in the Keychain.
+        jiraTokenRemovalFailed = false
+        logger.info("Jira connected")
+        if isReady {
+            // The credential is in hand: no Keychain read for the first sync.
+            syncJira(interactive: false, using: credential)
+        } else if loadState == .loading {
+            pendingJiraSyncWhenReady = true
+        }
+        return nil
+    }
+
+    /// Forgets the token and stops syncing. With `removeTasks`, the Jira tasks and their unlogged
+    /// time go too (timing one stops first); without, they stay in the order as they are.
+    func disconnectJira(removeTasks: Bool) {
+        jiraGeneration += 1
+        jiraSyncInFlight = nil
+        pendingJiraSyncWhenReady = false
+        lastJiraSync = nil
+        jiraSync = .idle
+        Defaults[.jiraEnabled] = false
+        Defaults[.jiraSiteHost] = ""
+        Defaults[.jiraAccountID] = ""
+        Defaults[.jiraAccountDisplayName] = ""
+        removeJiraToken()
+        logger.info("Jira disconnected, tasks removed: \(removeTasks, privacy: .public)")
+        guard removeTasks, isReady else { return }
+        if let timed = timing?.taskID, tasks.first(where: { $0.id == timed })?.source == .jira {
+            stopTiming()
+        }
+        let removed = Set(tasks.filter { $0.source == .jira }.map(\.id))
+        guard !removed.isEmpty else { return }
+        if let pending = pendingLink, removed.contains(pending.taskID) { pendingLink = nil }
+        tasks.removeAll { removed.contains($0.id) }
+        drafts.removeAll { removed.contains($0.taskID) }
+        persist()
+    }
+
+    /// Disconnect could not delete the saved token: the user asks again. The delete may raise the
+    /// Keychain dialog (an item saved by a differently signed build); it runs off the main actor.
+    func retryRemovingJiraToken() {
+        guard !isJiraConnected else { return }
+        removeJiraToken()
+    }
+
+    /// Deletes the saved token off the main actor, and says so when it could not. A result that
+    /// lands after a new Connect is dropped: that Connect saved a token of its own.
+    private func removeJiraToken() {
+        let generation = jiraGeneration
+        jiraTokenRemovalFailed = false
+        Task { [weak self] in
+            let removed = await JiraCredentialStore.remove()
+            guard let self, generation == self.jiraGeneration else { return }
+            self.jiraTokenRemovalFailed = !removed
+            if !removed { self.logger.error("Jira: the saved sign-in could not be removed from the Keychain") }
+        }
+    }
+
+    /// The issue's page, built from the host the task came from, or nil for anything else.
+    func jiraBrowseURL(for task: TaskItem) -> URL? {
+        guard task.source == .jira, let remote = task.remote else { return nil }
+        return JiraSite.browseURL(host: remote.hostScope, key: remote.key)
+    }
+
+    private func syncJira(interactive: Bool, using known: JiraCredential?) {
+        let generation = jiraGeneration
+        jiraSyncInFlight = generation
+        jiraSync = .syncing
+        let expectedHost = Defaults[.jiraSiteHost]
+        let jql = JiraAPI.effectiveJQL(Defaults[.jiraJQL])
+        Task { [weak self] in
+            let credential: JiraCredential
+            if let known {
+                credential = known
+            } else {
+                switch await JiraCredentialStore.load(allowInteraction: interactive) {
+                case .found(let stored):
+                    credential = stored
+                case .needsApproval:
+                    self?.finishJiraSync(generation, .needsKeychainApproval)
+                    return
+                case .missing, .broken:
+                    self?.finishJiraSync(generation, .needsReconnect)
+                    return
+                }
+            }
+            // The Keychain's host is the only one a token is sent to. A Defaults copy that
+            // disagrees means the setup changed under Kannu: reconnect, never a request elsewhere.
+            guard credential.site == expectedHost, JiraSite.isValidHost(credential.site) else {
+                self?.finishJiraSync(generation, .needsReconnect)
+                return
+            }
+            let result = await JiraClient().fetchIssues(credential, jql: jql)
+            self?.didFetchJira(result.outcome, failure: result.failure, host: credential.site, generation: generation)
+        }
+    }
+
+    private func finishJiraSync(_ generation: Int, _ state: JiraSyncState) {
+        guard generation == jiraGeneration else { return }
+        jiraSyncInFlight = nil
+        jiraSync = state
+    }
+
+    private func didFetchJira(_ outcome: SyncOutcome, failure: JiraClient.Failure?, host: String, generation: Int) {
+        // Connected again or disconnected meanwhile: this result belongs to a setup that is gone.
+        guard generation == jiraGeneration else { return }
+        let now = Date()
+        guard case .fetched(let fetch) = outcome else {
+            finishJiraSync(generation, Self.syncState(for: failure, now: now))
+            logger.notice("Jira sync failed")
+            return
+        }
+        guard isReady else {
+            finishJiraSync(generation, .failed(String(localized: "Kannu could not read its task list, so Jira issues cannot be added to it.")))
+            return
+        }
+        // The task being timed stays in the order however the issue changed: its row holds the
+        // list's Stop button. The first sync after its timing ends decides.
+        let timed = Set([timing?.taskID, pendingLink?.taskID].compactMap { $0 })
+        let merged = TaskMerge.apply(outcome, source: .jira, hostScope: host, to: tasks, now: now, keepingActive: timed)
+        tasks = merged.tasks
+        if merged.changed { persist() }
+        lastJiraSync = now
+        finishJiraSync(generation, .synced(at: now, count: fetch.issues.count, complete: fetch.complete))
+        logger.info("Jira sync: \(fetch.issues.count, privacy: .public) issues, complete \(fetch.complete, privacy: .public), \(merged.added, privacy: .public) added, \(merged.updated, privacy: .public) updated, \(merged.gone, privacy: .public) gone")
+    }
+
+    private static func syncState(for failure: JiraClient.Failure?, now: Date) -> JiraSyncState {
+        switch failure {
+        case .http(.offline):
+            return .offline
+        case .http(.rateLimited(let seconds)):
+            return .rateLimited(until: now.addingTimeInterval(seconds))
+        case .http(.auth(let status)):
+            return .authFailed(status: status)
+        case .http(.rejected(400)):
+            return .failed(String(localized: "Jira refused the issue filter (400). Check it under Advanced, or reset it."))
+        case .http(.rejected(let status)):
+            return .failed(String(localized: "Jira refused the request (\(status)). The account may have lost access to this site."))
+        case .http(.redirected(let status)):
+            return .failed(String(localized: "The site answered with a redirect (\(status)), which Kannu never follows."))
+        case .http(.failedBeforeSend):
+            return .failed(String(localized: "Kannu could not reach the Jira site. Check your connection."))
+        case .http(.ambiguous(let status?)):
+            return .failed(String(localized: "Jira did not answer properly (\(status)). Try again later."))
+        case .http(.ambiguous(nil)), .http(.ok):
+            return .failed(String(localized: "Jira did not answer in time. Try again later."))
+        case .decode:
+            return .failed(String(localized: "Jira's answer could not be read."))
+        case .badSite, nil:
+            return .needsReconnect
+        }
+    }
+
+    private static func message(for error: JiraSiteError) -> String {
+        switch error {
+        case .empty:
+            return String(localized: "Type your Jira site, such as acme or acme.atlassian.net.")
+        case .notHTTPS:
+            return String(localized: "Kannu connects to Jira over HTTPS only.")
+        case .userInfo:
+            return String(localized: "The site has a name and @ before the host. Type just the site, such as acme.atlassian.net.")
+        case .port:
+            return String(localized: "Jira Cloud uses the standard HTTPS port. Remove the port from the site.")
+        case .notAtlassianCloud, .malformed:
+            return String(localized: "That is not a Jira Cloud site. It looks like acme.atlassian.net.")
+        }
+    }
+
+    private static func connectMessage(for failure: JiraClient.Failure, host: String) -> String {
+        switch failure {
+        case .badSite:
+            return message(for: .notAtlassianCloud)
+        case .decode, .http(.ok):
+            return String(localized: "\(host) answered, but not the way Jira Cloud does. Check the site.")
+        case .http(.auth(let status)):
+            return String(localized: "Jira did not accept that email and token (\(status)). Check both, or create a new token.")
+        case .http(.rejected(404)):
+            return String(localized: "No Jira site answered at \(host) (404). Check the site.")
+        case .http(.rejected(let status)):
+            return String(localized: "Jira refused the request (\(status)).")
+        case .http(.redirected(let status)):
+            return String(localized: "\(host) answered with a redirect (\(status)), which Kannu never follows. Check the site.")
+        case .http(.rateLimited):
+            return String(localized: "Jira is limiting requests right now. Try again in a minute.")
+        case .http(.offline):
+            return String(localized: "This Mac is offline.")
+        case .http(.failedBeforeSend):
+            return String(localized: "Kannu could not reach \(host). Check the site and your connection.")
+        case .http(.ambiguous):
+            return String(localized: "Jira did not answer. Try again.")
+        }
+    }
+
     // MARK: - Loading and saving
 
     private func load() async {
@@ -347,6 +669,10 @@ final class TasksManager: ObservableObject {
         loadState = .ready
         logger.info("Loaded \(file.tasks.count, privacy: .public) tasks, \(interrupted, privacy: .public) interrupted sessions")
         if interrupted > 0 || normalized != file.drafts { persist() }
+        if pendingJiraSyncWhenReady {
+            pendingJiraSyncWhenReady = false
+            syncJiraIfStale()
+        }
     }
 
     private var snapshot: TasksFile {

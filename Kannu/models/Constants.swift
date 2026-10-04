@@ -1516,6 +1516,19 @@ extension Defaults.Keys {
     static let tasksDefaultSessionMinutes = Key<Int>("tasksDefaultSessionMinutes", default: 25)
     /// Off by default: a task's timer runs on past its estimate silently.
     static let tasksSoundAtEstimate = Key<Bool>("tasksSoundAtEstimate", default: false)
+    /// Local tasks in the task order. Off hides them from the order; they stay on this Mac.
+    static let showLocalTasks = Key<Bool>("showLocalTasks", default: true)
+    // Jira Cloud (Brain › Tasks › Sources). These are display copies only: the token, and the one
+    // host it may be sent to, live together in the Keychain (`SecureSecretKey.jiraCredential`). A
+    // site here that differs from the Keychain's means "reconnect", never a request to this host.
+    /// "Sync Jira": Jira issues are fetched and listed in the task order. On after Connect.
+    static let jiraEnabled = Key<Bool>("jiraEnabled", default: false)
+    /// The connected site's host (`acme.atlassian.net`); empty when not connected.
+    static let jiraSiteHost = Key<String>("jiraSiteHost", default: "")
+    static let jiraAccountID = Key<String>("jiraAccountID", default: "")
+    static let jiraAccountDisplayName = Key<String>("jiraAccountDisplayName", default: "")
+    /// The issue filter. Empty means the default (`JiraAPI.defaultJQL`).
+    static let jiraJQL = Key<String>("jiraJQL", default: JiraAPI.defaultJQL)
 
     // Use Now Playing as the default media controller for new installs.
     static var defaultMediaController: MediaControllerType {

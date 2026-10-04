@@ -58,9 +58,9 @@ final class SettingsHighlightInventoryTests: XCTestCase {
 
     func testCountsArePinned() throws {
         let inventory = try Self.inventory()
-        XCTAssertEqual(inventory.entries.count, 214, "search entries")
-        XCTAssertEqual(inventory.registrations.values.reduce(0, +), 263, "row registrations")
-        XCTAssertEqual(inventory.registrations.count, 257, "distinct registered ids")
+        XCTAssertEqual(inventory.entries.count, 220, "search entries")
+        XCTAssertEqual(inventory.registrations.values.reduce(0, +), 268, "row registrations")
+        XCTAssertEqual(inventory.registrations.count, 262, "distinct registered ids")
     }
 
     func testOnlyTheKnownRowsTakeTheirIdBuilderFromAParent() throws {

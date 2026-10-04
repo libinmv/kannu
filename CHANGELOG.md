@@ -4,6 +4,54 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-04 - Brain › Tasks: Jira Cloud as a source, with your Jira issues in the task order
+- **Developer label:** "what about jira page, i want a section in main brain in productivity for task management"
+- **Agent label:** Brain Tasks PR3: Jira read inside Productivity › Tasks (Sources section, read-only sync, token in the Keychain)
+- **Changes:**
+  - New Sources section at the top of Brain › Productivity › Tasks (shown while Enable tasks is on):
+    a Jira Cloud row ("Connected as Dana" or "Not connected", "Site acme.atlassian.net · Filter: my
+    open issues", Connect… or Disconnect…), Sync Jira, Jira issues with Refresh and "Synced 10:42 ·
+    12 issues" / "Showing the first 200 — narrow the filter" / "Offline" / "Rate limited until 10:52",
+    an Advanced Issue filter (JQL) with Reset, Allow Keychain Access when macOS asks, and Local tasks.
+    There is no separate Integrations page; GitLab follows in its own PR.
+  - Connect… opens a sheet (site, email, API token in a `SecureField`, "Create API token…"). Kannu
+    checks the token with `GET /rest/api/3/myself` before storing anything; only then does it go to
+    the Keychain (`SecureSecretKey.jiraCredential`, JSON with the site), and the field is cleared.
+    Disconnect asks, in a SwiftUI dialog, whether to keep or remove the Jira tasks on this Mac. If
+    the Keychain refuses to delete the saved token, Sources says it is still there, with Remove Token
+    to try again and where to find it in Keychain Access.
+  - Jira issues join the task order beside local tasks: "PROJ-123 · In Progress · 42m of 2h · Jira
+    logged 3h", titles verbatim, and a ⋯ menu with Open in Jira and Hide in place of Mark Done and
+    Delete. Done and hidden rows lead with the key. Turning off Local tasks or Sync Jira takes those
+    tasks out of the order, and Move Up / Down and drags count only the tasks on screen.
+  - A sync runs when the Tasks page appears and the last one is over 5 minutes old, on Refresh, and
+    right after Connect: nothing at launch, no timer, no polling. Once Jira has refused the token, or
+    the saved sign-in needs reconnecting, the page never syncs on its own again: only Refresh, Allow
+    Keychain Access or Connect retries, so a revoked token is not re-sent on every visit (repeated
+    failed sign-ins can lock the Atlassian account behind a CAPTCHA). `POST /rest/api/3/search/jql`, at
+    most 2 pages of 100; a 429 honours `Retry-After` (1 s to 1 h). `TaskMerge` folds the result into
+    the list on the main actor: matched on the issue id within the site, it keeps the user's order,
+    estimate, recorded time and hidden or done state; new issues are appended; only a complete fetch
+    marks missing active tasks gone, a capped one marks nothing, a failed one changes nothing, and a
+    different site's tasks go. The task being timed never goes: its row holds the Stop button, and
+    the first sync after its timing ends decides.
+  - Requests go through `IntegrationHTTP`: an ephemeral session (no cookies, cache or credential
+    storage), 20 s timeouts, every redirect refused, bodies over 5 MB dropped. The token is sent only
+    as HTTP Basic to the Keychain item's own `<site>.atlassian.net` host (`JiraSite.normalize`
+    refuses http, userinfo, other ports, IPs, look-alikes and non-ASCII), never in a URL or a log.
+  - Every Keychain access runs on a serial queue off the main actor; the page reads none. A sync the
+    page starts never shows the Keychain dialog: it shows Allow Keychain Access instead. Logs carry
+    counts and status codes only.
+  - Pure files in the logic target: `IntegrationHosts`, `HTTPOutcome`, `JiraAPI`, `TaskMerge`,
+    `IntegrationHTTP`, `JiraSyncState`; `TaskOrdering` gains a `listed` filter. App files: `JiraClient` (with
+    `JiraCredentialStore`). `SecureSecretsStore.read(_:allowInteraction:)`. Defaults: `showLocalTasks`,
+    `jiraEnabled`, `jiraSiteHost`, `jiraAccountID`, `jiraAccountDisplayName`, `jiraJQL`.
+  - Tests: JiraSiteTests, JiraRequestTests, JiraDecodingTests, TaskMergeTests, JiraSyncStateTests, HTTPOutcomeTests,
+    RedirectGuardTests (a `URLProtocol` stub: the redirect target is never asked for anything, with a
+    meta-test that an unguarded session would follow it), IntegrationSecretRulesTests (source scans
+    with planted offenders), TaskSourceFilterTests. Highlight inventory 220 entries, 268
+    registrations, 262 ids; the TasksSettings padding pin is 2 (the Connect sheet).
+
 ### 2026-10-04 - Brain › Tasks: an ordered task list with estimates, and the actual time recorded by Kannu's timer
 - **Developer label:** "task will have option to add estimate and also record the actual time"
 - **Agent label:** Brain Tasks PR2: local tasks, estimates, timer session events, recorded actual time

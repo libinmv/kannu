@@ -188,6 +188,8 @@ private struct SettingsSearchEntry: Identifiable {
 enum SettingsDeepLink {
     static let smartCaffeinateHighlightID = SettingsTab.agentStatus.highlightID(for: "Smart caffeinate")
     static let securityFindingsHighlightID = SettingsTab.agentSecurity.highlightID(for: "Security findings")
+    /// Brain › Tasks › Sources, on its Jira Cloud row: where a later "Manage tasks…" lands.
+    static let tasksSourcesHighlightID = SettingsTab.tasks.highlightID(for: "Sources")
 }
 
 final class SettingsHighlightCoordinator: ObservableObject {
@@ -899,6 +901,12 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .timer, title: "Accent colour", keywords: ["accent", "timer"], highlightID: SettingsTab.timer.highlightID(for: "Accent colour")),
 
             // Tasks
+            SettingsSearchEntry(tab: .tasks, title: "Sources", keywords: ["tasks", "sources", "jira", "integrations", "connect", "issues"], highlightID: SettingsDeepLink.tasksSourcesHighlightID),
+            SettingsSearchEntry(tab: .tasks, title: "Jira Cloud", keywords: ["jira", "atlassian", "connect", "disconnect", "api token", "issues", "integration"], highlightID: SettingsDeepLink.tasksSourcesHighlightID),
+            SettingsSearchEntry(tab: .tasks, title: "Sync Jira", keywords: ["jira", "sync", "issues", "show jira tasks"], highlightID: SettingsTab.tasks.highlightID(for: "Sync Jira")),
+            SettingsSearchEntry(tab: .tasks, title: "Refresh Jira issues", keywords: ["jira", "refresh", "reload", "synced", "rate limited", "offline"], highlightID: SettingsTab.tasks.highlightID(for: "Jira issues")),
+            SettingsSearchEntry(tab: .tasks, title: "Issue filter (JQL)", keywords: ["jira", "jql", "filter", "query", "advanced", "issues"], highlightID: SettingsTab.tasks.highlightID(for: "Issue filter")),
+            SettingsSearchEntry(tab: .tasks, title: "Local tasks", keywords: ["tasks", "local", "my tasks", "show", "hide", "sources"], highlightID: SettingsTab.tasks.highlightID(for: "Local tasks")),
             SettingsSearchEntry(tab: .tasks, title: "Enable tasks", keywords: ["tasks", "todo", "to-do", "estimate", "time tracking", "actual time"], highlightID: SettingsTab.tasks.highlightID(for: "Enable tasks")),
             SettingsSearchEntry(tab: .tasks, title: "Default session length", keywords: ["tasks", "session", "length", "minutes", "pomodoro", "timer"], highlightID: SettingsTab.tasks.highlightID(for: "Default session length")),
             SettingsSearchEntry(tab: .tasks, title: "Sound when the estimate is reached", keywords: ["tasks", "sound", "estimate", "alarm", "chime", "overtime"], highlightID: SettingsTab.tasks.highlightID(for: "Sound when the estimate is reached")),

@@ -24,10 +24,30 @@ import Foundation
 /// Done, hidden and gone tasks keep their place in the array, so reopening one puts it back where
 /// it was. The moves below therefore step over them: Move Up swaps with the previous *active* task,
 /// so one click always changes what the user sees.
+///
+/// The same goes for tasks of a source the user switched off (Local tasks, Sync Jira): `listed`
+/// says which active tasks are on screen, and every move and drag offset counts only those. Its
+/// default lists every active task.
 enum TaskOrdering {
+    typealias Listed = (TaskItem) -> Bool
+
+    /// Which tasks the task order shows, by source. The task being timed always shows, so it can be
+    /// stopped from the list. Jira tasks show while Jira is synced, and also while it is not
+    /// connected at all: tasks kept after a disconnect stay where the user can see them.
+    static func listedFilter(showLocal: Bool, showJira: Bool, alwaysListed: UUID?) -> Listed {
+        { task in
+            if task.id == alwaysListed { return true }
+            switch task.source {
+            case .local: return showLocal
+            case .jira: return showJira
+            case .gitlab: return true
+            }
+        }
+    }
+
     /// The tasks in the task order, top first.
-    static func active(_ tasks: [TaskItem]) -> [TaskItem] {
-        tasks.filter { $0.visibility == .active }
+    static func active(_ tasks: [TaskItem], listed: Listed = { _ in true }) -> [TaskItem] {
+        tasks.filter { $0.visibility == .active && listed($0) }
     }
 
     /// A new task goes to the top.
@@ -43,20 +63,20 @@ enum TaskOrdering {
         return result
     }
 
-    /// Places the task just before the previous active task. No change at the top.
-    static func movingUp(_ id: UUID, in tasks: [TaskItem]) -> [TaskItem] {
+    /// Places the task just before the previous listed active task. No change at the top.
+    static func movingUp(_ id: UUID, in tasks: [TaskItem], listed: Listed = { _ in true }) -> [TaskItem] {
         guard let index = tasks.firstIndex(where: { $0.id == id }),
-              let previous = tasks[..<index].lastIndex(where: { $0.visibility == .active }) else { return tasks }
+              let previous = tasks[..<index].lastIndex(where: { $0.visibility == .active && listed($0) }) else { return tasks }
         var result = tasks
         let task = result.remove(at: index)
         result.insert(task, at: previous)
         return result
     }
 
-    /// Places the task just after the next active task. No change at the bottom.
-    static func movingDown(_ id: UUID, in tasks: [TaskItem]) -> [TaskItem] {
+    /// Places the task just after the next listed active task. No change at the bottom.
+    static func movingDown(_ id: UUID, in tasks: [TaskItem], listed: Listed = { _ in true }) -> [TaskItem] {
         guard let index = tasks.firstIndex(where: { $0.id == id }),
-              let next = tasks[(index + 1)...].firstIndex(where: { $0.visibility == .active }) else { return tasks }
+              let next = tasks[(index + 1)...].firstIndex(where: { $0.visibility == .active && listed($0) }) else { return tasks }
         var result = tasks
         let task = result.remove(at: index)
         // `next` shifted down by one with the removal; inserting at it places the task after it.
@@ -64,11 +84,16 @@ enum TaskOrdering {
         return result
     }
 
-    /// A drag in the task order (`onMove`), whose offsets count active tasks only. The dragged
-    /// tasks land just before the active task that was at `destination`, or after the last active
-    /// task when dropped at the end.
-    static func moving(activeOffsets offsets: IndexSet, toActiveOffset destination: Int, in tasks: [TaskItem]) -> [TaskItem] {
-        let visible = active(tasks)
+    /// A drag in the task order (`onMove`), whose offsets count listed active tasks only. The
+    /// dragged tasks land just before the listed task that was at `destination`, or after the last
+    /// listed task when dropped at the end.
+    static func moving(
+        activeOffsets offsets: IndexSet,
+        toActiveOffset destination: Int,
+        in tasks: [TaskItem],
+        listed: Listed = { _ in true }
+    ) -> [TaskItem] {
+        let visible = active(tasks, listed: listed)
         let moved = offsets.filter { visible.indices.contains($0) }.map { visible[$0].id }
         guard !moved.isEmpty else { return tasks }
         let movedSet = Set(moved)
@@ -79,7 +104,7 @@ enum TaskOrdering {
         let movedTasks = moved.compactMap { id in tasks.first { $0.id == id } }
         if let anchor, let anchorIndex = result.firstIndex(where: { $0.id == anchor }) {
             result.insert(contentsOf: movedTasks, at: anchorIndex)
-        } else if let lastActive = result.lastIndex(where: { $0.visibility == .active }) {
+        } else if let lastActive = result.lastIndex(where: { $0.visibility == .active && listed($0) }) {
             result.insert(contentsOf: movedTasks, at: lastActive + 1)
         } else {
             result.insert(contentsOf: movedTasks, at: 0)

@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import AppKit
 import Defaults
 import SwiftUI
 
@@ -28,6 +29,9 @@ import SwiftUI
 /// user's own text and render verbatim.
 ///
 /// With tasks off nothing here touches `TasksManager`, so the tab never reads the task file.
+///
+/// The Sources section (Jira Cloud, Local tasks) shows what the Defaults display copies say. This
+/// file never reads the Keychain: a sync does, off the main actor, in `TasksManager`.
 struct TasksSettings: View {
     @Default(.enableTasks) private var enableTasks
     @Default(.tasksDefaultSessionMinutes) private var defaultSessionMinutes
@@ -37,11 +41,16 @@ struct TasksSettings: View {
     @State private var pendingDelete: TaskItem?
     @State private var newTitle = ""
     @State private var newEstimate: Int?
+    @State private var confirmsJiraDisconnect = false
 
     private func highlightID(_ title: String) -> String { "tasks-\(title)" }
 
     var body: some View {
         Form {
+            if enableTasks {
+                TaskSourcesSection(sheet: $sheet, confirmsJiraDisconnect: $confirmsJiraDisconnect)
+            }
+
             Section {
                 SettingsRow("Enable tasks", description: "Keep a list of what you are working on, in the order you will do it. Time a task with Kannu's timer and its actual time is recorded.") {
                     Defaults.Toggle(key: .enableTasks) {
@@ -83,7 +92,11 @@ struct TasksSettings: View {
         }
         .navigationTitle("Tasks")
         .sheet(item: $sheet) { sheet in
-            TaskValueSheet(sheet: sheet) { value in apply(value, from: sheet) }
+            if case .connectJira = sheet {
+                JiraConnectSheet()
+            } else {
+                TaskValueSheet(sheet: sheet) { value in apply(value, from: sheet) }
+            }
         }
         .alert(
             Text(verbatim: String(localized: "Delete “\(pendingDelete?.title ?? "")”?")),
@@ -94,6 +107,13 @@ struct TasksSettings: View {
             Button("Cancel", role: .cancel) {}
         } message: { _ in
             Text("The time recorded on it is deleted too.")
+        }
+        .confirmationDialog("Disconnect Jira?", isPresented: $confirmsJiraDisconnect, titleVisibility: .visible) {
+            Button("Keep Jira Tasks") { TasksManager.shared.disconnectJira(removeTasks: false) }
+            Button("Remove Jira Tasks", role: .destructive) { TasksManager.shared.disconnectJira(removeTasks: true) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Kannu forgets the API token and stops syncing. Keep the Jira tasks on this Mac, with the time recorded on them, or remove them.")
         }
     }
 
@@ -113,11 +133,211 @@ struct TasksSettings: View {
     }
 }
 
+/// Where tasks come from: Jira Cloud and the user's own. A separate view so `TasksManager` is
+/// created only once tasks are turned on.
+///
+/// Status comes from the Defaults display copies and the manager's sync state, never from the
+/// Keychain. The page appearing asks for a sync only when the last one is stale.
+private struct TaskSourcesSection: View {
+    @ObservedObject private var manager = TasksManager.shared
+    @Default(.jiraEnabled) private var jiraEnabled
+    @Default(.jiraSiteHost) private var jiraSiteHost
+    @Default(.jiraAccountDisplayName) private var jiraAccountDisplayName
+    @Default(.jiraJQL) private var jiraJQL
+    @Binding private var sheet: TaskSheet?
+    @Binding private var confirmsJiraDisconnect: Bool
+    @State private var showsAdvanced = false
+
+    init(sheet: Binding<TaskSheet?>, confirmsJiraDisconnect: Binding<Bool>) {
+        _sheet = sheet
+        _confirmsJiraDisconnect = confirmsJiraDisconnect
+    }
+
+    private func highlightID(_ title: String) -> String { "tasks-\(title)" }
+
+    private var isConnected: Bool { !jiraSiteHost.isEmpty }
+
+    var body: some View {
+        Section {
+            jiraRow
+
+            if isConnected, let problem = jiraProblem {
+                SettingsErrorText(problem)
+            }
+            if isConnected, manager.jiraSync == .needsKeychainApproval {
+                SettingsActionRow("Keychain access", description: "macOS asks before Kannu reads the saved Jira token. Allow it and syncing carries on.") {
+                    Button("Allow Keychain Access") { manager.refreshJira() }
+                }
+            }
+            if !isConnected, manager.jiraTokenRemovalFailed {
+                SettingsErrorText(String(localized: "Kannu could not remove the saved Jira token from your Keychain, so it is still there."))
+                SettingsActionRow("Saved Jira token", description: "Try again. If it stays, delete it in Keychain Access: the com.kannu.app.secure-secrets item whose account is jira-credential.") {
+                    Button("Remove Token") { manager.retryRemovingJiraToken() }
+                }
+            }
+
+            if isConnected {
+                SettingsRow("Sync Jira", description: "Your Jira issues appear in the task order, mixed with your own, and are refreshed when this page opens. Off: they are not fetched and leave the task order.") {
+                    Defaults.Toggle(key: .jiraEnabled) {
+                        Text("Sync Jira")
+                    }
+                }
+                .settingsHighlight(id: highlightID("Sync Jira"))
+
+                jiraIssuesRow
+                    .settingsHighlight(id: highlightID("Jira issues"))
+
+                DisclosureGroup(isExpanded: $showsAdvanced) {
+                    issueFilterRow
+                } label: {
+                    SettingsRowLabel("Advanced")
+                }
+                .settingsHighlight(id: highlightID("Issue filter"))
+            }
+
+            SettingsRow("Local tasks", description: "The tasks you add here. Off: they leave the task order and Add a task is hidden. Nothing is deleted.") {
+                Defaults.Toggle(key: .showLocalTasks) {
+                    Text("Local tasks")
+                }
+            }
+            .settingsHighlight(id: highlightID("Local tasks"))
+        } header: {
+            SettingsSectionHeader("Sources")
+        } footer: {
+            SettingsFooter("Kannu reads your Jira issues from your Jira site only, over HTTPS, and writes nothing to Jira. The API token is kept in your Keychain. A classic API token carries all of your Jira permissions, so create one just for Kannu and revoke it when you stop using it.")
+        }
+    }
+
+    // MARK: - Jira Cloud
+
+    private var jiraRow: some View {
+        LabeledContent {
+            if isConnected {
+                Button("Disconnect…") { confirmsJiraDisconnect = true }
+            } else {
+                Button("Connect…") { sheet = .connectJira }
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: SettingsMetrics.labelStack) {
+                Text("Jira Cloud")
+                SettingsStatusText(statusText, isReady: isConnected && jiraEnabled && jiraProblem == nil)
+                if isConnected {
+                    Text(verbatim: String(localized: "Site \(jiraSiteHost) · Filter: \(JiraAPI.filterSummary(jql: jiraJQL))"))
+                        .settingsDescriptionStyle()
+                } else {
+                    Text("Your open Jira issues in the task order, beside your own tasks. Needs your site, your Atlassian email and an API token.")
+                        .settingsDescriptionStyle()
+                }
+            }
+        }
+        .settingsHighlight(id: SettingsDeepLink.tasksSourcesHighlightID)
+        .onAppear { manager.syncJiraIfStale() }
+        .onChange(of: jiraEnabled) { _, isOn in
+            if isOn { manager.syncJiraIfStale() }
+        }
+    }
+
+    private var statusText: String {
+        guard isConnected else { return String(localized: "Not connected") }
+        let name = jiraAccountDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? String(localized: "Connected") : String(localized: "Connected as \(name)")
+    }
+
+    /// A problem the user has to act on. Offline and rate limits are not: they read in the
+    /// Jira issues caption and clear on their own.
+    private var jiraProblem: String? {
+        switch manager.jiraSync {
+        case .authFailed(let status):
+            return String(localized: "Token rejected (\(status)): it may have expired or been revoked. Disconnect, then connect again with a new token.")
+        case .needsReconnect:
+            return String(localized: "The saved Jira sign-in is missing, or belongs to another site. Disconnect, then connect again.")
+        case .failed(let message):
+            return message
+        case .idle, .syncing, .synced, .offline, .rateLimited, .needsKeychainApproval:
+            return nil
+        }
+    }
+
+    private var rateLimitedUntil: Date? {
+        if case .rateLimited(let until) = manager.jiraSync { return until }
+        return nil
+    }
+
+    /// Refresh, with what the last sync found. While Jira asks Kannu to wait, the button is off
+    /// until the time it gave; the timeline redraws once, then, with no polling.
+    private var jiraIssuesRow: some View {
+        LabeledContent {
+            HStack(spacing: SettingsMetrics.rowContent) {
+                if manager.isJiraSyncing {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                TimelineView(.explicit(rateLimitedUntil.map { [$0] } ?? [])) { context in
+                    Button("Refresh") { manager.refreshJira() }
+                        .disabled(!canRefresh(at: context.date))
+                }
+            }
+        } label: {
+            TimelineView(.explicit(rateLimitedUntil.map { [$0] } ?? [])) { context in
+                SettingsRowLabel("Jira issues", description: Text(verbatim: syncCaption(at: context.date)))
+            }
+        }
+    }
+
+    private func canRefresh(at date: Date) -> Bool {
+        guard jiraEnabled, manager.isReady, !manager.isJiraSyncing else { return false }
+        return rateLimitedUntil.map { $0 <= date } ?? true
+    }
+
+    private func syncCaption(at date: Date) -> String {
+        guard jiraEnabled else { return String(localized: "Sync Jira is off.") }
+        switch manager.jiraSync {
+        case .idle:
+            return String(localized: "Not synced yet.")
+        case .syncing:
+            return String(localized: "Syncing…")
+        case .synced(let at, let count, let complete):
+            let time = at.formatted(date: .omitted, time: .shortened)
+            if !complete {
+                return String(localized: "Synced \(time) · Showing the first \(count) — narrow the filter")
+            }
+            return count == 1
+                ? String(localized: "Synced \(time) · 1 issue")
+                : String(localized: "Synced \(time) · \(count) issues")
+        case .offline:
+            return String(localized: "Offline. Refresh once you are back online.")
+        case .rateLimited(let until):
+            guard until > date else { return String(localized: "Jira asked Kannu to wait. You can refresh again.") }
+            return String(localized: "Rate limited until \(until.formatted(date: .omitted, time: .shortened))")
+        case .authFailed, .needsKeychainApproval, .needsReconnect, .failed:
+            return String(localized: "Not synced.")
+        }
+    }
+
+    private var issueFilterRow: some View {
+        LabeledContent {
+            HStack(spacing: SettingsMetrics.rowContent) {
+                TextField("Issue filter (JQL)", text: $jiraJQL, prompt: Text(verbatim: JiraAPI.defaultJQL))
+                    .labelsHidden()
+                    .onSubmit { manager.refreshJira() }
+                Button("Reset") {
+                    jiraJQL = JiraAPI.defaultJQL
+                    manager.refreshJira()
+                }
+                .disabled(JiraAPI.effectiveJQL(jiraJQL) == JiraAPI.defaultJQL)
+            }
+        } label: {
+            SettingsRowLabel("Issue filter (JQL)", description: "Which issues appear, in Jira's query language. Press Return to apply it. Empty uses the default: your open issues, most recently updated first.")
+        }
+    }
+}
+
 /// Everything below the switches. A separate view so `TasksManager` is created only once tasks
 /// are turned on.
 private struct TaskListSections: View {
     @ObservedObject private var manager = TasksManager.shared
     @Default(.enableTimerFeature) private var enableTimerFeature
+    @Default(.showLocalTasks) private var showLocalTasks
     @Binding private var sheet: TaskSheet?
     @Binding private var pendingDelete: TaskItem?
     @Binding private var newTitle: String
@@ -184,7 +404,9 @@ private struct TaskListSections: View {
 
     private var taskOrderSection: some View {
         Section {
-            addTaskRow
+            if showLocalTasks {
+                addTaskRow
+            }
 
             LabeledContent {
                 SettingsValueText(String(localized: "\(manager.activeTasks.count) to do"))
@@ -310,9 +532,18 @@ private struct TaskListSections: View {
         Button("Move Down") { manager.moveDown(task.id) }
             .disabled(position == order.count - 1)
         Divider()
-        Button("Mark Done") { manager.markDone(task.id) }
-        Button("Delete…", role: .destructive) { pendingDelete = task }
-            .disabled(isTimed || task.source != .local)
+        if task.source == .local {
+            Button("Mark Done") { manager.markDone(task.id) }
+            Button("Delete…", role: .destructive) { pendingDelete = task }
+                .disabled(isTimed)
+        } else {
+            // A remote task is finished in its source, and hidden here; deleting it would only
+            // bring it back on the next sync.
+            if let url = manager.jiraBrowseURL(for: task) {
+                Button("Open in Jira") { NSWorkspace.shared.open(url) }
+            }
+            Button("Hide") { manager.hide(task.id) }
+        }
     }
 
     private func taskLabel(_ task: TaskItem, now: Date) -> some View {
@@ -320,10 +551,16 @@ private struct TaskListSections: View {
     }
 
     /// "42m of 2h", with "10m over" in orange past the estimate. Tracked time is exact, in minutes.
+    /// A Jira task leads with its key and status and ends with the time Jira already has logged:
+    /// "PROJ-123 · In Progress · 42m of 2h · 10m over · Jira logged 3h". Remote text is verbatim.
     private func progressText(for task: TaskItem, now: Date) -> Text {
         let tracked = manager.trackedSeconds(of: task, now: now)
         let estimate = task.effectiveEstimateSeconds
         var parts: [String] = []
+        if let remote = task.remote {
+            parts.append(remote.key)
+            if !remote.status.isEmpty { parts.append(remote.status) }
+        }
         if let timing = manager.timing, timing.taskID == task.id {
             parts.append(timing.isPaused ? String(localized: "Paused") : String(localized: "Timing now"))
         }
@@ -335,12 +572,17 @@ private struct TaskListSections: View {
         } else {
             parts.append(String(localized: "No estimate"))
         }
-        let summary = Text(verbatim: parts.joined(separator: " · "))
+        var text = Text(verbatim: parts.joined(separator: " · "))
         let over = TaskTimeMath.overtimeSeconds(estimate: estimate, tracked: tracked)
-        guard over >= 60 else { return summary }
-        return summary
-            + Text(verbatim: " · ")
-            + Text(verbatim: String(localized: "\(WorkDuration.format(over)) over")).foregroundStyle(.orange)
+        if over >= 60 {
+            text = text
+                + Text(verbatim: " · ")
+                + Text(verbatim: String(localized: "\(WorkDuration.format(over)) over")).foregroundStyle(.orange)
+        }
+        if task.source == .jira, let spent = task.remote?.remoteSpentSeconds, spent > 0 {
+            text = text + Text(verbatim: " · " + String(localized: "Jira logged \(WorkDuration.format(spent))"))
+        }
+        return text
     }
 
     // MARK: - Done and hidden
@@ -370,6 +612,9 @@ private struct TaskListSections: View {
         case .hidden: state = String(localized: "Hidden · \(tracked) recorded")
         case .gone, .active: state = String(localized: "No longer listed by its source · \(tracked) recorded")
         }
+        // A remote task's key comes first, so a hidden PROJ-123 is found by its key.
+        let line = task.remote.map { "\($0.key) · \(state)" } ?? state
+        let browseURL = manager.jiraBrowseURL(for: task)
         return LabeledContent {
             HStack(spacing: SettingsMetrics.rowContent) {
                 if task.visibility == .done || task.visibility == .hidden {
@@ -381,10 +626,14 @@ private struct TaskListSections: View {
                     SettingsMoreMenu {
                         Button("Delete…", role: .destructive) { pendingDelete = task }
                     }
+                } else if let browseURL {
+                    SettingsMoreMenu {
+                        Button("Open in Jira") { NSWorkspace.shared.open(browseURL) }
+                    }
                 }
             }
         } label: {
-            SettingsRowLabel(Text(verbatim: task.title), description: Text(verbatim: state))
+            SettingsRowLabel(Text(verbatim: task.title), description: Text(verbatim: line))
         }
     }
 }
@@ -396,9 +645,12 @@ private enum TaskSheet: Identifiable {
     case estimate(taskID: UUID, title: String, current: Int?)
     case addTime(taskID: UUID, title: String)
     case endTime(taskID: UUID, segmentID: UUID, title: String, start: Date)
+    /// Connect… on the Jira Cloud row: served by `JiraConnectSheet`, not `TaskValueSheet`.
+    case connectJira
 
     var id: String {
         switch self {
+        case .connectJira: return "connect-jira"
         case .customEstimateForNewTask: return "new-task-estimate"
         case .estimate(let taskID, _, _): return "estimate-\(taskID)"
         case .addTime(let taskID, _): return "add-time-\(taskID)"
@@ -429,7 +681,7 @@ private struct TaskValueSheet: View {
         switch sheet {
         case .customEstimateForNewTask(let current), .estimate(_, _, let current):
             _text = State(initialValue: current.map(WorkDuration.format) ?? "")
-        case .addTime, .endTime:
+        case .addTime, .endTime, .connectJira:
             _text = State(initialValue: "")
         }
         if case .endTime(_, _, _, let start) = sheet {
@@ -491,13 +743,14 @@ private struct TaskValueSheet: View {
         case .estimate: return "Set Estimate"
         case .addTime: return "Add Time Manually"
         case .endTime: return "Set End Time"
+        case .connectJira: return "Connect Jira Cloud"
         }
     }
 
     /// The task's own title, verbatim.
     private var subject: String? {
         switch sheet {
-        case .customEstimateForNewTask: return nil
+        case .customEstimateForNewTask, .connectJira: return nil
         case .estimate(_, let title, _), .addTime(_, let title), .endTime(_, _, let title, _): return title
         }
     }
@@ -510,13 +763,15 @@ private struct TaskValueSheet: View {
             return "Time you worked on it without the timer, such as 45m or 1h 15m. It is recorded as ending now."
         case .endTime:
             return "Kannu stopped while this was being timed. When did you stop working on it?"
+        case .connectJira:
+            return ""
         }
     }
 
     private var primaryTitle: LocalizedStringKey {
         switch sheet {
         case .addTime: return "Add"
-        case .customEstimateForNewTask, .estimate, .endTime: return "Set"
+        case .customEstimateForNewTask, .estimate, .endTime, .connectJira: return "Set"
         }
     }
 
@@ -530,7 +785,7 @@ private struct TaskValueSheet: View {
         let isEstimate: Bool
         switch sheet {
         case .customEstimateForNewTask, .estimate: isEstimate = true
-        case .addTime, .endTime: isEstimate = false
+        case .addTime, .endTime, .connectJira: isEstimate = false
         }
         if trimmed.isEmpty, isEstimate {
             onSave(.duration(nil))
@@ -542,6 +797,81 @@ private struct TaskValueSheet: View {
             return
         }
         onSave(.duration(seconds))
+        dismiss()
+    }
+}
+
+/// Connect… on the Jira Cloud row. The token lives only in this sheet's state until Jira has
+/// accepted it; the manager then stores it in the Keychain and the field is cleared. A sheet pads
+/// its own content; a Form row never does.
+private struct JiraConnectSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var site = ""
+    @State private var email = ""
+    @State private var token = ""
+    @State private var problem: String?
+    @State private var connecting: Task<Void, Never>?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SettingsMetrics.rowContent) {
+            Text("Connect Jira Cloud")
+                .font(.headline)
+            Text("Kannu checks the token with your Jira site before saving it in your Keychain, then lists your issues. It writes nothing to Jira.")
+                .settingsDescriptionStyle()
+            TextField("Site", text: $site, prompt: Text(verbatim: "acme.atlassian.net"))
+            TextField("Email", text: $email, prompt: Text(verbatim: "you@example.com"))
+            SecureField("API token", text: $token)
+            Link("Create API token…", destination: JiraAPI.createTokenURL)
+            if let problem {
+                Text(verbatim: problem)
+                    .settingsDescriptionStyle(tint: .red)
+            }
+            HStack(spacing: SettingsMetrics.rowContent) {
+                if connecting != nil {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Spacer()
+                Button("Cancel", role: .cancel) { close() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Connect") { connect() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(connecting != nil || !canConnect)
+            }
+        }
+        .padding(SettingsMetrics.cardPadding)
+        .frame(width: 420)
+        .onDisappear {
+            connecting?.cancel()
+            token = ""
+        }
+    }
+
+    private var canConnect: Bool {
+        !site.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !token.isEmpty
+    }
+
+    private func connect() {
+        problem = nil
+        connecting = Task { @MainActor in
+            let failure = await TasksManager.shared.connectJira(siteInput: site, email: email, token: token)
+            guard !Task.isCancelled else { return }
+            connecting = nil
+            if let failure {
+                problem = failure
+            } else {
+                token = ""
+                dismiss()
+            }
+        }
+    }
+
+    private func close() {
+        connecting?.cancel()
+        connecting = nil
+        token = ""
         dismiss()
     }
 }
