@@ -4,6 +4,33 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-04 - Brain › Tasks: an ordered task list with estimates, and the actual time recorded by Kannu's timer
+- **Developer label:** "task will have option to add estimate and also record the actual time"
+- **Agent label:** Brain Tasks PR2: local tasks, estimates, timer session events, recorded actual time
+- **Changes:**
+  - New Brain › Tasks tab (Productivity group, after Notes, `checklist` icon): Enable tasks (off by
+    default), Default session length (25 min), Sound when the estimate is reached (off by default),
+    Add a task (title plus an estimate menu: none, 15m, 30m, 1h, 2h, 4h, 8h, Custom…), the task order
+    with "42m of 2h" and an orange "10m over", ▶ to time a task (■ while it is timed), a ⋯ menu (Set
+    Estimate…, Add Time Manually…, Move to Top / Up / Down, Mark Done, Delete…, disabled while timed),
+    Interrupted sessions (Set End Time… or Discard), and a Done and hidden disclosure with Reopen.
+  - `TimerManager.sessionEvents` sends started, paused, resumed and ended(stopped | replaced) for
+    timers started in Kannu only; `.ended` is sent before `resetTimer()` mints the next id, and a
+    replace ends the old session before the new one starts. `startTimer(playsSoundOnFinish:)`.
+  - `TasksManager` (lazy `@MainActor` singleton, nothing at launch) links a timed session to its task
+    and records segments from each event's own date; sleep closes and wake reopens without pausing the
+    timer; quit closes the open segment with one synchronous write; a segment found open at load
+    becomes an interrupted session that counts for nothing until the user sets its end.
+  - `tasks.json` in Application Support/Kannu/Tasks, written by the `TaskFileStore` actor: atomic,
+    mode 0600 (folder 0700), revision-ordered so a stale save is dropped, a corrupt file moved aside.
+  - Pure model in the logic target (`TimerSessionEvent`, `TaskModels`, `TaskTimeMath`, `TaskOrdering`,
+    `WorklogDrafts`, `TaskFileStore`): log entries round to the nearest 15 minutes, 0 makes no draft
+    and carries over; tracked totals stay exact. `TaskSource`/`RemoteTaskInfo` exist for later Jira
+    and GitLab work; no network, credentials or Keychain code.
+  - Tests: TaskModelCodingTests, TaskTimeMathTests, WorkDurationTests, TaskOrderTests,
+    WorklogDraftTests, TaskFileStoreTests, TimerSessionEventRulesTests (source scan with planted
+    offenders). Highlight inventory 214 entries, 263 registrations, 257 ids.
+
 ### 2026-10-04 - Name a timer session before it starts, and rename it while it runs
 - **Developer label:** "in promod timer i need to able to name a timer session"
 - **Agent label:** Timer session names: an optional field before Start, click-to-rename while running
