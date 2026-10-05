@@ -4,6 +4,22 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-05 - The timer tab fits its Start and Reset buttons again
+- **Developer label:** "add bottom padding for timer and maybe resize so that it wont cutt off like this"
+- **Agent label:** Timer tab sizing: one shared open-notch height for the window, view model, frame and tab budget
+- **Changes:**
+  - The open notch's timer tab is sized by one value, `timerTabOpenNotchHeight` (270), in all four
+    places that size it: the window (`KannuApp.calculateRequiredNotchSize`), the view model
+    (`KannuViewModel.calculateDynamicNotchSize`, which had no timer case and stayed at 200), the
+    SwiftUI frame (`ContentView.dynamicNotchSize`) and the tab's own budget
+    (`NotchTimerView.maxTabContentHeight`, which read the view model's stale size). With the session
+    name field above the composer, the Start/Reset row (and the ruler's Start button) was cut off.
+  - 10 pt of space below the composer (`timerTabComposerBottomPadding`), clear of the panel's rounded
+    edge.
+  - Tests: `TimerTabSizingRulesTests` reads the four sites and the constants from source (every
+    site uses the shared height; the budget never comes from `vm.notchSize`; the tallest composer,
+    177 pt, fits under a 38 pt header with the padding), with a planted-offender self-test.
+
 ### 2026-10-04 - Name a timer session before it starts, and rename it while it runs
 - **Developer label:** "in promod timer i need to able to name a timer session"
 - **Agent label:** Timer session names: an optional field before Start, click-to-rename while running

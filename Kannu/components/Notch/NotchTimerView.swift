@@ -143,7 +143,8 @@ struct NotchTimerView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(maxHeight: maxTabContentHeight, alignment: .top)
-        .padding(.bottom, 2)
+        // Clear of the panel's rounded bottom edge.
+        .padding(.bottom, timerTabComposerBottomPadding)
     }
 
     private var presetColumn: some View {
@@ -439,17 +440,14 @@ struct NotchTimerView: View {
         !timerManager.isTimerActive && showTimerPresetsInNotchTab
     }
 
-    private var resolvedNotchHeight: CGFloat {
-        let height = vm.notchSize.height
-        return height > 0 ? height : openNotchSize.height
-    }
-
     private var headerHeight: CGFloat {
         max(24, vm.effectiveClosedNotchHeight)
     }
 
+    /// The tab's own budget, from the shared timer height rather than `vm.notchSize`, which is
+    /// not updated when the user switches to this tab while the notch is open.
     private var maxTabContentHeight: CGFloat {
-        let available = resolvedNotchHeight - headerHeight - 36
+        let available = timerTabOpenNotchHeight - headerHeight - 36
         return max(130, available)
     }
 

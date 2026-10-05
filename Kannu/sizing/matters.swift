@@ -127,6 +127,13 @@ private let minimalisticLyricsExtraHeight: CGFloat = 40
 let minimalisticTimerCountdownTopPadding: CGFloat = 12
 let minimalisticTimerCountdownContentHeight: CGFloat = 82
 let minimalisticTimerCountdownBlockHeight: CGFloat = minimalisticTimerCountdownTopPadding + minimalisticTimerCountdownContentHeight
+/// The open notch's height on the timer tab, read by every site that sizes it (the window, the
+/// view model, the SwiftUI frame and the tab's own budget). They used to disagree: the window said
+/// 250, the view model had no timer case and stayed at 200, and the tab sized itself from that 200,
+/// so the composer's Start/Reset row was cut off once the session name field sat above it.
+let timerTabOpenNotchHeight: CGFloat = 270
+/// Space below the timer tab's composer, so its buttons sit clear of the panel's rounded edge.
+let timerTabComposerBottomPadding: CGFloat = 10
 let statsSecondRowContentHeight: CGFloat = 120
 let statsGridSpacingHeight: CGFloat = 12
 let notchShadowPaddingStandard: CGFloat = 18

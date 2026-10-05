@@ -173,7 +173,7 @@ struct ContentView: View {
         }
         
         if coordinator.currentView == .timer {
-            return CGSize(width: baseSize.width, height: 250) // Extra height for timer presets
+            return CGSize(width: baseSize.width, height: timerTabOpenNotchHeight)
         }
         
         if coordinator.currentView == .notes || coordinator.currentView == .clipboard {
