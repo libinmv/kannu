@@ -4,6 +4,14 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-05 - Homebrew private tap bootstrap
+- **Developer label:** build homebrew support for this project using a private tap
+- **Agent label:** Private-tap cask tree, bump script, optional release push
+- **Changes:**
+  - Added `homebrew/` as the tap tree (`Casks/kannu.rb`, private GitHub Release download strategy, tap README) to copy into a private `libinmv/homebrew-kannu` repo.
+  - `scripts/update-homebrew-cask.sh` rewrites cask `version` and `sha256` from a DMG and can push the tap when `HOMEBREW_TAP_TOKEN` is set.
+  - Release CI updates the cask on `main` after a GitHub Release; tap push is skipped until the secret exists. Docs in `docs/HOMEBREW.md`, `scripts/RELEASE.md`, and `ReadMe.md`.
+
 ### 2026-10-01 - Quit Kannu has a row in Settings, and searching "quit" or "exit" finds it
 - **Developer label:** "the settings should have a quit app, or at least on search of quit or exit i should get the tab with that button to come up as result"
 - **Agent label:** Settings Quit row + search entry, pinned by the highlight inventory

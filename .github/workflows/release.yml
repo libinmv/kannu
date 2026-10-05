@@ -243,3 +243,34 @@ jobs:
             git commit -m "Update appcast for ${TAG}"
             git push origin main
           fi
+
+      - name: Update Homebrew cask
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout main
+
+          chmod +x scripts/update-homebrew-cask.sh
+          ./scripts/update-homebrew-cask.sh \
+            --version "${RELEASE_VERSION}" \
+            --dmg "build/${RELEASE_DMG}"
+
+          git add homebrew/Casks/kannu.rb
+          if git diff --staged --quiet; then
+            echo "homebrew/Casks/kannu.rb unchanged."
+          else
+            git commit -m "Update Homebrew cask for v${RELEASE_VERSION}"
+            git push origin main
+          fi
+
+          if [ -z "${HOMEBREW_TAP_TOKEN:-}" ]; then
+            echo "HOMEBREW_TAP_TOKEN unset; skipped push to libinmv/homebrew-kannu."
+            exit 0
+          fi
+          ./scripts/update-homebrew-cask.sh \
+            --version "${RELEASE_VERSION}" \
+            --dmg "build/${RELEASE_DMG}" \
+            --push-tap
