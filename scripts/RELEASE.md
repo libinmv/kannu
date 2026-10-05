@@ -4,7 +4,7 @@ Ship Kannu via **automated CI** (recommended) or **manual Xcode** export.
 
 ## Automated CI release (recommended)
 
-Triggered only by pushing a `v*` tag. The workflow archives with Developer ID, notarizes the DMG, Sparkle-signs the appcast, publishes to GitHub Releases, and commits [`Updates/appcast.xml`](../Updates/appcast.xml).
+Triggered only by pushing a `v*` tag. The workflow archives with Developer ID, notarizes the DMG, Sparkle-signs the appcast, publishes to GitHub Releases, commits [`Updates/appcast.xml`](../Updates/appcast.xml), and rewrites [`homebrew/Casks/kannu.rb`](../homebrew/Casks/kannu.rb). If `HOMEBREW_TAP_TOKEN` is set, it also pushes that cask to the private tap `libinmv/homebrew-kannu`. See [docs/HOMEBREW.md](../docs/HOMEBREW.md).
 
 ### One-time: GitHub secrets
 
@@ -19,6 +19,7 @@ Add at **Settings → Secrets and variables → Actions** on `libinmv/kannu`:
 | `APPLE_ID` | Apple ID email for notarization |
 | `APPLE_NOTARIZATION_PASSWORD` | App-specific password from [appleid.apple.com](https://appleid.apple.com) |
 | `SPARKLE_EDDSA_PRIVATE_KEY` | Ed25519 private seed matching `SUPublicEDKey` in `Kannu/Info.plist` |
+| `HOMEBREW_TAP_TOKEN` | Optional. PAT with contents write on `libinmv/homebrew-kannu`. Without it, CI still updates the cask in this repo and skips the tap push. |
 
 Example (run locally after exporting your `.p12`):
 
@@ -136,3 +137,4 @@ Scripts:
 - [`notarize-dmg.sh`](notarize-dmg.sh) — `notarytool submit` + staple
 - [`export-sparkle-update.sh`](export-sparkle-update.sh) — Sparkle-sign DMG + appcast
 - [`manual-release.sh`](manual-release.sh) — local release helper
+- [`update-homebrew-cask.sh`](update-homebrew-cask.sh) — rewrite cask `version`/`sha256`, optionally push the private tap

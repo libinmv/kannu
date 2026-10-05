@@ -49,6 +49,17 @@ Kannu requests permissions only when you use the related feature. The app is not
 
 For detailed prompts and one-click setup actions, open **Settings** in Kannu. Contributor docs are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Install (Homebrew private tap)
+
+After the private tap repository `libinmv/homebrew-kannu` exists:
+
+```bash
+brew tap libinmv/kannu git@github.com:libinmv/homebrew-kannu.git
+brew install --cask kannu
+```
+
+Setup for maintainers: [docs/HOMEBREW.md](docs/HOMEBREW.md).
+
 ## Install (Pre-built DMG)
 
 1. Download the latest `Kannu.<version>.dmg` (for example `Kannu.1.2.0.dmg`) from the [Releases page](https://github.com/libinmv/kannu/releases).

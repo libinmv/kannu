@@ -162,6 +162,10 @@ echo "Release artifacts ready:"
 echo "  DMG:     $DMG_PATH"
 echo "  Appcast: $ROOT_DIR/Updates/appcast.xml"
 echo ""
+echo "Homebrew cask (after the GitHub Release is live):"
+echo "  $ROOT_DIR/scripts/update-homebrew-cask.sh --version ${VERSION} --dmg \"${DMG_PATH}\""
+echo "  $ROOT_DIR/scripts/update-homebrew-cask.sh --version ${VERSION} --dmg \"${DMG_PATH}\" --push-tap"
+echo ""
 
 if $PUBLISH; then
   if ! command -v gh >/dev/null 2>&1; then
