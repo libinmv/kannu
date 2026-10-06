@@ -342,12 +342,6 @@ class KannuViewModel: NSObject, ObservableObject {
         let baseSize = Defaults[.enableMinimalisticUI] ? minimalisticOpenNotchSize(isDynamicIslandMode: shouldUseDynamicIslandMode(for: screen)) : openNotchSize
         var adjustedSize = baseSize
 
-        // Opening straight onto the timer tab: the same height the window and the tab use.
-        if coordinator.currentView == .timer {
-            adjustedSize.height = timerTabOpenNotchHeight
-            return adjustedSize
-        }
-
         if coordinator.currentView == .notes || coordinator.currentView == .clipboard {
             let preferred = coordinator.notesLayoutState.preferredHeight
             adjustedSize.height = max(adjustedSize.height, preferred)

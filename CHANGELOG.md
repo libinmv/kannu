@@ -4,21 +4,22 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
-### 2026-10-05 - The timer tab fits its Start and Reset buttons again
-- **Developer label:** "add bottom padding for timer and maybe resize so that it wont cutt off like this"
-- **Agent label:** Timer tab sizing: one shared open-notch height for the window, view model, frame and tab budget
+### 2026-10-06 - The timer tab fits without the notch growing: the timer is smaller instead
+- **Developer label:** "rather than resizing the noth in timer tab, you could have just shrinked the timer, theresize looks like a glitch, please fix that"
+- **Agent label:** Timer composer sized by TimerComposerMetrics to the tab's existing budget; the notch-height change is reverted
 - **Changes:**
-  - The open notch's timer tab is sized by one value, `timerTabOpenNotchHeight` (270), in all four
-    places that size it: the window (`KannuApp.calculateRequiredNotchSize`), the view model
-    (`KannuViewModel.calculateDynamicNotchSize`, which had no timer case and stayed at 200), the
-    SwiftUI frame (`ContentView.dynamicNotchSize`) and the tab's own budget
-    (`NotchTimerView.maxTabContentHeight`, which read the view model's stale size). With the session
-    name field above the composer, the Start/Reset row (and the ruler's Start button) was cut off.
-  - 10 pt of space below the composer (`timerTabComposerBottomPadding`), clear of the panel's rounded
-    edge.
-  - Tests: `TimerTabSizingRulesTests` reads the four sites and the constants from source (every
-    site uses the shared height; the budget never comes from `vm.notchSize`; the tallest composer,
-    177 pt, fits under a 38 pt header with the padding), with a planted-offender self-test.
+  - Reverts the previous fix, which made the open notch 270 pt tall on the timer tab: the notch
+    jumped in size when you switched to the tab. The notch's sizing is exactly as before.
+  - The composer is smaller so it fits the tab's 130 pt budget with the session name field above it:
+    the name field is 24 pt, the duration fields 34 pt with 22 pt digits and a smaller caption,
+    Start/Reset 26 pt with 13 pt labels, and tighter padding and spacing. The ruler style's strip
+    is 46 pt and its Start Timer button and readout are smaller. The running-timer card is unchanged.
+  - Every one of those sizes is a named constant in `TimerComposerMetrics` (pure, in the logic
+    target), read by `NotchTimerView` and `RulerTimerPicker`.
+  - Tests: `TimerComposerMetricsTests` (every style — manual with presets, manual without, ruler —
+    fits the 130 pt floor with 4 pt to spare; buttons stay at least 24 pt tall) and
+    `TimerComposerMetricsRulesTests` (the views take their sizes from the metrics; nothing gives the
+    timer tab its own notch height), with planted offenders.
 
 ### 2026-10-04 - Name a timer session before it starts, and rename it while it runs
 - **Developer label:** "in promod timer i need to able to name a timer session"

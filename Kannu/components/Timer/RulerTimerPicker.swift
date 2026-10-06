@@ -174,12 +174,12 @@ struct RulerTimerPicker: View {
                         let isMajor = (m % 5 == 0)
 
                         // tick
-                        let tickH: CGFloat = isMajor ? 20 : 12
+                        let tickH: CGFloat = isMajor ? 16 : 10
                         let tickW: CGFloat = isMajor ? 2 : 1.5
                         let opacity: Double = isMajor ? 0.9 : 0.5
                         let rect = CGRect(
                             x: x - tickW / 2,
-                            y: isMajor ? 16 : 20,
+                            y: isMajor ? 14 : 18,
                             width: tickW,
                             height: tickH
                         )
@@ -202,18 +202,18 @@ struct RulerTimerPicker: View {
                         }
                     }
                 }
-                .frame(height: 52)
+                .frame(height: TimerComposerMetrics.rulerCanvasHeight)
 
                 // ── pointer triangle ──
                 Image(systemName: "arrowtriangle.up.fill")
                     .font(.system(size: 10, weight: .heavy))
                     .foregroundStyle(tintColor)
                     .frame(width: width)
-                    .offset(y: 48)
+                    .offset(y: TimerComposerMetrics.rulerPointerOffset)
 
                 // ── drag gesture overlay ──
                 Color.clear
-                    .frame(width: width, height: 60)
+                    .frame(width: width, height: TimerComposerMetrics.rulerAreaHeight)
                     .contentShape(Rectangle())
                     .gesture(
                         DragGesture(minimumDistance: 2)
@@ -267,7 +267,8 @@ struct RulerTimerPicker: View {
                 updateScrollGestureSuppression(hovering)
             }
         }
-        .frame(height: 62)
+        // Sized by TimerComposerMetrics so the timer tab fits without the notch growing.
+        .frame(height: TimerComposerMetrics.rulerAreaHeight)
         .onDisappear {
             updateScrollGestureSuppression(false)
         }
@@ -283,10 +284,10 @@ struct RulerTimerPicker: View {
                 startAction()
             }) {
                 Text(String(localized: "Start Timer"))
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .font(.system(size: TimerComposerMetrics.buttonFontSize, weight: .semibold, design: .rounded))
                     .foregroundStyle(tintColor)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 10)
+                    .padding(.horizontal, 16)
+                    .frame(height: TimerComposerMetrics.rulerButtonHeight)
                     .background(
                         Capsule()
                             .fill(tintColor.opacity(0.18))
@@ -304,14 +305,15 @@ struct RulerTimerPicker: View {
 
             // Large time readout
             Text(formattedDisplayTime)
-                .font(.system(size: 34, weight: .semibold, design: .rounded))
+                .font(.system(size: TimerComposerMetrics.rulerReadoutFontSize, weight: .semibold, design: .rounded))
                 .monospacedDigit()
+                .frame(height: TimerComposerMetrics.rulerReadoutHeight)
                 .foregroundStyle(tintColor)
                 .contentTransition(.numericText())
                 .animation(.smooth(duration: 0.12), value: Int(totalMinutes.rounded()))
         }
         .padding(.horizontal, 6)
-        .padding(.top, 14)
+        .padding(.top, TimerComposerMetrics.rulerControlTopPadding)
     }
 
     // MARK: Helpers
