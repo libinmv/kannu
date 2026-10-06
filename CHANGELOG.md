@@ -4,6 +4,71 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-04 - Kannu's clipboard history skips copied access tokens
+- **Developer label:** "do we write now save these tokens in a secure way right, noone can just come and read it from us right"
+- **Agent label:** Clipboard history skips token-shaped text — the hook script's secret formats plus Atlassian
+- **Changes:**
+  - The clipboard history (off by default) persists what it records to UserDefaults in plain text,
+    and a token page's copy button carries no concealed marker: a GitLab or Atlassian token copied
+    from its settings page was recorded in Kannu's preferences file. `ClipboardManager.checkClipboard()`
+    now drops a copy whose text, URL or rich text's plain text holds a token-shaped secret, after
+    the read and before anything is recorded.
+  - The decision is pure `ClipboardCapturePolicy.shouldRecord(text:)` / `secretKind(in:)`. Its
+    format list is the hook script's `SEC_PATTERNS` character for character (private keys,
+    Anthropic, OpenAI, AWS, GitHub, GitLab, Slack, Stripe, Google, npm, Hugging Face) plus
+    Atlassian `ATATT` API tokens (100+ characters), with the hook's acceptance rules: a whole token
+    (no word character just before it), the vendors' minimum lengths, no placeholder words
+    (`EXAMPLE`, `XXXXXXXX`, …), and at least 8 distinct characters after the vendor prefix. So
+    `task-…`, `risk-…`, `xoxo` and AWS's documentation key are still recorded.
+  - Two deliberate differences from the hook, both because a missed token is persisted in plain
+    text while a false alarm only drops one history entry. The body must hold a digit **or** both
+    upper and lower case (an AWS key ID, upper case by format, neither): the hook's digit rule
+    misses about 1 GitLab token in 20 to 30, 1 AWS key ID in 30 and every Hugging Face token
+    (letters only), while lower-case words such as `glpat-your-token-goes-here` still fail it. And a
+    private key needs one base64 run of 64+ characters after its header, footer or not: raw or
+    written-out `\n` line breaks continue the run, anything else ends it, so a copy cut short of
+    its footer or a service-account JSON is caught, and prose or code that only names the header
+    is not.
+  - `ClipboardCapturePolicyTests` covers every format alone and inside a sentence, tokens on one
+    line of a multi-line `.env`, script, JSON or URL copy, tokens with no digit, private keys
+    without a footer, with CRLF, encrypted or inside JSON, near misses one character short, glued to
+    a word or made of lower-case words, prose and code that name a key header, ordinary prose and
+    identifiers, a 1 MB scan of near misses under a second, and pins the list to the hook's: every
+    `SEC_PATTERNS` kind with identical anchors and pattern, `SEC_LITERAL_PREFIXES` and
+    `SEC_PLACEHOLDER_WORDS`, read from `AgentHookInstaller.swift`. The
+    capture-order test now also pins the text check between the read and the record. Fixture
+    tokens are assembled at run time, so no token-shaped literal is committed.
+
+### 2026-10-02 - Act on CodeRabbit's review of #71
+- **Developer label:** "cloud sessions are not detected by us, nor cowork, what can be done to cover that in our claude detection?" — review follow-up
+- **Agent label:** CodeRabbit #71 — recheck the pasteboard after reading it
+- **Changes:**
+  - `ClipboardManager.checkClipboard()` checked a copy's privacy markers and then read its
+    contents, and the pasteboard is no snapshot: a concealed copy landing between the two reads
+    could be recorded under the earlier decision. It now rechecks `changeCount` after reading and
+    drops the read if anything changed (deleting the temporary image file a read may have
+    written); the next poll checks the new contents afresh.
+  - Not taken: a second recheck right before the deferred insert. Once the count matched after
+    the read, the item belongs to the copy whose markers were checked, so a later change cannot
+    make it private; that check would only drop a genuine copy made in quick succession.
+  - `ClipboardCapturePolicyTests.testTheCaptureChecksTypesFirstAndRechecksAfterReading` pins the
+    order from the source: markers, read, recheck, record.
+
+### 2026-10-02 - Kannu's clipboard history skips copies their app marked private
+- **Developer label:** "cloud sessions are not detected by us, nor cowork, what can be done to cover that in our claude detection?" — prerequisite: the relay key Kannu will copy must not persist in its own clipboard history
+- **Agent label:** Cloud relay PR A — honour nspasteboard.org's concealed and transient markers
+- **Changes:**
+  - `ClipboardManager.checkClipboard()` now returns early when the pasteboard carries
+    `org.nspasteboard.ConcealedType` or `org.nspasteboard.TransientType`, the convention password
+    managers use to mark a copied secret or a momentary automation copy. The history persists what
+    it records to UserDefaults in plain text, so such a copy used to outlive the password manager's
+    own clear-after-90-seconds, in Kannu's preferences file.
+  - The decision is pure `ClipboardCapturePolicy.shouldRecord(types:)` in the logic test target,
+    pinned by `ClipboardCapturePolicyTests`; `AutoGeneratedType` (not a privacy marker) is still
+    recorded.
+  - The upcoming cloud-session relay copies its key with the concealed marker, which is why this
+    lands first.
+
 ### 2026-10-01 - Quit Kannu has a row in Settings, and searching "quit" or "exit" finds it
 - **Developer label:** "the settings should have a quit app, or at least on search of quit or exit i should get the tab with that button to come up as result"
 - **Agent label:** Settings Quit row + search entry, pinned by the highlight inventory

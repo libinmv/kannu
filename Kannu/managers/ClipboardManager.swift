@@ -348,9 +348,26 @@ class ClipboardManager: ObservableObject {
         
         guard currentChangeCount != lastChangeCount else { return }
         lastChangeCount = currentChangeCount
-        
+
+        // A copy its app marked private (a password manager's secret, Kannu's own relay key)
+        // must never reach the history, which is persisted in plain text.
+        let types = NSPasteboard.general.types?.map(\.rawValue) ?? []
+        guard ClipboardCapturePolicy.shouldRecord(types: types) else { return }
+
         guard let clipboardItem = getCurrentClipboardItem() else { return }
-        
+        // The pasteboard is not a snapshot: if it changed while it was read, the types checked above
+        // may belong to another copy, possibly a concealed one. Drop this read; the next poll reads
+        // the new contents and checks them afresh.
+        guard NSPasteboard.general.changeCount == currentChangeCount else {
+            if let fileName = clipboardItem.imageFileName {
+                try? FileManager.default.removeItem(at: ClipboardManager.clipboardDataDirectory.appendingPathComponent(fileName))
+            }
+            return
+        }
+        // A token page's copy button carries no marker, so text holding an access token (GitLab,
+        // Atlassian, GitHub, an API key) is skipped by its shape.
+        if let text = clipboardItem.stringData, !ClipboardCapturePolicy.shouldRecord(text: text) { return }
+
         // Don't add duplicate items
         if !clipboardHistory.contains(where: { isSameContent($0, clipboardItem) }) {
             addToHistory(clipboardItem)
