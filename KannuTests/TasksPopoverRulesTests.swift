@@ -261,11 +261,11 @@ final class TasksPopoverRulesTests: XCTestCase {
     func testTheDeepLinkScannerCatchesPlantedOffenders() {
         let menu = Self.code("""
             enum TasksBrainDestination {
-                case sources, taskOrder, timeToLog
+                case sources, taskList, timeToLog
                 var highlightID: String {
                     switch self {
                     case .sources: return SettingsDeepLink.tasksSourcesHighlightID
-                    case .taskOrder: return SettingsDeepLink.tasksOrderHighlightID
+                    case .taskList: return SettingsDeepLink.tasksListHighlightID
                     case .timeToLog: return SettingsDeepLink.tasksTimeToLogHighlightID
                     }
                 }
@@ -292,7 +292,7 @@ final class TasksPopoverRulesTests: XCTestCase {
         XCTAssertEqual(Self.deepLinkProblems(menu: menu, popover: popover), [])
 
         let wrongRow = menu.replacingOccurrences(of: "Button(\"Manage tasks…\") { openBrain(.sources) }",
-                                                 with: "Button(\"Manage tasks…\") { openBrain(.taskOrder) }")
+                                                 with: "Button(\"Manage tasks…\") { openBrain(.taskList) }")
         XCTAssertEqual(Self.deepLinkProblems(menu: wrongRow, popover: popover), ["Manage tasks… does not open Sources"])
         let integrations = menu.replacingOccurrences(of: "case .sources: return SettingsDeepLink.tasksSourcesHighlightID",
                                                      with: "case .sources: return \"integrations-Jira\"")

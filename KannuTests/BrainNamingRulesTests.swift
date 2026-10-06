@@ -80,6 +80,11 @@ final class BrainNamingRulesTests: XCTestCase {
                 reason: "opens the macOS Battery settings"),
         Allowed(file: "Kannu/components/ScreenAssistant/ChatPanels.swift", literal: .exactly("Open Model Settings"),
                 reason: "opens the Screen Assistant's model panel, not Brain"),
+        Allowed(file: "Kannu/components/Settings/TasksSettings.swift", literal: .exactly("Open Notification Settings"),
+                reason: "opens the macOS Notifications pane, for task reminders"),
+        Allowed(file: "Kannu/managers/Tasks/TaskReminders.swift",
+                literal: .containing("x-apple.systempreferences:com.apple.Notifications-Settings.extension"),
+                reason: "the URL of the macOS Notifications pane, never shown"),
     ]
 
     // MARK: - The rename

@@ -93,6 +93,8 @@
 		AA10000000000000000000EB /* SourceSyncState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000EA /* SourceSyncState.swift */; };
 		AA10000000000000000000F1 /* GitLabAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000F0 /* GitLabAPI.swift */; };
 		AA10000000000000000001A1 /* WorklogPoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000001A0 /* WorklogPoster.swift */; };
+		AA10000000000000000002A1 /* TaskFacets.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000002A0 /* TaskFacets.swift */; };
+		AA10000000000000000002A3 /* TaskReminderPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000002A2 /* TaskReminderPlan.swift */; };
 		AA10000000000000000000B7 /* ClipboardPanelPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B6 /* ClipboardPanelPlacement.swift */; };
 		AA10000000000000000000B9 /* HostedContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B8 /* HostedContent.swift */; };
 		AA10000000000000000000B3 /* AgentSecurityFindingGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B2 /* AgentSecurityFindingGroup.swift */; };
@@ -206,6 +208,8 @@
 		AA10000000000000000000EA /* SourceSyncState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SourceSyncState.swift; path = Kannu/managers/Tasks/SourceSyncState.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000F0 /* GitLabAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GitLabAPI.swift; path = Kannu/managers/Tasks/GitLabAPI.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000001A0 /* WorklogPoster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WorklogPoster.swift; path = Kannu/managers/Tasks/WorklogPoster.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000002A0 /* TaskFacets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TaskFacets.swift; path = Kannu/managers/Tasks/TaskFacets.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000002A2 /* TaskReminderPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TaskReminderPlan.swift; path = Kannu/managers/Tasks/TaskReminderPlan.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000B6 /* ClipboardPanelPlacement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClipboardPanelPlacement.swift; path = Kannu/managers/Display/ClipboardPanelPlacement.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000B8 /* HostedContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HostedContent.swift; path = Kannu/helpers/HostedContent.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000B2 /* AgentSecurityFindingGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentSecurityFindingGroup.swift; path = Kannu/managers/AgentStatus/AgentSecurityFindingGroup.swift; sourceTree = SOURCE_ROOT; };
@@ -669,6 +673,8 @@
 				AA10000000000000000000EB /* SourceSyncState.swift in Sources */,
 				AA10000000000000000000F1 /* GitLabAPI.swift in Sources */,
 				AA10000000000000000001A1 /* WorklogPoster.swift in Sources */,
+				AA10000000000000000002A1 /* TaskFacets.swift in Sources */,
+				AA10000000000000000002A3 /* TaskReminderPlan.swift in Sources */,
 				AA10000000000000000000B7 /* ClipboardPanelPlacement.swift in Sources */,
 				AA10000000000000000000B9 /* HostedContent.swift in Sources */,
 				AA100000000000000000F008 /* TermsOfUse.swift in Sources */,

@@ -4,6 +4,82 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-06 - Brain › Tasks gets a Task list page with filters, tags and reminders, real drag and drop, and shorter text
+- **Developer label:** "there should be drag and drop and for all explaination we give like this, try to make it cleaner; also where is seperate tab for task listing with filtered tabs and all"
+- **Agent label:** Brain Tasks PR7: Task list sub-page (Source/Project/Status/Tag filters, tags, local-task reminders), draggable/dropDestination reordering, copy pass
+- **Changes:**
+  - The Tasks page now holds Sources, the Tasks options, Time to log, Interrupted sessions and a
+    "Task list" row ("12 to do · 3 in progress") whose Open button swaps the tab's content for the
+    Task list (an in-tab view swap: Brain has no navigation stack). The Task list has a "‹ Tasks"
+    back row; Filters (Source as a segmented All | Local | Jira | GitLab, then Project, Status — To
+    Do + In Progress / To Do / In Progress — and Tag menus, all kept in Defaults:
+    `tasksListSourceFilter`, `tasksListProjectFilter`, `tasksListStatusFilter`,
+    `tasksListTagFilter`); Add a task; the task rows; and Done and hidden. "No tasks match" offers
+    Clear Filters. Any Tasks search or deep link closes the Task list so its row is on screen,
+    except the Task list's own deep link (`SettingsDeepLink.tasksListOpenID`, registered on the back
+    row), which opens it. The task order's count reads "15 open" (to do and in progress together).
+  - Pure `TaskFacets` (logic target): project from a Jira key prefix or a GitLab `references.full`
+    path (or the key `#project:N`, shown as "Project N", for a GitLab project known only by its
+    id; a filter saved as the old "Project N" label is rewritten to the key), status from the status category (a local task is In Progress once it has
+    recorded time; a GitLab issue is In Progress with an in-progress, doing or WIP label, a merge
+    request always), the filter match, and the projects and tags on offer.
+  - Model, all optional and decoded leniently so an older `tasks.json` still reads:
+    `RemoteTaskInfo.statusCategory` (Jira's `status.statusCategory.key`, carried through
+    `JiraAPI.remoteIssue`, `GitLabAPI.remoteIssue` and `TaskMerge`) and `labels` (GitLab labels,
+    decoded so another shape costs the labels, never the item); `TaskItem.tags` (Kannu only, never
+    sent: trimmed, no leading "#", at most 24 characters, at most 10, de-duplicated ignoring case)
+    and `scheduledAt` (local tasks only).
+  - The ⋯ menu gains Tags… (any task) and Schedule… / Clear Schedule (local tasks), through
+    `TaskValueSheet`. Rows show the schedule ("Today 15:00", "Tomorrow 09:30", "Overdue · Mon
+    10:00") and the tags ("#writing #urgent").
+  - Reminders: `TaskReminders` schedules a `UNUserNotificationCenter` notification with a Start
+    action, from the pure `TaskReminderPlan` (what to add or take back after each change: done,
+    hidden, deleted and cleared schedules are taken back; a reminder already shown is left alone).
+    Permission is asked only on the user's first schedule; the resend once it is allowed only adds,
+    so another task's reminder on screen stays. After the task file is read and whenever the Task
+    list opens, `TaskReminderPlan.reconcile` compares with what macOS actually holds (pending and
+    delivered, by the `kannu.task-reminder.` prefix): requests for tasks that are gone are taken
+    back, and while notifications are allowed any wanted reminder still ahead that macOS is missing
+    is added, so notifications turned on while Kannu was not running, or a replaced `tasks.json`,
+    are caught. Turning Enable tasks off takes back every task reminder, waiting or shown.
+    `TaskReminderCenter` is installed in `continueLaunch()` after the terms (a delegate and a
+    category only: no prompt, no file read, `TasksManager` stays lazy); Start times the task, a
+    click opens Brain on the Task list itself. A Start that cannot start (the timer is off, the task
+    is gone, the file could not be read) opens the Task list instead of doing nothing. Kannu never
+    starts a timer on its own. With notifications off, the Task list and the Schedule sheet show
+    "Notifications are off" with Open Notification Settings.
+  - Real drag and drop: each row is `.draggable(task.id.uuidString)` and a
+    `.dropDestination(for: String.self)`, replacing `ForEach.onMove`, which never drags inside a
+    grouped Form on macOS. An insertion line shows on the side the task will land. Drops go through
+    the pure `TaskOrdering.move(id:onto:in:listed:)` (dragged down, it lands after the target; up,
+    before it), and Move Up / Move Down now pass the active filters too, so moves count only the
+    rows shown. ⋯ › Move to Top / Up / Down stay. `TaskOrdering.moving(activeOffsets:)` and
+    `TasksManager.move(activeOffsets:)` are gone.
+  - Shorter copy across `TasksSettings.swift`, `TimeToLogSection.swift` and the notch Tasks
+    popover: each description says what the control does in about eight words, without "Off: …"
+    sentences or mechanics; footers keep only privacy and trust facts ("Tokens stay in your
+    Keychain. Kannu writes nothing until you choose Log.", "Jira watchers aren't emailed."); error
+    and recovery text stays specific but short.
+  - Search: new entries Task list, Task list filters, Task tags and Schedule a task, and the
+    existing Add a task, Task order and Done and hidden tasks entries, all land on the visible
+    "Task list" row (`SettingsDeepLink.tasksListHighlightID`, replacing `tasksOrderHighlightID`).
+    Inventory pins: 229 entries, 272 registrations, 266 ids.
+  - Tests: TaskFacetsTests (project, status, GitLab labels, filters, what the filters offer, a
+    filtered move, tag cleaning, coding of the new fields including odd and older files, the sync
+    carrying category and labels, a Project filter saved as a label), TaskReminderPlanTests (a
+    resend never takes anything back; the reconcile adds what macOS is missing, takes back what the
+    list no longer wants, and takes back everything with tasks off), TaskListRulesTests (rows use
+    `draggable`/`dropDestination` and never `onMove`, drops and moves pass the filters, permission is
+    asked only from `setSchedule`, only Start starts a task, with planted offenders; the reminder
+    and Task list deep-link wiring above), the drop cases
+    in TaskOrderTests and TaskSourceFilterTests, JiraDecodingTests expecting the category,
+    LaunchGateRulesTests (the delegate is installed only
+    in `continueLaunch()`, which asks nothing and builds no `TasksManager`), and BrainNamingRulesTests
+    allowing "Open Notification Settings" and the Notifications pane's URL. docs/SETTINGS.md
+    records the in-tab sub-page rule, names its back row as the one sanctioned lone leading
+    button, and replaces the old caption rule with the new copy rule (descriptions in about eight
+    words, footers for privacy and trust facts only, short specific errors).
+
 ### 2026-10-04 - The notch has a Tasks button: what you are timing, what to log, and what is next
 - **Developer label:** "maybe a button with integration toggle for people to switch and then getting a click through to a tab in settings to manage integrations"
 - **Agent label:** Brain Tasks PR6: notch Tasks button and popover (Now, Log time?, Up next, source toggles, Manage tasks… to Brain › Tasks › Sources)

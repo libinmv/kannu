@@ -72,6 +72,16 @@ struct GitLabItem: Decodable, Equatable {
     let references: References?
     /// Absent on older servers; present with zeros when nothing is estimated or spent.
     let timeStats: TimeStats?
+    /// The label names. Read leniently: another shape costs the labels, never the item.
+    let labels: Labels?
+
+    struct Labels: Decodable, Equatable {
+        let names: [String]
+
+        init(from decoder: Decoder) throws {
+            names = (try? decoder.singleValueContainer().decode([String].self)) ?? []
+        }
+    }
 
     struct References: Decodable, Equatable {
         /// `group/app#45`, `group/app!12`.
@@ -89,7 +99,7 @@ struct GitLabItem: Decodable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, iid, title, state, references
+        case id, iid, title, state, references, labels
         case projectID = "project_id"
         case webURL = "web_url"
         case timeStats = "time_stats"
@@ -312,6 +322,7 @@ enum GitLabAPI {
             status = reviewRequested ? String(localized: "review requested") : String(localized: "assigned to you")
         }
         let webURL = item.webURL.flatMap { GitLabHost.isWebURL($0, onServer: base) ? $0 : nil }
+        let labels = TaskFacets.keptLabels(item.labels?.names ?? [])
         return RemoteIssue(
             remoteID: remoteID(kind: kind, id: item.id),
             key: key,
@@ -320,7 +331,9 @@ enum GitLabAPI {
             isDoneRemotely: item.state == "closed" || item.state == "merged",
             estimateSeconds: item.timeStats?.timeEstimate.flatMap { $0 > 0 ? $0 : nil },
             spentSeconds: item.timeStats?.totalTimeSpent.flatMap { $0 > 0 ? $0 : nil },
-            gitlab: RemoteIssue.GitLabRef(kind: kind, projectID: item.projectID, iid: item.iid, webURL: webURL)
+            gitlab: RemoteIssue.GitLabRef(kind: kind, projectID: item.projectID, iid: item.iid, webURL: webURL),
+            statusCategory: TaskFacets.gitlabCategory(kind: kind, labels: labels),
+            labels: labels
         )
     }
 }

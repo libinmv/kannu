@@ -92,6 +92,9 @@ final class TasksManager: ObservableObject {
     @Published private(set) var gitlabSync: SourceSyncState = .idle
     /// Disconnect could not delete the saved GitLab token from the Keychain, so it is still there.
     @Published private(set) var gitlabTokenRemovalFailed = false
+    /// macOS has Kannu's notifications turned off, so a schedule raises no reminder. Checked after
+    /// a schedule, after the task file is read, and when the Task list opens.
+    @Published private(set) var remindersBlocked = false
 
     private struct Link {
         let session: UUID
@@ -132,6 +135,13 @@ final class TasksManager: ObservableObject {
     private var gitlabGeneration = 0
     private var gitlabSyncInFlight: Int?
     private var pendingGitLabSyncWhenReady = false
+    /// The reminders macOS was last told about (`TaskReminderPlan.wanted`). Taken from the file at
+    /// load; each save after that sends only what changed. `checkReminderPermission` checks it
+    /// against what macOS actually holds.
+    private var reminderBaseline: [UUID: TaskReminderPlan.Reminder] = [:]
+    /// A reminder's Start clicked before the task file was read, and what to do if it cannot
+    /// start: tried once the file is read, or the fallback runs when it cannot be.
+    private var pendingReminderStart: (taskID: UUID, otherwise: () -> Void)?
 
     private init() {
         store = TaskFileStore(directory: { AppSupportPaths.child("Tasks") })
@@ -190,6 +200,16 @@ final class TasksManager: ObservableObject {
 
     var doneAndHiddenTasks: [TaskItem] { tasks.filter { $0.visibility != .active } }
 
+    /// The Task list's rows: the task order narrowed by its filters.
+    func listedTasks(_ filter: TaskFilter) -> [TaskItem] {
+        TaskOrdering.active(tasks, listed: listed(filter))
+    }
+
+    /// What a Task list move counts: what the sources show, narrowed by the filters.
+    private func listed(_ filter: TaskFilter) -> TaskOrdering.Listed {
+        filter.isNarrowing ? TaskFacets.listed(listed, filter: filter) : listed
+    }
+
     /// Segments left open by a quit or a crash, newest first, with their task.
     var interruptedSessions: [InterruptedSession] {
         tasks.flatMap { task in task.segments.filter(\.isInterrupted).map { InterruptedSession(task: task, segment: $0) } }
@@ -204,9 +224,13 @@ final class TasksManager: ObservableObject {
 
     /// Times the task with Kannu's timer, for what is left of its estimate (or the default session
     /// length). A session already running is replaced, and its own task's time ends with it.
-    func start(_ taskID: UUID) {
-        guard isReady, Defaults[.enableTimerFeature], timing?.taskID != taskID,
-              let task = tasks.first(where: { $0.id == taskID }), task.visibility == .active else { return }
+    /// Returns false when nothing could start: not loaded, the timer is off, or the task is gone,
+    /// done or hidden. Timing the task already counts as started.
+    @discardableResult
+    func start(_ taskID: UUID) -> Bool {
+        guard isReady, Defaults[.enableTimerFeature],
+              let task = tasks.first(where: { $0.id == taskID }), task.visibility == .active else { return false }
+        guard timing?.taskID != taskID else { return true }
         let length = TaskTimeMath.sessionLengthSeconds(
             estimate: task.effectiveEstimateSeconds,
             tracked: trackedSeconds(of: task),
@@ -223,6 +247,7 @@ final class TasksManager: ObservableObject {
         )
         // The id is minted inside startTimer; its .started event is already queued behind this.
         pendingLink = (timer.sessionID, taskID)
+        return true
     }
 
     /// Stops the timer when it is timing a task. The session's `.ended` closes the task's time.
@@ -359,19 +384,80 @@ final class TasksManager: ObservableObject {
 
     func moveToTop(_ taskID: UUID) { reorder { TaskOrdering.movingToTop(taskID, in: $0) } }
 
-    func moveUp(_ taskID: UUID) {
-        let listed = listed
+    /// Up one row of what the Task list shows with `filter`.
+    func moveUp(_ taskID: UUID, filter: TaskFilter = .all) {
+        let listed = listed(filter)
         reorder { TaskOrdering.movingUp(taskID, in: $0, listed: listed) }
     }
 
-    func moveDown(_ taskID: UUID) {
-        let listed = listed
+    func moveDown(_ taskID: UUID, filter: TaskFilter = .all) {
+        let listed = listed(filter)
         reorder { TaskOrdering.movingDown(taskID, in: $0, listed: listed) }
     }
 
-    func move(activeOffsets: IndexSet, toActiveOffset destination: Int) {
-        let listed = listed
-        reorder { TaskOrdering.moving(activeOffsets: activeOffsets, toActiveOffset: destination, in: $0, listed: listed) }
+    /// A row dragged onto another in the Task list: it takes that row's place among the rows shown.
+    func move(_ taskID: UUID, onto target: UUID, filter: TaskFilter = .all) {
+        let listed = listed(filter)
+        reorder { TaskOrdering.move(id: taskID, onto: target, in: $0, listed: listed) }
+    }
+
+    /// Which edge of `target` a drop of `taskID` lands on among the rows shown; nil when it would
+    /// change nothing.
+    func dropEdge(dragging taskID: UUID, onto target: UUID, filter: TaskFilter = .all) -> TaskOrdering.DropEdge? {
+        TaskOrdering.dropEdge(dragging: taskID, onto: target, in: tasks, listed: listed(filter))
+    }
+
+    /// The task's own tags, cleaned (`TaskItem.cleanedTags`). Kannu's only: never sent anywhere.
+    func setTags(_ tags: [String], for taskID: UUID) {
+        update(taskID) { $0.tags = TaskItem.cleanedTags(tags) }
+    }
+
+    /// A local task's reminder time; nil clears it. The first schedule is where Kannu asks macOS
+    /// for notifications — never earlier.
+    func setSchedule(_ date: Date?, for taskID: UUID) {
+        guard let task = tasks.first(where: { $0.id == taskID }), task.source == .local else { return }
+        update(taskID) { $0.scheduledAt = date }
+        guard date != nil else { return }
+        Task { [weak self] in
+            let permission = await TaskReminders.requestPermission()
+            guard let self else { return }
+            remindersBlocked = permission == .denied
+            if permission == .allowed { resendReminders() }
+        }
+    }
+
+    /// Whether macOS still lets the reminders show, and whether it holds the ones the list wants.
+    /// Asks nothing. Judged from what macOS reports, not from the file: requests for tasks that
+    /// are gone (or for everything, with tasks off) are taken back, and, while notifications are
+    /// allowed, any wanted reminder still ahead that macOS is missing is added. Runs after the
+    /// task file is read and whenever the Task list opens.
+    func checkReminderPermission() {
+        guard isReady else { return }
+        Task { [weak self] in
+            let permission = await TaskReminders.permission()
+            let held = await TaskReminders.held()
+            guard let self, isReady else { return }
+            let wanted = Defaults[.enableTasks] ? TaskReminderPlan.wanted(tasks) : [:]
+            remindersBlocked = permission == .denied && !wanted.isEmpty
+            TaskReminders.apply(TaskReminderPlan.reconcile(
+                pending: held.pending, delivered: held.delivered, wanted: wanted,
+                now: Date(), canAdd: permission == .allowed
+            ))
+        }
+    }
+
+    /// Start, on a task's reminder: the user's click. Before the task file is read, it waits for
+    /// it. When the task cannot start — the timer is off, the task is gone, or the file could not
+    /// be read — `otherwise` runs, so the click is never silently lost.
+    func startFromReminder(_ taskID: UUID, otherwise: @escaping () -> Void) {
+        switch loadState {
+        case .loading:
+            pendingReminderStart = (taskID, otherwise)
+        case .failed:
+            otherwise()
+        case .ready:
+            if !start(taskID) { otherwise() }
+        }
     }
 
     /// Marking the task being timed done stops the timer first, which ends its time.
@@ -1264,6 +1350,10 @@ final class TasksManager: ObservableObject {
         case .failed(let reason):
             logger.error("tasks.json could not be read: \(reason, privacy: .private)")
             loadState = .failed(reason)
+            if let pending = pendingReminderStart {
+                pendingReminderStart = nil
+                pending.otherwise()
+            }
         }
     }
 
@@ -1286,6 +1376,9 @@ final class TasksManager: ObservableObject {
         tasks = loadedTasks
         drafts = normalized
         loadState = .ready
+        // What earlier launches told macOS. It may not hold all of it (notifications turned on
+        // since, a file replaced), so `checkReminderPermission` below checks with macOS.
+        reminderBaseline = TaskReminderPlan.wanted(loadedTasks)
         let uncertain = normalized.filter { $0.state == .uncertain }.count
         logger.info("Loaded \(file.tasks.count, privacy: .public) tasks, \(interrupted, privacy: .public) interrupted sessions, \(uncertain, privacy: .public) uncertain entries")
         if interrupted > 0 || normalized != file.drafts || loadedTasks != file.tasks { persist() }
@@ -1297,6 +1390,11 @@ final class TasksManager: ObservableObject {
             pendingGitLabSyncWhenReady = false
             syncGitLabIfStale()
         }
+        if let pending = pendingReminderStart {
+            pendingReminderStart = nil
+            if !start(pending.taskID) { pending.otherwise() }
+        }
+        checkReminderPermission()
     }
 
     private var snapshot: TasksFile {
@@ -1307,6 +1405,7 @@ final class TasksManager: ObservableObject {
     /// store drop an older one.
     private func persist() {
         guard isReady else { return }
+        syncReminders()
         revision += 1
         let revision = revision
         let snapshot = snapshot
@@ -1314,6 +1413,22 @@ final class TasksManager: ObservableObject {
             let outcome = await store.save(snapshot, revision: revision)
             self?.didSave(outcome, revision: revision)
         }
+    }
+
+    /// Tells macOS about reminders that changed with this edit: added, moved, retitled, or gone
+    /// because the task was done, hidden, deleted or unscheduled.
+    private func syncReminders() {
+        let wanted = TaskReminderPlan.wanted(tasks)
+        let changes = TaskReminderPlan.changes(from: reminderBaseline, to: wanted, now: Date())
+        reminderBaseline = wanted
+        TaskReminders.apply(changes)
+    }
+
+    /// Sends every reminder still ahead again, once macOS allows them: one scheduled before the
+    /// user answered the permission prompt, or while notifications were off, was refused. Adds
+    /// only, so a reminder already on screen for another task stays.
+    private func resendReminders() {
+        TaskReminders.apply(TaskReminderPlan.resend(reminderBaseline, now: Date()))
     }
 
     /// Writes the list now and waits until it is on disk: the write-ahead before a send. A newer

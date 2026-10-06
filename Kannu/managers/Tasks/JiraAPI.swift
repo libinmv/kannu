@@ -451,7 +451,8 @@ enum JiraAPI {
             status: fields.status?.name ?? "",
             isDoneRemotely: fields.status?.statusCategory?.key == "done",
             estimateSeconds: fields.timetracking?.originalEstimateSeconds,
-            spentSeconds: fields.timetracking?.timeSpentSeconds
+            spentSeconds: fields.timetracking?.timeSpentSeconds,
+            statusCategory: fields.status?.statusCategory?.key.flatMap(TaskItem.cleanedTitle)
         )
     }
 }

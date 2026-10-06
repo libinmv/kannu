@@ -76,17 +76,32 @@ final class TaskOrderTests: XCTestCase {
         XCTAssertEqual(Order.movingToTop(UUID(), in: list), list)
     }
 
-    func testADragCountsActiveTasksOnly() {
+    func testADropDownLandsAfterTheTarget() {
         // The list the user drags in is "A B C"; x sits between A and B in the file.
         let list = tasks("A x B C")
-        // Drag A below B (onMove: from 0 to 2).
-        XCTAssertEqual(Order.active(Order.moving(activeOffsets: [0], toActiveOffset: 2, in: list)).map(\.title), ["B", "A", "C"])
-        // Drag C to the top.
-        XCTAssertEqual(titles(Order.moving(activeOffsets: [2], toActiveOffset: 0, in: list)), "C A x B")
-        // Drag A to the end.
-        XCTAssertEqual(Order.active(Order.moving(activeOffsets: [0], toActiveOffset: 3, in: list)).map(\.title), ["B", "C", "A"])
-        // An offset past the list moves nothing.
-        XCTAssertEqual(Order.moving(activeOffsets: [7], toActiveOffset: 0, in: list), list)
+        let moved = Order.move(id: id("A", in: list), onto: id("B", in: list), in: list)
+        XCTAssertEqual(Order.active(moved).map(\.title), ["B", "A", "C"])
+        XCTAssertEqual(titles(moved), "x B A C", "the done task keeps its place")
+        // Onto the last row: to the end.
+        XCTAssertEqual(titles(Order.move(id: id("A", in: list), onto: id("C", in: list), in: list)), "x B C A")
+        XCTAssertEqual(Order.dropEdge(dragging: id("A", in: list), onto: id("C", in: list), in: list), .below)
+    }
+
+    func testADropUpLandsBeforeTheTarget() {
+        let list = tasks("A x B C")
+        XCTAssertEqual(titles(Order.move(id: id("C", in: list), onto: id("A", in: list), in: list)), "C A x B")
+        XCTAssertEqual(titles(Order.move(id: id("C", in: list), onto: id("B", in: list), in: list)), "A x C B")
+        XCTAssertEqual(Order.dropEdge(dragging: id("C", in: list), onto: id("A", in: list), in: list), .above)
+    }
+
+    func testADropThatChangesNothing() {
+        let list = tasks("A x B C")
+        XCTAssertEqual(Order.move(id: id("B", in: list), onto: id("B", in: list), in: list), list, "onto itself")
+        XCTAssertNil(Order.dropEdge(dragging: id("B", in: list), onto: id("B", in: list), in: list))
+        XCTAssertEqual(Order.move(id: UUID(), onto: id("B", in: list), in: list), list, "an unknown task")
+        XCTAssertEqual(Order.move(id: id("A", in: list), onto: UUID(), in: list), list, "an unknown target")
+        XCTAssertEqual(Order.move(id: id("x", in: list), onto: id("A", in: list), in: list), list, "a done task is not dragged")
+        XCTAssertEqual(Order.move(id: id("A", in: list), onto: id("x", in: list), in: list), list, "nor dropped on")
     }
 
     func testReopeningPutsATaskBackWhereItWas() {

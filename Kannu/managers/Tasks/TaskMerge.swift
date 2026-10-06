@@ -31,6 +31,10 @@ struct RemoteIssue: Equatable {
     var spentSeconds: Int?
     /// GitLab only.
     var gitlab: GitLabRef? = nil
+    /// "new", "indeterminate" or "done" (`RemoteTaskInfo.statusCategory`).
+    var statusCategory: String? = nil
+    /// GitLab only: the item's labels.
+    var labels: [String]? = nil
 
     /// Where a GitLab item lives: what the next PR needs to log time to it, and its page.
     struct GitLabRef: Equatable {
@@ -59,10 +63,10 @@ enum SyncOutcome: Equatable {
 /// *now* — never a wholesale replace — so an edit made while the request was out survives it.
 ///
 /// - A task matches an issue on (source, remote id) within the same site or server. A match
-///   refreshes what the source owns (key, title, status, estimate, logged time, last seen, and a
-///   GitLab item's kind, project, number and page) and keeps what the user
+///   refreshes what the source owns (key, title, status and its category, labels, estimate, logged
+///   time, last seen, and a GitLab item's kind, project, number and page) and keeps what the user
 ///   owns: Kannu's id, the place in the order, the local estimate, the recorded time, the log
-///   policy and whether it is done or hidden. A task that had gone and came back is active again.
+///   policy, the tags and whether it is done or hidden. A task that had gone and came back is active again.
 /// - A new issue is appended at the end of the order. An issue listed twice counts once: the first.
 /// - A complete fetch turns the *active* tasks it did not return into `.gone`. A capped one marks
 ///   nothing gone. A failed one changes nothing.
@@ -116,6 +120,8 @@ enum TaskMerge {
                 remote.isDoneRemotely = issue.isDoneRemotely
                 remote.remoteEstimateSeconds = issue.estimateSeconds
                 remote.remoteSpentSeconds = issue.spentSeconds
+                remote.statusCategory = issue.statusCategory
+                remote.labels = issue.labels
                 if let gitlab = issue.gitlab {
                     remote.gitlabKind = gitlab.kind
                     remote.gitlabProjectID = gitlab.projectID
@@ -142,7 +148,9 @@ enum TaskMerge {
                     gitlabIID: issue.gitlab?.iid,
                     lastSeenAt: now,
                     gitlabKind: issue.gitlab?.kind,
-                    gitlabWebURL: issue.gitlab?.webURL
+                    gitlabWebURL: issue.gitlab?.webURL,
+                    statusCategory: issue.statusCategory,
+                    labels: issue.labels
                 )
                 appended.append(TaskItem(id: newID(), source: source, title: title, remote: remote, createdAt: now))
                 added += 1

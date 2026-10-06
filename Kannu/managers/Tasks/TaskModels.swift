@@ -80,10 +80,17 @@ struct RemoteTaskInfo: Codable, Equatable {
     /// GitLab only: the item's page, kept only when it is on the server the task came from
     /// (`GitLabHost.isWebURL`), and checked again before it is opened.
     var gitlabWebURL: String? = nil
+    /// Where the item stands, in Jira's status-category words: "new" (To Do), "indeterminate" (In
+    /// Progress) or "done". Jira's own `status.statusCategory.key`; for GitLab, set by
+    /// `GitLabAPI.remoteIssue` (`TaskFacets.gitlabCategory`). Nil in a file written before it.
+    var statusCategory: String? = nil
+    /// GitLab only: the item's labels, as the server sent them. Read for the In Progress facet and
+    /// never sent anywhere. Nil for Jira, and in a file written before it.
+    var labels: [String]? = nil
 
     private enum CodingKeys: String, CodingKey {
         case remoteID, key, hostScope, status, isDoneRemotely, remoteEstimateSeconds, remoteSpentSeconds
-        case gitlabProjectID, gitlabIID, lastSeenAt, gitlabKind, gitlabWebURL
+        case gitlabProjectID, gitlabIID, lastSeenAt, gitlabKind, gitlabWebURL, statusCategory, labels
     }
 }
 
@@ -105,6 +112,8 @@ extension RemoteTaskInfo {
         lastSeenAt = try container.decode(Date.self, forKey: .lastSeenAt)
         gitlabKind = (try? container.decodeIfPresent(GitLabKind.self, forKey: .gitlabKind)) ?? nil
         gitlabWebURL = try container.decodeIfPresent(String.self, forKey: .gitlabWebURL)
+        statusCategory = try? container.decodeIfPresent(String.self, forKey: .statusCategory)
+        labels = try? container.decodeIfPresent([String].self, forKey: .labels)
     }
 }
 
@@ -156,6 +165,10 @@ struct TaskItem: Codable, Identifiable, Equatable {
     var logPolicy: LogPolicy
     var visibility: TaskVisibility
     let createdAt: Date
+    /// The user's own tags. Kannu's only: never sent to Jira or GitLab. Cleaned by `cleanedTags`.
+    var tags: [String]
+    /// When a local task's reminder is due. Nil when it has none; never set on a remote task.
+    var scheduledAt: Date?
 
     init(
         id: UUID = UUID(),
@@ -166,7 +179,9 @@ struct TaskItem: Codable, Identifiable, Equatable {
         segments: [WorkSegment] = [],
         logPolicy: LogPolicy = .ask,
         visibility: TaskVisibility = .active,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        tags: [String] = [],
+        scheduledAt: Date? = nil
     ) {
         self.id = id
         self.source = source
@@ -177,6 +192,8 @@ struct TaskItem: Codable, Identifiable, Equatable {
         self.logPolicy = logPolicy
         self.visibility = visibility
         self.createdAt = createdAt
+        self.tags = tags
+        self.scheduledAt = scheduledAt
     }
 
     var effectiveEstimateSeconds: Int? { localEstimateSeconds ?? remote?.remoteEstimateSeconds }
@@ -193,8 +210,36 @@ struct TaskItem: Codable, Identifiable, Equatable {
         return String(joined.prefix(maxTitleLength)).trimmingCharacters(in: .whitespaces)
     }
 
+    /// At most this many tags on one task.
+    static let maxTags = 10
+    /// A longer tag is cut to this many characters.
+    static let maxTagLength = 24
+
+    /// Tags as Kannu keeps them: one line each, without a leading "#", at most `maxTagLength`
+    /// characters, the first spelling of each (compared ignoring case), at most `maxTags`.
+    static func cleanedTags(_ raw: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for tag in raw {
+            var text = tag.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).joined(separator: " ")
+            while text.hasPrefix("#") { text.removeFirst() }
+            text = String(text.trimmingCharacters(in: .whitespaces).prefix(maxTagLength))
+                .trimmingCharacters(in: .whitespaces)
+            guard !text.isEmpty, seen.insert(text.lowercased()).inserted else { continue }
+            result.append(text)
+            if result.count == maxTags { break }
+        }
+        return result
+    }
+
+    /// Tags typed in one field, separated by commas: "writing, #urgent".
+    static func parsedTags(_ text: String) -> [String] {
+        cleanedTags(text.components(separatedBy: CharacterSet(charactersIn: ",\n")))
+    }
+
     private enum CodingKeys: String, CodingKey {
         case id, source, title, localEstimateSeconds, remote, segments, logPolicy, visibility, createdAt
+        case tags, scheduledAt
     }
 
     /// Fields added after the first version default instead of failing, so an older file still
@@ -210,6 +255,8 @@ struct TaskItem: Codable, Identifiable, Equatable {
         logPolicy = try container.decodeIfPresent(LogPolicy.self, forKey: .logPolicy) ?? .ask
         visibility = try container.decodeIfPresent(TaskVisibility.self, forKey: .visibility) ?? .active
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date(timeIntervalSince1970: 0)
+        tags = Self.cleanedTags((try? container.decodeIfPresent([String].self, forKey: .tags)) ?? [])
+        scheduledAt = try? container.decodeIfPresent(Date.self, forKey: .scheduledAt)
     }
 }
 

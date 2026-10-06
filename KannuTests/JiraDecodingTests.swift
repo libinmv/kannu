@@ -56,8 +56,10 @@ final class JiraDecodingTests: XCTestCase {
 
         let first = JiraAPI.remoteIssue(from: page.issues[0])
         XCTAssertEqual(first, RemoteIssue(remoteID: "10001", key: "PROJ-1", title: "Fix the login redirect", status: "In Progress",
-                                          isDoneRemotely: false, estimateSeconds: 7200, spentSeconds: 10800))
+                                          isDoneRemotely: false, estimateSeconds: 7200, spentSeconds: 10800,
+                                          statusCategory: "indeterminate"))
         let second = JiraAPI.remoteIssue(from: page.issues[1])
+        XCTAssertEqual(second.statusCategory, "new", "the category is kept for the Task list's Status filter")
         XCTAssertNil(second.estimateSeconds, "an empty timetracking object has no estimate")
         XCTAssertNil(second.spentSeconds)
         XCTAssertEqual(second.status, "To Do")

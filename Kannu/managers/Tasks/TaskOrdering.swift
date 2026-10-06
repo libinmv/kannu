@@ -26,8 +26,8 @@ import Foundation
 /// so one click always changes what the user sees.
 ///
 /// The same goes for tasks of a source the user switched off (Local tasks, Sync Jira, Sync GitLab): `listed`
-/// says which active tasks are on screen, and every move and drag offset counts only those. Its
-/// default lists every active task.
+/// says which active tasks are on screen, and every move and drop counts only those. Its default
+/// lists every active task.
 enum TaskOrdering {
     typealias Listed = (TaskItem) -> Bool
 
@@ -102,31 +102,35 @@ enum TaskOrdering {
         return result
     }
 
-    /// A drag in the task order (`onMove`), whose offsets count listed active tasks only. The
-    /// dragged tasks land just before the listed task that was at `destination`, or after the last
-    /// listed task when dropped at the end.
-    static func moving(
-        activeOffsets offsets: IndexSet,
-        toActiveOffset destination: Int,
-        in tasks: [TaskItem],
-        listed: Listed = { _ in true }
-    ) -> [TaskItem] {
-        let visible = active(tasks, listed: listed)
-        let moved = offsets.filter { visible.indices.contains($0) }.map { visible[$0].id }
-        guard !moved.isEmpty else { return tasks }
-        let movedSet = Set(moved)
-        // The first active task at or after the drop point that is not itself being moved.
-        let anchor = visible[min(destination, visible.count)...].first { !movedSet.contains($0.id) }?.id
+    /// Where a dragged row lands relative to the row it is dropped on.
+    enum DropEdge: Equatable {
+        /// Dragged up: it lands just above the target.
+        case above
+        /// Dragged down: it lands just below the target.
+        case below
+    }
 
-        var result = tasks.filter { !movedSet.contains($0.id) }
-        let movedTasks = moved.compactMap { id in tasks.first { $0.id == id } }
-        if let anchor, let anchorIndex = result.firstIndex(where: { $0.id == anchor }) {
-            result.insert(contentsOf: movedTasks, at: anchorIndex)
-        } else if let lastActive = result.lastIndex(where: { $0.visibility == .active && listed($0) }) {
-            result.insert(contentsOf: movedTasks, at: lastActive + 1)
-        } else {
-            result.insert(contentsOf: movedTasks, at: 0)
-        }
+    /// Which side of `target` the dragged task lands on, counting listed active tasks only; nil
+    /// when the drop would change nothing (onto itself, or either task not on screen).
+    static func dropEdge(dragging id: UUID, onto target: UUID, in tasks: [TaskItem], listed: Listed = { _ in true }) -> DropEdge? {
+        guard id != target else { return nil }
+        let visible = active(tasks, listed: listed)
+        guard let from = visible.firstIndex(where: { $0.id == id }),
+              let to = visible.firstIndex(where: { $0.id == target }) else { return nil }
+        return from < to ? .below : .above
+    }
+
+    /// A drop of the task `id` on the row of `target`: the dragged task takes the target's place.
+    /// Dragged down, it lands just after the target; dragged up, just before it. Only listed active
+    /// tasks count (`listed` carries the Task list's filters), so a drop never moves a task the user
+    /// cannot see, and done, hidden and filtered-out tasks keep their places in the file.
+    static func move(id: UUID, onto target: UUID, in tasks: [TaskItem], listed: Listed = { _ in true }) -> [TaskItem] {
+        guard let edge = dropEdge(dragging: id, onto: target, in: tasks, listed: listed),
+              let from = tasks.firstIndex(where: { $0.id == id }) else { return tasks }
+        var result = tasks
+        let task = result.remove(at: from)
+        guard let anchor = result.firstIndex(where: { $0.id == target }) else { return tasks }
+        result.insert(task, at: edge == .above ? anchor : anchor + 1)
         return result
     }
 }

@@ -66,7 +66,7 @@ struct TasksPopover: View {
             Divider()
                 .padding(.horizontal, -8)
 
-            Button("Show all in Brain") { openBrain(.taskOrder) }
+            Button("Show all in Brain") { openBrain(.taskList) }
                 .buttonStyle(.link)
                 .font(.system(size: 12, weight: .medium))
         }
@@ -194,7 +194,7 @@ struct TasksPopover: View {
     }
 
     private func failureRow(_ reason: String) -> some View {
-        Text(verbatim: String(localized: "Kannu could not read its task list, so nothing here can change until it can. \(reason)"))
+        Text(verbatim: String(localized: "Couldn't read the task list, so it can't change. \(reason)"))
             .font(.system(size: 11))
             .foregroundStyle(.red)
             .fixedSize(horizontal: false, vertical: true)
@@ -354,7 +354,7 @@ struct TasksPopover: View {
                 addTaskField
             }
             if !enableTimerFeature && !tasks.isEmpty {
-                Text("Turn on the timer feature in Brain to time a task.")
+                Text("Turn on the timer in Brain to time tasks.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -381,7 +381,7 @@ struct TasksPopover: View {
             .buttonStyle(.borderless)
             .disabled(!manager.isReady || TaskItem.cleanedTitle(newTitle) == nil)
             .accessibilityLabel("Add task")
-            .hoverTooltip(String(localized: "Add to the top of the order"), edge: .above)
+            .hoverTooltip(String(localized: "Add to the top"), edge: .above)
         }
     }
 
@@ -456,13 +456,13 @@ struct TasksPopover: View {
     private func emptyMessage(connected: Bool) -> LocalizedStringKey {
         switch (connected, showLocalTasks) {
         case (false, true):
-            return "Connect Jira or GitLab in Brain, or add a task above."
+            return "Connect Jira or GitLab, or add a task above."
         case (false, false):
-            return "Connect Jira or GitLab in Brain, or switch on Local in the sources menu."
+            return "Connect Jira or GitLab, or turn on Local."
         case (true, true):
-            return "Your sources list no open tasks, or are switched off in the sources menu. Add a task above."
+            return "No open tasks. Add one above."
         case (true, false):
-            return "Your sources list no open tasks, or are switched off in the sources menu."
+            return "No open tasks in the sources that are on."
         }
     }
 }

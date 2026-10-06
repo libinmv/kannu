@@ -43,7 +43,7 @@ struct TimeToLogSection: View {
                 LabeledContent {
                     SettingsValueText(open.count == 1 ? String(localized: "1 waiting") : String(localized: "\(open.count) waiting"))
                 } label: {
-                    SettingsRowLabel("Time to log", description: "Time you recorded on Jira and GitLab tasks. Kannu always asks first: nothing is sent until you choose Log.")
+                    SettingsRowLabel("Time to log", description: "Nothing is sent until you choose Log.")
                 }
                 .settingsHighlight(id: highlightID("Time to log"))
 
@@ -53,7 +53,7 @@ struct TimeToLogSection: View {
             } header: {
                 SettingsSectionHeader("Time to log")
             } footer: {
-                SettingsFooter("Jira entries are logged without emailing the issue's watchers, and take the time off its remaining estimate. GitLab records the time when you log it. Not now keeps an entry until more time is added to it; Keep local only keeps the time on this Mac.")
+                SettingsFooter("Jira watchers aren't emailed.")
             }
         }
     }
@@ -195,16 +195,16 @@ private struct WorklogDraftRow: View {
         switch availability {
         case .notConnected:
             let place = source == .gitlab ? GitLabHost.displayName(draft.hostScope) : draft.hostScope
-            return (String(localized: "\(sourceName) is not connected to \(place), so Kannu cannot log this. Connect it in Sources, or keep the time on this Mac."), .orange)
+            return (String(localized: "\(sourceName) isn't connected to \(place). Connect it in Sources, or keep it local."), .orange)
         case .readOnly:
-            return (String(localized: "Your GitLab token is read-only (read_api), so Kannu cannot log time with it. Connect again with an api token, or keep the time on this Mac."), .orange)
+            return (String(localized: "Read-only GitLab token. Connect with an api token, or keep it local."), .orange)
         case .missingDetails:
-            return (String(localized: "Kannu does not know enough about this item to log to it. Refresh \(sourceName) in Sources, or keep the time on this Mac."), .orange)
+            return (String(localized: "Item details missing. Refresh \(sourceName) in Sources, or keep it local."), .orange)
         case .ready:
             break
         }
         if showsFields, !isSending, typedSeconds == nil {
-            return (String(localized: "Type a length of at least a minute, such as 1h 15m, 45m or 1.5h."), .red)
+            return (String(localized: "Type at least a minute, such as 1h 15m."), .red)
         }
         guard let message = draft.message else { return nil }
         return (message, draft.state == .uncertain ? .orange : .red)

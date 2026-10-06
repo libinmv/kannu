@@ -969,6 +969,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         _ = CaffeinateManager.shared
         extensionXPCServiceHost.start()
         extensionRPCServer.start()
+        // Answers a task reminder's Start. Sets a delegate only: no permission prompt, no file
+        // read, and `TasksManager` stays lazy until a reminder is actually answered.
+        TaskReminderCenter.shared.install()
         
         // Migrate legacy progress bar settings
         Defaults.Keys.migrateProgressBarStyle()

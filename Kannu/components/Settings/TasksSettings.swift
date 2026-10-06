@@ -20,8 +20,12 @@ import AppKit
 import Defaults
 import SwiftUI
 
-/// Brain › Tasks: the task list in the order the user will work through it, an estimate per task,
-/// and the actual time recorded when a task is timed with Kannu's timer.
+/// Brain › Tasks: where tasks come from, the Tasks options, Time to log, Interrupted sessions, and a
+/// "Task list ›" row that opens the Task list: the task order with its filters, Add a task, and
+/// Done and hidden. Brain has no navigation stack, so the Task list is an in-tab view swap; search
+/// lands on the visible "Task list" row (the Advanced precedent, docs/SETTINGS.md), and any Tasks
+/// search or deep link closes the Task list so its row is on screen — except
+/// `SettingsDeepLink.tasksListOpenID`, which opens it ("Show all in Brain", a reminder's click).
 ///
 /// Built only from the `SettingsComponents` shapes (docs/SETTINGS.md). A task row carries a ▶ and a
 /// `SettingsMoreMenu`, so it is a raw `LabeledContent` with a `SettingsRowLabel` — the `analysisRow`
@@ -43,59 +47,37 @@ struct TasksSettings: View {
     @State private var newEstimate: Int?
     @State private var confirmsJiraDisconnect = false
     @State private var confirmsGitLabDisconnect = false
+    @State private var showsTaskList = false
+    @ObservedObject private var highlights = SettingsHighlightCoordinator.shared
 
     private func highlightID(_ title: String) -> String { "tasks-\(title)" }
 
     var body: some View {
         Form {
-            if enableTasks {
-                TaskSourcesSection(
-                    sheet: $sheet,
-                    confirmsJiraDisconnect: $confirmsJiraDisconnect,
-                    confirmsGitLabDisconnect: $confirmsGitLabDisconnect
-                )
-            }
-
-            Section {
-                SettingsRow("Enable tasks", description: "Keep a list of what you are working on, in the order you will do it. Time a task with Kannu's timer and its actual time is recorded.") {
-                    Defaults.Toggle(key: .enableTasks) {
-                        Text("Enable tasks")
-                    }
-                }
-                .settingsHighlight(id: highlightID("Enable tasks"))
-
-                SettingsStepperRow(
-                    "Default session length",
-                    description: "How long a task's timer runs when the task has no estimate, or has used it up.",
-                    value: $defaultSessionMinutes,
-                    in: 5...240,
-                    step: 5,
-                    valueText: Text("\(defaultSessionMinutes) min")
-                )
-                .settingsHighlight(id: highlightID("Default session length"))
-
-                SettingsRow("Sound when the estimate is reached", description: "Plays the timer sound when a task's timer runs out. Off: the timer runs on past the estimate silently, and that time still counts.") {
-                    Defaults.Toggle(key: .tasksSoundAtEstimate) {
-                        Text("Sound when the estimate is reached")
-                    }
-                }
-                .settingsHighlight(id: highlightID("Sound when the estimate is reached"))
-            } header: {
-                SettingsSectionHeader("Tasks")
-            } footer: {
-                SettingsFooter("Tasks and their recorded time stay on this Mac. Time on a Jira or GitLab task is sent there only when you choose Log in Time to log.")
-            }
-
-            if enableTasks {
-                TaskListSections(
+            if enableTasks && showsTaskList {
+                TaskListPage(
                     sheet: $sheet,
                     pendingDelete: $pendingDelete,
                     newTitle: $newTitle,
-                    newEstimate: $newEstimate
+                    newEstimate: $newEstimate,
+                    close: { showsTaskList = false }
                 )
+            } else {
+                tasksPage
             }
         }
-        .navigationTitle("Tasks")
+        .navigationTitle(enableTasks && showsTaskList ? "Task list" : "Tasks")
+        // Search and deep links land on rows of the Tasks page, never inside the Task list; only
+        // the Task list's own deep link opens it. `initial`: the link may arrive before this tab is built.
+        .onChange(of: highlights.activeHighlightID, initial: true) { _, id in
+            guard let id, id.hasPrefix(highlightID("")) else { return }
+            showsTaskList = id == SettingsDeepLink.tasksListOpenID
+        }
+        // Tasks off: every reminder, waiting or on screen, is taken back. `TaskReminders` only —
+        // this never builds `TasksManager`.
+        .onChange(of: enableTasks) { _, isOn in
+            if !isOn { TaskReminders.withdrawAll() }
+        }
         .sheet(item: $sheet) { sheet in
             switch sheet {
             case .connectJira:
@@ -114,21 +96,66 @@ struct TasksSettings: View {
             Button("Delete", role: .destructive) { TasksManager.shared.delete(task.id) }
             Button("Cancel", role: .cancel) {}
         } message: { _ in
-            Text("The time recorded on it is deleted too.")
+            Text("Its recorded time is deleted too.")
         }
         .confirmationDialog("Disconnect Jira?", isPresented: $confirmsJiraDisconnect, titleVisibility: .visible) {
             Button("Keep Jira Tasks") { TasksManager.shared.disconnectJira(removeTasks: false) }
             Button("Remove Jira Tasks", role: .destructive) { TasksManager.shared.disconnectJira(removeTasks: true) }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Kannu forgets the API token and stops syncing. Keep the Jira tasks on this Mac, with the time recorded on them, or remove them.")
+            Text("Kannu forgets the token. Keep the Jira tasks and their time, or remove them.")
         }
         .confirmationDialog("Disconnect GitLab?", isPresented: $confirmsGitLabDisconnect, titleVisibility: .visible) {
             Button("Keep GitLab Tasks") { TasksManager.shared.disconnectGitLab(removeTasks: false) }
             Button("Remove GitLab Tasks", role: .destructive) { TasksManager.shared.disconnectGitLab(removeTasks: true) }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Kannu forgets the personal access token and stops syncing. Keep the GitLab issues and merge requests on this Mac, with the time recorded on them, or remove them.")
+            Text("Kannu forgets the token. Keep the GitLab tasks and their time, or remove them.")
+        }
+    }
+
+    @ViewBuilder
+    private var tasksPage: some View {
+        if enableTasks {
+            TaskSourcesSection(
+                sheet: $sheet,
+                confirmsJiraDisconnect: $confirmsJiraDisconnect,
+                confirmsGitLabDisconnect: $confirmsGitLabDisconnect
+            )
+        }
+
+        Section {
+            SettingsRow("Enable tasks", description: "Plan your work and time it.") {
+                Defaults.Toggle(key: .enableTasks) {
+                    Text("Enable tasks")
+                }
+            }
+            .settingsHighlight(id: highlightID("Enable tasks"))
+
+            SettingsStepperRow(
+                "Default session length",
+                description: "Timer length when a task has no estimate.",
+                value: $defaultSessionMinutes,
+                in: 5...240,
+                step: 5,
+                valueText: Text("\(defaultSessionMinutes) min")
+            )
+            .settingsHighlight(id: highlightID("Default session length"))
+
+            SettingsRow("Sound when the estimate is reached", description: "Play the timer sound at the estimate.") {
+                Defaults.Toggle(key: .tasksSoundAtEstimate) {
+                    Text("Sound when the estimate is reached")
+                }
+            }
+            .settingsHighlight(id: highlightID("Sound when the estimate is reached"))
+        } header: {
+            SettingsSectionHeader("Tasks")
+        } footer: {
+            SettingsFooter("Tasks and their time stay on this Mac.")
+        }
+
+        if enableTasks {
+            TaskOverviewSections(sheet: $sheet, openTaskList: { showsTaskList = true })
         }
     }
 
@@ -142,6 +169,12 @@ struct TasksSettings: View {
             if let seconds { TasksManager.shared.addManualTime(seconds, to: taskID) }
         case (.endTime(let taskID, let segmentID, _, _), .date(let end)):
             TasksManager.shared.setEndTime(end, segmentID: segmentID, taskID: taskID)
+        case (.tags(let taskID, _, _, _), .tags(let tags)):
+            TasksManager.shared.setTags(tags, for: taskID)
+        case (.schedule(let taskID, _, _), .date(let date)):
+            TasksManager.shared.setSchedule(date, for: taskID)
+        case (.schedule(let taskID, _, _), .cleared):
+            TasksManager.shared.setSchedule(nil, for: taskID)
         default:
             break
         }
@@ -189,19 +222,19 @@ private struct TaskSourcesSection: View {
                 SettingsErrorText(problem)
             }
             if isConnected, manager.jiraSync == .needsKeychainApproval {
-                SettingsActionRow("Keychain access", description: "macOS asks before Kannu reads the saved Jira token. Allow it and syncing carries on.") {
+                SettingsActionRow("Keychain access", description: "Let Kannu read the saved Jira token.") {
                     Button("Allow Keychain Access") { manager.refreshJira() }
                 }
             }
             if !isConnected, manager.jiraTokenRemovalFailed {
-                SettingsErrorText(String(localized: "Kannu could not remove the saved Jira token from your Keychain, so it is still there."))
-                SettingsActionRow("Saved Jira token", description: "Try again. If it stays, delete it in Keychain Access: the com.kannu.app.secure-secrets item whose account is jira-credential.") {
+                SettingsErrorText(String(localized: "Couldn't remove the Jira token from your Keychain."))
+                SettingsActionRow("Saved Jira token", description: "Or delete com.kannu.app.secure-secrets (jira-credential) in Keychain Access.") {
                     Button("Remove Token") { manager.retryRemovingJiraToken() }
                 }
             }
 
             if isConnected {
-                SettingsRow("Sync Jira", description: "Your Jira issues appear in the task order, mixed with your own, and are refreshed when this page opens. Off: they are not fetched and leave the task order.") {
+                SettingsRow("Sync Jira", description: "Show your Jira issues here.") {
                     Defaults.Toggle(key: .jiraEnabled) {
                         Text("Sync Jira")
                     }
@@ -221,7 +254,7 @@ private struct TaskSourcesSection: View {
 
             gitlabRows
 
-            SettingsRow("Local tasks", description: "The tasks you add here. Off: they leave the task order and Add a task is hidden. Nothing is deleted.") {
+            SettingsRow("Local tasks", description: "Show tasks you add here.") {
                 Defaults.Toggle(key: .showLocalTasks) {
                     Text("Local tasks")
                 }
@@ -231,8 +264,8 @@ private struct TaskSourcesSection: View {
             SettingsSectionHeader("Sources")
         } footer: {
             SettingsFooterStack {
-                SettingsFooter("Kannu reads your Jira issues from your Jira site only, over HTTPS, and writes to Jira only when you log time from Time to log. The API token is kept in your Keychain. A classic API token carries all of your Jira permissions, so create one just for Kannu and revoke it when you stop using it.")
-                SettingsFooter("Kannu reads your GitLab issues and merge requests from your GitLab server only, over HTTPS with a certificate macOS trusts, and writes to GitLab only when you log time from Time to log, which needs a token with the api scope. The personal access token is kept in your Keychain. A read_api token is enough to list; create one just for Kannu, with an expiry date.")
+                SettingsFooter("Tokens stay in your Keychain. Kannu writes nothing until you choose Log.")
+                SettingsFooter("Make tokens just for Kannu, with an expiry date.")
             }
         }
     }
@@ -254,7 +287,7 @@ private struct TaskSourcesSection: View {
                     Text(verbatim: String(localized: "Site \(jiraSiteHost) · Filter: \(JiraAPI.filterSummary(jql: jiraJQL))"))
                         .settingsDescriptionStyle()
                 } else {
-                    Text("Your open Jira issues in the task order, beside your own tasks. Needs your site, your Atlassian email and an API token.")
+                    Text("Your open issues. Needs your site, email and a token.")
                         .settingsDescriptionStyle()
                 }
             }
@@ -277,9 +310,9 @@ private struct TaskSourcesSection: View {
     private var jiraProblem: String? {
         switch manager.jiraSync {
         case .authFailed(let status):
-            return String(localized: "Token rejected (\(status)): it may have expired or been revoked. Disconnect, then connect again with a new token.")
+            return String(localized: "Token rejected (\(status)). Disconnect, then connect with a new token.")
         case .needsReconnect:
-            return String(localized: "The saved Jira sign-in is missing, or belongs to another site. Disconnect, then connect again.")
+            return String(localized: "Saved Jira sign-in missing or for another site. Disconnect, then connect again.")
         case .failed(let message):
             return message
         case .idle, .syncing, .synced, .offline, .rateLimited, .needsKeychainApproval:
@@ -334,9 +367,9 @@ private struct TaskSourcesSection: View {
                 ? String(localized: "Synced \(time) · 1 issue")
                 : String(localized: "Synced \(time) · \(count) issues")
         case .offline:
-            return String(localized: "Offline. Refresh once you are back online.")
+            return String(localized: "Offline.")
         case .rateLimited(let until):
-            guard until > date else { return String(localized: "Jira asked Kannu to wait. You can refresh again.") }
+            guard until > date else { return String(localized: "You can refresh again.") }
             return String(localized: "Rate limited until \(until.formatted(date: .omitted, time: .shortened))")
         case .authFailed, .needsKeychainApproval, .needsReconnect, .failed:
             return String(localized: "Not synced.")
@@ -356,7 +389,7 @@ private struct TaskSourcesSection: View {
                 .disabled(JiraAPI.effectiveJQL(jiraJQL) == JiraAPI.defaultJQL)
             }
         } label: {
-            SettingsRowLabel("Issue filter (JQL)", description: "Which issues appear, in Jira's query language. Press Return to apply it. Empty uses the default: your open issues, most recently updated first.")
+            SettingsRowLabel("Issue filter (JQL)", description: "Which issues appear. Return applies it.")
         }
     }
 
@@ -372,26 +405,26 @@ private struct TaskSourcesSection: View {
             SettingsErrorText(problem)
         }
         if isGitLabConnected, manager.gitlabSync == .needsKeychainApproval {
-            SettingsActionRow("GitLab Keychain access", description: "macOS asks before Kannu reads the saved GitLab token. Allow it and syncing carries on.") {
+            SettingsActionRow("GitLab Keychain access", description: "Let Kannu read the saved GitLab token.") {
                 Button("Allow Keychain Access") { manager.refreshGitLab() }
             }
         }
         if !isGitLabConnected, manager.gitlabTokenRemovalFailed {
-            SettingsErrorText(String(localized: "Kannu could not remove the saved GitLab token from your Keychain, so it is still there."))
-            SettingsActionRow("Saved GitLab token", description: "Try again. If it stays, delete it in Keychain Access: the com.kannu.app.secure-secrets item whose account is gitlab-credential.") {
+            SettingsErrorText(String(localized: "Couldn't remove the GitLab token from your Keychain."))
+            SettingsActionRow("Saved GitLab token", description: "Or delete com.kannu.app.secure-secrets (gitlab-credential) in Keychain Access.") {
                 Button("Remove Token") { manager.retryRemovingGitLabToken() }
             }
         }
 
         if isGitLabConnected {
-            SettingsRow("Sync GitLab", description: "Your GitLab issues appear in the task order, mixed with your own, and are refreshed when this page opens. Off: they are not fetched and leave the task order.") {
+            SettingsRow("Sync GitLab", description: "Show your GitLab issues here.") {
                 Defaults.Toggle(key: .gitlabEnabled) {
                     Text("Sync GitLab")
                 }
             }
             .settingsHighlight(id: highlightID("Sync GitLab"))
 
-            SettingsRow("Include merge requests", description: "Open merge requests assigned to you or waiting for your review join the task order beside your issues. Off: they leave the task order, and only issues are fetched.") {
+            SettingsRow("Include merge requests", description: "Also show MRs assigned to you or awaiting your review.") {
                 Defaults.Toggle(key: .gitlabIncludeMergeRequests) {
                     Text("Include merge requests")
                 }
@@ -423,7 +456,7 @@ private struct TaskSourcesSection: View {
                     Text(verbatim: gitlabListsText)
                         .settingsDescriptionStyle()
                 } else {
-                    Text("Your open GitLab issues, and the merge requests assigned to you or waiting for your review, in the task order beside your own tasks. gitlab.com or your own GitLab server; needs a personal access token.")
+                    Text("Your issues and MRs, from gitlab.com or your server.")
                         .settingsDescriptionStyle()
                 }
             }
@@ -457,9 +490,9 @@ private struct TaskSourcesSection: View {
     private var gitlabProblem: String? {
         switch manager.gitlabSync {
         case .authFailed(let status):
-            return String(localized: "Token rejected (\(status)): it may have expired or been revoked. Disconnect, then connect again with a new token.")
+            return String(localized: "Token rejected (\(status)). Disconnect, then connect with a new token.")
         case .needsReconnect:
-            return String(localized: "The saved GitLab sign-in is missing, or belongs to another server. Disconnect, then connect again.")
+            return String(localized: "Saved GitLab sign-in missing or for another server. Disconnect, then connect again.")
         case .failed(let message):
             return message
         case .idle, .syncing, .synced, .offline, .rateLimited, .needsKeychainApproval:
@@ -508,15 +541,15 @@ private struct TaskSourcesSection: View {
         case .synced(let at, let count, let complete):
             let time = at.formatted(date: .omitted, time: .shortened)
             if !complete {
-                return String(localized: "Synced \(time) · Showing the first \(count): you have more than Kannu lists")
+                return String(localized: "Synced \(time) · Showing the first \(count)")
             }
             return count == 1
                 ? String(localized: "Synced \(time) · 1 item")
                 : String(localized: "Synced \(time) · \(count) items")
         case .offline:
-            return String(localized: "Offline. Refresh once you are back online.")
+            return String(localized: "Offline.")
         case .rateLimited(let until):
-            guard until > date else { return String(localized: "GitLab asked Kannu to wait. You can refresh again.") }
+            guard until > date else { return String(localized: "You can refresh again.") }
             return String(localized: "Rate limited until \(until.formatted(date: .omitted, time: .shortened))")
         case .authFailed, .needsKeychainApproval, .needsReconnect, .failed:
             return String(localized: "Not synced.")
@@ -524,41 +557,29 @@ private struct TaskSourcesSection: View {
     }
 }
 
-/// Everything below the switches. A separate view so `TasksManager` is created only once tasks
-/// are turned on.
-private struct TaskListSections: View {
+/// The Tasks page below the options: Time to log, Interrupted sessions, and the "Task list ›" row.
+/// A separate view so `TasksManager` is created only once tasks are turned on.
+private struct TaskOverviewSections: View {
     @ObservedObject private var manager = TasksManager.shared
-    @Default(.enableTimerFeature) private var enableTimerFeature
-    @Default(.showLocalTasks) private var showLocalTasks
     @Binding private var sheet: TaskSheet?
-    @Binding private var pendingDelete: TaskItem?
-    @Binding private var newTitle: String
-    @Binding private var newEstimate: Int?
-    @State private var showsDoneAndHidden = false
+    private let openTaskList: () -> Void
 
-    private static let estimateChoices = [15, 30, 60, 120, 240, 480].map { $0 * 60 }
-
-    init(sheet: Binding<TaskSheet?>, pendingDelete: Binding<TaskItem?>, newTitle: Binding<String>, newEstimate: Binding<Int?>) {
+    init(sheet: Binding<TaskSheet?>, openTaskList: @escaping () -> Void) {
         _sheet = sheet
-        _pendingDelete = pendingDelete
-        _newTitle = newTitle
-        _newEstimate = newEstimate
+        self.openTaskList = openTaskList
     }
-
-    private func highlightID(_ title: String) -> String { "tasks-\(title)" }
 
     var body: some View {
         if case .failed(let reason) = manager.loadState {
             Section {
-                SettingsErrorText(String(localized: "Kannu could not read its task list, so nothing here can change until it can. \(reason)"))
+                SettingsErrorText(String(localized: "Couldn't read the task list, so it can't change. \(reason)"))
             } header: {
                 SettingsSectionHeader("Task list")
             }
         }
         TimeToLogSection()
         interruptedSection
-        taskOrderSection
-        doneAndHiddenSection
+        taskListSection
     }
 
     // MARK: - Interrupted sessions
@@ -581,52 +602,227 @@ private struct TaskListSections: View {
                     } label: {
                         SettingsRowLabel(
                             Text(verbatim: entry.task.title),
-                            description: Text(verbatim: String(localized: "Was being timed when Kannu stopped, from \(entry.segment.start.formatted(date: .abbreviated, time: .shortened))"))
+                            description: Text(verbatim: String(localized: "Timing since \(entry.segment.start.formatted(date: .abbreviated, time: .shortened))"))
                         )
                     }
                 }
             } header: {
                 SettingsSectionHeader("Interrupted sessions")
             } footer: {
-                SettingsFooter("Kannu stopped while these were being timed, so it does not know when you stopped working, and it never guesses. Set when you stopped, or discard the time. Until then it counts for nothing.")
+                SettingsFooter("Kannu stopped while timing these. Set an end time or discard.")
             }
         }
     }
 
-    // MARK: - Task order
+    // MARK: - Task list ›
 
-    private var taskOrderSection: some View {
+    /// "12 to do · 3 in progress", and the button that opens the Task list.
+    private var taskListSection: some View {
+        let counts = TaskFacets.counts(manager.activeTasks)
+        return Section {
+            LabeledContent {
+                Button(action: openTaskList) {
+                    HStack(spacing: 4) {
+                        Text("Open")
+                        Image(systemName: "chevron.right")
+                    }
+                }
+                .accessibilityLabel("Open task list")
+            } label: {
+                SettingsRowLabel(
+                    "Task list",
+                    description: Text(verbatim: String(localized: "\(counts.toDo) to do · \(counts.inProgress) in progress"))
+                )
+            }
+            .settingsHighlight(id: SettingsDeepLink.tasksListHighlightID)
+        } header: {
+            SettingsSectionHeader("Your tasks")
+        }
+    }
+}
+
+/// The Task list: a back row, the filters, Add a task, the task order and Done and hidden.
+///
+/// The filters persist in Defaults (`tasksListSourceFilter` and the rest). Every move — drag, Move
+/// Up and Move Down — counts only the rows shown, so a filtered drag lands where it was dropped.
+/// A row is dragged with `draggable` and dropped on with `dropDestination`, which work inside a
+/// grouped `Form` on macOS, where `ForEach.onMove` never drags; ⋯ › Move to Top / Up / Down stay
+/// as the keyboard and VoiceOver path. The rows here carry no highlight ids: their search entries
+/// land on the Tasks page's "Task list" row.
+private struct TaskListPage: View {
+    @ObservedObject private var manager = TasksManager.shared
+    @Default(.enableTimerFeature) private var enableTimerFeature
+    @Default(.showLocalTasks) private var showLocalTasks
+    @Default(.tasksListSourceFilter) private var sourceFilter
+    @Default(.tasksListProjectFilter) private var projectFilter
+    @Default(.tasksListStatusFilter) private var statusFilter
+    @Default(.tasksListTagFilter) private var tagFilter
+    @Binding private var sheet: TaskSheet?
+    @Binding private var pendingDelete: TaskItem?
+    @Binding private var newTitle: String
+    @Binding private var newEstimate: Int?
+    private let close: () -> Void
+    @State private var showsDoneAndHidden = false
+    /// The row being dragged, once the drag has begun: it says which edge the insertion line takes.
+    @State private var draggingID: UUID?
+    /// The row the pointer is over during a drag.
+    @State private var dropTargetID: UUID?
+
+    private static let estimateChoices = [15, 30, 60, 120, 240, 480].map { $0 * 60 }
+
+    init(sheet: Binding<TaskSheet?>, pendingDelete: Binding<TaskItem?>, newTitle: Binding<String>,
+         newEstimate: Binding<Int?>, close: @escaping () -> Void) {
+        _sheet = sheet
+        _pendingDelete = pendingDelete
+        _newTitle = newTitle
+        _newEstimate = newEstimate
+        self.close = close
+    }
+
+    private var filter: TaskFilter {
+        TaskFilter(source: sourceFilter, project: TaskFacets.normalizedProjectFilter(projectFilter),
+                   status: statusFilter, tag: tagFilter)
+    }
+
+    var body: some View {
         Section {
+            // The one sanctioned lone leading button in Brain (docs/SETTINGS.md): a sub-page's back
+            // row. It carries the Task list's own deep link, so an opened link lands here.
+            Button(action: close) {
+                Label("Tasks", systemImage: "chevron.left")
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Back to Tasks")
+            .settingsHighlight(id: SettingsDeepLink.tasksListOpenID)
+        }
+        .onAppear {
+            manager.checkReminderPermission()
+            // A Project filter saved before project keys: rewrite it once, so the picker selects it.
+            let project = TaskFacets.normalizedProjectFilter(projectFilter)
+            if project != projectFilter { projectFilter = project }
+        }
+
+        if case .failed(let reason) = manager.loadState {
+            Section {
+                SettingsErrorText(String(localized: "Couldn't read the task list, so it can't change. \(reason)"))
+            }
+        }
+        filtersSection
+        tasksSection
+        doneAndHiddenSection
+    }
+
+    // MARK: - Filters
+
+    private var filtersSection: some View {
+        let active = manager.activeTasks
+        let projects = TaskFacets.projects(in: active)
+        let tags = TaskFacets.tags(in: active)
+        return Section {
+            SettingsRow("Source") {
+                Picker("Source", selection: $sourceFilter) {
+                    ForEach(TaskSourceFilter.allCases) { choice in
+                        Text(choice.localizedName).tag(choice)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+            }
+
+            SettingsRow("Project") {
+                Picker("Project", selection: $projectFilter) {
+                    Text("All").tag(TaskFacets.anyProject)
+                    ForEach(projects, id: \.self) { project in
+                        Text(verbatim: TaskFacets.projectName(project)).tag(project)
+                    }
+                    if TaskFacets.hasTaskWithoutProject(in: active) {
+                        Text("No project").tag(TaskFacets.noProject)
+                    }
+                    // A saved choice no task has any more still shows, so the picker is never blank.
+                    if projectFilter != TaskFacets.anyProject, projectFilter != TaskFacets.noProject,
+                       !projects.contains(projectFilter) {
+                        Text(verbatim: TaskFacets.projectName(projectFilter)).tag(projectFilter)
+                    }
+                }
+            }
+
+            SettingsRow("Status") {
+                Picker("Status", selection: $statusFilter) {
+                    ForEach(TaskStatusFilter.allCases) { choice in
+                        Text(choice.localizedName).tag(choice)
+                    }
+                }
+            }
+
+            SettingsRow("Tag") {
+                Picker("Tag", selection: $tagFilter) {
+                    Text("Any").tag(TaskFacets.anyTag)
+                    ForEach(tags, id: \.self) { tag in
+                        Text(verbatim: "#\(tag)").tag(tag)
+                    }
+                    if tagFilter != TaskFacets.anyTag,
+                       !tags.contains(where: { $0.lowercased() == tagFilter.lowercased() }) {
+                        Text(verbatim: "#\(tagFilter)").tag(tagFilter)
+                    }
+                }
+            }
+        } header: {
+            SettingsSectionHeader("Filters")
+        }
+    }
+
+    private func clearFilters() {
+        sourceFilter = .all
+        projectFilter = TaskFacets.anyProject
+        statusFilter = .toDoAndInProgress
+        tagFilter = TaskFacets.anyTag
+    }
+
+    // MARK: - Tasks
+
+    private var tasksSection: some View {
+        let filter = filter
+        let rows = manager.listedTasks(filter)
+        let total = manager.activeTasks.count
+        return Section {
             if showLocalTasks {
                 addTaskRow
             }
 
             LabeledContent {
-                SettingsValueText(String(localized: "\(manager.activeTasks.count) to do"))
+                SettingsValueText(filter.isNarrowing
+                    ? String(localized: "\(rows.count) of \(total)")
+                    : String(localized: "\(total) open"))
             } label: {
-                SettingsRowLabel("Task order", description: "The top task is next. Drag a task, or use its ⋯ menu, to move it. ▶ times it with Kannu's timer and records the actual time.")
+                SettingsRowLabel("Task order", description: "Drag to reorder. ▶ starts the timer.")
             }
-            .settingsHighlight(id: highlightID("Task order"))
 
             if !enableTimerFeature {
-                SettingsNoteRow("Timing is off", description: "Turn on the timer feature in the Timer tab to time a task.")
+                SettingsNoteRow("Timing is off", description: "Turn on the timer in the Timer tab.")
             }
             if let name = manager.movedAsideFileName {
                 SettingsNoteRow(
                     "A new task list was started",
-                    description: String(localized: "The old task file could not be read. It is kept beside the new one as \(name)."),
+                    description: String(localized: "The old file couldn't be read; it's kept as \(name)."),
                     tint: .orange
                 )
             }
-
-            ForEach(manager.activeTasks) { task in
-                taskRow(task)
+            if manager.remindersBlocked {
+                SettingsActionRow("Notifications are off", description: "Reminders need notifications for Kannu.") {
+                    Button(openNotificationSettingsTitle) { TaskReminders.openNotificationSettings() }
+                }
             }
-            .onMove { offsets, destination in
-                manager.move(activeOffsets: offsets, toActiveOffset: destination)
+            if rows.isEmpty && filter.isNarrowing {
+                SettingsActionRow("No tasks match", description: "Change or clear the filters.") {
+                    Button("Clear Filters", action: clearFilters)
+                }
+            }
+
+            ForEach(rows) { task in
+                draggableRow(task, filter: filter)
             }
         } header: {
-            SettingsSectionHeader("Your tasks")
+            SettingsSectionHeader("Tasks")
         }
     }
 
@@ -641,9 +837,8 @@ private struct TaskListSections: View {
                     .disabled(!manager.isReady || TaskItem.cleanedTitle(newTitle) == nil)
             }
         } label: {
-            SettingsRowLabel("Add a task", description: "A title and, if you like, an estimate. New tasks go to the top.")
+            SettingsRowLabel("Add a task", description: "Title and optional estimate.")
         }
-        .settingsHighlight(id: highlightID("Add a task"))
     }
 
     private var estimateMenu: some View {
@@ -668,8 +863,56 @@ private struct TaskListSections: View {
         }
     }
 
+    // MARK: - Drag and drop
+
+    /// A task row that can be dragged onto another, with an insertion line while it is targeted:
+    /// above the row when the dragged task comes from below, below it when it comes from above.
+    private func draggableRow(_ task: TaskItem, filter: TaskFilter) -> some View {
+        let edge = dropTargetID == task.id ? insertionEdge(onto: task.id, filter: filter) : nil
+        return taskRow(task, filter: filter)
+            .draggable(dragPayload(for: task.id))
+            .dropDestination(for: String.self) { items, _ in
+                defer {
+                    draggingID = nil
+                    dropTargetID = nil
+                }
+                guard let id = items.first.flatMap(UUID.init(uuidString:)) else { return false }
+                manager.move(id, onto: task.id, filter: filter)
+                return true
+            } isTargeted: { isTargeted in
+                if isTargeted {
+                    dropTargetID = task.id
+                } else if dropTargetID == task.id {
+                    dropTargetID = nil
+                }
+            }
+            .overlay(alignment: edge == .below ? .bottom : .top) {
+                if edge != nil {
+                    Rectangle()
+                        .fill(Color.accentColor)
+                        .frame(height: 2)
+                        .allowsHitTesting(false)
+                }
+            }
+    }
+
+    /// The drag's payload, the task's id. Evaluated when the drag begins, so it also notes which row
+    /// is moving — after the current update, never during one.
+    private func dragPayload(for id: UUID) -> String {
+        DispatchQueue.main.async { draggingID = id }
+        return id.uuidString
+    }
+
+    /// Where the insertion line goes; a drag Kannu has not seen begin yet shows it on top.
+    private func insertionEdge(onto target: UUID, filter: TaskFilter) -> TaskOrdering.DropEdge? {
+        guard let draggingID else { return .above }
+        return manager.dropEdge(dragging: draggingID, onto: target, filter: filter)
+    }
+
+    // MARK: - Rows
+
     @ViewBuilder
-    private func taskRow(_ task: TaskItem) -> some View {
+    private func taskRow(_ task: TaskItem, filter: TaskFilter) -> some View {
         let isTimed = manager.timing?.taskID == task.id
         LabeledContent {
             HStack(spacing: SettingsMetrics.rowContent) {
@@ -692,7 +935,7 @@ private struct TaskListSections: View {
                     .accessibilityLabel("Start timing")
                 }
                 SettingsMoreMenu {
-                    moreItems(for: task, isTimed: isTimed)
+                    moreItems(for: task, isTimed: isTimed, filter: filter)
                 }
             }
         } label: {
@@ -708,8 +951,8 @@ private struct TaskListSections: View {
     }
 
     @ViewBuilder
-    private func moreItems(for task: TaskItem, isTimed: Bool) -> some View {
-        let order = manager.activeTasks
+    private func moreItems(for task: TaskItem, isTimed: Bool, filter: TaskFilter) -> some View {
+        let order = manager.listedTasks(filter)
         let position = order.firstIndex { $0.id == task.id }
         Button("Set Estimate…") {
             sheet = .estimate(taskID: task.id, title: task.title, current: task.localEstimateSeconds)
@@ -717,12 +960,24 @@ private struct TaskListSections: View {
         Button("Add Time Manually…") {
             sheet = .addTime(taskID: task.id, title: task.title)
         }
+        Button("Tags…") {
+            sheet = .tags(taskID: task.id, title: task.title, current: task.tags,
+                          suggestions: TaskFacets.tags(in: manager.tasks))
+        }
+        if task.source == .local {
+            Button("Schedule…") {
+                sheet = .schedule(taskID: task.id, title: task.title, current: task.scheduledAt)
+            }
+            if task.scheduledAt != nil {
+                Button("Clear Schedule") { manager.setSchedule(nil, for: task.id) }
+            }
+        }
         Divider()
         Button("Move to Top") { manager.moveToTop(task.id) }
             .disabled(position == 0)
-        Button("Move Up") { manager.moveUp(task.id) }
+        Button("Move Up") { manager.moveUp(task.id, filter: filter) }
             .disabled(position == 0)
-        Button("Move Down") { manager.moveDown(task.id) }
+        Button("Move Down") { manager.moveDown(task.id, filter: filter) }
             .disabled(position == order.count - 1)
         Divider()
         if task.source == .local {
@@ -760,7 +1015,9 @@ private struct TaskListSections: View {
     /// "42m of 2h", with "10m over" in orange past the estimate. Tracked time is exact, in minutes.
     /// A remote task leads with its key and status and ends with the time its source already has:
     /// "PROJ-123 · In Progress · 42m of 2h · 10m over · Jira logged 3h", "group/app#45 · opened ·
-    /// 42m of 2h · GitLab spent 3h", "group/app!12 · MR · review requested". Remote text is verbatim.
+    /// 42m of 2h · GitLab spent 3h", "group/app!12 · MR · review requested". Then the schedule
+    /// ("Today 15:00", "Overdue · Mon 10:00") and the tags ("#writing #urgent"). Remote text and
+    /// tags are verbatim.
     private func progressText(for task: TaskItem, now: Date) -> Text {
         let tracked = manager.trackedSeconds(of: task, now: now)
         let estimate = task.effectiveEstimateSeconds
@@ -791,7 +1048,31 @@ private struct TaskListSections: View {
                 break
             }
         }
+        if task.source == .local, let scheduled = task.scheduledAt {
+            let when = TaskReminderPlan.when(scheduled, now: now)
+            text = text + Text(verbatim: " · ")
+                + Text(verbatim: Self.scheduleText(scheduled, when: when))
+                    .foregroundStyle(when == .overdue ? Color.orange : Color.secondary)
+        }
+        if !task.tags.isEmpty {
+            text = text + Text(verbatim: " · " + task.tags.map { "#\($0)" }.joined(separator: " "))
+        }
         return text
+    }
+
+    /// "Today 15:00", "Tomorrow 09:30", "Overdue · Mon 10:00", or "Thu 9 Oct, 15:00".
+    private static func scheduleText(_ date: Date, when: TaskReminderPlan.When) -> String {
+        let time = date.formatted(date: .omitted, time: .shortened)
+        switch when {
+        case .today:
+            return String(localized: "Today \(time)")
+        case .tomorrow:
+            return String(localized: "Tomorrow \(time)")
+        case .overdue:
+            return String(localized: "Overdue · \(date.formatted(.dateTime.weekday(.abbreviated).hour().minute()))")
+        case .later:
+            return date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour().minute())
+        }
     }
 
     // MARK: - Done and hidden
@@ -801,15 +1082,14 @@ private struct TaskListSections: View {
         return Section {
             DisclosureGroup(isExpanded: $showsDoneAndHidden) {
                 if finished.isEmpty {
-                    SettingsNoteRow("Nothing here yet", description: "Tasks you mark done move here, with the time recorded on them.")
+                    SettingsNoteRow("Nothing here yet", description: "Tasks you mark done appear here.")
                 }
                 ForEach(finished) { task in
                     doneRow(task)
                 }
             } label: {
-                SettingsRowLabel("Done and hidden", description: "Finished tasks keep their recorded time. Reopen one to put it back where it was in the order.")
+                SettingsRowLabel("Done and hidden", description: "Finished tasks keep their time.")
             }
-            .settingsHighlight(id: highlightID("Done and hidden tasks"))
         }
     }
 
@@ -854,6 +1134,10 @@ private enum TaskSheet: Identifiable {
     case estimate(taskID: UUID, title: String, current: Int?)
     case addTime(taskID: UUID, title: String)
     case endTime(taskID: UUID, segmentID: UUID, title: String, start: Date)
+    /// Tags… on any task. `suggestions` are the tags already in use.
+    case tags(taskID: UUID, title: String, current: [String], suggestions: [String])
+    /// Schedule… on a local task.
+    case schedule(taskID: UUID, title: String, current: Date?)
     /// Connect… on the Jira Cloud row: served by `JiraConnectSheet`, not `TaskValueSheet`.
     case connectJira
     /// Connect… on the GitLab row: served by `GitLabConnectSheet`.
@@ -867,17 +1151,22 @@ private enum TaskSheet: Identifiable {
         case .estimate(let taskID, _, _): return "estimate-\(taskID)"
         case .addTime(let taskID, _): return "add-time-\(taskID)"
         case .endTime(_, let segmentID, _, _): return "end-time-\(segmentID)"
+        case .tags(let taskID, _, _, _): return "tags-\(taskID)"
+        case .schedule(let taskID, _, _): return "schedule-\(taskID)"
         }
     }
 }
 
-/// The small sheet behind Custom…, Set Estimate…, Add Time Manually… and Set End Time…. A sheet
-/// pads its own content; a Form row never does.
+/// The small sheet behind Custom…, Set Estimate…, Add Time Manually…, Set End Time…, Tags… and
+/// Schedule…. A sheet pads its own content; a Form row never does.
 private struct TaskValueSheet: View {
     enum Value {
         /// Nil removes an estimate.
         case duration(Int?)
         case date(Date)
+        case tags([String])
+        /// Clear Schedule.
+        case cleared
     }
 
     let sheet: TaskSheet
@@ -893,15 +1182,27 @@ private struct TaskValueSheet: View {
         switch sheet {
         case .customEstimateForNewTask(let current), .estimate(_, _, let current):
             _text = State(initialValue: current.map(WorkDuration.format) ?? "")
-        case .addTime, .endTime, .connectJira, .connectGitLab:
+        case .tags(_, _, let current, _):
+            _text = State(initialValue: current.joined(separator: ", "))
+        case .addTime, .endTime, .schedule, .connectJira, .connectGitLab:
             _text = State(initialValue: "")
         }
-        if case .endTime(_, _, _, let start) = sheet {
+        switch sheet {
+        case .endTime(_, _, _, let start):
             // Kannu never guesses the end: the picker starts where the session started.
             _date = State(initialValue: start)
-        } else {
+        case .schedule(_, _, let current):
+            _date = State(initialValue: current.flatMap { $0 > Date() ? $0 : nil } ?? Self.nextHour())
+        default:
             _date = State(initialValue: Date())
         }
+    }
+
+    /// The next whole hour: a schedule's starting point.
+    private static func nextHour(after now: Date = Date()) -> Date {
+        let calendar = Calendar.current
+        let hour = calendar.dateInterval(of: .hour, for: now)?.start ?? now
+        return calendar.date(byAdding: .hour, value: 1, to: hour) ?? now.addingTimeInterval(3600)
     }
 
     var body: some View {
@@ -915,6 +1216,9 @@ private struct TaskValueSheet: View {
             Text(explanation)
                 .settingsDescriptionStyle()
             field
+            if case .schedule = sheet {
+                ReminderPermissionNote()
+            }
             if let problem {
                 Text(verbatim: problem)
                     .settingsDescriptionStyle(tint: .red)
@@ -923,6 +1227,12 @@ private struct TaskValueSheet: View {
                 if case .estimate(_, _, .some) = sheet {
                     Button("Remove Estimate") {
                         onSave(.duration(nil))
+                        dismiss()
+                    }
+                }
+                if case .schedule(_, _, .some) = sheet {
+                    Button("Clear Schedule") {
+                        onSave(.cleared)
                         dismiss()
                     }
                 }
@@ -939,14 +1249,39 @@ private struct TaskValueSheet: View {
 
     @ViewBuilder
     private var field: some View {
-        if case .endTime(_, _, _, let start) = sheet {
+        switch sheet {
+        case .endTime(_, _, _, let start):
             DatePicker("Stopped working at", selection: $date, in: start...max(start, Date()),
                        displayedComponents: [.date, .hourAndMinute])
-        } else {
+        case .schedule:
+            DatePicker("Remind me at", selection: $date, in: Date()...,
+                       displayedComponents: [.date, .hourAndMinute])
+        case .tags(_, _, _, let suggestions):
+            HStack(spacing: SettingsMetrics.rowContent) {
+                TextField("Tags", text: $text, prompt: Text("writing, urgent"))
+                    .onSubmit(save)
+                    .onChange(of: text) { _, _ in problem = nil }
+                let unused = suggestions.filter { tag in
+                    !TaskItem.parsedTags(text).contains { $0.lowercased() == tag.lowercased() }
+                }
+                if !unused.isEmpty {
+                    Menu("Add") {
+                        ForEach(unused, id: \.self) { tag in
+                            Button { append(tag) } label: { Text(verbatim: "#\(tag)") }
+                        }
+                    }
+                    .fixedSize()
+                }
+            }
+        default:
             TextField("Length", text: $text, prompt: Text("1h 30m"))
                 .onSubmit(save)
                 .onChange(of: text) { _, _ in problem = nil }
         }
+    }
+
+    private func append(_ tag: String) {
+        text = (TaskItem.parsedTags(text) + [tag]).joined(separator: ", ")
     }
 
     private var heading: LocalizedStringKey {
@@ -955,6 +1290,8 @@ private struct TaskValueSheet: View {
         case .estimate: return "Set Estimate"
         case .addTime: return "Add Time Manually"
         case .endTime: return "Set End Time"
+        case .tags: return "Tags"
+        case .schedule: return "Schedule"
         case .connectJira: return "Connect Jira Cloud"
         case .connectGitLab: return "Connect GitLab"
         }
@@ -964,18 +1301,24 @@ private struct TaskValueSheet: View {
     private var subject: String? {
         switch sheet {
         case .customEstimateForNewTask, .connectJira, .connectGitLab: return nil
-        case .estimate(_, let title, _), .addTime(_, let title), .endTime(_, _, let title, _): return title
+        case .estimate(_, let title, _), .addTime(_, let title), .endTime(_, _, let title, _),
+             .tags(_, let title, _, _), .schedule(_, let title, _):
+            return title
         }
     }
 
     private var explanation: LocalizedStringKey {
         switch sheet {
         case .customEstimateForNewTask, .estimate:
-            return "How long you expect it to take, such as 1h 30m, 90m or 1.5h. A number on its own is minutes."
+            return "Such as 1h 30m, 90m or 1.5h."
         case .addTime:
-            return "Time you worked on it without the timer, such as 45m or 1h 15m. It is recorded as ending now."
+            return "Time worked without the timer, ending now."
         case .endTime:
-            return "Kannu stopped while this was being timed. When did you stop working on it?"
+            return "When did you stop working on it?"
+        case .tags:
+            return "Separate tags with commas. Kept on this Mac."
+        case .schedule:
+            return "A reminder with a Start button."
         case .connectJira, .connectGitLab:
             return ""
         }
@@ -984,21 +1327,29 @@ private struct TaskValueSheet: View {
     private var primaryTitle: LocalizedStringKey {
         switch sheet {
         case .addTime: return "Add"
-        case .customEstimateForNewTask, .estimate, .endTime, .connectJira, .connectGitLab: return "Set"
+        case .schedule: return "Schedule"
+        case .customEstimateForNewTask, .estimate, .endTime, .tags, .connectJira, .connectGitLab: return "Set"
         }
     }
 
     private func save() {
-        if case .endTime = sheet {
+        switch sheet {
+        case .endTime, .schedule:
             onSave(.date(date))
             dismiss()
             return
+        case .tags:
+            onSave(.tags(TaskItem.parsedTags(text)))
+            dismiss()
+            return
+        default:
+            break
         }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let isEstimate: Bool
         switch sheet {
         case .customEstimateForNewTask, .estimate: isEstimate = true
-        case .addTime, .endTime, .connectJira, .connectGitLab: isEstimate = false
+        default: isEstimate = false
         }
         if trimmed.isEmpty, isEstimate {
             onSave(.duration(nil))
@@ -1006,11 +1357,30 @@ private struct TaskValueSheet: View {
             return
         }
         guard let seconds = WorkDuration.parse(trimmed), seconds >= 60 else {
-            problem = String(localized: "Type a length of at least a minute, such as 1h 30m, 90m or 1.5h.")
+            problem = String(localized: "Type at least a minute, such as 1h 30m.")
             return
         }
         onSave(.duration(seconds))
         dismiss()
+    }
+}
+
+/// The button to macOS's Notifications pane. One literal, for the Task list note and the Schedule
+/// sheet (`BrainNamingRulesTests` allows it once: it means the macOS pane, not Brain).
+private let openNotificationSettingsTitle: LocalizedStringKey = "Open Notification Settings"
+
+/// "Notifications are off" with a way to turn them on, while macOS blocks Kannu's notifications.
+private struct ReminderPermissionNote: View {
+    @ObservedObject private var manager = TasksManager.shared
+
+    var body: some View {
+        if manager.remindersBlocked {
+            HStack(spacing: SettingsMetrics.rowContent) {
+                Text("Notifications are off for Kannu.")
+                    .settingsDescriptionStyle(tint: .orange)
+                Button(openNotificationSettingsTitle) { TaskReminders.openNotificationSettings() }
+            }
+        }
     }
 }
 
@@ -1029,7 +1399,7 @@ private struct JiraConnectSheet: View {
         VStack(alignment: .leading, spacing: SettingsMetrics.rowContent) {
             Text("Connect Jira Cloud")
                 .font(.headline)
-            Text("Kannu checks the token with your Jira site before saving it in your Keychain, then lists your issues. It writes to Jira only when you log time.")
+            Text("Checked with your site, then kept in your Keychain.")
                 .settingsDescriptionStyle()
             TextField("Site", text: $site, prompt: Text(verbatim: "acme.atlassian.net"))
             TextField("Email", text: $email, prompt: Text(verbatim: "you@example.com"))
@@ -1104,7 +1474,7 @@ private struct GitLabConnectSheet: View {
         VStack(alignment: .leading, spacing: SettingsMetrics.rowContent) {
             Text("Connect GitLab")
                 .font(.headline)
-            Text("Kannu checks the token with your GitLab server before saving it in your Keychain, then lists your open issues and merge requests. It writes to GitLab only when you log time.")
+            Text("Checked with your server, then kept in your Keychain.")
                 .settingsDescriptionStyle()
             TextField("Server", text: $server, prompt: Text(verbatim: GitLabHost.defaultServer))
                 .onChange(of: server) { _, _ in problem = nil }

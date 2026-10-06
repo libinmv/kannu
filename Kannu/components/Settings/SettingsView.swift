@@ -191,8 +191,11 @@ enum SettingsDeepLink {
     /// Brain › Tasks › Sources, on its Jira Cloud row: where the notch Tasks popover's "Manage
     /// tasks…", "Connect Jira…" / "Connect GitLab…" and Brain glyph land.
     static let tasksSourcesHighlightID = SettingsTab.tasks.highlightID(for: "Sources")
-    /// Brain › Tasks › Task order: the popover's "Show all in Brain".
-    static let tasksOrderHighlightID = SettingsTab.tasks.highlightID(for: "Task order")
+    /// Brain › Tasks › Task list, the row that opens the list: where search lands.
+    static let tasksListHighlightID = SettingsTab.tasks.highlightID(for: "Task list")
+    /// The Task list sub-page itself, opened, on its back row: the popover's "Show all in Brain"
+    /// and a click on a task reminder. `TasksSettings` opens the sub-page for this id.
+    static let tasksListOpenID = SettingsTab.tasks.highlightID(for: "Task list page")
     /// Brain › Tasks › Time to log, shown while an entry waits: the popover's "… more in Brain".
     static let tasksTimeToLogHighlightID = SettingsTab.tasks.highlightID(for: "Time to log")
 }
@@ -920,9 +923,15 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .tasks, title: "Default session length", keywords: ["tasks", "session", "length", "minutes", "pomodoro", "timer"], highlightID: SettingsTab.tasks.highlightID(for: "Default session length")),
             SettingsSearchEntry(tab: .tasks, title: "Sound when the estimate is reached", keywords: ["tasks", "sound", "estimate", "alarm", "chime", "overtime"], highlightID: SettingsTab.tasks.highlightID(for: "Sound when the estimate is reached")),
             SettingsSearchEntry(tab: .tasks, title: "Time to log", keywords: ["tasks", "log time", "log work", "worklog", "time tracking", "spent", "timesheet", "jira", "gitlab"], highlightID: SettingsTab.tasks.highlightID(for: "Time to log")),
-            SettingsSearchEntry(tab: .tasks, title: "Add a task", keywords: ["tasks", "add", "new task", "todo", "estimate"], highlightID: SettingsTab.tasks.highlightID(for: "Add a task")),
-            SettingsSearchEntry(tab: .tasks, title: "Task order", keywords: ["tasks", "order", "reorder", "move", "priority", "list", "tracked", "actual time", "start", "time a task"], highlightID: SettingsTab.tasks.highlightID(for: "Task order")),
-            SettingsSearchEntry(tab: .tasks, title: "Done and hidden tasks", keywords: ["tasks", "done", "finished", "completed", "hidden", "reopen"], highlightID: SettingsTab.tasks.highlightID(for: "Done and hidden tasks")),
+            // The Task list sub-page's rows exist only while it is open, so their entries land on
+            // the visible row that opens it (the Advanced precedent, docs/SETTINGS.md).
+            SettingsSearchEntry(tab: .tasks, title: "Task list", keywords: ["tasks", "list", "to do", "in progress", "open tasks", "my tasks"], highlightID: SettingsDeepLink.tasksListHighlightID),
+            SettingsSearchEntry(tab: .tasks, title: "Task list filters", keywords: ["tasks", "filter", "source", "project", "status", "to do", "in progress", "local", "jira", "gitlab"], highlightID: SettingsDeepLink.tasksListHighlightID),
+            SettingsSearchEntry(tab: .tasks, title: "Add a task", keywords: ["tasks", "add", "new task", "todo", "estimate"], highlightID: SettingsDeepLink.tasksListHighlightID),
+            SettingsSearchEntry(tab: .tasks, title: "Task order", keywords: ["tasks", "order", "reorder", "move", "drag", "priority", "list", "tracked", "actual time", "start", "time a task"], highlightID: SettingsDeepLink.tasksListHighlightID),
+            SettingsSearchEntry(tab: .tasks, title: "Task tags", keywords: ["tasks", "tags", "labels", "hashtag"], highlightID: SettingsDeepLink.tasksListHighlightID),
+            SettingsSearchEntry(tab: .tasks, title: "Schedule a task", keywords: ["tasks", "schedule", "reminder", "notification", "remind me", "due"], highlightID: SettingsDeepLink.tasksListHighlightID),
+            SettingsSearchEntry(tab: .tasks, title: "Done and hidden tasks", keywords: ["tasks", "done", "finished", "completed", "hidden", "reopen"], highlightID: SettingsDeepLink.tasksListHighlightID),
 
             // Stats
             SettingsSearchEntry(tab: .stats, title: "Enable system stats monitoring", keywords: ["stats", "monitoring"], highlightID: SettingsTab.stats.highlightID(for: "Enable system stats monitoring")),

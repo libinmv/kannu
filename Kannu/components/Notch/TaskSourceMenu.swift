@@ -25,15 +25,15 @@ import SwiftUI
 enum TasksBrainDestination {
     /// Sources: Manage tasks…, Connect Jira… / Connect GitLab… and the Brain glyph.
     case sources
-    /// Task order: Show all in Brain.
-    case taskOrder
+    /// The Task list sub-page, opened: Show all in Brain, and a click on a task reminder.
+    case taskList
     /// Time to log: the entries the popover has no room for.
     case timeToLog
 
     var highlightID: String {
         switch self {
         case .sources: return SettingsDeepLink.tasksSourcesHighlightID
-        case .taskOrder: return SettingsDeepLink.tasksOrderHighlightID
+        case .taskList: return SettingsDeepLink.tasksListOpenID
         case .timeToLog: return SettingsDeepLink.tasksTimeToLogHighlightID
         }
     }

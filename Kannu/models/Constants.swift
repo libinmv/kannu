@@ -1543,6 +1543,14 @@ extension Defaults.Keys {
     static let gitlabCanLogTime = Key<Bool>("gitlabCanLogTime", default: false)
     /// Open merge requests assigned to the user or waiting for their review join the task order.
     static let gitlabIncludeMergeRequests = Key<Bool>("gitlabIncludeMergeRequests", default: true)
+    // Brain › Tasks › Task list filters (`TaskFilter`). This Mac only; never sent anywhere.
+    /// All | Local | Jira | GitLab.
+    static let tasksListSourceFilter = Key<TaskSourceFilter>("tasksListSourceFilter", default: .all)
+    /// `TaskFacets.anyProject` (""), `TaskFacets.noProject`, or a project name.
+    static let tasksListProjectFilter = Key<String>("tasksListProjectFilter", default: TaskFacets.anyProject)
+    static let tasksListStatusFilter = Key<TaskStatusFilter>("tasksListStatusFilter", default: .toDoAndInProgress)
+    /// `TaskFacets.anyTag` (""), or a tag.
+    static let tasksListTagFilter = Key<String>("tasksListTagFilter", default: TaskFacets.anyTag)
 
     // Use Now Playing as the default media controller for new installs.
     static var defaultMediaController: MediaControllerType {
@@ -1695,3 +1703,7 @@ enum ReleaseInfo {
 /// `DisplayPlacement` lives in the logic test target, which does not link Defaults, so the storage
 /// conformance is declared here. A `String`-backed enum needs nothing more.
 extension DisplayPlacement: Defaults.Serializable {}
+
+/// The Task list's filters live in the logic test target too (`TaskFacets.swift`).
+extension TaskSourceFilter: Defaults.Serializable {}
+extension TaskStatusFilter: Defaults.Serializable {}
