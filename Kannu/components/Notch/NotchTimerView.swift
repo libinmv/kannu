@@ -134,7 +134,7 @@ struct NotchTimerView: View {
                 activeTimerCard
                 Spacer(minLength: 0)
             } else {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: TimerComposerMetrics.nameFieldSpacing) {
                     sessionNameField
                     customTimerComposer
                 }
@@ -376,7 +376,7 @@ struct NotchTimerView: View {
                     startAction: startCustomTimer
                 )
             } else if showTimerPresetsInNotchTab {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: TimerComposerMetrics.rowSpacing) {
                     DurationInputRow(
                         hours: $customHours,
                         minutes: $customMinutes,
@@ -399,7 +399,7 @@ struct NotchTimerView: View {
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                    VStack(spacing: 10) {
+                    VStack(spacing: TimerComposerMetrics.buttonColumnSpacing) {
                         startButton
                         resetButton
                     }
@@ -407,7 +407,8 @@ struct NotchTimerView: View {
                 }
             }
         }
-        .padding(12)
+        // Sized by TimerComposerMetrics so it fits the tab without the notch growing.
+        .padding(TimerComposerMetrics.composerPadding)
         .background(Color.white.opacity(0.04))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
@@ -542,10 +543,10 @@ struct NotchTimerView: View {
     private var startButton: some View {
         Button(action: startCustomTimer) {
             Label(String(localized: "Start"), systemImage: "play.fill")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: TimerComposerMetrics.buttonFontSize, weight: .semibold))
                 .foregroundStyle(Color.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
+                .frame(height: TimerComposerMetrics.buttonHeight)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(startButtonColor.opacity(isStartDisabled ? 0.5 : 1))
@@ -565,10 +566,10 @@ struct NotchTimerView: View {
     private var resetButton: some View {
         Button(action: resetCustomTimerInputs) {
             Label(String(localized: "Reset"), systemImage: "arrow.counterclockwise")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: TimerComposerMetrics.buttonFontSize, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.9))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
+                .frame(height: TimerComposerMetrics.buttonHeight)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(Color.white.opacity(0.16))
@@ -599,14 +600,14 @@ struct NotchTimerView: View {
     /// One line above the composer: the name the next session starts with, from a preset or Start.
     private var sessionNameField: some View {
         TextField(String(localized: "Name this session (optional)"), text: $pendingSessionName)
-            .font(.system(size: 13, weight: .medium))
+            .font(.system(size: 12, weight: .medium))
             .textFieldStyle(.plain)
             .foregroundColor(.white)
             .tint(.white)
             .padding(.horizontal, 10)
-            .frame(height: 28)
+            .frame(height: TimerComposerMetrics.nameFieldHeight)
             .background(Color.white.opacity(0.08))
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .focused($focusedNameField, equals: .pending)
             .onSubmit { focusedNameField = nil }
             .accessibilityLabel(Text("Session name"))
@@ -758,7 +759,7 @@ private struct DurationInputRow: View {
 
     private var colon: some View {
         Text(":")
-            .font(.system(size: 26, weight: .black, design: .monospaced))
+            .font(.system(size: TimerComposerMetrics.fieldDigitSize, weight: .black, design: .monospaced))
             .foregroundStyle(Color.white.opacity(0.65))
     }
 }
@@ -782,20 +783,21 @@ private struct DurationField: View {
     }
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: TimerComposerMetrics.captionGap) {
             TextField("00", text: binding)
-                .font(.system(size: 28, weight: .semibold, design: .monospaced))
+                .font(.system(size: TimerComposerMetrics.fieldDigitSize, weight: .semibold, design: .monospaced))
                 .multilineTextAlignment(.center)
                 .textFieldStyle(.plain)
                 .foregroundColor(.white)
                 .tint(.white)
-                .frame(width: width, height: 46)
+                .frame(width: width, height: TimerComposerMetrics.fieldBoxHeight)
                 .background(Color.white.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
             Text(label)
-                .font(.caption)
+                .font(.caption2)
                 .foregroundStyle(Color.white.opacity(0.65))
+                .frame(height: TimerComposerMetrics.captionHeight)
         }
     }
 

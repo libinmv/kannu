@@ -4,6 +4,23 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-06 - The timer tab fits without the notch growing: the timer is smaller instead
+- **Developer label:** "rather than resizing the noth in timer tab, you could have just shrinked the timer, theresize looks like a glitch, please fix that"
+- **Agent label:** Timer composer sized by TimerComposerMetrics to the tab's existing budget; the notch-height change is reverted
+- **Changes:**
+  - Reverts the previous fix, which made the open notch 270 pt tall on the timer tab: the notch
+    jumped in size when you switched to the tab. The notch's sizing is exactly as before.
+  - The composer is smaller so it fits the tab's 130 pt budget with the session name field above it:
+    the name field is 24 pt, the duration fields 34 pt with 22 pt digits and a smaller caption,
+    Start/Reset 26 pt with 13 pt labels, and tighter padding and spacing. The ruler style's strip
+    is 46 pt and its Start Timer button and readout are smaller. The running-timer card is unchanged.
+  - Every one of those sizes is a named constant in `TimerComposerMetrics` (pure, in the logic
+    target), read by `NotchTimerView` and `RulerTimerPicker`.
+  - Tests: `TimerComposerMetricsTests` (every style — manual with presets, manual without, ruler —
+    fits the 130 pt floor with 4 pt to spare; buttons stay at least 24 pt tall) and
+    `TimerComposerMetricsRulesTests` (the views take their sizes from the metrics; nothing gives the
+    timer tab its own notch height), with planted offenders.
+
 ### 2026-10-07 - Each task view has its own filter, and tags are added one at a time with clearer names
 - **Developer label:** "the filter applies outside in notch applies to list in the brain and that doesnt show any fiter applies, besides what to filter in drop down in notch is something local, the task list should show everything connected, but also provide a seperate view only filter and should apply on there. the tags and add tine manually have trailling ... for no reason, also please fix spacing and naming like these, for eg tag should add tags, with option to add multiple tags for a ticket, with the popup tag add ui to be adding 1 item at a time and giving option like create new tag or use existing tag"
 - **Agent label:** Claude Code (Opus 5.5) — Brain Tasks PR8: connection-only Sources, view-only Task list filter with a Filtered row, notch-only Show in notch filter, one-tag-at-a-time Tags sheet, naming and spacing pass
