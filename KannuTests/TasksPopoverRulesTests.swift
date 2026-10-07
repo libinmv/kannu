@@ -31,7 +31,10 @@ import XCTest
 ///   pre-commit hook checks the same, but no CI job runs the hook; this test is the CI-side guard;
 /// - Manage tasks…, Connect Jira… / Connect GitLab… and the Brain glyph open Brain › Tasks at
 ///   Sources through `SettingsDeepLink.tasksSourcesHighlightID`;
-/// - the new views never touch the Keychain, and live time ticks only through a `TimelineView`.
+/// - the new views never touch the Keychain, and live time ticks only through a `TimelineView`;
+/// - the source menu is a notch-only filter: it binds Show in notch's own keys and never Sync Jira,
+///   Sync GitLab or the old Local tasks key, so the notch never changes what is fetched or what
+///   Brain's Task list shows.
 ///
 /// Each detector has a planted-offender test, so a scanner that stops matching fails instead of
 /// passing vacuously.
@@ -49,6 +52,10 @@ final class TasksPopoverRulesTests: XCTestCase {
     static let notchDirectories = ["Kannu/components/Notch", "Kannu/components/AgentStatus"]
     static let keychainAPIs = ["SecureSecretsStore", "KeychainReader", "SecItem", "JiraCredentialStore", "GitLabCredentialStore"]
     static let tickers = ["Timer.publish", "Timer.scheduledTimer", "Timer(timeInterval", ".autoconnect()", "DispatchSourceTimer"]
+    /// What the source menu must never bind: data keys (what is fetched), and the removed Local tasks key.
+    static let dataKeys = ["jiraEnabled", "gitlabEnabled", "showLocalTasks"]
+    /// What it binds instead: Show in notch.
+    static let notchKeys = ["tasksPopoverShowLocal", "tasksPopoverShowJira", "tasksPopoverShowGitLab"]
 
     private static func read(_ path: String) throws -> String {
         code(try String(contentsOf: repoRoot.appendingPathComponent(path), encoding: .utf8))
@@ -99,6 +106,10 @@ final class TasksPopoverRulesTests: XCTestCase {
         var sources: [String: String] = [:]
         for path in Self.newFiles { sources[path] = try Self.read(path) }
         XCTAssertEqual(Self.keychainUses(in: sources), [])
+    }
+
+    func testTheSourceMenuFiltersTheNotchOnly() throws {
+        XCTAssertEqual(Self.menuKeyProblems(in: try Self.read(Self.menuPath)), [])
     }
 
     func testLiveTimeTicksOnlyThroughATimelineView() throws {
@@ -310,6 +321,25 @@ final class TasksPopoverRulesTests: XCTestCase {
         XCTAssertEqual(Self.deepLinkProblems(menu: menu, popover: stayOpen), ["openBrain does not close the popover first"])
     }
 
+    func testTheMenuKeyScannerCatchesPlantedOffenders() {
+        let good = Self.code("""
+            @Default(.tasksPopoverShowLocal) private var showLocal
+            @Default(.tasksPopoverShowJira) private var showJira
+            @Default(.tasksPopoverShowGitLab) private var showGitLab
+            Toggle("Jira", isOn: $showJira)
+            // Never Sync Jira (jiraEnabled): a comment is prose.
+            """)
+        XCTAssertEqual(Self.menuKeyProblems(in: good), [])
+        let syncJira = good.replacingOccurrences(of: "@Default(.tasksPopoverShowJira) private var showJira",
+                                                 with: "@Default(.jiraEnabled) private var showJira")
+        XCTAssertNotEqual(syncJira, good, "the plant did not take")
+        XCTAssertEqual(Self.menuKeyProblems(in: syncJira),
+                       ["the menu binds jiraEnabled", "the menu does not bind tasksPopoverShowJira"])
+        let alsoBound = good + "\nToggle(\"GitLab\", isOn: Defaults.binding(.gitlabEnabled))\n@Default(.showLocalTasks) var old"
+        XCTAssertEqual(Self.menuKeyProblems(in: alsoBound),
+                       ["the menu binds gitlabEnabled", "the menu binds showLocalTasks"])
+    }
+
     func testTheKeychainAndTickerScannersCatchPlantedOffenders() {
         let planted = [
             "A.swift": "let value = SecureSecretsStore.read(.jiraCredential)",
@@ -446,6 +476,12 @@ final class TasksPopoverRulesTests: XCTestCase {
             problems.append("openBrain does not close the popover first")
         }
         return problems
+    }
+
+    /// The source menu names no data key and binds each Show in notch key.
+    static func menuKeyProblems(in menu: String) -> [String] {
+        dataKeys.filter { menu.contains($0) }.map { "the menu binds \($0)" }
+            + notchKeys.filter { !menu.contains("@Default(.\($0))") }.map { "the menu does not bind \($0)" }
     }
 
     static func keychainUses(in sources: [String: String]) -> [String] {

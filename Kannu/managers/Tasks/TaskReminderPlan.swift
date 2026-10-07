@@ -115,8 +115,8 @@ enum TaskReminderPlan {
         reminders.sorted { ($0.date, $0.taskID.uuidString) < ($1.date, $1.taskID.uuidString) }
     }
 
-    /// How a schedule reads on a row: "Today 15:00", "Tomorrow 09:30", "Overdue · Mon 10:00", or the
-    /// date for anything later.
+    /// How a schedule reads on a row: "Due Today 15:00", "Due Tomorrow 09:30", "Overdue Mon 10:00", or
+    /// "Due" and the date for anything later.
     enum When: Equatable {
         case overdue
         case today

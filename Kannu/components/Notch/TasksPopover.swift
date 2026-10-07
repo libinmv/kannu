@@ -21,14 +21,15 @@ import SwiftUI
 
 /// The notch's Tasks popover, opened by `TasksHeaderButton` (the `TimerPopover` pattern):
 ///
-/// - a header with the source menu (`TaskSourceMenu`), Refresh with what each source's last sync
-///   found, and a Brain glyph that opens Brain › Tasks at Sources;
+/// - a header with the notch-only filter menu (`TaskSourceMenu`), Refresh with what each source's
+///   last sync found, and a Brain glyph that opens Brain › Tasks at Sources;
 /// - **Now**: the task being timed, with its live time, Pause and Stop;
 /// - **Log time?**: the Time to log cards still asking (`WorklogDraftCard`, the very card Brain
 ///   shows, so Log goes the same one way it does there);
-/// - **Up next**: Add a task… (a local task, at the top of the order), then the task order, at
-///   most `TaskOrdering.upNextLimit` rows, each with its key, title, "42m of 2h" and ▶; or an
-///   empty state;
+/// - **Up next**: Add a task… (a local task, at the top of the order, whatever the filter), then
+///   the task order narrowed by Show in notch (`TaskOrdering.viewFilter`), at most
+///   `TaskOrdering.upNextLimit` rows, each with its key, title, "42m of 2h" and ▶; or an empty
+///   state. While the filter hides a source, one quiet line says "Filtered · Show all";
 /// - **Show all in Brain**.
 ///
 /// Live time ticks through a `TimelineView`, once a second, only while the Now card is on screen
@@ -38,7 +39,11 @@ import SwiftUI
 struct TasksPopover: View {
     @ObservedObject private var manager = TasksManager.shared
     @Default(.enableTimerFeature) private var enableTimerFeature
-    @Default(.showLocalTasks) private var showLocalTasks
+    // Show in notch (`TaskSourceMenu`): what Up next shows, and nothing else.
+    @Default(.tasksPopoverShowLocal) private var showLocal
+    @Default(.tasksPopoverShowJira) private var showJira
+    @Default(.tasksPopoverShowGitLab) private var showGitLab
+    // Sync Jira and Sync GitLab: data keys, read only to start a sync when one is switched on.
     @Default(.jiraEnabled) private var jiraEnabled
     @Default(.gitlabEnabled) private var gitlabEnabled
     @Default(.jiraSiteHost) private var jiraSiteHost
@@ -89,6 +94,30 @@ struct TasksPopover: View {
         .onChange(of: gitlabEnabled) { _, isOn in
             if isOn { manager.syncGitLabIfStale() }
         }
+    }
+
+    // MARK: - Show in notch
+
+    /// A source that is not connected has no check item in the menu, so its kept tasks always show.
+    private var showsJira: Bool { showJira || jiraSiteHost.isEmpty }
+    private var showsGitLab: Bool { showGitLab || gitlabHost.isEmpty }
+
+    private var isFiltered: Bool {
+        TaskOrdering.isNarrowingView(showLocal: showLocal, showJira: showsJira, showGitLab: showsGitLab)
+    }
+
+    /// Show in notch over the connected baseline (`TasksManager.activeTasks`). The task being timed
+    /// always passes.
+    private var notchFilter: TaskOrdering.Listed {
+        TaskOrdering.viewFilter(showLocal: showLocal, showJira: showsJira, showGitLab: showsGitLab,
+                                alwaysListed: manager.timing?.taskID)
+    }
+
+    /// Show all: every source back in the notch.
+    private func showAllSources() {
+        showLocal = true
+        showJira = true
+        showGitLab = true
     }
 
     /// Closes the popover, then opens Brain › Tasks at `destination`.
@@ -208,7 +237,8 @@ struct TasksPopover: View {
         let asking = manager.openDrafts.filter(WorklogDrafts.isAskingNow)
         let cards = Array(asking.prefix(Self.maxCards))
         let rows = TaskOrdering.upNextRows(showingNow: timed != nil, cards: cards.count)
-        let waitingNext = TaskOrdering.upNext(manager.activeTasks, excluding: manager.timing?.taskID, limit: .max)
+        let shown = TaskOrdering.active(manager.activeTasks, listed: notchFilter)
+        let waitingNext = TaskOrdering.upNext(shown, excluding: manager.timing?.taskID, limit: .max)
 
         if let timed, let timing = manager.timing {
             nowSection(timed, isPaused: timing.isPaused)
@@ -216,9 +246,8 @@ struct TasksPopover: View {
         if !cards.isEmpty {
             logTimeSection(cards, more: asking.count - cards.count)
         }
-        if showLocalTasks || !waitingNext.isEmpty || timed == nil {
-            upNextSection(Array(waitingNext.prefix(rows)), total: waitingNext.count, showsEmptyState: waitingNext.isEmpty && timed == nil)
-        }
+        // Always: Add a task stays whatever the filter shows.
+        upNextSection(Array(waitingNext.prefix(rows)), total: waitingNext.count, showsEmptyState: waitingNext.isEmpty && timed == nil)
     }
 
     private var timedTask: TaskItem? {
@@ -350,9 +379,10 @@ struct TasksPopover: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            if showLocalTasks {
-                addTaskField
+            if isFiltered {
+                filteredLine
             }
+            addTaskField
             if !enableTimerFeature && !tasks.isEmpty {
                 Text("Turn on the timer in Brain to time tasks.")
                     .font(.system(size: 11))
@@ -366,6 +396,19 @@ struct TasksPopover: View {
                 upNextRow(task)
             }
         }
+    }
+
+    /// "Filtered · Show all": Show in notch hides a source. Show all puts every source back.
+    private var filteredLine: some View {
+        HStack(spacing: 4) {
+            Text("Filtered")
+                .foregroundStyle(.secondary)
+            Text(verbatim: "·")
+                .foregroundStyle(.secondary)
+            Button("Show all", action: showAllSources)
+                .buttonStyle(.link)
+        }
+        .font(.system(size: 11, weight: .medium))
     }
 
     /// A local task, added at the top of the order. Return adds it; nothing here sends anything.
@@ -385,9 +428,12 @@ struct TasksPopover: View {
         }
     }
 
+    /// The new task is always local: with Local hidden it would vanish as it is added, so adding one
+    /// puts Local back in the notch.
     private func addTask() {
         if manager.addTask(title: newTitle, estimateSeconds: nil) {
             newTitle = ""
+            if !showLocal { showLocal = true }
         }
     }
 
@@ -436,7 +482,7 @@ struct TasksPopover: View {
     private var emptyState: some View {
         let connected = !jiraSiteHost.isEmpty || !gitlabHost.isEmpty
         return VStack(alignment: .leading, spacing: 6) {
-            Text(verbatim: connected ? String(localized: "Nothing to do") : String(localized: "No tasks yet"))
+            Text(verbatim: emptyTitle(connected: connected))
                 .font(.system(size: 13, weight: .semibold))
             Text(emptyMessage(connected: connected))
                 .font(.system(size: 11))
@@ -453,17 +499,20 @@ struct TasksPopover: View {
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
+    /// Whether Show in notch is what empties Up next: it hides a source, and without it an open task
+    /// would show. With no open task anywhere the plain empty state is the true one.
+    private var filterHidesEveryTask: Bool {
+        isFiltered && !TaskOrdering.upNext(manager.activeTasks, excluding: manager.timing?.taskID, limit: 1).isEmpty
+    }
+
+    private func emptyTitle(connected: Bool) -> String {
+        if filterHidesEveryTask { return String(localized: "Nothing to show") }
+        return connected ? String(localized: "Nothing to do") : String(localized: "No tasks yet")
+    }
+
     private func emptyMessage(connected: Bool) -> LocalizedStringKey {
-        switch (connected, showLocalTasks) {
-        case (false, true):
-            return "Connect Jira or GitLab, or add a task above."
-        case (false, false):
-            return "Connect Jira or GitLab, or turn on Local."
-        case (true, true):
-            return "No open tasks. Add one above."
-        case (true, false):
-            return "No open tasks in the sources that are on."
-        }
+        if filterHidesEveryTask { return "The filter hides every open task." }
+        return connected ? "No open tasks. Add one above." : "Connect Jira or GitLab, or add a task above."
     }
 }
 

@@ -44,45 +44,57 @@ enum TasksBrainDestination {
     }
 }
 
-/// The Tasks popover's source menu, the "button with integration toggle": check items switch
-/// Jira (Sync Jira), GitLab (Sync GitLab) and Local (Local tasks) — the very keys behind the
-/// toggles in Brain › Tasks › Sources, so the two always agree, and the task order follows at once.
+/// The Tasks popover's filter menu, Show in notch: check items show or hide Local, Jira and GitLab
+/// tasks in this popover's Up next, and nothing else. They are the notch's own keys
+/// (`tasksPopoverShowLocal`, `tasksPopoverShowJira`, `tasksPopoverShowGitLab`), never Sync Jira or
+/// Sync GitLab: what is fetched, and what Brain's Task list shows, never change from here
+/// (`TaskOrdering.viewFilter`). While it hides a source the glyph is filled, and the popover says
+/// "Filtered".
 ///
 /// A source that is not connected offers "Connect Jira…" / "Connect GitLab…" instead, which, like
 /// "Manage tasks…", opens Brain at Sources: a token is typed only in Brain's Connect sheet, never
 /// in the notch. This menu reads Defaults only — never the Keychain.
 struct TaskSourceMenu: View {
-    @Default(.jiraEnabled) private var jiraEnabled
+    @Default(.tasksPopoverShowLocal) private var showLocal
+    @Default(.tasksPopoverShowJira) private var showJira
+    @Default(.tasksPopoverShowGitLab) private var showGitLab
     @Default(.jiraSiteHost) private var jiraSiteHost
-    @Default(.gitlabEnabled) private var gitlabEnabled
     @Default(.gitlabHost) private var gitlabHost
-    @Default(.showLocalTasks) private var showLocalTasks
     /// Closes the popover, then opens Brain there.
     let openBrain: (TasksBrainDestination) -> Void
 
+    /// A source that is not connected has no check item, so it never counts as hidden: its kept
+    /// tasks show (the popover reads the keys the same way).
+    private var isNarrowing: Bool {
+        TaskOrdering.isNarrowingView(showLocal: showLocal, showJira: showJira || jiraSiteHost.isEmpty,
+                                     showGitLab: showGitLab || gitlabHost.isEmpty)
+    }
+
     var body: some View {
         Menu {
-            if jiraSiteHost.isEmpty {
-                Button("Connect Jira…") { openBrain(.sources) }
-            } else {
-                Toggle("Jira", isOn: $jiraEnabled)
+            Section("Show in notch") {
+                Toggle("Local", isOn: $showLocal)
+                if jiraSiteHost.isEmpty {
+                    Button("Connect Jira…") { openBrain(.sources) }
+                } else {
+                    Toggle("Jira", isOn: $showJira)
+                }
+                if gitlabHost.isEmpty {
+                    Button("Connect GitLab…") { openBrain(.sources) }
+                } else {
+                    Toggle("GitLab", isOn: $showGitLab)
+                }
             }
-            if gitlabHost.isEmpty {
-                Button("Connect GitLab…") { openBrain(.sources) }
-            } else {
-                Toggle("GitLab", isOn: $gitlabEnabled)
-            }
-            Toggle("Local", isOn: $showLocalTasks)
             Divider()
             Button("Manage tasks…") { openBrain(.sources) }
         } label: {
-            Image(systemName: "line.3.horizontal.decrease.circle")
+            Image(systemName: isNarrowing ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
                 .imageScale(.large)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .accessibilityLabel("Task sources")
-        .hoverTooltip(String(localized: "Task sources"), edge: .below)
+        .accessibilityLabel("Filter tasks")
+        .hoverTooltip(String(localized: "Filter tasks"), edge: .below)
     }
 }

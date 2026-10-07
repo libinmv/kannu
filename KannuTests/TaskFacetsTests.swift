@@ -61,6 +61,22 @@ final class TaskFacetsTests: XCTestCase {
 
     // MARK: - Status
 
+    /// A row caption reads GitLab's lower-case states as words ("Open", not "opened"); Jira's own
+    /// status names stay as Jira sent them.
+    func testTheStatusReadsAsAWord() {
+        func task(_ source: TaskSource, status: String) -> TaskItem {
+            let info = RemoteTaskInfo(remoteID: "1", key: "K-1", hostScope: "h", status: status, isDoneRemotely: false,
+                                      lastSeenAt: Date(timeIntervalSince1970: 0))
+            return TaskItem(source: source, title: "t", remote: info)
+        }
+        XCTAssertEqual(Facets.statusName(for: task(.gitlab, status: "opened")), String(localized: "Open"))
+        XCTAssertEqual(Facets.statusName(for: task(.gitlab, status: "merged")), String(localized: "Merged"))
+        XCTAssertEqual(Facets.statusName(for: task(.gitlab, status: "review requested")), "Review requested")
+        XCTAssertEqual(Facets.statusName(for: task(.jira, status: "in review")), "in review", "Jira's names are verbatim")
+        XCTAssertNil(Facets.statusName(for: task(.gitlab, status: "")))
+        XCTAssertNil(Facets.statusName(for: local("Write")))
+    }
+
     func testTheStatusComesFromTheCategory() {
         XCTAssertEqual(Facets.status(for: jira("A-1", category: "new")), .toDo)
         XCTAssertEqual(Facets.status(for: jira("A-1", category: "indeterminate")), .inProgress)

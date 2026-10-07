@@ -34,8 +34,10 @@ import SwiftUI
 ///
 /// With tasks off nothing here touches `TasksManager`, so the tab never reads the task file.
 ///
-/// The Sources section (Jira Cloud, GitLab, Local tasks) shows what the Defaults display copies
-/// say. This file never reads the Keychain: a sync does, off the main actor, in `TasksManager`.
+/// The Sources section (Jira Cloud, GitLab) shows what the Defaults display copies say, and only
+/// connects: Sync Jira and Sync GitLab decide what is fetched, never what is listed. Every task Kannu
+/// holds is in the Task list; its filters are the Task list's own, and it says when they hide
+/// anything. This file never reads the Keychain: a sync does, off the main actor, in `TasksManager`.
 struct TasksSettings: View {
     @Default(.enableTasks) private var enableTasks
     @Default(.tasksDefaultSessionMinutes) private var defaultSessionMinutes
@@ -84,6 +86,8 @@ struct TasksSettings: View {
                 JiraConnectSheet()
             case .connectGitLab:
                 GitLabConnectSheet()
+            case .tags(let taskID, let title, let current, let existing):
+                TaskTagsSheet(taskID: taskID, title: title, current: current, existing: existing)
             default:
                 TaskValueSheet(sheet: sheet) { value in apply(value, from: sheet) }
             }
@@ -169,8 +173,6 @@ struct TasksSettings: View {
             if let seconds { TasksManager.shared.addManualTime(seconds, to: taskID) }
         case (.endTime(let taskID, let segmentID, _, _), .date(let end)):
             TasksManager.shared.setEndTime(end, segmentID: segmentID, taskID: taskID)
-        case (.tags(let taskID, _, _, _), .tags(let tags)):
-            TasksManager.shared.setTags(tags, for: taskID)
         case (.schedule(let taskID, _, _), .date(let date)):
             TasksManager.shared.setSchedule(date, for: taskID)
         case (.schedule(let taskID, _, _), .cleared):
@@ -181,9 +183,10 @@ struct TasksSettings: View {
     }
 }
 
-/// Where tasks come from: Jira Cloud, GitLab and the user's own. A separate view so `TasksManager`
-/// is created only once tasks are turned on. Each source has its own rows, status and Refresh: one
-/// failing never shows on the other.
+/// Where tasks come from: Jira Cloud and GitLab. Connection only: Sync Jira and Sync GitLab decide
+/// what is fetched, and a paused source's tasks stay listed (its Sync row says so). The user's own
+/// tasks need no source. A separate view so `TasksManager` is created only once tasks are turned
+/// on. Each source has its own rows, status and Refresh: one failing never shows on the other.
 ///
 /// Status comes from the Defaults display copies and the manager's sync state, never from the
 /// Keychain. The page appearing asks for a sync only when the last one is stale.
@@ -234,7 +237,9 @@ private struct TaskSourcesSection: View {
             }
 
             if isConnected {
-                SettingsRow("Sync Jira", description: "Show your Jira issues here.") {
+                SettingsRow("Sync Jira", description: jiraEnabled
+                    ? Text("Fetch your open Jira issues.")
+                    : Text("Sync paused. Jira tasks stay listed.")) {
                     Defaults.Toggle(key: .jiraEnabled) {
                         Text("Sync Jira")
                     }
@@ -253,13 +258,6 @@ private struct TaskSourcesSection: View {
             }
 
             gitlabRows
-
-            SettingsRow("Local tasks", description: "Show tasks you add here.") {
-                Defaults.Toggle(key: .showLocalTasks) {
-                    Text("Local tasks")
-                }
-            }
-            .settingsHighlight(id: highlightID("Local tasks"))
         } header: {
             SettingsSectionHeader("Sources")
         } footer: {
@@ -352,7 +350,7 @@ private struct TaskSourcesSection: View {
     }
 
     private func syncCaption(at date: Date) -> String {
-        guard jiraEnabled else { return String(localized: "Sync Jira is off.") }
+        guard jiraEnabled else { return String(localized: "Sync paused.") }
         switch manager.jiraSync {
         case .idle:
             return String(localized: "Not synced yet.")
@@ -417,7 +415,9 @@ private struct TaskSourcesSection: View {
         }
 
         if isGitLabConnected {
-            SettingsRow("Sync GitLab", description: "Show your GitLab issues here.") {
+            SettingsRow("Sync GitLab", description: gitlabEnabled
+                ? Text("Fetch your open GitLab issues.")
+                : Text("Sync paused. GitLab tasks stay listed.")) {
                 Defaults.Toggle(key: .gitlabEnabled) {
                     Text("Sync GitLab")
                 }
@@ -532,7 +532,7 @@ private struct TaskSourcesSection: View {
     }
 
     private func gitlabSyncCaption(at date: Date) -> String {
-        guard gitlabEnabled else { return String(localized: "Sync GitLab is off.") }
+        guard gitlabEnabled else { return String(localized: "Sync paused.") }
         switch manager.gitlabSync {
         case .idle:
             return String(localized: "Not synced yet.")
@@ -592,7 +592,7 @@ private struct TaskOverviewSections: View {
                 ForEach(interrupted) { entry in
                     LabeledContent {
                         HStack(spacing: SettingsMetrics.rowContent) {
-                            Button("Set End Time…") {
+                            Button("Set End Time") {
                                 sheet = .endTime(taskID: entry.task.id, segmentID: entry.segment.id, title: entry.task.title, start: entry.segment.start)
                             }
                             Button("Discard") {
@@ -616,13 +616,14 @@ private struct TaskOverviewSections: View {
 
     // MARK: - Task list ›
 
-    /// "12 to do · 3 in progress", and the button that opens the Task list.
+    /// "12 to do · 3 in progress" — every task Kannu holds, whatever the Task list's filters hide —
+    /// and the button that opens the Task list.
     private var taskListSection: some View {
         let counts = TaskFacets.counts(manager.activeTasks)
         return Section {
             LabeledContent {
                 Button(action: openTaskList) {
-                    HStack(spacing: 4) {
+                    HStack(spacing: SettingsMetrics.iconGap) {
                         Text("Open")
                         Image(systemName: "chevron.right")
                     }
@@ -641,10 +642,14 @@ private struct TaskOverviewSections: View {
     }
 }
 
-/// The Task list: a back row, the filters, Add a task, the task order and Done and hidden.
+/// The Task list: a back row, the filters, Add a task, the task order and Done and hidden. It lists
+/// every task Kannu holds — local, Jira and GitLab, synced or paused (`TasksManager.activeTasks`).
 ///
-/// The filters persist in Defaults (`tasksListSourceFilter` and the rest). Every move — drag, Move
-/// Up and Move Down — counts only the rows shown, so a filtered drag lands where it was dropped.
+/// The filters are this page's own, a view filter only: they persist in Defaults
+/// (`tasksListSourceFilter` and the rest), change nothing anywhere else, and while they hide
+/// anything the list opens with a "Filtered" row, "3 of 12 tasks", whose Show All clears them.
+/// Every move — drag, Move Up and Move Down — counts only the rows shown, so a filtered drag lands
+/// where it was dropped.
 /// A row is dragged with `draggable` and dropped on with `dropDestination`, which work inside a
 /// grouped `Form` on macOS, where `ForEach.onMove` never drags; ⋯ › Move to Top / Up / Down stay
 /// as the keyboard and VoiceOver path. The rows here carry no highlight ids: their search entries
@@ -652,7 +657,6 @@ private struct TaskOverviewSections: View {
 private struct TaskListPage: View {
     @ObservedObject private var manager = TasksManager.shared
     @Default(.enableTimerFeature) private var enableTimerFeature
-    @Default(.showLocalTasks) private var showLocalTasks
     @Default(.tasksListSourceFilter) private var sourceFilter
     @Default(.tasksListProjectFilter) private var projectFilter
     @Default(.tasksListStatusFilter) private var statusFilter
@@ -714,6 +718,8 @@ private struct TaskListPage: View {
 
     // MARK: - Filters
 
+    /// The pickers offer what every task Kannu holds has, not what the filters left, so a choice
+    /// never vanishes from its own picker.
     private var filtersSection: some View {
         let active = manager.activeTasks
         let projects = TaskFacets.projects(in: active)
@@ -756,7 +762,7 @@ private struct TaskListPage: View {
 
             SettingsRow("Tag") {
                 Picker("Tag", selection: $tagFilter) {
-                    Text("Any").tag(TaskFacets.anyTag)
+                    Text("All").tag(TaskFacets.anyTag)
                     ForEach(tags, id: \.self) { tag in
                         Text(verbatim: "#\(tag)").tag(tag)
                     }
@@ -771,7 +777,8 @@ private struct TaskListPage: View {
         }
     }
 
-    private func clearFilters() {
+    /// Show All: every filter back to its default, so every task shows.
+    private func showAll() {
         sourceFilter = .all
         projectFilter = TaskFacets.anyProject
         statusFilter = .toDoAndInProgress
@@ -785,14 +792,20 @@ private struct TaskListPage: View {
         let rows = manager.listedTasks(filter)
         let total = manager.activeTasks.count
         return Section {
-            if showLocalTasks {
-                addTaskRow
+            // First, so a narrowed list never passes for the whole one.
+            if filter.isNarrowing {
+                SettingsActionRow("Filtered", description: String(localized: "\(rows.count) of \(total) tasks")) {
+                    Button("Show All", action: showAll)
+                }
             }
 
+            addTaskRow
+
             LabeledContent {
-                SettingsValueText(filter.isNarrowing
-                    ? String(localized: "\(rows.count) of \(total)")
-                    : String(localized: "\(total) open"))
+                // Filtered, the count is on the Filtered row: one fact, said once.
+                if !filter.isNarrowing {
+                    SettingsValueText(String(localized: "\(total) open"))
+                }
             } label: {
                 SettingsRowLabel("Task order", description: "Drag to reorder. ▶ starts the timer.")
             }
@@ -813,8 +826,8 @@ private struct TaskListPage: View {
                 }
             }
             if rows.isEmpty && filter.isNarrowing {
-                SettingsActionRow("No tasks match", description: "Change or clear the filters.") {
-                    Button("Clear Filters", action: clearFilters)
+                SettingsActionRow("No tasks match", description: "Change the filters, or show all tasks.") {
+                    Button("Show All", action: showAll)
                 }
             }
 
@@ -848,7 +861,7 @@ private struct TaskListPage: View {
                 Button(WorkDuration.format(seconds)) { newEstimate = seconds }
             }
             Divider()
-            Button(String(localized: "Custom…")) { sheet = .customEstimateForNewTask(current: newEstimate) }
+            Button(String(localized: "Custom")) { sheet = .customEstimateForNewTask(current: newEstimate) }
         } label: {
             Text(newEstimate.map(WorkDuration.format) ?? String(localized: "No estimate"))
         }
@@ -921,6 +934,7 @@ private struct TaskListPage: View {
                         manager.stopTiming()
                     } label: {
                         Image(systemName: "stop.fill")
+                            .imageScale(.large)
                     }
                     .buttonStyle(.borderless)
                     .accessibilityLabel("Stop timing")
@@ -929,6 +943,7 @@ private struct TaskListPage: View {
                         manager.start(task.id)
                     } label: {
                         Image(systemName: "play.fill")
+                            .imageScale(.large)
                     }
                     .buttonStyle(.borderless)
                     .disabled(!enableTimerFeature || !manager.isReady)
@@ -954,18 +969,19 @@ private struct TaskListPage: View {
     private func moreItems(for task: TaskItem, isTimed: Bool, filter: TaskFilter) -> some View {
         let order = manager.listedTasks(filter)
         let position = order.firstIndex { $0.id == task.id }
-        Button("Set Estimate…") {
+        // No "…": each acts in place or opens a small sheet (docs/SETTINGS.md).
+        Button("Set Estimate") {
             sheet = .estimate(taskID: task.id, title: task.title, current: task.localEstimateSeconds)
         }
-        Button("Add Time Manually…") {
+        Button("Add Time") {
             sheet = .addTime(taskID: task.id, title: task.title)
         }
-        Button("Tags…") {
+        Button("Add Tags") {
             sheet = .tags(taskID: task.id, title: task.title, current: task.tags,
-                          suggestions: TaskFacets.tags(in: manager.tasks))
+                          existing: TaskFacets.tags(in: manager.tasks))
         }
         if task.source == .local {
-            Button("Schedule…") {
+            Button("Schedule") {
                 sheet = .schedule(taskID: task.id, title: task.title, current: task.scheduledAt)
             }
             if task.scheduledAt != nil {
@@ -982,7 +998,7 @@ private struct TaskListPage: View {
         Divider()
         if task.source == .local {
             Button("Mark Done") { manager.markDone(task.id) }
-            Button("Delete…", role: .destructive) { pendingDelete = task }
+            Button("Delete", role: .destructive) { pendingDelete = task }
                 .disabled(isTimed)
         } else {
             // A remote task is finished in its source, and hidden here; deleting it would only
@@ -992,9 +1008,9 @@ private struct TaskListPage: View {
             }
             // Whether the time recorded on it is offered in Time to log. Never asking keeps it here.
             if task.logPolicy == .ask {
-                Button("Never Ask to Log Time") { manager.setAsksToLogTime(false, for: task.id) }
+                Button("Never Ask to Log") { manager.setAsksToLogTime(false, for: task.id) }
             } else {
-                Button("Ask to Log Time") { manager.setAsksToLogTime(true, for: task.id) }
+                Button("Ask to Log") { manager.setAsksToLogTime(true, for: task.id) }
             }
             Button("Hide") { manager.hide(task.id) }
         }
@@ -1014,18 +1030,17 @@ private struct TaskListPage: View {
 
     /// "42m of 2h", with "10m over" in orange past the estimate. Tracked time is exact, in minutes.
     /// A remote task leads with its key and status and ends with the time its source already has:
-    /// "PROJ-123 · In Progress · 42m of 2h · 10m over · Jira logged 3h", "group/app#45 · opened ·
-    /// 42m of 2h · GitLab spent 3h", "group/app!12 · MR · review requested". Then the schedule
-    /// ("Today 15:00", "Overdue · Mon 10:00") and the tags ("#writing #urgent"). Remote text and
-    /// tags are verbatim.
+    /// "PROJ-123 · In Progress · 42m of 2h · 10m over · Jira logged 3h", "group/app#45 · Open ·
+    /// 42m of 2h · GitLab spent 3h", "group/app!12 · Review requested" (the "!" already says merge
+    /// request). Then the schedule as one segment ("Due Today 15:00", "Overdue Mon 10:00") and,
+    /// last, the tags ("#writing #urgent"). Keys, Jira statuses and tags are verbatim.
     private func progressText(for task: TaskItem, now: Date) -> Text {
         let tracked = manager.trackedSeconds(of: task, now: now)
         let estimate = task.effectiveEstimateSeconds
         var parts: [String] = []
         if let remote = task.remote {
             parts.append(remote.key)
-            if remote.gitlabKind == .mergeRequest { parts.append(String(localized: "MR")) }
-            if !remote.status.isEmpty { parts.append(remote.status) }
+            if let status = TaskFacets.statusName(for: task) { parts.append(status) }
         }
         if let timing = manager.timing, timing.taskID == task.id {
             parts.append(timing.isPaused ? String(localized: "Paused") : String(localized: "Timing now"))
@@ -1060,18 +1075,19 @@ private struct TaskListPage: View {
         return text
     }
 
-    /// "Today 15:00", "Tomorrow 09:30", "Overdue · Mon 10:00", or "Thu 9 Oct, 15:00".
+    /// One caption segment: "Due Today 15:00", "Due Tomorrow 09:30", "Overdue Mon 10:00", or
+    /// "Due Thu 9 Oct, 15:00".
     private static func scheduleText(_ date: Date, when: TaskReminderPlan.When) -> String {
         let time = date.formatted(date: .omitted, time: .shortened)
         switch when {
         case .today:
-            return String(localized: "Today \(time)")
+            return String(localized: "Due Today \(time)")
         case .tomorrow:
-            return String(localized: "Tomorrow \(time)")
+            return String(localized: "Due Tomorrow \(time)")
         case .overdue:
-            return String(localized: "Overdue · \(date.formatted(.dateTime.weekday(.abbreviated).hour().minute()))")
+            return String(localized: "Overdue \(date.formatted(.dateTime.weekday(.abbreviated).hour().minute()))")
         case .later:
-            return date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour().minute())
+            return String(localized: "Due \(date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour().minute()))")
         }
     }
 
@@ -1104,22 +1120,23 @@ private struct TaskListPage: View {
         // A remote task's key comes first, so a hidden PROJ-123 is found by its key.
         let line = task.remote.map { "\($0.key) · \(state)" } ?? state
         let link = openLink(for: task)
+        // Every row ends in the same pair, Reopen or Show then ⋯, so the trailing edges line up. A
+        // task its source no longer lists comes back only with the source; a remote task with no
+        // page Kannu would open has nothing in its ⋯.
         return LabeledContent {
             HStack(spacing: SettingsMetrics.rowContent) {
-                if task.visibility == .done || task.visibility == .hidden {
-                    Button(task.visibility == .done ? String(localized: "Reopen") : String(localized: "Show")) {
-                        manager.reopen(task.id)
-                    }
+                Button(task.visibility == .done ? String(localized: "Reopen") : String(localized: "Show")) {
+                    manager.reopen(task.id)
                 }
-                if task.source == .local {
-                    SettingsMoreMenu {
-                        Button("Delete…", role: .destructive) { pendingDelete = task }
-                    }
-                } else if let link {
-                    SettingsMoreMenu {
+                .disabled(task.visibility != .done && task.visibility != .hidden)
+                SettingsMoreMenu {
+                    if task.source == .local {
+                        Button("Delete", role: .destructive) { pendingDelete = task }
+                    } else if let link {
                         Button(link.title) { NSWorkspace.shared.open(link.url) }
                     }
                 }
+                .disabled(task.source != .local && link == nil)
             }
         } label: {
             SettingsRowLabel(Text(verbatim: task.title), description: Text(verbatim: line))
@@ -1129,14 +1146,14 @@ private struct TaskListPage: View {
 
 /// What a task sheet edits.
 private enum TaskSheet: Identifiable {
-    /// "Custom…" in the Add a task row's estimate menu.
+    /// "Custom" in the Add a task row's estimate menu.
     case customEstimateForNewTask(current: Int?)
     case estimate(taskID: UUID, title: String, current: Int?)
     case addTime(taskID: UUID, title: String)
     case endTime(taskID: UUID, segmentID: UUID, title: String, start: Date)
-    /// Tags… on any task. `suggestions` are the tags already in use.
-    case tags(taskID: UUID, title: String, current: [String], suggestions: [String])
-    /// Schedule… on a local task.
+    /// Add Tags on any task, served by `TaskTagsSheet`. `existing` are the tags in use on any task.
+    case tags(taskID: UUID, title: String, current: [String], existing: [String])
+    /// Schedule on a local task.
     case schedule(taskID: UUID, title: String, current: Date?)
     /// Connect… on the Jira Cloud row: served by `JiraConnectSheet`, not `TaskValueSheet`.
     case connectJira
@@ -1157,14 +1174,14 @@ private enum TaskSheet: Identifiable {
     }
 }
 
-/// The small sheet behind Custom…, Set Estimate…, Add Time Manually…, Set End Time…, Tags… and
-/// Schedule…. A sheet pads its own content; a Form row never does.
+/// The small sheet behind Custom, Set Estimate, Add Time, Set End Time and Schedule. Its confirm
+/// button says what it does: Save, Add or Schedule. A sheet pads its own content; a Form row never
+/// does.
 private struct TaskValueSheet: View {
     enum Value {
         /// Nil removes an estimate.
         case duration(Int?)
         case date(Date)
-        case tags([String])
         /// Clear Schedule.
         case cleared
     }
@@ -1182,9 +1199,7 @@ private struct TaskValueSheet: View {
         switch sheet {
         case .customEstimateForNewTask(let current), .estimate(_, _, let current):
             _text = State(initialValue: current.map(WorkDuration.format) ?? "")
-        case .tags(_, _, let current, _):
-            _text = State(initialValue: current.joined(separator: ", "))
-        case .addTime, .endTime, .schedule, .connectJira, .connectGitLab:
+        case .addTime, .endTime, .schedule, .tags, .connectJira, .connectGitLab:
             _text = State(initialValue: "")
         }
         switch sheet {
@@ -1256,23 +1271,6 @@ private struct TaskValueSheet: View {
         case .schedule:
             DatePicker("Remind me at", selection: $date, in: Date()...,
                        displayedComponents: [.date, .hourAndMinute])
-        case .tags(_, _, _, let suggestions):
-            HStack(spacing: SettingsMetrics.rowContent) {
-                TextField("Tags", text: $text, prompt: Text("writing, urgent"))
-                    .onSubmit(save)
-                    .onChange(of: text) { _, _ in problem = nil }
-                let unused = suggestions.filter { tag in
-                    !TaskItem.parsedTags(text).contains { $0.lowercased() == tag.lowercased() }
-                }
-                if !unused.isEmpty {
-                    Menu("Add") {
-                        ForEach(unused, id: \.self) { tag in
-                            Button { append(tag) } label: { Text(verbatim: "#\(tag)") }
-                        }
-                    }
-                    .fixedSize()
-                }
-            }
         default:
             TextField("Length", text: $text, prompt: Text("1h 30m"))
                 .onSubmit(save)
@@ -1280,15 +1278,11 @@ private struct TaskValueSheet: View {
         }
     }
 
-    private func append(_ tag: String) {
-        text = (TaskItem.parsedTags(text) + [tag]).joined(separator: ", ")
-    }
-
     private var heading: LocalizedStringKey {
         switch sheet {
         case .customEstimateForNewTask: return "Custom Estimate"
         case .estimate: return "Set Estimate"
-        case .addTime: return "Add Time Manually"
+        case .addTime: return "Add Time"
         case .endTime: return "Set End Time"
         case .tags: return "Tags"
         case .schedule: return "Schedule"
@@ -1300,9 +1294,9 @@ private struct TaskValueSheet: View {
     /// The task's own title, verbatim.
     private var subject: String? {
         switch sheet {
-        case .customEstimateForNewTask, .connectJira, .connectGitLab: return nil
+        case .customEstimateForNewTask, .tags, .connectJira, .connectGitLab: return nil
         case .estimate(_, let title, _), .addTime(_, let title), .endTime(_, _, let title, _),
-             .tags(_, let title, _, _), .schedule(_, let title, _):
+             .schedule(_, let title, _):
             return title
         }
     }
@@ -1315,11 +1309,9 @@ private struct TaskValueSheet: View {
             return "Time worked without the timer, ending now."
         case .endTime:
             return "When did you stop working on it?"
-        case .tags:
-            return "Separate tags with commas. Kept on this Mac."
         case .schedule:
             return "A reminder with a Start button."
-        case .connectJira, .connectGitLab:
+        case .tags, .connectJira, .connectGitLab:
             return ""
         }
     }
@@ -1328,7 +1320,7 @@ private struct TaskValueSheet: View {
         switch sheet {
         case .addTime: return "Add"
         case .schedule: return "Schedule"
-        case .customEstimateForNewTask, .estimate, .endTime, .tags, .connectJira, .connectGitLab: return "Set"
+        case .customEstimateForNewTask, .estimate, .endTime, .tags, .connectJira, .connectGitLab: return "Save"
         }
     }
 
@@ -1336,10 +1328,6 @@ private struct TaskValueSheet: View {
         switch sheet {
         case .endTime, .schedule:
             onSave(.date(date))
-            dismiss()
-            return
-        case .tags:
-            onSave(.tags(TaskItem.parsedTags(text)))
             dismiss()
             return
         default:

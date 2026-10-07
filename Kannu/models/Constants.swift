@@ -1516,12 +1516,11 @@ extension Defaults.Keys {
     static let tasksDefaultSessionMinutes = Key<Int>("tasksDefaultSessionMinutes", default: 25)
     /// Off by default: a task's timer runs on past its estimate silently.
     static let tasksSoundAtEstimate = Key<Bool>("tasksSoundAtEstimate", default: false)
-    /// Local tasks in the task order. Off hides them from the order; they stay on this Mac.
-    static let showLocalTasks = Key<Bool>("showLocalTasks", default: true)
     // Jira Cloud (Brain › Tasks › Sources). These are display copies only: the token, and the one
     // host it may be sent to, live together in the Keychain (`SecureSecretKey.jiraCredential`). A
     // site here that differs from the Keychain's means "reconnect", never a request to this host.
-    /// "Sync Jira": Jira issues are fetched and listed in the task order. On after Connect.
+    /// "Sync Jira": Jira issues are fetched. On after Connect. Off pauses fetching only: the Jira
+    /// tasks stay in the task order.
     static let jiraEnabled = Key<Bool>("jiraEnabled", default: false)
     /// The connected site's host (`acme.atlassian.net`); empty when not connected.
     static let jiraSiteHost = Key<String>("jiraSiteHost", default: "")
@@ -1532,7 +1531,8 @@ extension Defaults.Keys {
     // GitLab (Brain › Tasks › Sources). Display copies too: the token and the one server it may be
     // sent to live together in the Keychain (`SecureSecretKey.gitlabCredential`). A server here that
     // differs from the Keychain's means "reconnect", never a request to this server.
-    /// "Sync GitLab": GitLab issues (and merge requests) are fetched and listed in the task order.
+    /// "Sync GitLab": GitLab issues (and merge requests) are fetched. Off pauses fetching only: the
+    /// GitLab tasks stay in the task order.
     static let gitlabEnabled = Key<Bool>("gitlabEnabled", default: false)
     /// The connected server's base URL (`https://gitlab.com`); empty when not connected.
     static let gitlabHost = Key<String>("gitlabHost", default: "")
@@ -1551,6 +1551,11 @@ extension Defaults.Keys {
     static let tasksListStatusFilter = Key<TaskStatusFilter>("tasksListStatusFilter", default: .toDoAndInProgress)
     /// `TaskFacets.anyTag` (""), or a tag.
     static let tasksListTagFilter = Key<String>("tasksListTagFilter", default: TaskFacets.anyTag)
+    // The notch's Tasks popover: Show in notch (`TaskSourceMenu`). What Up next shows, and nothing
+    // else — never what is fetched or what Brain's Task list shows (`TaskOrdering.viewFilter`).
+    static let tasksPopoverShowLocal = Key<Bool>("tasksPopoverShowLocal", default: true)
+    static let tasksPopoverShowJira = Key<Bool>("tasksPopoverShowJira", default: true)
+    static let tasksPopoverShowGitLab = Key<Bool>("tasksPopoverShowGitLab", default: true)
 
     // Use Now Playing as the default media controller for new installs.
     static var defaultMediaController: MediaControllerType {

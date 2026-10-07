@@ -122,7 +122,7 @@ struct WorkSegment: Codable, Identifiable, Equatable {
     enum Origin: String, Codable, Equatable {
         /// Recorded while the task was timed with Kannu's timer.
         case timer
-        /// Added by hand ("Add Time Manually…").
+        /// Added by hand ("Add Time").
         case manual
         /// Was still open when Kannu loaded the file: Kannu quit or crashed while it was being
         /// timed. Until the user sets its end it has none, and it counts for nothing.

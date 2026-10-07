@@ -158,10 +158,11 @@ final class TasksManager: ObservableObject {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.saveBeforeQuit() }
         }
-        // Which tasks the order lists depends on these; the views read it through `activeTasks`.
-        // `options: []`, so subscribing does not fire.
+        // What the views read through the manager depends on these data keys: the connected baseline
+        // (`activeTasks`) and whether each source syncs (`isJiraSyncOn`, `isGitLabSyncOn`). No view
+        // filter belongs here: those change what one view shows, never the data. `options: []`, so
+        // subscribing does not fire.
         Publishers.MergeMany(
-            Defaults.publisher(.showLocalTasks, options: []).map { _ in () }.eraseToAnyPublisher(),
             Defaults.publisher(.jiraEnabled, options: []).map { _ in () }.eraseToAnyPublisher(),
             Defaults.publisher(.jiraSiteHost, options: []).map { _ in () }.eraseToAnyPublisher(),
             Defaults.publisher(.gitlabEnabled, options: []).map { _ in () }.eraseToAnyPublisher(),
@@ -180,19 +181,16 @@ final class TasksManager: ObservableObject {
 
     var isReady: Bool { loadState == .ready }
 
-    /// The task order, top first: active tasks of the sources that are switched on.
-    var activeTasks: [TaskItem] { TaskOrdering.active(tasks, listed: listed) }
+    /// The task order, top first: every active task Kannu holds (`TaskOrdering.connectedFilter`).
+    /// Sync Jira and Sync GitLab only decide what is fetched, so a paused source's tasks stay here.
+    /// A view narrows this with a filter of its own: the Task list's (`listedTasks`), the notch's
+    /// Show in notch (`TaskOrdering.viewFilter`).
+    var activeTasks: [TaskItem] { TaskOrdering.active(tasks, listed: connected) }
 
-    /// Whether the task order shows this task: Local tasks, Sync Jira and Sync GitLab decide by
-    /// source, and Include merge requests for GitLab's merge requests. The moves use the same
-    /// filter, so a task the user cannot see never shifts one.
-    func isListed(_ task: TaskItem) -> Bool { listed(task) }
-
-    private var listed: TaskOrdering.Listed {
-        TaskOrdering.listedFilter(
-            showLocal: Defaults[.showLocalTasks],
-            showJira: Defaults[.jiraEnabled] || !isJiraConnected,
-            showGitLab: Defaults[.gitlabEnabled] || !isGitLabConnected,
+    /// The connected baseline. Include merge requests is the one data setting that narrows it, and
+    /// only while GitLab is connected: merge requests kept after a disconnect stay in sight.
+    private var connected: TaskOrdering.Listed {
+        TaskOrdering.connectedFilter(
             showGitLabMergeRequests: Defaults[.gitlabIncludeMergeRequests] || !isGitLabConnected,
             alwaysListed: timing?.taskID
         )
@@ -200,14 +198,14 @@ final class TasksManager: ObservableObject {
 
     var doneAndHiddenTasks: [TaskItem] { tasks.filter { $0.visibility != .active } }
 
-    /// The Task list's rows: the task order narrowed by its filters.
+    /// The Task list's rows: the task order narrowed by its filters, which are the Task list's own.
     func listedTasks(_ filter: TaskFilter) -> [TaskItem] {
         TaskOrdering.active(tasks, listed: listed(filter))
     }
 
-    /// What a Task list move counts: what the sources show, narrowed by the filters.
+    /// What a Task list move counts: the connected baseline, narrowed by the Task list's filters.
     private func listed(_ filter: TaskFilter) -> TaskOrdering.Listed {
-        filter.isNarrowing ? TaskFacets.listed(listed, filter: filter) : listed
+        filter.isNarrowing ? TaskFacets.listed(connected, filter: filter) : connected
     }
 
     /// Segments left open by a quit or a crash, newest first, with their task.
@@ -543,7 +541,7 @@ final class TasksManager: ObservableObject {
     ///    `kannu` marker), and sends only if it is not. Then `POST …/worklog?adjustEstimate=auto&
     ///    notifyUsers=false`; a lost answer is checked once more, read-only.
     ///    **GitLab:** `POST …/add_spent_time?duration=`; a lost answer is uncertain, and the user
-    ///    chooses Mark Logged or Send Again.
+    ///    chooses Mark as Logged or Send Again.
     /// 4. Immediately before either request is built, after the last wait, `canStillSend` looks
     ///    again: a Disconnect during the save or the Keychain dialog sends nothing.
     func confirmWorklog(_ draftID: UUID, seconds typedSeconds: Int, comment typedComment: String?) {
@@ -677,7 +675,7 @@ final class TasksManager: ObservableObject {
         }
     }
 
-    /// Mark Logged: the user checked the server and found the entry Kannu could not confirm.
+    /// Mark as Logged: the user checked the server and found the entry Kannu could not confirm.
     /// Nothing is sent.
     func markWorklogLogged(_ draftID: UUID) {
         guard !sendsInFlight.contains(draftID) else { return }
@@ -688,8 +686,8 @@ final class TasksManager: ObservableObject {
         }
     }
 
-    /// Never Ask to Log Time (`false`): the task's time stays on this Mac, and its open entries are
-    /// kept local. Ask to Log Time (`true`) offers its unlogged time again.
+    /// Never Ask to Log (`false`): the task's time stays on this Mac, and its open entries are
+    /// kept local. Ask to Log (`true`) offers its unlogged time again.
     func setAsksToLogTime(_ asks: Bool, for taskID: UUID) {
         guard isReady, let index = tasks.firstIndex(where: { $0.id == taskID }), tasks[index].source != .local else { return }
         var task = tasks[index]
@@ -781,7 +779,8 @@ final class TasksManager: ObservableObject {
     /// Connected, as far as the display copies say. The Keychain has the final word at sync time.
     var isJiraConnected: Bool { !Defaults[.jiraSiteHost].isEmpty }
 
-    /// Connected and "Sync Jira" on.
+    /// Connected and "Sync Jira" on: Jira is fetched. Off pauses fetching only; the Jira tasks stay
+    /// in the task order.
     var isJiraSyncOn: Bool { isJiraConnected && Defaults[.jiraEnabled] }
 
     var isJiraSyncing: Bool { jiraSyncInFlight == jiraGeneration }
@@ -1044,7 +1043,8 @@ final class TasksManager: ObservableObject {
     /// Connected, as far as the display copies say. The Keychain has the final word at sync time.
     var isGitLabConnected: Bool { !Defaults[.gitlabHost].isEmpty }
 
-    /// Connected and "Sync GitLab" on.
+    /// Connected and "Sync GitLab" on: GitLab is fetched. Off pauses fetching only; the GitLab tasks
+    /// stay in the task order.
     var isGitLabSyncOn: Bool { isGitLabConnected && Defaults[.gitlabEnabled] }
 
     var isGitLabSyncing: Bool { gitlabSyncInFlight == gitlabGeneration }
@@ -1071,7 +1071,7 @@ final class TasksManager: ObservableObject {
         syncGitLab(interactive: true, using: nil)
     }
 
-    /// Include merge requests was switched. The task order follows at once (`listed`); what is
+    /// Include merge requests was switched. The task order follows at once (`connected`); what is
     /// fetched follows with a sync, started now when one can run. A sync already in flight read the
     /// old setting, so its result is dropped and a new one starts. Until a sync succeeds with the new
     /// setting, the next page visit syncs again: offline, a rate limit or Sync GitLab off only delay
