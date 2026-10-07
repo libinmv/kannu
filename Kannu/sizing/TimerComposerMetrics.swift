@@ -52,6 +52,42 @@ enum TimerComposerMetrics {
     static let rulerReadoutHeight: CGFloat = 30
     static let rulerReadoutFontSize: CGFloat = 26
 
+    // The side column beside the composer (`TimerSideColumn`): "Tasks · Presets" over one page.
+    static let sideColumnWidth: CGFloat = 210
+    /// Room the column leaves under itself inside the budget.
+    static let sideColumnInset: CGFloat = 16
+    /// The "Tasks · Presets" labels, shown only when both pages exist.
+    static let sideHeaderHeight: CGFloat = 16
+    static let sideHeaderSpacing: CGFloat = 6
+    /// One task row: key and title on one line, "42m of 2h" under it, and ▶.
+    static let sideTaskRowHeight: CGFloat = 36
+    static let sideRowSpacing: CGFloat = 4
+    /// The Tasks list is never shorter than this many rows (room permitting): the first row's ▶
+    /// tooltip opens below it, and a list clipped to one row would swallow the bubble.
+    static let sideTaskMinimumRows = 2
+    /// The "All tasks ›" link under the rows.
+    static let sideLinkHeight: CGFloat = 16
+    static let sideLinkSpacing: CGFloat = 4
+
+    /// The height left for the shown page: the tab's budget less the inset and, with both pages,
+    /// the labels.
+    static func sidePageHeight(budget: CGFloat, hasHeader: Bool) -> CGFloat {
+        let header = hasHeader ? sideHeaderHeight + sideHeaderSpacing : 0
+        return max(0, budget - sideColumnInset - header)
+    }
+
+    /// The Tasks page's rows: the page less the All tasks link.
+    static func sideTaskListHeight(pageHeight: CGFloat) -> CGFloat {
+        max(0, pageHeight - sideLinkSpacing - sideLinkHeight)
+    }
+
+    /// Every row's height plus the spacing around it, so a short list ends where its last row does.
+    static func sideTaskRowsHeight(count: Int) -> CGFloat {
+        CGFloat(max(0, count)) * (sideTaskRowHeight + sideRowSpacing)
+    }
+
+    /// `.manualWithPresets` is the stacked layout used whenever the side column shows (presets on,
+    /// or the Tasks page available); `.manualWithoutPresets` is the wide one, with no column.
     enum Style: CaseIterable { case manualWithPresets, manualWithoutPresets, ruler }
 
     static var durationFieldHeight: CGFloat { fieldBoxHeight + captionGap + captionHeight }

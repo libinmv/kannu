@@ -48,7 +48,10 @@ final class TasksPopoverRulesTests: XCTestCase {
     static let headerPath = "Kannu/components/Notch/KannuHeader.swift"
     static let contentViewPath = "Kannu/ContentView.swift"
     static let viewModelPath = "Kannu/models/KannuViewModel.swift"
-    static let newFiles = [buttonPath, popoverPath, menuPath]
+    /// The timer tab's side column (Tasks · Presets) and its swipe monitor are notch task views too.
+    static let sideColumnPath = "Kannu/components/Notch/TimerSideColumn.swift"
+    static let swipeMonitorPath = "Kannu/components/Notch/HorizontalSwipeMonitor.swift"
+    static let newFiles = [buttonPath, popoverPath, menuPath, sideColumnPath, swipeMonitorPath]
     static let notchDirectories = ["Kannu/components/Notch", "Kannu/components/AgentStatus"]
     static let keychainAPIs = ["SecureSecretsStore", "KeychainReader", "SecItem", "JiraCredentialStore", "GitLabCredentialStore"]
     static let tickers = ["Timer.publish", "Timer.scheduledTimer", "Timer(timeInterval", ".autoconnect()", "DispatchSourceTimer"]

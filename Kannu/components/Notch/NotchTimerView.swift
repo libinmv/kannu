@@ -35,7 +35,7 @@ struct NotchTimerView: View {
     @Default(.timerProgressStyle) private var progressStyle
     @Default(.showTimerPresetsInNotchTab) private var showTimerPresetsInNotchTab
     @Default(.timerInputStyle) private var timerInputStyle
-    
+    @Default(.enableTasks) private var enableTasks
 
     @AppStorage("customTimerDuration") private var customTimerDuration: Double = 600
     @State private var customHours: Int = 0
@@ -52,6 +52,10 @@ struct NotchTimerView: View {
     /// Keeps the notch open while a name is being typed (`KannuViewModel.setAutoCloseSuppression`).
     @State private var nameEditingToken = UUID()
     @FocusState private var focusedNameField: NameField?
+    /// The side column's page once one is picked (`TimerSideColumn`). Nil until then, so the tab
+    /// opens on `TimerSideColumn.initialPage` from its first frame; cleared each time the tab
+    /// appears, never persisted.
+    @State private var pickedSidePage: TimerSidePage?
 
     private enum NameField: Hashable {
         case pending
@@ -63,11 +67,11 @@ struct NotchTimerView: View {
             if enableTimerFeature {
                 HStack(alignment: .top, spacing: timerManager.isTimerActive ? 0 : 20) {
                     leftColumn
-                    if shouldShowPresetColumn {
+                    if shouldShowSideColumn {
                         Divider()
                             .frame(height: max(0, maxTabContentHeight - 8))
                             .opacity(0.2)
-                        presetColumn
+                        sideColumn
                     }
                 }
                 .frame(maxHeight: maxTabContentHeight, alignment: .top)
@@ -91,6 +95,8 @@ struct NotchTimerView: View {
         }
         .onAppear {
             lockAccentColorIfNeeded()
+            // Each time the tab appears it opens on the initial page again.
+            pickedSidePage = nil
         }
         .onChange(of: timerManager.isTimerActive) { _, isActive in
             if isActive {
@@ -146,55 +152,30 @@ struct NotchTimerView: View {
         .padding(.bottom, 2)
     }
 
-    private var presetColumn: some View {
-        VStack(spacing: 6) {
-            if timerPresets.isEmpty {
-                Text("Configure presets in Brain to see them here.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(14)
-                    .background(Color.white.opacity(0.05))
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            } else {
-                let computedHeight = CGFloat(timerPresets.count) * 60 + 4
-                let listHeight = min(max(0, maxTabContentHeight - 16), computedHeight)
-                ZStack {
-                    List {
-                        ForEach(timerPresets) { preset in
-                            TimerPresetCard(preset: preset, isActive: timerManager.activePresetId == preset.id) {
-                                startSession(duration: preset.duration, preset: preset, fallback: preset.name)
-                                if !enableMinimalisticUI {
-                                    coordinator.currentView = .timer
-                                }
-                            }
-                            .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0))
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
-                        }
-                    }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
-                    .scrollIndicators(.never)
-
-                    LinearGradient(colors: [Color.black.opacity(0.65), .clear], startPoint: .top, endPoint: .bottom)
-                        .frame(height: 16)
-                        .allowsHitTesting(false)
-                        .alignmentGuide(.top) { d in d[.top] }
-                        .frame(maxHeight: .infinity, alignment: .top)
-
-                    LinearGradient(colors: [.clear, Color.black.opacity(0.65)], startPoint: .top, endPoint: .bottom)
-                        .frame(height: 16)
-                        .allowsHitTesting(false)
-                        .alignmentGuide(.bottom) { d in d[.bottom] }
-                        .frame(maxHeight: .infinity, alignment: .bottom)
+    /// Tasks · Presets beside the composer. A task's ▶ starts it there; its name wins over a typed
+    /// one, so the typed name is dropped.
+    private var sideColumn: some View {
+        TimerSideColumn(
+            page: sidePage,
+            tasksAvailable: isTasksPageAvailable,
+            presetsAvailable: showTimerPresetsInNotchTab,
+            budget: maxTabContentHeight,
+            presets: timerPresets,
+            activePresetID: timerManager.activePresetId,
+            startPreset: { preset in
+                startSession(duration: preset.duration, preset: preset, fallback: preset.name)
+                if !enableMinimalisticUI {
+                    coordinator.currentView = .timer
                 }
-                .frame(height: listHeight)
+            },
+            taskStarted: {
+                pendingSessionName = ""
+                focusedNameField = nil
+                if !enableMinimalisticUI {
+                    coordinator.currentView = .timer
+                }
             }
-        }
-        .frame(width: 210, alignment: .leading)
-        .frame(maxHeight: maxTabContentHeight, alignment: .top)
-        .padding(.bottom, 2)
+        )
     }
 
     private var activeTimerCard: some View {
@@ -375,7 +356,7 @@ struct NotchTimerView: View {
                     tintColor: timerAccentColor,
                     startAction: startCustomTimer
                 )
-            } else if showTimerPresetsInNotchTab {
+            } else if hasSideColumn {
                 VStack(alignment: .leading, spacing: TimerComposerMetrics.rowSpacing) {
                     DurationInputRow(
                         hours: $customHours,
@@ -436,8 +417,32 @@ struct NotchTimerView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var shouldShowPresetColumn: Bool {
-        !timerManager.isTimerActive && showTimerPresetsInNotchTab
+    /// The Tasks page needs tasks and the timer; the Presets page, Show presets in the notch tab.
+    private var isTasksPageAvailable: Bool {
+        enableTasks && enableTimerFeature
+    }
+
+    /// The side column shows when it has a page. The composer's stacked layout and narrow fields
+    /// follow it, so the column always fits beside them without the notch growing.
+    private var hasSideColumn: Bool {
+        showTimerPresetsInNotchTab || isTasksPageAvailable
+    }
+
+    /// The picked page, or the one the tab opens on: Tasks first when Jira or GitLab is connected.
+    private var sidePage: Binding<TimerSidePage> {
+        Binding(
+            get: {
+                pickedSidePage ?? TimerSideColumn.initialPage(
+                    tasksAvailable: isTasksPageAvailable,
+                    presetsAvailable: showTimerPresetsInNotchTab
+                )
+            },
+            set: { pickedSidePage = $0 }
+        )
+    }
+
+    private var shouldShowSideColumn: Bool {
+        !timerManager.isTimerActive && hasSideColumn
     }
 
     private var resolvedNotchHeight: CGFloat {
@@ -535,7 +540,7 @@ struct NotchTimerView: View {
     }
 
     private var durationFieldWidth: CGFloat {
-        showTimerPresetsInNotchTab ? 64 : 78
+        hasSideColumn ? 64 : 78
     }
 
     private var buttonColumnWidth: CGFloat { 210 }
@@ -810,52 +815,6 @@ private struct DurationField: View {
                 value = number
             }
         )
-    }
-}
-
-private struct TimerPresetCard: View {
-    let preset: TimerPreset
-    let isActive: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Circle()
-                    .fill(preset.color.gradient)
-                    .frame(width: 30, height: 30)
-                    .overlay(
-                        Circle()
-                            .stroke(Color.white.opacity(0.3), lineWidth: 1)
-                    )
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(preset.name)
-                        .font(.system(size: 14, weight: .semibold))
-                        .lineLimit(1)
-                    Text(preset.formattedDuration)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                }
-                .foregroundStyle(preset.color)
-
-                Spacer()
-
-                Image(systemName: isActive ? "checkmark" : "play.fill")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(isActive ? preset.color : Color.secondary)
-                    .padding(6)
-                    .background(isActive ? preset.color.opacity(0.2) : Color.white.opacity(0.08))
-                    .clipShape(Circle())
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(isActive ? preset.color.opacity(0.12) : Color.white.opacity(0.04))
-            )
-        }
-        .buttonStyle(.plain)
     }
 }
 

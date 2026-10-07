@@ -4,6 +4,41 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-07 - The timer tab's side column has Tasks and Presets pages you can swipe between
+- **Developer label:** "the focus break pills should be a sub tab which could be swipeable to see the task list latest order and a click available to full task list but here its for user to start easily, that is default main tab for anyone when they turn on itegrations else the deep work tab will be default view"
+- **Agent label:** Claude Code (Opus 5.5) — timer tab side column: Tasks · Presets pages with clickable labels and a two-finger swipe, Tasks first when Jira or GitLab is connected, ▶ to start a task, All tasks › into Brain
+- **Changes:**
+  - The timer tab's right-hand column (`TimerSideColumn`, 210 pt as before) has two pages. Tasks
+    lists the task order, each row with its key, title, "42m of 2h" and ▶, then "All tasks ›" into
+    Brain's Task list ("No tasks" plus the same link when empty). Presets is the preset cards,
+    unchanged. Tasks exists with tasks and the timer on, Presets with Show presets in the notch tab
+    on; with only one page there are no labels.
+  - With both, small "Tasks · Presets" labels switch pages (VoiceOver reads them as a two-option
+    picker), and so does a two-finger sideways swipe: once per gesture, only when clearly
+    horizontal and at least 40 pt. A vertical scroll still scrolls the list.
+  - The tab opens on Tasks when Jira or GitLab is connected (a host is set, whether Sync is on or
+    paused), otherwise on Presets. It is chosen afresh each time the tab appears and never saved.
+    The pure `TimerSidePage` (logic target) decides the first page and the swipe.
+  - ▶ starts the task through `TasksManager.start`; its name replaces a typed session name, and a
+    failed start does nothing else. `NotchTimerView` never touches `TasksManager`, and the Tasks
+    page is built only while shown, so the manager is never created with tasks off. Showing the
+    page refreshes a stale Jira or GitLab sync, as the Tasks popover does, never with the Keychain
+    dialog.
+  - The notch does not grow: the labels, rows and link take their sizes from
+    `TimerComposerMetrics`, and the composer's stacked layout follows whenever the column shows.
+    The Tasks list keeps at least two rows of room, so the first row's tooltip, which opens below,
+    is not clipped; the other rows' open above.
+  - Hovering the column holds off the notch's scroll gesture, so scrolling the preset or task list
+    no longer blurs or closes the notch. The ruler's scroll monitor moved into the shared
+    `ScrollWheelMonitor` (`HorizontalSwipeMonitor.swift`) with its behaviour unchanged, and both
+    scroll-suppression tokens are `@State`, so a re-render no longer loses them.
+  - Tests: `TimerSidePageTests` (the first-page truth table; swipe threshold, direction,
+    vertical-dominant gestures ignored, one flip per gesture, a scroll down and back up never
+    flips), `TimerComposerMetricsTests` (the column fits the 130 pt floor; one task leaves room
+    for its tooltip) and `TimerSideColumnRulesTests` (no `TasksManager` in `NotchTimerView`,
+    `@State` tokens, "connected" never reads Sync Jira or Sync GitLab, sync on appear, no
+    `.help(`), with planted offenders. The new notch files join `TasksPopoverRulesTests.newFiles`.
+
 ### 2026-10-06 - The timer tab fits without the notch growing: the timer is smaller instead
 - **Developer label:** "rather than resizing the noth in timer tab, you could have just shrinked the timer, theresize looks like a glitch, please fix that"
 - **Agent label:** Timer composer sized by TimerComposerMetrics to the tab's existing budget; the notch-height change is reverted

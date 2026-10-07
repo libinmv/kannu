@@ -38,6 +38,49 @@ final class TimerComposerMetricsTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(M.fieldBoxHeight, 30)
     }
 
+    /// The side column with both pages, in the smallest budget: its labels, at least one task row
+    /// and "All tasks ›" fit, so the notch never has to grow for them.
+    func testTheSideColumnFitsTheSmallestBudget() {
+        let page = M.sidePageHeight(budget: M.minimumTabBudget, hasHeader: true)
+        let rows = M.sideTaskListHeight(pageHeight: page)
+        XCTAssertGreaterThanOrEqual(rows, M.sideTaskRowsHeight(count: 1), "not even one task row fits")
+        let column = M.sideColumnInset + M.sideHeaderHeight + M.sideHeaderSpacing
+            + M.sideTaskRowsHeight(count: 1) + M.sideLinkSpacing + M.sideLinkHeight
+        XCTAssertLessThanOrEqual(column, M.minimumTabBudget)
+        XCTAssertEqual(page + M.sideColumnInset + M.sideHeaderHeight + M.sideHeaderSpacing, M.minimumTabBudget)
+    }
+
+    func testWithOnePageTheColumnKeepsItsOldHeight() {
+        // No labels: the page has exactly the room the preset list always had (budget less 16).
+        XCTAssertEqual(M.sidePageHeight(budget: M.minimumTabBudget, hasHeader: false), M.minimumTabBudget - 16)
+        XCTAssertEqual(M.sideColumnWidth, 210)
+    }
+
+    func testTheSideColumnHeightsNeverGoNegative() {
+        XCTAssertEqual(M.sidePageHeight(budget: 10, hasHeader: true), 0)
+        XCTAssertEqual(M.sideTaskListHeight(pageHeight: 5), 0)
+        XCTAssertEqual(M.sideTaskRowsHeight(count: -1), 0)
+        XCTAssertEqual(M.sideTaskRowsHeight(count: 2), 2 * (M.sideTaskRowHeight + M.sideRowSpacing))
+    }
+
+    func testTheSideRowsStayReadable() {
+        XCTAssertGreaterThanOrEqual(M.sideTaskRowHeight, 32, "two lines of text and a ▶ need the room")
+        XCTAssertGreaterThanOrEqual(M.sideHeaderHeight, 14)
+        XCTAssertGreaterThanOrEqual(M.sideLinkHeight, 14)
+    }
+
+    /// With a single task, the list still has room under the row for its ▶ tooltip, which opens
+    /// below inside a ScrollView that clips (docs/TOOLTIPS.md rule 2): the bubble reaches about
+    /// 13 pt past the row, and the bottom fade is 16 pt. Checked at the smallest budget, both pages.
+    func testOneTaskLeavesRoomForItsTooltip() {
+        XCTAssertGreaterThanOrEqual(M.sideTaskMinimumRows, 2)
+        let page = M.sidePageHeight(budget: M.minimumTabBudget, hasHeader: true)
+        let list = min(M.sideTaskListHeight(pageHeight: page), M.sideTaskRowsHeight(count: M.sideTaskMinimumRows))
+        let bubbleOverflow: CGFloat = 13
+        let bottomFade: CGFloat = 16
+        XCTAssertGreaterThanOrEqual(list, M.sideRowSpacing / 2 + M.sideTaskRowHeight + bubbleOverflow + bottomFade)
+    }
+
     func testTheRulerPointerSitsInsideItsArea() {
         XCTAssertLessThanOrEqual(M.rulerPointerOffset + 12, M.rulerAreaHeight)
         XCTAssertLessThanOrEqual(M.rulerCanvasHeight, M.rulerAreaHeight)

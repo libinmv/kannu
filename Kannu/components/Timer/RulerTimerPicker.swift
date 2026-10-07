@@ -22,85 +22,8 @@ import Defaults
 #if canImport(AppKit)
 import AppKit
 
-// MARK: - Trackpad scroll monitor (NSEvent local monitor — NSView.scrollWheel is not
-// delivered when SwiftUI layers sit above the representable)
-
-private struct RulerScrollMonitor: NSViewRepresentable {
-    let onScroll: (CGFloat) -> Void
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        context.coordinator.installMonitor(on: view)
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        context.coordinator.onScroll = onScroll
-    }
-
-    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
-        coordinator.removeMonitor()
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onScroll: onScroll)
-    }
-
-    @MainActor
-    final class Coordinator: NSObject {
-        var onScroll: (CGFloat) -> Void
-        private var monitor: Any?
-        private weak var observedView: NSView?
-        private var lastEventTimestamp: TimeInterval = 0
-
-        init(onScroll: @escaping (CGFloat) -> Void) {
-            self.onScroll = onScroll
-        }
-
-        func installMonitor(on view: NSView) {
-            removeMonitor()
-            observedView = view
-            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-                guard let self else { return event }
-                guard self.shouldHandle(event, view: view) else { return event }
-                self.onScroll(event.scrollingDeltaX)
-                return nil
-            }
-        }
-
-        func removeMonitor() {
-            if let monitor {
-                NSEvent.removeMonitor(monitor)
-                self.monitor = nil
-            }
-            observedView = nil
-            lastEventTimestamp = 0
-        }
-
-        private func shouldHandle(_ event: NSEvent, view: NSView) -> Bool {
-            guard lastEventTimestamp != event.timestamp else { return false }
-            lastEventTimestamp = event.timestamp
-            guard isCursorOverView(view) else { return false }
-
-            let deltaX = event.scrollingDeltaX
-            let deltaY = event.scrollingDeltaY
-            guard abs(deltaX) > abs(deltaY), abs(deltaX) > 0.15 else { return false }
-
-            let phase = event.phase
-            let momentum = event.momentumPhase
-            guard phase != [] || momentum != [] else { return false }
-            return true
-        }
-
-        private func isCursorOverView(_ view: NSView) -> Bool {
-            guard let window = view.window else { return false }
-            let screenPoint = NSEvent.mouseLocation
-            let windowPoint = window.convertPoint(fromScreen: screenPoint)
-            let localPoint = view.convert(windowPoint, from: nil)
-            return view.bounds.contains(localPoint)
-        }
-    }
-}
+// The trackpad scroll monitor is the shared `ScrollWheelMonitor` (HorizontalSwipeMonitor.swift):
+// NSView.scrollWheel is not delivered when SwiftUI layers sit above the representable.
 
 // MARK: - Haptic
 
@@ -129,7 +52,9 @@ struct RulerTimerPicker: View {
     @State private var isDragging = false
     @State private var lastHapticMinute: Int = -1
     @State private var isSuppressingScrollGestures = false
-    private let scrollSuppressionToken = UUID()
+    /// `@State`, so the token survives a re-render: a plain `let` minted a new one each time, and a
+    /// release then named a token that was never inserted, leaving the notch's scroll gesture off.
+    @State private var scrollSuppressionToken = UUID()
 
     private let range: ClosedRange<Double> = 0...90
     private let tickSpacing: CGFloat = 10   // px per minute
@@ -258,8 +183,10 @@ struct RulerTimerPicker: View {
             )
 #if canImport(AppKit)
             .background {
-                RulerScrollMonitor { delta in
-                    applyTrackpadScroll(delta)
+                ScrollWheelMonitor { event in
+                    guard event.isHorizontalTrackpadScroll else { return false }
+                    applyTrackpadScroll(event.scrollingDeltaX)
+                    return true
                 }
             }
 #endif
