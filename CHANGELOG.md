@@ -4,6 +4,31 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-09 - Fixed buttons in the notch header keep their place; what comes and goes appears to their left
+- **Developer label:** "the refesh button in usage tab also should be one left, basically non changing buttons shoulkd have statis position priottized,  and dynamic ones come to their left only"
+- **Agent label:** Claude Code (Opus 5.5) — notch header order: the screen-recording and Do Not Disturb indicators, the Usage tab's Refresh button and the Tasks button sit left of the clipboard, timer, Brain and battery, so a fixed button never moves; the rule stated in AGENTS.md and pinned by a new test
+- **Changes:**
+  - `KannuHeader`'s trailing row now reads, left to right: screen-recording indicator, Do Not
+    Disturb indicator, Refresh (Usage tab only), Tasks, then clipboard, timer (popover mode), Brain
+    and battery. The row is trailing-aligned, so an item that appears or disappears pushes only
+    what is to its left; the buttons that are always there keep their place. Before, Refresh sat
+    between the clipboard and the timer, and both indicators sat right of Brain, so they shifted
+    the fixed buttons whenever they came and went. This corrects the previous entry's "front of the
+    trailing row" for the Tasks button: it is now the last of the items that come and go.
+  - The Refresh button fades in and out like the Tasks button: a plain `.transition(.opacity)`,
+    driven by an `.easeInOut(duration: 0.15)` animation on `currentView == .llmUsage`, since a tab
+    click changes the view with no transaction.
+  - AGENTS.md ("UI") states the principle: fixed buttons keep fixed positions on the right, and
+    buttons and indicators that come and go appear to their left.
+  - Comments in `TasksHeaderButton` and `NotchLLMUsageView` that still placed those buttons "first"
+    or "next to the clipboard icon" now describe the new order.
+  - Tests: new `HeaderOrderRulesTests` pins the order from the source (every item once, inside the
+    open, non-minimalistic block; what comes and goes left of the leftmost fixed button; each group
+    in its own order; the battery block last in the row) and the Refresh button's fade, each scanner
+    with planted offenders. `BrainNamingRulesTests` now ends the Brain button's span at the battery
+    block instead of the recording indicator, and the `TasksPopoverRulesTests` doc comment no longer
+    says the Tasks button sits first.
+
 ### 2026-10-09 - The timer tab's page labels sit in the footer, it swipes anywhere, and its Tasks button sits left of the clipboard
 - **Developer label:** "i want the layout spacing differently, name this session optional change it to Do you want to name this session ? the swipe doesnt work on the whole surface area task and preset can be centered to the bottom of that subsection,and can go a line space below the current line we hold for the tabs in current design, creeoping that into footer is fine, but the tabs section both timer and task list can stay same, make the task scroller a bit wider and taller all tasks not needed as that same page has task list at top  near brain, also that should only be near brain in that promodo tab, also move it to left of clipboard, that change animation between tabs donot need to be comnplicated"
 - **Agent label:** Claude Code (Opus 5.5) — timer tab layout follow-up: "Tasks · Presets" in the footer, a tab-wide page swipe that leaves the ruler alone, a wider and taller task list without "All tasks ›", the Tasks header button left of the clipboard on the timer tab only, and the new session-name placeholder

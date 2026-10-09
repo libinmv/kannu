@@ -122,7 +122,9 @@ final class BrainNamingRulesTests: XCTestCase {
         let header = Self.code(try Self.read("Kannu/components/Notch/KannuHeader.swift"))
         let start = try XCTUnwrap(header.range(of: "if Defaults[.settingsIconInNotch] {"),
                                   "the header's Brain button moved — this pin is vacuous")
-        let end = try XCTUnwrap(header.range(of: "RecordingIndicator()", range: start.upperBound..<header.endIndex))
+        // Brain is the last button of the open block; the battery block follows it (HeaderOrderRulesTests).
+        let end = try XCTUnwrap(header.range(of: "if vm.notchState == .open && showBatteryIndicator {",
+                                             range: start.upperBound..<header.endIndex))
         let button = String(header[start.lowerBound..<end.lowerBound])
         XCTAssertTrue(button.contains(#"Image(systemName: "brain")"#), "the button no longer shows the brain")
         XCTAssertFalse(button.contains(#""gear""#), "the button still shows the gear")

@@ -18,9 +18,10 @@
 
 import SwiftUI
 
-/// The notch header's Tasks button, first in its trailing row, left of the clipboard button: it
-/// opens `TasksPopover`, and carries a yellow dot while a Time to log entry waits for an answer —
-/// yellow is Kannu's "needs your input".
+/// The notch header's Tasks button, the last of the trailing row's items that come and go, directly
+/// left of the clipboard button (the order is pinned by `HeaderOrderRulesTests`): it opens
+/// `TasksPopover`, and carries a yellow dot while a Time to log entry waits for an answer — yellow
+/// is Kannu's "needs your input".
 ///
 /// `KannuHeader` shows it only with the notch open and the minimalistic UI off, and then as
 /// `TasksHeaderVisibility` says: with tasks on, on the timer tab, or on every tab when there is no

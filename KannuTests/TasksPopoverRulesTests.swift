@@ -25,7 +25,7 @@ import XCTest
 ///
 /// - opening the popover sets `vm.isTasksPopoverActive`, and leaving the view clears it;
 /// - `ContentView.hasAnyActivePopovers()` includes that flag, or the notch closes under the popover;
-/// - the button has a VoiceOver label and a `.hoverTooltip`; it sits first in the open,
+/// - the button has a VoiceOver label and a `.hoverTooltip`; it sits in the open,
 ///   non-minimalistic header, before the clipboard button, shown as `TasksHeaderVisibility.isShown`
 ///   says (never with tasks off) from the header's own state, and it simply fades;
 /// - no notch view uses `.help(` — it never renders there (docs/REGRESSIONS.md entry 9). The
