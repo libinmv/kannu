@@ -23,13 +23,17 @@ import SwiftUI
 /// pages (`TimerSidePage`):
 ///
 /// - **Tasks**, with tasks and the timer on: the task order (`TasksManager.activeTasks`), each row
-///   with its key and title, "42m of 2h" and ▶, then "All tasks ›" into Brain's Task list;
+///   with its key and title, "42m of 2h" and ▶;
 /// - **Presets**, with Show presets in the notch tab on: the preset cards, as before.
 ///
-/// With both, small "Tasks · Presets" labels sit on top, and a two-finger swipe sideways moves
-/// between them (`HorizontalSwipeMonitor`); a vertical scroll still scrolls the list. With one page
-/// there are no labels and no swipe. `NotchTimerView` owns the selected page and seeds it from
-/// `initialPage` each time the tab appears.
+/// The page fills the column from the session name field's line down to the tab's bottom line.
+/// With both pages, small "Tasks · Presets" labels hang below that line, centred in the footer
+/// (`TimerComposerMetrics.sidePagerFooterOffset`), as an overlay that takes no layout room, so
+/// neither the tab nor the notch grows for them. With one page there are no labels.
+///
+/// `NotchTimerView` owns the selected page, seeds it from `initialPage` each time the tab appears,
+/// and changes it (`select`) for a label click and for a two-finger swipe anywhere on the tab
+/// (`HorizontalSwipeMonitor`), so there is one way a page changes.
 ///
 /// The Tasks page is a view of its own, built only while it is shown, so `TasksManager` is never
 /// created while tasks are off (the `TasksHeaderButton` pattern). Hovering the column holds the
@@ -40,8 +44,10 @@ struct TimerSideColumn: View {
     private typealias M = TimerComposerMetrics
 
     @EnvironmentObject private var vm: KannuViewModel
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Binding var page: TimerSidePage
+    /// The page picked, or the one the tab opened on (`shownPage(_:in:)` resolves it).
+    let page: TimerSidePage
+    /// Shows a page: `NotchTimerView.selectSidePage`, the one implementation.
+    let select: (TimerSidePage) -> Void
     let tasksAvailable: Bool
     let presetsAvailable: Bool
     /// The tab's height budget (`NotchTimerView.maxTabContentHeight`).
@@ -74,53 +80,51 @@ struct TimerSideColumn: View {
         )
     }
 
+    /// The selected page, or the only one there is.
+    static func shownPage(_ page: TimerSidePage, in pages: [TimerSidePage]) -> TimerSidePage {
+        pages.contains(page) ? page : (pages.first ?? .presets)
+    }
+
     private var pages: [TimerSidePage] {
         Self.pages(tasksAvailable: tasksAvailable, presetsAvailable: presetsAvailable)
     }
 
-    /// The selected page, or the only one there is.
     private var shownPage: TimerSidePage {
-        pages.contains(page) ? page : (pages.first ?? .presets)
+        Self.shownPage(page, in: pages)
     }
 
-    private var hasHeader: Bool { pages.count > 1 }
+    private var hasPager: Bool { pages.count > 1 }
 
     private var pageHeight: CGFloat {
-        M.sidePageHeight(budget: budget, hasHeader: hasHeader)
+        M.sidePageHeight(budget: budget)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: M.sideHeaderSpacing) {
-            if hasHeader {
-                header
+        pageView
+            .id(shownPage)
+            .transition(.opacity)
+            .frame(width: M.sideColumnWidth, alignment: .leading)
+            .frame(maxHeight: budget, alignment: .top)
+            // Hangs below the tab's bottom line, into the footer: an overlay takes no room.
+            .overlay(alignment: .bottom) {
+                if hasPager {
+                    pager
+                        .offset(y: M.sidePagerFooterOffset)
+                }
             }
-            pageView
-                .id(shownPage)
-                .transition(.opacity)
-        }
-        .frame(width: M.sideColumnWidth, alignment: .leading)
-        .frame(maxHeight: budget, alignment: .top)
-        .padding(.bottom, 2)
-#if canImport(AppKit)
-        .background {
-            if hasHeader {
-                HorizontalSwipeMonitor(current: shownPage, onSwipe: select)
+            .onHover { hovering in
+                updateScrollSuppression(hovering)
             }
-        }
-#endif
-        .onHover { hovering in
-            updateScrollSuppression(hovering)
-        }
-        .onDisappear {
-            updateScrollSuppression(false)
-        }
+            .onDisappear {
+                updateScrollSuppression(false)
+            }
     }
 
     // MARK: - Labels
 
-    /// "Tasks · Presets": the shown page bright, the other dimmed. Clicking one shows it; VoiceOver
-    /// reads the pair as a two-option picker.
-    private var header: some View {
+    /// "Tasks · Presets", centred under the column: the shown page bright, the other dimmed.
+    /// Clicking one shows it; VoiceOver reads the pair as a two-option picker.
+    private var pager: some View {
         HStack(spacing: 5) {
             ForEach(Array(pages.enumerated()), id: \.element) { index, item in
                 if index > 0 {
@@ -136,10 +140,9 @@ struct TimerSideColumn: View {
                 }
                 .buttonStyle(.plain)
             }
-            Spacer(minLength: 0)
         }
         .font(.system(size: 11, weight: .semibold))
-        .frame(height: M.sideHeaderHeight)
+        .frame(height: M.sidePagerHeight)
         .accessibilityRepresentation {
             Picker(String(localized: "Timer column"), selection: pageSelection) {
                 ForEach(pages) { item in
@@ -201,15 +204,6 @@ struct TimerSideColumn: View {
         }
     }
 
-    private func select(_ target: TimerSidePage) {
-        guard target != shownPage, pages.contains(target) else { return }
-        if reduceMotion {
-            page = target
-        } else {
-            withAnimation(.smooth(duration: 0.2)) { page = target }
-        }
-    }
-
     private func updateScrollSuppression(_ hovering: Bool) {
         guard hovering != isSuppressingScroll else { return }
         isSuppressingScroll = hovering
@@ -241,7 +235,7 @@ private struct TimerTasksPage: View {
     let started: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: M.sideLinkSpacing) {
+        VStack(alignment: .leading, spacing: 0) {
             switch manager.loadState {
             case .loading:
                 statusRow(String(localized: "Loading tasks…"))
@@ -255,7 +249,6 @@ private struct TimerTasksPage: View {
                     rows(tasks)
                 }
             }
-            allTasksLink
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: height, alignment: .top)
@@ -269,7 +262,7 @@ private struct TimerTasksPage: View {
 
     private func rows(_ tasks: [TaskItem]) -> some View {
         let shownRows = max(tasks.count, M.sideTaskMinimumRows)
-        let listHeight = min(M.sideTaskListHeight(pageHeight: height), M.sideTaskRowsHeight(count: shownRows))
+        let listHeight = min(height, M.sideTaskRowsHeight(count: shownRows))
         return ZStack {
             ScrollView(.vertical) {
                 LazyVStack(spacing: M.sideRowSpacing) {
@@ -358,19 +351,6 @@ private struct TimerTasksPage: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.white.opacity(0.05))
             )
-    }
-
-    private var allTasksLink: some View {
-        Button {
-            TasksBrainDestination.taskList.open()
-        } label: {
-            Text("All tasks ›")
-        }
-        .buttonStyle(.link)
-        .font(.system(size: 11, weight: .medium))
-        .frame(height: M.sideLinkHeight)
-        .accessibilityLabel(Text("All tasks"))
-        .accessibilityHint(Text("Opens the Task list in Brain"))
     }
 }
 

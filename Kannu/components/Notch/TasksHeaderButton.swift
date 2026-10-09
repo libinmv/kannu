@@ -18,17 +18,20 @@
 
 import SwiftUI
 
-/// The notch header's Tasks button, after the timer button: it opens `TasksPopover`, and carries a
-/// yellow dot while a Time to log entry waits for an answer — yellow is Kannu's "needs your input".
+/// The notch header's Tasks button, first in its trailing row, left of the clipboard button: it
+/// opens `TasksPopover`, and carries a yellow dot while a Time to log entry waits for an answer —
+/// yellow is Kannu's "needs your input".
 ///
-/// `KannuHeader` shows it only with tasks on, the notch open and the minimalistic UI off. It is a
-/// view of its own so `TasksManager` is created only then: with tasks off, nothing here runs and
-/// the task file is never read.
+/// `KannuHeader` shows it only with the notch open and the minimalistic UI off, and then as
+/// `TasksHeaderVisibility` says: with tasks on, on the timer tab, or on every tab when there is no
+/// timer tab. It is a view of its own so `TasksManager` is created only then: with tasks off,
+/// nothing here runs and the task file is never read.
 ///
 /// While the popover is open it sets `vm.isTasksPopoverActive`, which
 /// `ContentView.hasAnyActivePopovers()` reads, so the notch does not close under it. Leaving the
-/// view clears it too (the notch closing, tasks or the minimalistic UI switched): a popover that
-/// vanishes with its button never reports closing, and a flag left set would hold the notch open.
+/// view clears it too (the notch closing, a switch away from the timer tab, tasks or the
+/// minimalistic UI switched): a popover that vanishes with its button never reports closing, and a
+/// flag left set would hold the notch open.
 ///
 /// Its tooltip is `.hoverTooltip`; `.help` never renders in the notch (docs/REGRESSIONS.md entry 9).
 struct TasksHeaderButton: View {

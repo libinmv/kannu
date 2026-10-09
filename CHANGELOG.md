@@ -4,6 +4,47 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-09 - The timer tab's page labels sit in the footer, it swipes anywhere, and its Tasks button sits left of the clipboard
+- **Developer label:** "i want the layout spacing differently, name this session optional change it to Do you want to name this session ? the swipe doesnt work on the whole surface area task and preset can be centered to the bottom of that subsection,and can go a line space below the current line we hold for the tabs in current design, creeoping that into footer is fine, but the tabs section both timer and task list can stay same, make the task scroller a bit wider and taller all tasks not needed as that same page has task list at top  near brain, also that should only be near brain in that promodo tab, also move it to left of clipboard, that change animation between tabs donot need to be comnplicated"
+- **Agent label:** Claude Code (Opus 5.5) — timer tab layout follow-up: "Tasks · Presets" in the footer, a tab-wide page swipe that leaves the ruler alone, a wider and taller task list without "All tasks ›", the Tasks header button left of the clipboard on the timer tab only, and the new session-name placeholder
+- **Changes:**
+  - The session name placeholder is "Do you want to name this session?" in the notch tab and in the
+    timer popover.
+  - "Tasks · Presets" no longer sits on top of the side column. It is a bottom overlay of the
+    column, centred on it and pushed 14 pt down into the notch's footer, so it takes no layout room
+    and neither the tab nor the notch grows. `TimerComposerMetrics.sidePagerHeight` and
+    `sidePagerFooterOffset` replace the old header metrics; the footer arithmetic (6 pt tab padding
+    plus the open notch's 12 pt bottom padding, 4 pt clear of the edge) is in the metric's doc
+    comment. The labels stay clickable, keep their VoiceOver picker, and the page switch keeps its
+    fade.
+  - The side column is 240 pt wide (was 210), and its page runs from the session name field's line
+    down to the tab's bottom line less a 4 pt inset, so the task list is wider and taller. The
+    stacked composer still fits beside it at the narrowest (640 pt) open notch.
+  - "All tasks ›" is gone, with its metrics and the column's link into Brain; an empty Tasks page
+    just says "No tasks".
+  - A two-finger sideways swipe turns the page anywhere on the tab, not only over the column:
+    `HorizontalSwipeMonitor` moved from `TimerSideColumn` to the background of `NotchTimerView`'s
+    whole tab, attached only with both pages and no timer running, and reaching down into the footer
+    (`pageSwipeFooterReach`) so the labels are swipeable too. Label clicks and swipes share
+    `NotchTimerView.selectSidePage`. Over the ruler the swipe stands aside, so a sideways scroll
+    there still sets the minutes (`RulerTimerPicker.onScrollAreaHover`, `isOverRuler`). Only
+    horizontal-dominant scrolls are taken, so a vertical scroll over the composer still reaches the
+    notch.
+  - `ScrollWheelMonitor` is offered only scrolls delivered to its own window, so a swipe inside the
+    Tasks or clipboard popover over the tab no longer turns the column's page behind it.
+  - The header's Tasks button moved to the front of the trailing row, left of the clipboard button.
+    With a timer tab it shows only on that tab; with no timer tab (the timer off, or shown as a
+    popover) it shows on every tab. The rule is the pure `TasksHeaderVisibility.isShown` (logic
+    target). It fades in and out with a plain 0.15 s opacity animation, and is still never built
+    with tasks off.
+  - Tests: new `TasksHeaderVisibilityTests` (truth table); `TasksPopoverRulesTests` now pins the
+    button before the clipboard button, shown through `TasksHeaderVisibility.isShown`, with its fade
+    animated on that gate; `TimerComposerMetricsTests` checks the list area, the footer labels, the
+    swipe area's reach and the 240 pt column at the narrowest notch; `TimerSideColumnRulesTests`
+    checks no "All tasks" link, the swipe hosted by `NotchTimerView` and reaching the footer, the
+    ruler exclusion honoured by `HorizontalSwipeMonitor`, the labels as a footer overlay, and no
+    `.help(`. Each new check has planted offenders.
+
 ### 2026-10-07 - The timer tab's side column has Tasks and Presets pages you can swipe between
 - **Developer label:** "the focus break pills should be a sub tab which could be swipeable to see the task list latest order and a click available to full task list but here its for user to start easily, that is default main tab for anyone when they turn on itegrations else the deep work tab will be default view"
 - **Agent label:** Claude Code (Opus 5.5) — timer tab side column: Tasks · Presets pages with clickable labels and a two-finger swipe, Tasks first when Jira or GitLab is connected, ▶ to start a task, All tasks › into Brain

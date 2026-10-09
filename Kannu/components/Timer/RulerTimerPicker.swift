@@ -45,6 +45,9 @@ struct RulerTimerPicker: View {
     @Binding var seconds: Int
     let tintColor: Color
     let startAction: () -> Void
+    /// The pointer entered (true) or left (false) the ruler strip, whose sideways scroll sets the
+    /// minutes: `NotchTimerView` holds its tab-wide page swipe off meanwhile.
+    var onScrollAreaHover: (Bool) -> Void = { _ in }
 
     // Raw continuous value for smooth dragging
     @State private var totalMinutes: Double = 10.0
@@ -192,12 +195,14 @@ struct RulerTimerPicker: View {
 #endif
             .onHover { hovering in
                 updateScrollGestureSuppression(hovering)
+                onScrollAreaHover(hovering)
             }
         }
         // Sized by TimerComposerMetrics so the timer tab fits without the notch growing.
         .frame(height: TimerComposerMetrics.rulerAreaHeight)
         .onDisappear {
             updateScrollGestureSuppression(false)
+            onScrollAreaHover(false)
         }
     }
 

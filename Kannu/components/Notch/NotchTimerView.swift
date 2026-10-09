@@ -56,6 +56,10 @@ struct NotchTimerView: View {
     /// opens on `TimerSideColumn.initialPage` from its first frame; cleared each time the tab
     /// appears, never persisted.
     @State private var pickedSidePage: TimerSidePage?
+    /// The pointer is over the ruler strip (`RulerTimerPicker.onScrollAreaHover`): a sideways
+    /// scroll there sets the minutes, so the tab-wide page swipe leaves it alone.
+    @State private var isOverRuler = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private enum NameField: Hashable {
         case pending
@@ -65,7 +69,7 @@ struct NotchTimerView: View {
     var body: some View {
         Group {
             if enableTimerFeature {
-                HStack(alignment: .top, spacing: timerManager.isTimerActive ? 0 : 20) {
+                HStack(alignment: .top, spacing: timerManager.isTimerActive ? 0 : TimerComposerMetrics.tabColumnSpacing) {
                     leftColumn
                     if shouldShowSideColumn {
                         Divider()
@@ -75,14 +79,28 @@ struct NotchTimerView: View {
                     }
                 }
                 .frame(maxHeight: maxTabContentHeight, alignment: .top)
-                .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
+                .padding(.horizontal, TimerComposerMetrics.tabHorizontalPadding)
+                .padding(.vertical, TimerComposerMetrics.tabVerticalPadding)
                 // A click anywhere in the tab that no control takes ends typing, which saves a rename.
                 .background(
                     Color.clear
                         .contentShape(Rectangle())
                         .onTapGesture { focusedNameField = nil }
                 )
+#if canImport(AppKit)
+                // A two-finger swipe anywhere on the tab (composer, divider or column) turns the
+                // side column's page, except over the ruler, whose sideways scroll sets minutes.
+                .background {
+                    if hasPageSwipe {
+                        HorizontalSwipeMonitor(current: shownSidePage, isSuspended: isOverRuler, onSwipe: selectSidePage)
+                            // Down into the footer, so the "Tasks · Presets" labels hanging there
+                            // are swipeable too.
+                            .padding(.bottom, -TimerComposerMetrics.pageSwipeFooterReach)
+                            // It watches scroll events only; clicks stay with the tap layer above.
+                            .allowsHitTesting(false)
+                    }
+                }
+#endif
                 .transition(.opacity.combined(with: .blurReplace))
                 .onAppear { syncCustomDuration(with: customTimerDuration) }
                 .onChange(of: customTimerDuration) { _, newValue in syncCustomDuration(with: newValue) }
@@ -156,7 +174,8 @@ struct NotchTimerView: View {
     /// one, so the typed name is dropped.
     private var sideColumn: some View {
         TimerSideColumn(
-            page: sidePage,
+            page: shownSidePage,
+            select: selectSidePage,
             tasksAvailable: isTasksPageAvailable,
             presetsAvailable: showTimerPresetsInNotchTab,
             budget: maxTabContentHeight,
@@ -354,7 +373,8 @@ struct NotchTimerView: View {
                     minutes: $customMinutes,
                     seconds: $customSeconds,
                     tintColor: timerAccentColor,
-                    startAction: startCustomTimer
+                    startAction: startCustomTimer,
+                    onScrollAreaHover: { isOverRuler = $0 }
                 )
             } else if hasSideColumn {
                 VStack(alignment: .leading, spacing: TimerComposerMetrics.rowSpacing) {
@@ -428,21 +448,39 @@ struct NotchTimerView: View {
         showTimerPresetsInNotchTab || isTasksPageAvailable
     }
 
-    /// The picked page, or the one the tab opens on: Tasks first when Jira or GitLab is connected.
-    private var sidePage: Binding<TimerSidePage> {
-        Binding(
-            get: {
-                pickedSidePage ?? TimerSideColumn.initialPage(
-                    tasksAvailable: isTasksPageAvailable,
-                    presetsAvailable: showTimerPresetsInNotchTab
-                )
-            },
-            set: { pickedSidePage = $0 }
+    /// The side column's pages, left to right.
+    private var sidePages: [TimerSidePage] {
+        TimerSideColumn.pages(tasksAvailable: isTasksPageAvailable, presetsAvailable: showTimerPresetsInNotchTab)
+    }
+
+    /// The picked page, or the one the tab opens on (Tasks first when Jira or GitLab is
+    /// connected), or the only page there is.
+    private var shownSidePage: TimerSidePage {
+        let page = pickedSidePage ?? TimerSideColumn.initialPage(
+            tasksAvailable: isTasksPageAvailable,
+            presetsAvailable: showTimerPresetsInNotchTab
         )
+        return TimerSideColumn.shownPage(page, in: sidePages)
+    }
+
+    /// The one way the side column's page changes: a label click, the VoiceOver picker, or a
+    /// swipe anywhere on the tab.
+    private func selectSidePage(_ target: TimerSidePage) {
+        guard target != shownSidePage, sidePages.contains(target) else { return }
+        if reduceMotion {
+            pickedSidePage = target
+        } else {
+            withAnimation(.smooth(duration: 0.2)) { pickedSidePage = target }
+        }
     }
 
     private var shouldShowSideColumn: Bool {
         !timerManager.isTimerActive && hasSideColumn
+    }
+
+    /// The tab-wide page swipe: only with both pages, and only while no timer runs.
+    private var hasPageSwipe: Bool {
+        shouldShowSideColumn && sidePages.count > 1
     }
 
     private var resolvedNotchHeight: CGFloat {
@@ -540,7 +578,7 @@ struct NotchTimerView: View {
     }
 
     private var durationFieldWidth: CGFloat {
-        hasSideColumn ? 64 : 78
+        hasSideColumn ? TimerComposerMetrics.stackedFieldWidth : TimerComposerMetrics.wideFieldWidth
     }
 
     private var buttonColumnWidth: CGFloat { 210 }
@@ -604,7 +642,7 @@ struct NotchTimerView: View {
 
     /// One line above the composer: the name the next session starts with, from a preset or Start.
     private var sessionNameField: some View {
-        TextField(String(localized: "Name this session (optional)"), text: $pendingSessionName)
+        TextField(String(localized: "Do you want to name this session?"), text: $pendingSessionName)
             .font(.system(size: 12, weight: .medium))
             .textFieldStyle(.plain)
             .foregroundColor(.white)
@@ -753,7 +791,7 @@ private struct DurationInputRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 8) {
+        HStack(alignment: .center, spacing: TimerComposerMetrics.durationRowSpacing) {
             DurationField(label: String(localized: "Hours"), value: $hours, range: 0...23, width: fieldWidth)
             colon
             DurationField(label: String(localized: "Minutes"), value: $minutes, range: 0...59, width: fieldWidth)

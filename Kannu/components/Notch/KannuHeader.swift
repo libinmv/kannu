@@ -74,6 +74,13 @@ struct KannuHeader: View {
 
             HStack(spacing: 4) {
                 if vm.notchState == .open && !enableMinimalisticUI {
+                    // First, left of the clipboard button. Its own view, so TasksManager (and the
+                    // task file) is touched only with tasks on: showsTasksButton includes that.
+                    if showsTasksButton {
+                        TasksHeaderButton()
+                            .transition(.opacity)
+                    }
+
                     if Defaults[.enableClipboardManager]
                         && showClipboardIcon
                         && clipboardDisplayMode != .separateTab {
@@ -175,11 +182,6 @@ struct KannuHeader: View {
                         }
                     }
 
-                    // Its own view, so TasksManager (and the task file) is touched only with tasks on.
-                    if enableTasks {
-                        TasksHeaderButton()
-                    }
-
                     if Defaults[.settingsIconInNotch] {
                         Button(action: {
                             SettingsWindowController.shared.showWindow()
@@ -252,6 +254,8 @@ struct KannuHeader: View {
             .opacity(vm.notchState == .closed ? 0 : 1)
             .blur(radius: vm.notchState == .closed ? 20 : 0)
             .animation(.smooth.delay(0.1), value: vm.notchState)
+            // The Tasks button's show/hide: a plain fade, nothing else moves (the row is trailing).
+            .animation(.easeInOut(duration: 0.15), value: showsTasksButton)
             .zIndex(2)
         }
         .foregroundColor(.gray)
@@ -284,6 +288,17 @@ struct KannuHeader: View {
 }
 
 private extension KannuHeader {
+    /// The Tasks button: with tasks on, on the timer tab, or on every tab when there is no timer
+    /// tab (the timer off, or shown as a popover). The timer tab exists exactly as
+    /// `TabSelectionView` builds it.
+    var showsTasksButton: Bool {
+        TasksHeaderVisibility.isShown(
+            enableTasks: enableTasks,
+            currentViewIsTimer: coordinator.currentView == .timer,
+            timerTabExists: enableTimerFeature && timerDisplayMode == .tab
+        )
+    }
+
     var shouldSuppressStatusIndicators: Bool {
         Defaults[.settingsIconInNotch]
             && Defaults[.enableClipboardManager]

@@ -31,7 +31,12 @@ import XCTest
 /// - "connected", for the page the tab opens on, is a host being set: the column never reads Sync
 ///   Jira or Sync GitLab, which only decide what is fetched;
 /// - the Tasks page refreshes a stale Jira or GitLab sync when it appears, as the popover does;
-/// - no `.help(` in the new notch files (docs/REGRESSIONS.md entry 9).
+/// - the column has no "All tasks ›" link into Brain any more;
+/// - the page swipe sits behind the whole tab (`NotchTimerView`), not the column, reaches down into
+///   the footer, and stands aside over the ruler, whose own sideways scroll sets the minutes;
+/// - "Tasks · Presets" is a bottom overlay pushed into the footer, never part of the column's stack;
+/// - the numbers `TimerComposerMetrics` mirrors from the open notch still match their sources;
+/// - no `.help(` in the touched notch files (docs/REGRESSIONS.md entry 9).
 ///
 /// Each detector has a planted-offender test, so a scanner that stops matching fails instead of
 /// passing vacuously.
@@ -43,6 +48,9 @@ final class TimerSideColumnRulesTests: XCTestCase {
     static let sideColumnPath = "Kannu/components/Notch/TimerSideColumn.swift"
     static let swipeMonitorPath = "Kannu/components/Notch/HorizontalSwipeMonitor.swift"
     static let rulerPath = "Kannu/components/Timer/RulerTimerPicker.swift"
+    static let headerPath = "Kannu/components/Notch/KannuHeader.swift"
+    static let contentViewPath = "Kannu/ContentView.swift"
+    static let sizesPath = "Kannu/sizing/matters.swift"
 
     private static func raw(_ path: String) throws -> String {
         try String(contentsOf: repoRoot.appendingPathComponent(path), encoding: .utf8)
@@ -84,10 +92,45 @@ final class TimerSideColumnRulesTests: XCTestCase {
         XCTAssertTrue(source.contains("manager.syncGitLabIfStale()"), "the Tasks page shows a stale GitLab order")
     }
 
-    func testTheNewNotchFilesNeverUseHelp() throws {
-        for path in [Self.sideColumnPath, Self.swipeMonitorPath] {
+    func testTheTouchedNotchFilesNeverUseHelp() throws {
+        for path in [Self.sideColumnPath, Self.swipeMonitorPath, Self.notchTimerPath, Self.headerPath, Self.rulerPath] {
             XCTAssertEqual(Self.helpCalls(in: try Self.raw(path)), [], "\(path): .help never renders in the notch")
         }
+    }
+
+    /// "All tasks ›" is gone: the header's Tasks button shows on the same tab.
+    func testTheColumnHasNoAllTasksLink() throws {
+        XCTAssertEqual(Self.allTasksLinkProblems(in: Self.code(try Self.raw(Self.sideColumnPath))), [])
+    }
+
+    func testTheSwipeCoversTheWholeTab() throws {
+        XCTAssertEqual(Self.swipeHostProblems(
+            notch: Self.code(try Self.raw(Self.notchTimerPath)),
+            column: Self.code(try Self.raw(Self.sideColumnPath))
+        ), [])
+    }
+
+    func testTheRulerKeepsItsSidewaysScroll() throws {
+        XCTAssertEqual(Self.rulerExclusionProblems(
+            notch: Self.code(try Self.raw(Self.notchTimerPath)),
+            ruler: Self.code(try Self.raw(Self.rulerPath)),
+            monitor: Self.code(try Self.raw(Self.swipeMonitorPath))
+        ), [])
+    }
+
+    /// The labels hang in the footer as an overlay, so the tab never grows for them.
+    func testThePagerHangsInTheFooter() throws {
+        XCTAssertEqual(Self.pagerPlacementProblems(in: Self.code(try Self.raw(Self.sideColumnPath))), [])
+    }
+
+    /// `TimerComposerMetrics` mirrors a few numbers from the views and the open notch so its tests
+    /// can add them up; each must still be what the source says.
+    func testTheMetricsMirrorTheirSources() throws {
+        XCTAssertEqual(Self.mirrorProblems(
+            contentView: try Self.raw(Self.contentViewPath),
+            sizes: try Self.raw(Self.sizesPath),
+            notch: Self.code(try Self.raw(Self.notchTimerPath))
+        ), [])
     }
 
     // MARK: - The scanners catch planted offenders
@@ -150,6 +193,113 @@ final class TimerSideColumnRulesTests: XCTestCase {
         XCTAssertEqual(Self.helpCalls(in: planted), ["3"])
     }
 
+    func testTheAllTasksScannerCatchesPlantedOffenders() {
+        let good = Self.code("""
+            // "All tasks" and TasksBrainDestination in a comment are prose
+            statusRow(String(localized: "No tasks"))
+            """)
+        XCTAssertEqual(Self.allTasksLinkProblems(in: good), [])
+        XCTAssertEqual(Self.allTasksLinkProblems(in: "    TasksBrainDestination.taskList.open()").count, 1)
+        XCTAssertEqual(Self.allTasksLinkProblems(in: "    Text(\"All tasks ›\")").count, 1)
+    }
+
+    func testTheSwipeHostScannerCatchesPlantedOffenders() {
+        let notch = """
+                .background { if hasPageSwipe { HorizontalSwipeMonitor(current: shownSidePage, onSwipe: selectSidePage)
+                    .padding(.bottom, -TimerComposerMetrics.pageSwipeFooterReach)
+                    .allowsHitTesting(false) } }
+            """
+        let column = "    pageView.overlay(alignment: .bottom) { pager }"
+        XCTAssertEqual(Self.swipeHostProblems(notch: notch, column: column), [])
+        XCTAssertEqual(Self.swipeHostProblems(notch: column, column: column), ["NotchTimerView does not host HorizontalSwipeMonitor"])
+        XCTAssertEqual(Self.swipeHostProblems(notch: notch, column: notch), ["TimerSideColumn still hosts HorizontalSwipeMonitor"])
+        let short = notch.replacingOccurrences(of: ".padding(.bottom, -TimerComposerMetrics.pageSwipeFooterReach)", with: "")
+        XCTAssertEqual(Self.swipeHostProblems(notch: short, column: column), ["the page swipe does not reach into the footer"])
+    }
+
+    func testThePagerPlacementScannerCatchesPlantedOffenders() {
+        let good = """
+                pageView
+                    .frame(maxHeight: budget, alignment: .top)
+                    .overlay(alignment: .bottom) {
+                        if hasPager {
+                            pager
+                                .offset(y: M.sidePagerFooterOffset)
+                        }
+                    }
+            private var pager: some View {
+                HStack { }
+                .frame(height: M.sidePagerHeight)
+            }
+            """
+        XCTAssertEqual(Self.pagerPlacementProblems(in: good), [])
+        let plant: (String, String) -> String = { target, replacement in
+            let planted = good.replacingOccurrences(of: target, with: replacement)
+            XCTAssertNotEqual(planted, good, "the plant did not take: \(target)")
+            return planted
+        }
+        XCTAssertEqual(Self.pagerPlacementProblems(in: plant(".overlay(alignment: .bottom)", ".overlay(alignment: .top)")),
+                       ["the labels are not a bottom overlay of the column"])
+        XCTAssertEqual(Self.pagerPlacementProblems(in: plant(".offset(y: M.sidePagerFooterOffset)", "")),
+                       ["the labels are not offset into the footer by sidePagerFooterOffset"])
+        XCTAssertEqual(Self.pagerPlacementProblems(in: plant(".frame(height: M.sidePagerHeight)", "")),
+                       ["the label row is not sidePagerHeight tall"])
+        let stacked = plant("pageView\n", "VStack { pager\n pageView }\n")
+        XCTAssertEqual(Self.pagerPlacementProblems(in: stacked), ["pager is used outside the footer overlay"])
+    }
+
+    func testTheRulerExclusionScannerCatchesPlantedOffenders() {
+        let notch = """
+                    startAction: startCustomTimer,
+                    onScrollAreaHover: { isOverRuler = $0 }
+                HorizontalSwipeMonitor(current: shownSidePage, isSuspended: isOverRuler, onSwipe: selectSidePage)
+            """
+        let ruler = """
+                var onScrollAreaHover: (Bool) -> Void = { _ in }
+                .onHover { hovering in
+                    updateScrollGestureSuppression(hovering)
+                    onScrollAreaHover(hovering)
+                }
+            """
+        let monitor = """
+                ScrollWheelMonitor { event in
+                    guard !isSuspended else { return false }
+                    if event.momentumPhase == [] {
+                        if let page = tracker.handle(event, current: current) {
+            """
+        XCTAssertEqual(Self.rulerExclusionProblems(notch: notch, ruler: ruler, monitor: monitor), [])
+        let unsuspended = notch.replacingOccurrences(of: "isSuspended: isOverRuler, ", with: "")
+        XCTAssertEqual(Self.rulerExclusionProblems(notch: unsuspended, ruler: ruler, monitor: monitor),
+                       ["the page swipe is not suspended over the ruler"])
+        let unwired = notch.replacingOccurrences(of: "onScrollAreaHover: { isOverRuler = $0 }", with: "")
+        XCTAssertEqual(Self.rulerExclusionProblems(notch: unwired, ruler: ruler, monitor: monitor),
+                       ["NotchTimerView does not track the ruler hover"])
+        let silent = ruler.replacingOccurrences(of: "onScrollAreaHover(hovering)", with: "")
+        XCTAssertEqual(Self.rulerExclusionProblems(notch: notch, ruler: silent, monitor: monitor),
+                       ["the ruler's .onHover does not report onScrollAreaHover"])
+        let unguarded = monitor.replacingOccurrences(of: "guard !isSuspended else { return false }", with: "")
+        XCTAssertEqual(Self.rulerExclusionProblems(notch: notch, ruler: ruler, monitor: unguarded),
+                       ["HorizontalSwipeMonitor does not honour isSuspended before it counts a swipe"])
+        let late = monitor
+            .replacingOccurrences(of: "guard !isSuspended else { return false }", with: "")
+            .replacingOccurrences(of: "current: current) {", with: "current: current) {\n    guard !isSuspended else { return false }")
+        XCTAssertNotEqual(late, monitor)
+        XCTAssertEqual(Self.rulerExclusionProblems(notch: notch, ruler: ruler, monitor: late),
+                       ["HorizontalSwipeMonitor does not honour isSuspended before it counts a swipe"])
+    }
+
+    func testTheMirrorScannerCatchesPlantedOffenders() {
+        let contentView = "    .padding([.horizontal, .bottom], vm.notchState == .open ? 12 : 0)\n    return activeCornerRadiusInsets.opened.bottom - 5"
+        let sizes = "    return 640\nlet cornerRadiusInsets = (opened: (top: 19, bottom: 24), closed: (top: 6, bottom: 14))"
+        let notch = Self.metricsTheNotchUses.map { "x(\($0))" }.joined(separator: "\n")
+        XCTAssertEqual(Self.mirrorProblems(contentView: contentView, sizes: sizes, notch: notch), [])
+        XCTAssertEqual(Self.mirrorProblems(contentView: contentView.replacingOccurrences(of: "? 12", with: "? 16"), sizes: sizes, notch: notch).count, 1)
+        XCTAssertEqual(Self.mirrorProblems(contentView: contentView, sizes: sizes.replacingOccurrences(of: "bottom: 24", with: "bottom: 30"), notch: notch).count, 1)
+        XCTAssertEqual(Self.mirrorProblems(contentView: contentView, sizes: sizes.replacingOccurrences(of: "return 640", with: "return 600"), notch: notch).count, 1)
+        XCTAssertEqual(Self.mirrorProblems(contentView: contentView, sizes: sizes, notch: ".padding(.vertical, 6)").count,
+                       Self.metricsTheNotchUses.count)
+    }
+
     // MARK: - Scanning
 
     /// The source without comment lines.
@@ -196,6 +346,121 @@ final class TimerSideColumnRulesTests: XCTestCase {
         code.split(separator: "\n")
             .filter { $0.contains(".jiraEnabled") || $0.contains(".gitlabEnabled") }
             .map(String.init)
+    }
+
+    /// Code lines that link to Brain's Task list or say "All tasks": the link is gone.
+    private static func allTasksLinkProblems(in code: String) -> [String] {
+        code.split(separator: "\n")
+            .filter { $0.contains("TasksBrainDestination") || $0.contains("All tasks") }
+            .map(String.init)
+    }
+
+    /// The page swipe sits behind the whole tab (`NotchTimerView`), not behind the column alone.
+    /// Its area reaches down into the footer (`pageSwipeFooterReach`), where the labels hang.
+    private static func swipeHostProblems(notch: String, column: String) -> [String] {
+        var problems: [String] = []
+        if let host = notch.range(of: "HorizontalSwipeMonitor(") {
+            let end = notch.range(of: "}", range: host.upperBound..<notch.endIndex)?.lowerBound ?? notch.endIndex
+            if !notch[host.upperBound..<end].contains(".padding(.bottom, -TimerComposerMetrics.pageSwipeFooterReach)") {
+                problems.append("the page swipe does not reach into the footer")
+            }
+        } else {
+            problems.append("NotchTimerView does not host HorizontalSwipeMonitor")
+        }
+        if column.contains("HorizontalSwipeMonitor(") { problems.append("TimerSideColumn still hosts HorizontalSwipeMonitor") }
+        return problems
+    }
+
+    /// "Tasks · Presets" is a bottom overlay of the column, pushed into the footer by
+    /// `sidePagerFooterOffset` and `sidePagerHeight` tall, and `pager` is used nowhere else: in the
+    /// column's own stack it would take room, and the tab (and the notch) would grow.
+    private static func pagerPlacementProblems(in column: String) -> [String] {
+        var problems: [String] = []
+        let overlay = column.range(of: ".overlay(alignment: .bottom) {").map { start -> Substring in
+            let open = column.index(before: start.upperBound)
+            var depth = 0
+            var index = open
+            repeat {
+                if column[index] == "{" { depth += 1 } else if column[index] == "}" { depth -= 1 }
+                index = column.index(after: index)
+            } while index < column.endIndex && depth > 0
+            return column[open..<index]
+        }
+        guard let overlay else { return ["the labels are not a bottom overlay of the column"] }
+        if !overlay.contains(".offset(y: M.sidePagerFooterOffset)") {
+            problems.append("the labels are not offset into the footer by sidePagerFooterOffset")
+        }
+        if !column.contains(".frame(height: M.sidePagerHeight)") {
+            problems.append("the label row is not sidePagerHeight tall")
+        }
+        let declarations = wordCount("var pager", in: column[...])
+        let overlayUses = wordCount("pager", in: overlay)
+        if wordCount("pager", in: column[...]) - declarations != overlayUses || overlayUses == 0 {
+            problems.append("pager is used outside the footer overlay")
+        }
+        return problems
+    }
+
+    /// How often `word` appears with no identifier character either side (`hasPager` is not `pager`).
+    private static func wordCount(_ word: String, in text: Substring) -> Int {
+        let isIdentifierCharacter = { (c: Character) in c.isLetter || c.isNumber || c == "_" }
+        var count = 0
+        var searchStart = text.startIndex
+        while let found = text.range(of: word, range: searchStart..<text.endIndex) {
+            let before = found.lowerBound > text.startIndex ? text[text.index(before: found.lowerBound)] : " "
+            let after = found.upperBound < text.endIndex ? text[found.upperBound] : " "
+            if !isIdentifierCharacter(before) && !isIdentifierCharacter(after) { count += 1 }
+            searchStart = found.upperBound
+        }
+        return count
+    }
+
+    /// Over the ruler, a sideways scroll sets minutes: the ruler reports its hover from `.onHover`,
+    /// `NotchTimerView` keeps it in `isOverRuler`, and the swipe is suspended while it is true:
+    /// `HorizontalSwipeMonitor` hands the event back before its tracker counts anything.
+    private static func rulerExclusionProblems(notch: String, ruler: String, monitor: String) -> [String] {
+        var problems: [String] = []
+        let honoured = monitor.range(of: "ScrollWheelMonitor { event in").flatMap { closure -> Bool? in
+            guard let guardLine = monitor.range(of: "guard !isSuspended else { return false }", range: closure.upperBound..<monitor.endIndex),
+                  let handle = monitor.range(of: "tracker.handle(", range: closure.upperBound..<monitor.endIndex) else { return nil }
+            return guardLine.lowerBound < handle.lowerBound
+        } ?? false
+        if !notch.contains("isSuspended: isOverRuler") { problems.append("the page swipe is not suspended over the ruler") }
+        if !notch.contains("onScrollAreaHover: { isOverRuler = $0 }") { problems.append("NotchTimerView does not track the ruler hover") }
+        let reports = ruler.range(of: ".onHover { hovering in").flatMap { hover in
+            ruler.range(of: "}", range: hover.upperBound..<ruler.endIndex).map { ruler[hover.upperBound..<$0.lowerBound] }
+        }
+        if !(ruler.contains("var onScrollAreaHover: (Bool) -> Void") && (reports?.contains("onScrollAreaHover(hovering)") ?? false)) {
+            problems.append("the ruler's .onHover does not report onScrollAreaHover")
+        }
+        if !honoured { problems.append("HorizontalSwipeMonitor does not honour isSuspended before it counts a swipe") }
+        return problems
+    }
+
+    /// What `NotchTimerView` must take from the metrics rather than spell out.
+    static let metricsTheNotchUses = [
+        "TimerComposerMetrics.tabHorizontalPadding", "TimerComposerMetrics.tabVerticalPadding",
+        "TimerComposerMetrics.tabColumnSpacing", "TimerComposerMetrics.stackedFieldWidth",
+        "TimerComposerMetrics.durationRowSpacing",
+    ]
+
+    /// The numbers `TimerComposerMetrics` mirrors from `ContentView` and matters.swift, and the ones
+    /// `NotchTimerView` takes from it.
+    private static func mirrorProblems(contentView: String, sizes: String, notch: String) -> [String] {
+        typealias M = TimerComposerMetrics
+        var problems: [String] = []
+        if !contentView.contains(".padding([.horizontal, .bottom], vm.notchState == .open ? \(Int(M.openNotchBottomPadding)) : 0)") {
+            problems.append("the open notch's bottom padding is not openNotchBottomPadding")
+        }
+        if !(contentView.contains("activeCornerRadiusInsets.opened.bottom - 5")
+             && sizes.contains("(opened: (top: 19, bottom: \(Int(M.openNotchSideInset + 5)))")) {
+            problems.append("the open notch's side inset is not openNotchSideInset")
+        }
+        if !sizes.contains("return \(Int(M.smallestOpenNotchWidth))") {
+            problems.append("the narrowest open notch is not smallestOpenNotchWidth")
+        }
+        problems += metricsTheNotchUses.filter { !notch.contains($0) }.map { "NotchTimerView does not use \($0)" }
+        return problems
     }
 
     /// Line numbers of `.help(` on a line that is not a comment (the pre-commit hook's rule).

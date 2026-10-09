@@ -47,7 +47,7 @@ struct TimerPopover: View {
             if timerManager.isTimerActive {
                 ActiveTimerSection(timerManager: timerManager)
             } else {
-                TextField(String(localized: "Name this session (optional)"), text: $pendingSessionName)
+                TextField(String(localized: "Do you want to name this session?"), text: $pendingSessionName)
                     .textFieldStyle(.roundedBorder)
                     .onChange(of: pendingSessionName) { _, newValue in
                         if newValue.count > TimerSessionName.maxLength {

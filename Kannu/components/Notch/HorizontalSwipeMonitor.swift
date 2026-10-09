@@ -24,11 +24,12 @@ import SwiftUI
 
 /// A local scroll-wheel monitor scoped to the view it backs. `NSView.scrollWheel` is not delivered
 /// when SwiftUI layers sit above the representable, so this watches the app's scroll events and
-/// hands `onScroll` each one, once, while the pointer is over this view. `onScroll` returns true to
-/// consume the event. The monitor is removed when the view goes away.
+/// hands `onScroll` each one delivered to this view's window, once, while the pointer is over this
+/// view. `onScroll` returns true to consume the event. The monitor is removed when the view goes
+/// away.
 ///
 /// Two users: the ruler (`RulerTimerPicker`) turns sideways trackpad scrolls into minutes, and the
-/// timer tab's side column (`HorizontalSwipeMonitor`) turns a two-finger swipe into a page change.
+/// timer tab (`HorizontalSwipeMonitor`) turns a two-finger swipe into a side-column page change.
 struct ScrollWheelMonitor: NSViewRepresentable {
     let onScroll: (NSEvent) -> Bool
 
@@ -81,6 +82,9 @@ struct ScrollWheelMonitor: NSViewRepresentable {
         }
 
         private func shouldOffer(_ event: NSEvent, view: NSView) -> Bool {
+            // Only scrolls delivered to this view's window: a popover over the tab (Tasks,
+            // clipboard) is a window of its own, and its scrolls are not this view's to take.
+            if let eventWindow = event.window, eventWindow !== view.window { return false }
             guard lastEventTimestamp != event.timestamp else { return false }
             lastEventTimestamp = event.timestamp
             return isCursorOverView(view)
@@ -110,20 +114,27 @@ extension NSEvent {
 // MARK: - Two-finger page swipe
 
 /// Turns a two-finger swipe over the view into a page change for the timer tab's side column.
+/// `NotchTimerView` puts it behind the whole tab (composer, divider and column), so a swipe works
+/// anywhere on the tab, not only over the column.
 ///
 /// It follows one gesture from `.began` to `.ended` (`TimerSideSwipe`) and ignores momentum, so a
 /// flick changes the page once and its coasting changes nothing. It consumes only sideways
-/// (horizontal-dominant) events: a vertical scroll still reaches the list under it. A plain mouse
-/// wheel has no gesture phase and is left alone.
+/// (horizontal-dominant) events: a vertical scroll still reaches the list, or the notch, under it.
+/// A plain mouse wheel has no gesture phase and is left alone.
+///
+/// While `isSuspended` is true it hands every event back untouched: the pointer is over the ruler,
+/// whose own sideways scroll sets the minutes.
 struct HorizontalSwipeMonitor: View {
     let current: TimerSidePage
+    var isSuspended = false
     let onSwipe: (TimerSidePage) -> Void
 
-    /// The gesture so far. A class, so counting deltas does not redraw the column on every event.
+    /// The gesture so far. A class, so counting deltas does not redraw the tab on every event.
     @State private var tracker = Tracker()
 
     var body: some View {
         ScrollWheelMonitor { event in
+            guard !isSuspended else { return false }
             if event.momentumPhase == [] {
                 if let page = tracker.handle(event, current: current) {
                     onSwipe(page)

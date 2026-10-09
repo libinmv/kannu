@@ -25,8 +25,9 @@ import XCTest
 ///
 /// - opening the popover sets `vm.isTasksPopoverActive`, and leaving the view clears it;
 /// - `ContentView.hasAnyActivePopovers()` includes that flag, or the notch closes under the popover;
-/// - the button has a VoiceOver label and a `.hoverTooltip`, and sits after the timer button, only
-///   with tasks on, the notch open and the minimalistic UI off;
+/// - the button has a VoiceOver label and a `.hoverTooltip`; it sits first in the open,
+///   non-minimalistic header, before the clipboard button, shown as `TasksHeaderVisibility.isShown`
+///   says (never with tasks off) from the header's own state, and it simply fades;
 /// - no notch view uses `.help(` — it never renders there (docs/REGRESSIONS.md entry 9). The
 ///   pre-commit hook checks the same, but no CI job runs the hook; this test is the CI-side guard;
 /// - Manage tasks…, Connect Jira… / Connect GitLab… and the Brain glyph open Brain › Tasks at
@@ -81,7 +82,7 @@ final class TasksPopoverRulesTests: XCTestCase {
         XCTAssertEqual(Self.buttonProblems(in: try Self.read(Self.buttonPath)), [])
     }
 
-    func testTheButtonSitsAfterTheTimerButtonOnlyWithTasksOn() throws {
+    func testTheButtonSitsBeforeTheClipboardButtonShownByTheVisibilityRule() throws {
         XCTAssertEqual(Self.placementProblems(in: try Self.read(Self.headerPath)), [])
     }
 
@@ -206,44 +207,56 @@ final class TasksPopoverRulesTests: XCTestCase {
     func testThePlacementScannerCatchesPlantedOffenders() {
         let good = """
             if vm.notchState == .open && !enableMinimalisticUI {
-                if Defaults[.enableTimerFeature] && timerDisplayMode == .popover {
-                    Button {} .popover(isPresented: $showTimerPopover) { TimerPopover() }
-                }
-                if enableTasks {
+                if showsTasksButton {
                     TasksHeaderButton()
+                        .transition(.opacity)
                 }
-                if Defaults[.settingsIconInNotch] {
-                    Button {}
+                if Defaults[.enableClipboardManager] {
+                    Button { Image(systemName: "doc.on.clipboard") }
                 }
+            }
+            .animation(.easeInOut(duration: 0.15), value: showsTasksButton)
+            var showsTasksButton: Bool {
+                TasksHeaderVisibility.isShown(
+                    enableTasks: enableTasks,
+                    currentViewIsTimer: coordinator.currentView == .timer,
+                    timerTabExists: enableTimerFeature && timerDisplayMode == .tab
+                )
             }
             """
         XCTAssertEqual(Self.placementProblems(in: good), [])
-        let unconditional = good.replacingOccurrences(of: "if enableTasks {\n        TasksHeaderButton()\n    }", with: "TasksHeaderButton()")
-        XCTAssertNotEqual(unconditional, good, "the plant did not take")
-        XCTAssertEqual(Self.placementProblems(in: unconditional), ["TasksHeaderButton() is not shown only with tasks on"])
-        let first = """
+        let plant: (String, String) -> String = { target, replacement in
+            let planted = good.replacingOccurrences(of: target, with: replacement)
+            XCTAssertNotEqual(planted, good, "the plant did not take: \(target)")
+            return planted
+        }
+        let unconditional = plant("    if showsTasksButton {\n        TasksHeaderButton()\n            .transition(.opacity)\n    }",
+                                  "    TasksHeaderButton()")
+        XCTAssertTrue(Self.placementProblems(in: unconditional).contains("TasksHeaderButton() is not shown through TasksHeaderVisibility.isShown"))
+        XCTAssertEqual(Self.placementProblems(in: plant("if showsTasksButton {", "if enableTasks {")),
+                       ["TasksHeaderButton() is not shown through TasksHeaderVisibility.isShown"])
+        XCTAssertEqual(Self.placementProblems(in: plant("enableTasks: enableTasks", "enableTasks: true")),
+                       ["TasksHeaderButton() is not shown only with tasks on"])
+        XCTAssertEqual(Self.placementProblems(in: plant("timerTabExists: enableTimerFeature && timerDisplayMode == .tab", "timerTabExists: true")),
+                       ["TasksHeaderVisibility.isShown is not given the header's own state"])
+        XCTAssertEqual(Self.placementProblems(in: plant(".transition(.opacity)", ".transition(.scale)")),
+                       ["the Tasks button does not simply fade"])
+        let afterClipboard = """
             if vm.notchState == .open && !enableMinimalisticUI {
-                if enableTasks { TasksHeaderButton() }
-                Button {} .popover(isPresented: $showTimerPopover) { TimerPopover() }
-                if Defaults[.settingsIconInNotch] { Button {} }
+                if Defaults[.enableClipboardManager] { Button { Image(systemName: "doc.on.clipboard") } }
+                if TasksHeaderVisibility.isShown(enableTasks: enableTasks, currentViewIsTimer: coordinator.currentView == .timer, timerTabExists: enableTimerFeature && timerDisplayMode == .tab) {
+                    TasksHeaderButton().transition(.opacity)
+                }
             }
+            .animation(.easeInOut(duration: 0.15), value: TasksHeaderVisibility.isShown(enableTasks: enableTasks, currentViewIsTimer: coordinator.currentView == .timer, timerTabExists: enableTimerFeature && timerDisplayMode == .tab))
             """
-        XCTAssertEqual(Self.placementProblems(in: first), ["TasksHeaderButton() is not after the timer button"])
-        let last = """
-            if vm.notchState == .open && !enableMinimalisticUI {
-                Button {} .popover(isPresented: $showTimerPopover) { TimerPopover() }
-                if Defaults[.settingsIconInNotch] { Button {} }
-                if enableTasks { TasksHeaderButton() }
-            }
-            """
-        XCTAssertEqual(Self.placementProblems(in: last), ["TasksHeaderButton() is not before the Brain button"])
-        let closed = """
-            if enableTasks { TasksHeaderButton() }
-            if vm.notchState == .open && !enableMinimalisticUI {
-                Button {} .popover(isPresented: $showTimerPopover) { TimerPopover() }
-                if Defaults[.settingsIconInNotch] { Button {} }
-            }
-            """
+        XCTAssertEqual(Self.placementProblems(in: afterClipboard), ["TasksHeaderButton() is not before the clipboard button"])
+        XCTAssertEqual(Self.placementProblems(in: plant(".animation(.easeInOut(duration: 0.15), value: showsTasksButton)\n", "")),
+                       ["the Tasks button's show/hide is not animated"])
+        XCTAssertEqual(Self.placementProblems(in: plant("value: showsTasksButton", "value: enableTasks")),
+                       ["the Tasks button's show/hide is not animated"])
+        let closed = plant("if vm.notchState == .open && !enableMinimalisticUI {\n    if showsTasksButton {",
+                           "if showsTasksButton {")
         XCTAssertTrue(Self.placementProblems(in: closed).contains("TasksHeaderButton() is not inside the open, non-minimalistic header"))
         XCTAssertEqual(Self.placementProblems(in: "struct KannuHeader {}"), ["the header shows no TasksHeaderButton()"])
     }
@@ -408,8 +421,11 @@ final class TasksPopoverRulesTests: XCTestCase {
         return problems
     }
 
-    /// In `KannuHeader`: inside the open, non-minimalistic header; inside `if enableTasks {`; after
-    /// the timer button; before the Brain button.
+    /// In `KannuHeader`: inside the open, non-minimalistic header; before the clipboard button; in
+    /// an `if` whose condition is (or names a `Bool` property that is) `TasksHeaderVisibility.isShown`
+    /// given the header's own state, `enableTasks` included, so `TasksManager` is never built with
+    /// tasks off; and shown and hidden with a plain `.transition(.opacity)`, driven by
+    /// `.animation(.easeInOut(duration: 0.15), value:)` on that same gate.
     static func placementProblems(in header: String) -> [String] {
         guard let button = header.range(of: "TasksHeaderButton()") else { return ["the header shows no TasksHeaderButton()"] }
         var problems: [String] = []
@@ -420,20 +436,51 @@ final class TasksPopoverRulesTests: XCTestCase {
         } else {
             problems.append("TasksHeaderButton() is not inside the open, non-minimalistic header")
         }
-        if !(block(after: "if enableTasks {", in: header)?.contains("TasksHeaderButton()") ?? false) {
-            problems.append("TasksHeaderButton() is not shown only with tasks on")
-        }
-        if let timer = header.range(of: "TimerPopover()"), timer.lowerBound < button.lowerBound {
-            // After.
+        let enclosing = enclosingIf(of: button, in: header)
+        let gate = enclosing.map { found -> String in
+            let condition = found.condition
+            return isIdentifier(condition) ? (block(after: "var \(condition): Bool", in: header) ?? condition) : condition
+        } ?? ""
+        if !gate.contains("TasksHeaderVisibility.isShown(") {
+            problems.append("TasksHeaderButton() is not shown through TasksHeaderVisibility.isShown")
         } else {
-            problems.append("TasksHeaderButton() is not after the timer button")
+            if !gate.contains("enableTasks: enableTasks") {
+                problems.append("TasksHeaderButton() is not shown only with tasks on")
+            }
+            if !(gate.contains("currentViewIsTimer: coordinator.currentView == .timer")
+                 && gate.contains("timerTabExists: enableTimerFeature && timerDisplayMode == .tab")) {
+                problems.append("TasksHeaderVisibility.isShown is not given the header's own state")
+            }
+            // A tab click changes `currentView` with no transaction: without this the fade never runs.
+            if let condition = enclosing?.condition,
+               !header.contains(".animation(.easeInOut(duration: 0.15), value: \(condition))") {
+                problems.append("the Tasks button's show/hide is not animated")
+            }
         }
-        if let brain = header.range(of: "if Defaults[.settingsIconInNotch] {"), button.lowerBound < brain.lowerBound {
+        let body = enclosing?.body ?? ""
+        if !body.contains(".transition(.opacity)") || [".scale", ".move", ".slide", ".offset"].contains(where: { body.contains($0) }) {
+            problems.append("the Tasks button does not simply fade")
+        }
+        if let clipboard = header.range(of: #"Image(systemName: "doc.on.clipboard")"#), button.lowerBound < clipboard.lowerBound {
             // Before.
         } else {
-            problems.append("TasksHeaderButton() is not before the Brain button")
+            problems.append("TasksHeaderButton() is not before the clipboard button")
         }
         return problems
+    }
+
+    /// The innermost `if` around `target`: its condition, and its `{ … }` block.
+    private static func enclosingIf(of target: Range<String.Index>, in source: String) -> (condition: String, body: String)? {
+        guard let keyword = source.range(of: "if ", options: .backwards, range: source.startIndex..<target.lowerBound),
+              let brace = source[keyword.upperBound..<target.lowerBound].firstIndex(of: "{"),
+              !source[source.index(after: brace)..<target.lowerBound].contains("}") else { return nil }
+        let condition = source[keyword.upperBound..<brace].trimmingCharacters(in: .whitespacesAndNewlines)
+        return (condition, balancedBlock(from: brace, in: source))
+    }
+
+    private static func isIdentifier(_ text: String) -> Bool {
+        guard let first = text.first, first.isLetter || first == "_" else { return false }
+        return text.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" }
     }
 
     /// `.help(` on a line that is not a comment, as "path:line" — the hook's own rule, which drops
@@ -511,6 +558,11 @@ final class TasksPopoverRulesTests: XCTestCase {
     private static func block(after marker: String, in source: String) -> String? {
         guard let start = source.range(of: marker),
               let open = source[start.lowerBound...].firstIndex(of: "{") else { return nil }
+        return balancedBlock(from: open, in: source)
+    }
+
+    /// The balanced `{ … }` that opens at `open`.
+    private static func balancedBlock(from open: String.Index, in source: String) -> String {
         var depth = 0
         var index = open
         repeat {

@@ -68,9 +68,10 @@ enum TimerSidePage: String, CaseIterable, Identifiable, Equatable {
     }
 }
 
-/// One two-finger gesture over the side column, from its first event to its last: the deltas so
-/// far, and whether it already changed the page. A gesture changes the page at most once, so a
-/// long swipe that overshoots and comes back never flips the column twice.
+/// One two-finger gesture over the timer tab (composer, divider or side column), from its first
+/// event to its last: the deltas so far, and whether it already changed the page. A gesture changes
+/// the page at most once, so a long swipe that overshoots and comes back never flips the column
+/// twice.
 struct TimerSideSwipe: Equatable {
     /// Net sideways travel, signed.
     private(set) var dx: Double = 0
