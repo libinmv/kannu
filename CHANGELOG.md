@@ -4,6 +4,207 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-04 - Brain › Tasks: GitLab as a source, with your issues and merge requests in the task order
+- **Developer label:** "not just jira, i want gotlab too"
+- **Agent label:** Brain Tasks PR4: GitLab read (gitlab.com and self-managed servers, issues and merge requests, token in the Keychain, read-only)
+- **Changes:**
+  - A GitLab row in Brain › Productivity › Tasks › Sources, below Jira Cloud and in the same shape:
+    "Connected as @dana · gitlab.com (can log time)", "(read-only)" or "Not connected", Connect… or
+    Disconnect…, Sync GitLab, Include merge requests (on by default), GitLab items with Refresh and
+    "Synced 10:42 · 5 items" / "Showing the first N" / "Offline" / "Rate limited until 10:52", Allow
+    Keychain Access when macOS asks, and Remove Token when a Disconnect could not delete it. The
+    Sources footer gains a GitLab line.
+  - Connect… opens a sheet: Server (starts at `https://gitlab.com`; any HTTPS server, with a port or a
+    path prefix, on a private or LAN address too), Personal access token in a `SecureField`, the
+    caption "`api` to log time; `read_api` lists only", and "Create token…" to
+    `<server>/-/user_settings/personal_access_tokens`. Kannu checks the token with `GET /api/v4/user`
+    and reads its scopes with `GET /api/v4/personal_access_tokens/self` before storing anything: a
+    token without `api` is shown read-only (`gitlabCanLogTime` off, also when the server will not
+    say: it refuses or redirects the scopes request, as before GitLab 15.5), and one that has neither
+    `api` nor `read_api` is refused. A scopes request that fails for a reason that may pass next time
+    (429, 5xx, timeout, offline, TLS) fails Connect with a try-again message instead of saving a
+    guess, since nothing reads the scopes again. Only then is `{baseURL, token}` saved
+    (`SecureSecretKey.gitlabCredential`) and the field cleared. Disconnect asks whether to keep or
+    remove the GitLab tasks on this Mac.
+  - Your open issues (`/issues?scope=assigned_to_me&state=opened`) and, with Include merge requests
+    on, the open merge requests assigned to you or waiting for your review
+    (`/merge_requests?scope=assigned_to_me…` and `?reviewer_username=<you>&state=opened&scope=all`)
+    join the task order: "group/app#45 · opened · 42m of 2h · GitLab spent 3h" and "group/app!12 · MR
+    · review requested", titles verbatim, with Open in GitLab and Hide in the ⋯ menu. Up to 2 pages
+    of 100 per list through `X-Next-Page` (6 requests a sync at most); more is reported as
+    incomplete and marks nothing gone. A merge request in both lists counts once. Turning Include
+    merge requests off takes the merge requests out of the task order at once, with no request (a
+    listing filter, as Sync GitLab is), and the next complete sync moves them to Done and hidden;
+    turning it on brings them back in place. Switching it during a sync drops that sync's result
+    and starts a new one; when no sync can run (offline, rate limited, Sync GitLab off), the next
+    page visit syncs.
+  - `RemoteTaskInfo` gains `gitlabKind` (issue or merge request) and `gitlabWebURL`, both optional, so
+    an existing `tasks.json` still reads, and an unknown kind reads as nil instead of costing the
+    file. A GitLab task matches on its global id with its kind (`issue:76`, `mr:31`), since issues and
+    merge requests number their ids separately. `TaskMerge` carries the project, number, kind and
+    page; switching server makes the old server's tasks gone.
+  - The token travels only in the `PRIVATE-TOKEN` header, never in a URL or a log, and only to the
+    Keychain item's own server (`GitLabHost.normalize`: HTTPS only, no user info, query, fragment,
+    `..`, percent escapes or IPv6 literals; checked again before every request). Requests use
+    `IntegrationHTTP` (ephemeral, 20 s, every redirect refused) with system trust only: a
+    self-signed certificate macOS does not trust fails the request. A `web_url` is kept and opened
+    only when it is on the same host, port and path prefix. A 429 honours `Retry-After`, else
+    GitLab's `RateLimit-Reset`, else 60 s (clamped to 1 s – 1 h).
+  - Each source syncs on its own: page appear (when over 5 minutes old, never after a refused token,
+    never with the Keychain dialog), Refresh, Connect, and switching Include merge requests. A Jira
+    failure never shows on or stops GitLab, and the other way round. Nothing at launch, no polling.
+  - `JiraSyncState` becomes `SourceSyncState`, shared by both sources. `TaskOrdering.listedFilter`
+    gains `showGitLab` and `showGitLabMergeRequests`. New pure file in the logic target: `GitLabAPI` (credential, decoders, request
+    builders, `X-Next-Page` paging, scopes, and `GitLabReader`, the fetch loop over `IntegrationHTTP`).
+    App file: `GitLabClient` (logging) with `GitLabCredentialStore` (Keychain off the main actor).
+    `HTTPOutcome` reads `RateLimit-Reset`; `HTTPExchange` carries the response for its headers.
+    Defaults: `gitlabEnabled`, `gitlabHost`, `gitlabUsername`, `gitlabAccountDisplayName`,
+    `gitlabCanLogTime`, `gitlabIncludeMergeRequests`. No time is logged to GitLab yet.
+  - Tests: GitLabHostTests, GitLabRequestTests, GitLabDecodingTests (handwritten fixtures, scope
+    detection), GitLabReaderTests (a `URLProtocol` stub: paging, the two-page cap, merge requests
+    counted once, a failed page failing the sync, `RateLimit-Reset`, scopes, a scopes request that
+    may pass next time failing Connect, a refused redirect), and GitLab cases in TaskMergeTests,
+    TaskModelCodingTests, HTTPOutcomeTests, TaskSourceFilterTests (Sync GitLab, and Include merge
+    requests hiding only merge requests) and IntegrationSecretRulesTests (`PRIVATE-TOKEN` set only in `GitLabAPI`,
+    the GitLab sync on appear non-interactive and never retrying a refused token, the token removal
+    result used). Highlight inventory 224 entries, 272 registrations, 266 ids; the TasksSettings
+    padding pin is 3 (the Connect GitLab sheet).
+
+### 2026-10-04 - Brain › Tasks: Jira Cloud as a source, with your Jira issues in the task order
+- **Developer label:** "what about jira page, i want a section in main brain in productivity for task management"
+- **Agent label:** Brain Tasks PR3: Jira read inside Productivity › Tasks (Sources section, read-only sync, token in the Keychain)
+- **Changes:**
+  - New Sources section at the top of Brain › Productivity › Tasks (shown while Enable tasks is on):
+    a Jira Cloud row ("Connected as Dana" or "Not connected", "Site acme.atlassian.net · Filter: my
+    open issues", Connect… or Disconnect…), Sync Jira, Jira issues with Refresh and "Synced 10:42 ·
+    12 issues" / "Showing the first 200 — narrow the filter" / "Offline" / "Rate limited until 10:52",
+    an Advanced Issue filter (JQL) with Reset, Allow Keychain Access when macOS asks, and Local tasks.
+    There is no separate Integrations page; GitLab follows in its own PR.
+  - Connect… opens a sheet (site, email, API token in a `SecureField`, "Create API token…"). Kannu
+    checks the token with `GET /rest/api/3/myself` before storing anything; only then does it go to
+    the Keychain (`SecureSecretKey.jiraCredential`, JSON with the site), and the field is cleared.
+    Disconnect asks, in a SwiftUI dialog, whether to keep or remove the Jira tasks on this Mac. If
+    the Keychain refuses to delete the saved token, Sources says it is still there, with Remove Token
+    to try again and where to find it in Keychain Access.
+  - Jira issues join the task order beside local tasks: "PROJ-123 · In Progress · 42m of 2h · Jira
+    logged 3h", titles verbatim, and a ⋯ menu with Open in Jira and Hide in place of Mark Done and
+    Delete. Done and hidden rows lead with the key. Turning off Local tasks or Sync Jira takes those
+    tasks out of the order, and Move Up / Down and drags count only the tasks on screen.
+  - A sync runs when the Tasks page appears and the last one is over 5 minutes old, on Refresh, and
+    right after Connect: nothing at launch, no timer, no polling. Once Jira has refused the token, or
+    the saved sign-in needs reconnecting, the page never syncs on its own again: only Refresh, Allow
+    Keychain Access or Connect retries, so a revoked token is not re-sent on every visit (repeated
+    failed sign-ins can lock the Atlassian account behind a CAPTCHA). `POST /rest/api/3/search/jql`, at
+    most 2 pages of 100; a 429 honours `Retry-After` (1 s to 1 h). `TaskMerge` folds the result into
+    the list on the main actor: matched on the issue id within the site, it keeps the user's order,
+    estimate, recorded time and hidden or done state; new issues are appended; only a complete fetch
+    marks missing active tasks gone, a capped one marks nothing, a failed one changes nothing, and a
+    different site's tasks go. The task being timed never goes: its row holds the Stop button, and
+    the first sync after its timing ends decides.
+  - Requests go through `IntegrationHTTP`: an ephemeral session (no cookies, cache or credential
+    storage), 20 s timeouts, every redirect refused, bodies over 5 MB dropped. The token is sent only
+    as HTTP Basic to the Keychain item's own `<site>.atlassian.net` host (`JiraSite.normalize`
+    refuses http, userinfo, other ports, IPs, look-alikes and non-ASCII), never in a URL or a log.
+  - Every Keychain access runs on a serial queue off the main actor; the page reads none. A sync the
+    page starts never shows the Keychain dialog: it shows Allow Keychain Access instead. Logs carry
+    counts and status codes only.
+  - Pure files in the logic target: `IntegrationHosts`, `HTTPOutcome`, `JiraAPI`, `TaskMerge`,
+    `IntegrationHTTP`, `JiraSyncState`; `TaskOrdering` gains a `listed` filter. App files: `JiraClient` (with
+    `JiraCredentialStore`). `SecureSecretsStore.read(_:allowInteraction:)`. Defaults: `showLocalTasks`,
+    `jiraEnabled`, `jiraSiteHost`, `jiraAccountID`, `jiraAccountDisplayName`, `jiraJQL`.
+  - Tests: JiraSiteTests, JiraRequestTests, JiraDecodingTests, TaskMergeTests, JiraSyncStateTests, HTTPOutcomeTests,
+    RedirectGuardTests (a `URLProtocol` stub: the redirect target is never asked for anything, with a
+    meta-test that an unguarded session would follow it), IntegrationSecretRulesTests (source scans
+    with planted offenders), TaskSourceFilterTests. Highlight inventory 220 entries, 268
+    registrations, 262 ids; the TasksSettings padding pin is 2 (the Connect sheet).
+
+### 2026-10-04 - Brain › Tasks: an ordered task list with estimates, and the actual time recorded by Kannu's timer
+- **Developer label:** "task will have option to add estimate and also record the actual time"
+- **Agent label:** Brain Tasks PR2: local tasks, estimates, timer session events, recorded actual time
+- **Changes:**
+  - New Brain › Tasks tab (Productivity group, after Notes, `checklist` icon): Enable tasks (off by
+    default), Default session length (25 min), Sound when the estimate is reached (off by default),
+    Add a task (title plus an estimate menu: none, 15m, 30m, 1h, 2h, 4h, 8h, Custom…), the task order
+    with "42m of 2h" and an orange "10m over", ▶ to time a task (■ while it is timed), a ⋯ menu (Set
+    Estimate…, Add Time Manually…, Move to Top / Up / Down, Mark Done, Delete…, disabled while timed),
+    Interrupted sessions (Set End Time… or Discard), and a Done and hidden disclosure with Reopen.
+  - `TimerManager.sessionEvents` sends started, paused, resumed and ended(stopped | replaced) for
+    timers started in Kannu only; `.ended` is sent before `resetTimer()` mints the next id, and a
+    replace ends the old session before the new one starts. `startTimer(playsSoundOnFinish:)`.
+  - `TasksManager` (lazy `@MainActor` singleton, nothing at launch) links a timed session to its task
+    and records segments from each event's own date; sleep closes and wake reopens without pausing the
+    timer; quit closes the open segment with one synchronous write; a segment found open at load
+    becomes an interrupted session that counts for nothing until the user sets its end.
+  - `tasks.json` in Application Support/Kannu/Tasks, written by the `TaskFileStore` actor: atomic,
+    mode 0600 (folder 0700), revision-ordered so a stale save is dropped, a corrupt file moved aside.
+  - Pure model in the logic target (`TimerSessionEvent`, `TaskModels`, `TaskTimeMath`, `TaskOrdering`,
+    `WorklogDrafts`, `TaskFileStore`): log entries round to the nearest 15 minutes, 0 makes no draft
+    and carries over; tracked totals stay exact. `TaskSource`/`RemoteTaskInfo` exist for later Jira
+    and GitLab work; no network, credentials or Keychain code.
+  - Tests: TaskModelCodingTests, TaskTimeMathTests, WorkDurationTests, TaskOrderTests,
+    WorklogDraftTests, TaskFileStoreTests, TimerSessionEventRulesTests (source scan with planted
+    offenders). Highlight inventory 214 entries, 263 registrations, 257 ids.
+
+### 2026-10-04 - Name a timer session before it starts, and rename it while it runs
+- **Developer label:** "in promod timer i need to able to name a timer session"
+- **Agent label:** Timer session names: an optional field before Start, click-to-rename while running
+- **Changes:**
+  - The timer tab in the notch, and the popover, have a one-line "Name this session (optional)"
+    field. The next session takes that name, whether it starts from a preset card (Focus, Break,
+    Deep Work) or from the custom Start. Without one it keeps the preset's name or "Custom Timer",
+    as before, and the field clears once the session starts. The notch stays open while you type.
+  - Clicking a running session's name in the notch or the popover turns it into a text field.
+    Return saves the new name, and so does anything else that ends the edit: a click elsewhere in
+    the tab or the popover card, a click into another app, closing the notch or the popover, or
+    switching tabs. Escape keeps the old name, and clearing it goes back to the default. The closed
+    notch shows the new name for a few seconds. Clock-app timers keep the Clock app's name.
+  - `TimerSessionName` (pure, in the logic target) makes a typed name one clean line of at most
+    40 characters, counting an emoji once, and never empty. `TimerManager.renameSession(to:session:)`
+    renames only timers started in Kannu, and only the session the rename began in
+    (`TimerManager.sessionID`), because a save on close can land after a new session started.
+  - Tests: `TimerSessionNameTests`, and `TimerNamingRulesTests`, which pins from the source that
+    every start path in both views takes the typed name, both views can rename a running session,
+    both save a rename when they go away and pass its session, and the notch saves when its window
+    goes to the background, with planted-offender self-tests for both scanners.
+
+### 2026-10-04 - Settings is now Brain, with a brain icon in the notch and ⌘, to open it
+- **Developer label:** "rename settings to brain and use that icon, it is more going to be a place where do all the management"
+- **Agent label:** Brain rename (user-visible text only), notch brain icon, live ⌘, command, BrainNamingRulesTests
+- **Changes:**
+  - Everywhere users see Kannu's Settings window it is now **Brain**: the window title (Kannu
+    Brain), the menu bar icon's menu and the notch's right-click menu, the search field (Search
+    Brain), the "Brain icon in notch" row together with its search entry (keywords brain, settings,
+    gear), the menu bar icon caption, the hints in the notch's Stats, Timer and agent views and the
+    timer popover, onboarding (the finish button and the "change this later" lines), the
+    security-finding advice, push text and analysis error, the closed-notch findings caption, the
+    Spotify login hints, the ADR policy-drafting prompt, and ReadMe.md. Code names do not change:
+    the `Settings` folder and types, `KannuSettingsWindow`, `settingsIconInNotch`, comments.
+  - The notch header's button shows the `brain` SF Symbol instead of `gear`, with an accessibility
+    label and a `.hoverTooltip` reading "Brain". Screen Assistant keeps `brain.head.profile`.
+  - Kept as "Settings", because none of them is Kannu's window: every "System Settings" string and
+    the "Open … Settings" menu items that open macOS panes, "Settings file:" (an agent's config),
+    BetterDisplay's Settings, the Clipboard section header, "Global Settings", the permission
+    callout's default "Open Settings" button, "Battery Settings" and "Open Model Settings".
+  - ⌘, works. `commands` held a `CommandGroup(replacing: .appSettings)` that no scene attached, so
+    the shortcut did nothing. It is now attached to the app's scene, reads "Brain…", carries
+    `.keyboardShortcut(",", modifiers: .command)`, and still brings the Terms of Use back before
+    they are accepted. Like any menu key equivalent it fires while Kannu is the active app, which
+    the Brain window (and the terms and onboarding windows) make it; with only the notch on screen
+    the key belongs to the app in front. The never-attached "Check for Updates…" group is removed
+    rather than attached, because the Kannu menu built by `installTopMenuItemsIfNeeded` already
+    carries that item.
+  - `docs/SETTINGS.md` says the window is shown to users as Brain while the code keeps the Settings
+    names. `Localizable.xcstrings` is untouched, as for every recent string: the new keys show in
+    English in every locale until the catalog is synced and translated.
+  - New `BrainNamingRulesTests`: scans every string literal under `Kannu/` (comments skipped; plain,
+    multi-line, raw and interpolated literals read correctly) and fails on "Settings" outside an
+    11-entry allowlist plus the phrase "System Settings", each entry with its reason and each
+    required to match exactly one string. It also pins the window title, the header's `brain`
+    symbol, label and tooltip (no `gear`, no `.help(`, no `brain.head.profile`), the attached ⌘,
+    command with its terms guard, the menus, the search field and the renamed row's search
+    keywords, and carries a planted-offender self-test. `SettingsHighlightInventoryTests` counts
+    are unchanged (208 entries, 257 registrations, 251 ids): the rename swaps one entry and its id.
+
 ### 2026-10-01 - Quit Kannu has a row in Settings, and searching "quit" or "exit" finds it
 - **Developer label:** "the settings should have a quit app, or at least on search of quit or exit i should get the tab with that button to come up as result"
 - **Agent label:** Settings Quit row + search entry, pinned by the highlight inventory
