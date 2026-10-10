@@ -18,12 +18,19 @@
 
 import SwiftUI
 
-/// Add Tags on a task, one tag at a time: the task's tags as chips (a click removes one), a field,
+/// Add Tags on a task, one tag at a time: the task's tags as pills (a click removes one), a field,
 /// and under it what the field would add — "#name" for a tag already in use, "Create tag “name”"
 /// for a new one, or a few tags in use while the field is empty (`TaskTagEditing.suggestions`).
 /// Return adds the highlighted line (`TaskTagEditing.returnPick`) and clears the field for the next
-/// tag. Done adds any text still typed the same way, then saves through `TasksManager.setTags`;
-/// Cancel, or Escape, keeps the tags as they were.
+/// tag. Done adds any text still typed the same way, then saves the tags through
+/// `TasksManager.setTags` and the colours picked here through `setTagColors`; Cancel, or Escape,
+/// keeps both as they were.
+///
+/// Each pill leads with its tag's colour swatch, which opens the presets. The first tag gives the
+/// task its colour (`TaskColoring.color`), so the pills reorder: drag one onto another to take its
+/// place (`TaskTagEditing.moving`), or right-click it — Move to Front, Move Left, Move Right — the
+/// same three moves VoiceOver offers as the pill's actions. A task's integration is never one of its
+/// tags, so it never shows as a pill here.
 ///
 /// The suggestion list follows the Brain search bar's (`SettingsSidebarSearchBar`): plain buttons,
 /// one per line, and Return picks the highlighted one. Tags are the user's own and render verbatim; they stay
@@ -37,6 +44,10 @@ struct TaskTagsSheet: View {
     @State private var tags: [String]
     @State private var text = ""
     @State private var hovered: TaskTagEditing.Suggestion?
+    /// Colours picked in this sheet, keyed by `TaskColoring.key(for:)`: staged until Done.
+    @State private var colorPicks: [String: TaskColor] = [:]
+    /// The pill a dragged tag is over.
+    @State private var dropTarget: String?
     @FocusState private var fieldIsFocused: Bool
 
     init(taskID: UUID, title: String, current: [String], existing: [String]) {
@@ -66,10 +77,12 @@ struct TaskTagsSheet: View {
                     .settingsDescriptionStyle()
             } else {
                 SettingsFlowLayout {
-                    ForEach(tags, id: \.self) { tag in
-                        SettingsTagChip(tag) { tags = TaskTagEditing.removing(tag, from: tags) }
+                    ForEach(Array(tags.enumerated()), id: \.element) { index, tag in
+                        pill(tag, at: index)
                     }
                 }
+                Text("The first tag sets the task's colour.")
+                    .settingsDescriptionStyle()
             }
 
             TextField("Add a tag", text: $text, prompt: Text("Add a tag"))
@@ -94,6 +107,7 @@ struct TaskTagsSheet: View {
                 Button("Done") {
                     addReturnPick()
                     TasksManager.shared.setTags(tags, for: taskID)
+                    TasksManager.shared.setTagColors(keptColorPicks)
                     dismiss()
                 }
                 .keyboardShortcut(isTyping ? nil : .defaultAction)
@@ -102,6 +116,78 @@ struct TaskTagsSheet: View {
         .padding(SettingsMetrics.cardPadding)
         .frame(width: 380)
         .onAppear { fieldIsFocused = true }
+    }
+
+    // MARK: - Pills
+
+    /// One tag: its colour swatch, then the chip that removes it, washed in the tag's colour. Drag it
+    /// onto another pill to take that pill's place; the right-click menu and the matching VoiceOver
+    /// actions move it too.
+    private func pill(_ tag: String, at index: Int) -> some View {
+        let tagColor = color(of: tag)
+        return HStack(spacing: SettingsMetrics.iconGap) {
+            TaskColorPickerButton(
+                selection: colorBinding(for: tag),
+                accessibilityLabel: String(localized: "Colour of tag \(tag): \(tagColor.localizedName)")
+            )
+            SettingsTagChip(tag, tint: tagColor.tint) { tags = TaskTagEditing.removing(tag, from: tags) }
+        }
+        .overlay {
+            if dropTarget == tag {
+                Capsule()
+                    .strokeBorder(Color.accentColor, lineWidth: 2)
+                    .allowsHitTesting(false)
+            }
+        }
+        .draggable(tag)
+        .dropDestination(for: String.self) { items, _ in
+            dropTarget = nil
+            // Only a tag on this task moves; text dragged in from elsewhere changes nothing.
+            guard let dropped = items.first else { return false }
+            let moved = TaskTagEditing.moving(dropped, to: index, in: tags)
+            guard moved != tags else { return false }
+            tags = moved
+            return true
+        } isTargeted: { isTargeted in
+            if isTargeted {
+                dropTarget = tag
+            } else if dropTarget == tag {
+                dropTarget = nil
+            }
+        }
+        .contextMenu {
+            Button("Move to Front") { tags = TaskTagEditing.movingToFront(tag, in: tags) }
+                .disabled(index == 0)
+            Button("Move Left") { tags = TaskTagEditing.moving(tag, to: index - 1, in: tags) }
+                .disabled(index == 0)
+            Button("Move Right") { tags = TaskTagEditing.moving(tag, to: index + 1, in: tags) }
+                .disabled(index == tags.count - 1)
+        }
+        // The same moves as named actions, so VoiceOver reaches them on the pill itself. `moving`
+        // clamps, so a move past either end leaves the order as it is.
+        .accessibilityElement(children: .contain)
+        .accessibilityAction(named: Text("Move to Front")) { tags = TaskTagEditing.movingToFront(tag, in: tags) }
+        .accessibilityAction(named: Text("Move Left")) { tags = TaskTagEditing.moving(tag, to: index - 1, in: tags) }
+        .accessibilityAction(named: Text("Move Right")) { tags = TaskTagEditing.moving(tag, to: index + 1, in: tags) }
+    }
+
+    /// The tag's colour as this sheet has it: picked here, or else saved.
+    private func color(of tag: String) -> TaskColor {
+        colorPicks[TaskColoring.key(for: tag)] ?? TasksManager.shared.tagColor(for: tag)
+    }
+
+    private func colorBinding(for tag: String) -> Binding<TaskColor> {
+        Binding(
+            get: { color(of: tag) },
+            set: { colorPicks[TaskColoring.key(for: tag)] = $0 }
+        )
+    }
+
+    /// The colours picked here for tags the task still carries: a pill removed before Done takes
+    /// its pick with it, so Done never colours a tag it did not keep.
+    private var keptColorPicks: [String: TaskColor] {
+        let kept = Set(tags.map(TaskColoring.key(for:)))
+        return colorPicks.filter { kept.contains($0.key) }
     }
 
     // MARK: - Suggestions

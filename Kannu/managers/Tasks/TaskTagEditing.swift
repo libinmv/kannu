@@ -102,4 +102,24 @@ enum TaskTagEditing {
     static func removing(_ tag: String, from current: [String]) -> [String] {
         current.filter { $0.lowercased() != tag.lowercased() }
     }
+
+    // MARK: - Order
+
+    /// The task's tags with `tag` (compared ignoring case, kept in its own spelling) taken out and
+    /// put back at `index` — clamped to the list, so past either end is the first or last place.
+    /// Every other tag keeps its order. Unchanged when the task does not carry `tag`, so a drop of
+    /// text from elsewhere moves nothing. A drag onto a later pill lands after it, onto an earlier
+    /// one before it: the dragged tag takes that pill's place.
+    static func moving(_ tag: String, to index: Int, in tags: [String]) -> [String] {
+        guard let from = tags.firstIndex(where: { $0.lowercased() == tag.lowercased() }) else { return tags }
+        var result = tags
+        let moved = result.remove(at: from)
+        result.insert(moved, at: min(max(index, 0), result.count))
+        return result
+    }
+
+    /// The task's tags with `tag` first: the tag that gives the task its colour.
+    static func movingToFront(_ tag: String, in tags: [String]) -> [String] {
+        moving(tag, to: 0, in: tags)
+    }
 }

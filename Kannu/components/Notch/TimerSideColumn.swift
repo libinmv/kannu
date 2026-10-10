@@ -320,10 +320,7 @@ private struct TimerTasksPage: View {
         }
         .padding(.horizontal, 10)
         .frame(height: M.sideTaskRowHeight)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.white.opacity(0.05))
-        )
+        .background(TaskGlassBackground(color: manager.color(of: task)))
     }
 
     /// "PROJ-123 " in a quiet monospaced face, for a Jira or GitLab task; nothing for a local one.

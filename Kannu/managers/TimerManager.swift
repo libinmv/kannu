@@ -37,6 +37,9 @@ class TimerManager: ObservableObject {
     @Published var isOvertime: Bool = false // Timer has gone past 0 and is counting negative
     @Published var lastUpdated: Date = .distantPast
     @Published var activePresetId: UUID?
+    /// The colour of the task this session times, when it has one; the accent sites read it
+    /// through `sessionAccent`, ahead of the preset's colour. Cleared with every session.
+    @Published private(set) var sessionTint: Color?
     @Published private(set) var activeSource: TimerSource = .none
     /// What a renamed session goes back to when its name is cleared: the preset's name, or
     /// "Custom Timer" (`TimerSessionName`).
@@ -152,13 +155,15 @@ class TimerManager: ObservableObject {
     // MARK: - Timer Methods
     /// `name` is what the session shows; `fallbackName`, when given, is the default a cleared name
     /// returns to (the user may have typed `name` over it). `playsSoundOnFinish` false runs the
-    /// session into overtime silently.
+    /// session into overtime silently. `tint` is the timed task's colour, the session's accent ahead
+    /// of the preset's (`sessionAccent`).
     func startTimer(
         duration: TimeInterval,
         name: String = "Timer",
         preset: TimerPreset? = nil,
         fallbackName: String? = nil,
-        playsSoundOnFinish: Bool = true
+        playsSoundOnFinish: Bool = true,
+        tint: Color? = nil
     ) {
         if activeSource == .external {
             endExternalTimer(triggerSmoothClose: false)
@@ -191,6 +196,7 @@ class TimerManager: ObservableObject {
         lastUpdated = Date()
 
         activePresetId = preset?.id
+        sessionTint = tint
         emit(.started)
 
         // Start countdown timer
@@ -330,6 +336,7 @@ class TimerManager: ObservableObject {
         isFinished = false
         isOvertime = remaining < 0
         activePresetId = nil
+        sessionTint = nil
         lastUpdated = Date()
     }
 
@@ -394,6 +401,7 @@ class TimerManager: ObservableObject {
         isFinished = false
         isOvertime = false
         activePresetId = nil
+        sessionTint = nil
         activeSource = .none
     }
 
@@ -412,6 +420,13 @@ class TimerManager: ObservableObject {
         timerName = name
     }
 
+    /// Recolours the running session when its task's colour changes. `session` is the `sessionID`
+    /// the task was started in; a later session keeps its own colour.
+    func updateSessionTint(_ tint: Color?, session: UUID) {
+        guard session == sessionID, activeSource == .manual, isTimerActive, sessionTint != tint else { return }
+        sessionTint = tint
+    }
+
     /// Sends `kind` for the current session. Only a timer started in Kannu has session events: a
     /// mirrored Clock-app timer never sends one, whatever path it takes through here.
     private func emit(_ kind: TimerSessionEvent.Kind) {
@@ -423,6 +438,12 @@ class TimerManager: ObservableObject {
     var activePreset: TimerPreset? {
         guard let presetId = activePresetId else { return nil }
         return Defaults[.timerPresets].first { $0.id == presetId }
+    }
+
+    /// The session's adaptive accent: the timed task's colour, else the preset's. Every accent site
+    /// reads this, never `activePreset?.color` (TaskColorRulesTests).
+    var sessionAccent: Color? {
+        sessionTint ?? activePreset?.color
     }
 
     var isExternalTimerActive: Bool {

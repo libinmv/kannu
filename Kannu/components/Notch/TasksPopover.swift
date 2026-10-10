@@ -317,7 +317,7 @@ struct TasksPopover: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white.opacity(0.08))
+            .background(TaskGlassBackground(color: manager.color(of: task), base: 0.08))
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
     }
@@ -466,10 +466,7 @@ struct TasksPopover: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.white.opacity(0.05))
-        )
+        .background(TaskGlassBackground(color: manager.color(of: task)))
     }
 
     /// " · 10m over", in orange, once a task is a minute or more past its estimate.

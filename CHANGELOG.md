@@ -4,6 +4,49 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-10 - Tasks take a colour from their first tag or their source
+- **Developer label:** "also allow color for each tag, and by default a task will be tagged with its integration too( but that should be hidden to user) and while setting up an integration ask user to select a color for a integration for eg gitlab is orange or local is white. there should be a default option which is glass grey opaque like now, other colors also should be glass opaque finish, lets jus give them a few presets to select from, now if a tag is added by user to a ticket, the color should be given to related to the tag that is highest in order , the order can be based on tags, the tags listing is a list change that to small tabs and only seletctd tags should be shown in a list, the list should be able to be reordered, or if it can be better dones as small pills it self do that, but the first one there will be the color for the task, dont show integration tag on that list, this would be considered excluding that"
+- **Agent label:** Claude Code (Opus 5.5) — task colours: ten glass presets (plain grey glass the default), a colour per tag and per source (local, Jira, GitLab), a task strictly coloured by its first tag or, untagged, by its source; reorderable tag pills with their own colour swatch, a Tag colours list in Brain, a colour picker in the Jira and GitLab connect sheets, and the colour shown in Brain's task rows, the notch Tasks popover, the timer tab's Tasks page and the running timer's accent
+- **Changes:**
+  - New `TaskColor` (`Kannu/managers/Tasks/TaskColor.swift`, in the logic test target): ten
+    presets, `glass` first and the default, each with `localizedName` and `description`.
+    `TaskColoring.color` gives a task strictly its first tag's colour (glass when that tag has
+    none); only a task with no tags takes its source's colour. The source is never a tag, so it
+    never shows as one.
+  - Tag colours are saved in tasks.json as `tagColors`, keyed by the cleaned, lower-cased tag;
+    glass is never stored. Each entry decodes on its own, so a malformed or unknown value costs only
+    that tag's colour, never the file or the other colours.
+  - Source colours are three `Defaults` keys (`tasksLocalColor`, `jiraTaskColor`,
+    `gitlabTaskColor`), default glass. `TasksManager` gains `tagColor(for:)`, `setTagColor`,
+    `setTagColors` and `color(of:)`, and republishes when a source colour changes.
+  - New `TaskColorViews.swift`: `TaskGlassBackground` (glass is exactly the old fill; a colour adds a
+    translucent tint and a thin tinted edge), `TaskColorDot`, and `TaskColorPickerButton`, a swatch
+    that opens the presets through the shared swatch grid.
+  - The Tags sheet shows the task's tags as capsule pills (`SettingsTagChip` gains `tint:`), each with
+    its colour swatch. Pills reorder by drag and drop, by a right-click Move to Front / Move Left /
+    Move Right menu, and by the same moves as VoiceOver actions (`TaskTagEditing.moving`). Done saves
+    the tags and the colours picked there; Cancel saves neither.
+  - Brain › Tasks: a colour row per source in Sources (Local always, Jira and GitLab once
+    connected), a "Tag colours" section at the end of the Task list, and a colour picker in the Jira
+    and GitLab connect sheets, saved only when Connect succeeds. Each swatch's VoiceOver label names
+    what it colours. Task list rows lead with a colour dot once any listed task has a colour; an
+    all-glass list looks as before. New search entries for the three source rows and Tag colours.
+  - The notch Tasks popover's Up next rows and Now card, and the timer tab's Tasks page rows, draw
+    their background through `TaskGlassBackground` with the task's colour.
+  - The running timer's accent: `TimerManager.startTimer` takes the timed task's colour as
+    `sessionTint`, cleared whenever a session ends or a Clock-app timer takes over, and
+    `sessionAccent` (the tint, else the preset's colour) is what every accent site reads. A change
+    of tag, tag colour or source colour recolours the running session. `NotchTimerView` re-locks its
+    accent whenever `sessionAccent` changes, so a session that replaces a preset session without a
+    colour no longer keeps the preset's accent.
+  - docs/SETTINGS.md notes the chip's capsule shape and `tint:`.
+  - Tests: new `TaskColorTests` (the colour rule, file round trips, odd and partly bad
+    `tagColors`) and `TaskColorRulesTests` (the tinted rows, Brain's dot, no `.help(` in the colour
+    views, the pills' reorder paths including the VoiceOver action, Done/Cancel saving, every accent
+    site reading `sessionAccent`, the tint cleared with each session), each scanner with planted
+    offenders; `TaskTagEditingTests` covers the reorder helpers; `SettingsHighlightInventoryTests`
+    counts move to 232 entries, 274 registrations and 268 distinct ids.
+
 ### 2026-10-10 - A two-finger swipe turns the timer tab's page over the preset cards too
 - **Developer label:** "swiping on any part of the tab shoulw work, current i think swipe does not work on top of preset capsules"
 - **Agent label:** Claude Code (Opus 5.5) — timer tab page swipe over the Presets page: the preset cards scroll in a `ScrollView` of a `LazyVStack` instead of a `List`, so the trackpad gesture reaches the tab's swipe monitor there too; the rule pinned by a new test

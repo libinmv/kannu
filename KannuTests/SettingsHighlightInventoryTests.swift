@@ -65,9 +65,13 @@ final class SettingsHighlightInventoryTests: XCTestCase {
         // sub-page itself ("Show all in Brain", a reminder's click); no search entry uses it.
         // 2026-10-07: the Sources switches only connect now, so the "Local tasks" row, its id and
         // its search entry are gone (one fewer of each).
-        XCTAssertEqual(inventory.entries.count, 228, "search entries")
-        XCTAssertEqual(inventory.registrations.values.reduce(0, +), 271, "row registrations")
-        XCTAssertEqual(inventory.registrations.count, 265, "distinct registered ids")
+        // 2026-10-10: task colours. The Sources section gained three colour rows (Local tasks colour,
+        // Jira colour, GitLab colour), each with its own id and entry (three more of each); the Task
+        // list's "Tag colours" section is a sub-page row, so it registers nothing and its new entry
+        // lands on the "Task list" row (four entries in all).
+        XCTAssertEqual(inventory.entries.count, 232, "search entries")
+        XCTAssertEqual(inventory.registrations.values.reduce(0, +), 274, "row registrations")
+        XCTAssertEqual(inventory.registrations.count, 268, "distinct registered ids")
     }
 
     func testOnlyTheKnownRowsTakeTheirIdBuilderFromAParent() throws {

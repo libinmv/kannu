@@ -21,10 +21,10 @@ import Defaults
 import SwiftUI
 
 /// Brain › Tasks: where tasks come from, the Tasks options, Time to log, Interrupted sessions, and a
-/// "Task list ›" row that opens the Task list: the task order with its filters, Add a task, and
-/// Done and hidden. Brain has no navigation stack, so the Task list is an in-tab view swap; search
-/// lands on the visible "Task list" row (the Advanced precedent, docs/SETTINGS.md), and any Tasks
-/// search or deep link closes the Task list so its row is on screen — except
+/// "Task list ›" row that opens the Task list: the task order with its filters, Add a task, Done
+/// and hidden, and Tag colours. Brain has no navigation stack, so the Task list is an in-tab view
+/// swap; search lands on the visible "Task list" row (the Advanced precedent, docs/SETTINGS.md),
+/// and any Tasks search or deep link closes the Task list so its row is on screen — except
 /// `SettingsDeepLink.tasksListOpenID`, which opens it ("Show all in Brain", a reminder's click).
 ///
 /// Built only from the `SettingsComponents` shapes (docs/SETTINGS.md). A task row carries a ▶ and a
@@ -187,6 +187,8 @@ struct TasksSettings: View {
 /// what is fetched, and a paused source's tasks stay listed (its Sync row says so). The user's own
 /// tasks need no source. A separate view so `TasksManager` is created only once tasks are turned
 /// on. Each source has its own rows, status and Refresh: one failing never shows on the other.
+/// Each source also has a colour row — local always, Jira and GitLab once connected — the colour a
+/// task from it shows when it has no tags (`TaskColoring`).
 ///
 /// Status comes from the Defaults display copies and the manager's sync state, never from the
 /// Keychain. The page appearing asks for a sync only when the last one is stale.
@@ -202,6 +204,9 @@ private struct TaskSourcesSection: View {
     @Default(.gitlabAccountDisplayName) private var gitlabAccountDisplayName
     @Default(.gitlabCanLogTime) private var gitlabCanLogTime
     @Default(.gitlabIncludeMergeRequests) private var gitlabIncludeMergeRequests
+    @Default(.tasksLocalColor) private var localColor
+    @Default(.jiraTaskColor) private var jiraColor
+    @Default(.gitlabTaskColor) private var gitlabColor
     @Binding private var sheet: TaskSheet?
     @Binding private var confirmsJiraDisconnect: Bool
     @Binding private var confirmsGitLabDisconnect: Bool
@@ -219,6 +224,14 @@ private struct TaskSourcesSection: View {
 
     var body: some View {
         Section {
+            TaskColorRow(
+                "Local tasks colour",
+                description: "For your own tasks that have no tags.",
+                accessibilityLabel: String(localized: "Local tasks colour: \(localColor.localizedName)"),
+                selection: $localColor
+            )
+            .settingsHighlight(id: highlightID("Local tasks colour"))
+
             jiraRow
 
             if isConnected, let problem = jiraProblem {
@@ -245,6 +258,14 @@ private struct TaskSourcesSection: View {
                     }
                 }
                 .settingsHighlight(id: highlightID("Sync Jira"))
+
+                TaskColorRow(
+                    "Jira colour",
+                    description: "For Jira tasks that have no tags.",
+                    accessibilityLabel: String(localized: "Jira colour: \(jiraColor.localizedName)"),
+                    selection: $jiraColor
+                )
+                .settingsHighlight(id: highlightID("Jira colour"))
 
                 jiraIssuesRow
                     .settingsHighlight(id: highlightID("Jira issues"))
@@ -424,6 +445,14 @@ private struct TaskSourcesSection: View {
             }
             .settingsHighlight(id: highlightID("Sync GitLab"))
 
+            TaskColorRow(
+                "GitLab colour",
+                description: "For GitLab tasks that have no tags.",
+                accessibilityLabel: String(localized: "GitLab colour: \(gitlabColor.localizedName)"),
+                selection: $gitlabColor
+            )
+            .settingsHighlight(id: highlightID("GitLab colour"))
+
             SettingsRow("Include merge requests", description: "Also show MRs assigned to you or awaiting your review.") {
                 Defaults.Toggle(key: .gitlabIncludeMergeRequests) {
                     Text("Include merge requests")
@@ -557,6 +586,37 @@ private struct TaskSourcesSection: View {
     }
 }
 
+/// A colour row: the title and description, then the preset swatch. A raw `LabeledContent`, never a
+/// `SettingsRow`: the swatch anchors a popover, and `SettingsRow`'s `.labelsHidden()` is for
+/// controls whose label the row replaces (docs/SETTINGS.md). The swatch's own label replaces the
+/// row's for VoiceOver, so `accessibilityLabel` names what it colours as well as the colour.
+private struct TaskColorRow: View {
+    private let title: LocalizedStringKey
+    private let description: LocalizedStringKey
+    private let accessibilityLabel: String
+    @Binding private var selection: TaskColor
+
+    init(
+        _ title: LocalizedStringKey,
+        description: LocalizedStringKey,
+        accessibilityLabel: String,
+        selection: Binding<TaskColor>
+    ) {
+        self.title = title
+        self.description = description
+        self.accessibilityLabel = accessibilityLabel
+        _selection = selection
+    }
+
+    var body: some View {
+        LabeledContent {
+            TaskColorPickerButton(selection: $selection, accessibilityLabel: accessibilityLabel)
+        } label: {
+            SettingsRowLabel(title, description: description)
+        }
+    }
+}
+
 /// The Tasks page below the options: Time to log, Interrupted sessions, and the "Task list ›" row.
 /// A separate view so `TasksManager` is created only once tasks are turned on.
 private struct TaskOverviewSections: View {
@@ -642,8 +702,9 @@ private struct TaskOverviewSections: View {
     }
 }
 
-/// The Task list: a back row, the filters, Add a task, the task order and Done and hidden. It lists
-/// every task Kannu holds — local, Jira and GitLab, synced or paused (`TasksManager.activeTasks`).
+/// The Task list: a back row, the filters, Add a task, the task order, Done and hidden, and Tag
+/// colours. It lists every task Kannu holds — local, Jira and GitLab, synced or paused
+/// (`TasksManager.activeTasks`).
 ///
 /// The filters are this page's own, a view filter only: they persist in Defaults
 /// (`tasksListSourceFilter` and the rest), change nothing anywhere else, and while they hide
@@ -714,6 +775,7 @@ private struct TaskListPage: View {
         filtersSection
         tasksSection
         doneAndHiddenSection
+        tagColorsSection
     }
 
     // MARK: - Filters
@@ -791,6 +853,9 @@ private struct TaskListPage: View {
         let filter = filter
         let rows = manager.listedTasks(filter)
         let total = manager.activeTasks.count
+        // The dot column appears only once a listed task has a colour: an all-glass list looks as
+        // it did before colours existed.
+        let showsColorDots = rows.contains { manager.color(of: $0) != .glass }
         return Section {
             // First, so a narrowed list never passes for the whole one.
             if filter.isNarrowing {
@@ -832,7 +897,7 @@ private struct TaskListPage: View {
             }
 
             ForEach(rows) { task in
-                draggableRow(task, filter: filter)
+                draggableRow(task, filter: filter, showsColorDot: showsColorDots)
             }
         } header: {
             SettingsSectionHeader("Tasks")
@@ -880,9 +945,9 @@ private struct TaskListPage: View {
 
     /// A task row that can be dragged onto another, with an insertion line while it is targeted:
     /// above the row when the dragged task comes from below, below it when it comes from above.
-    private func draggableRow(_ task: TaskItem, filter: TaskFilter) -> some View {
+    private func draggableRow(_ task: TaskItem, filter: TaskFilter, showsColorDot: Bool) -> some View {
         let edge = dropTargetID == task.id ? insertionEdge(onto: task.id, filter: filter) : nil
-        return taskRow(task, filter: filter)
+        return taskRow(task, filter: filter, showsColorDot: showsColorDot)
             .draggable(dragPayload(for: task.id))
             .dropDestination(for: String.self) { items, _ in
                 defer {
@@ -925,7 +990,7 @@ private struct TaskListPage: View {
     // MARK: - Rows
 
     @ViewBuilder
-    private func taskRow(_ task: TaskItem, filter: TaskFilter) -> some View {
+    private func taskRow(_ task: TaskItem, filter: TaskFilter, showsColorDot: Bool) -> some View {
         let isTimed = manager.timing?.taskID == task.id
         LabeledContent {
             HStack(spacing: SettingsMetrics.rowContent) {
@@ -957,10 +1022,10 @@ private struct TaskListPage: View {
             if isTimed {
                 // Only the row being timed changes on its own, once a minute.
                 TimelineView(.everyMinute) { context in
-                    taskLabel(task, now: context.date)
+                    taskLabel(task, now: context.date, showsColorDot: showsColorDot)
                 }
             } else {
-                taskLabel(task, now: Date())
+                taskLabel(task, now: Date(), showsColorDot: showsColorDot)
             }
         }
     }
@@ -1024,8 +1089,16 @@ private struct TaskListPage: View {
         return nil
     }
 
-    private func taskLabel(_ task: TaskItem, now: Date) -> some View {
-        SettingsRowLabel(Text(verbatim: task.title), description: progressText(for: task, now: now))
+    /// The task's colour as a dot, then its title and caption (`TasksManager.color(of:)`). No dot
+    /// column while every listed task is glass (`showsColorDot`); in a mixed list a glass task's
+    /// dot is empty, so the titles still line up.
+    private func taskLabel(_ task: TaskItem, now: Date, showsColorDot: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: SettingsMetrics.rowContent) {
+            if showsColorDot {
+                TaskColorDot(color: manager.color(of: task))
+            }
+            SettingsRowLabel(Text(verbatim: task.title), description: progressText(for: task, now: now))
+        }
     }
 
     /// "42m of 2h", with "10m over" in orange past the estimate. Tracked time is exact, in minutes.
@@ -1141,6 +1214,42 @@ private struct TaskListPage: View {
         } label: {
             SettingsRowLabel(Text(verbatim: task.title), description: Text(verbatim: line))
         }
+    }
+
+    // MARK: - Tag colours
+
+    /// Every tag on any task Kannu holds, done and hidden ones too, with its colour. A colour is
+    /// the tag's, shared by every task carrying it (`TasksManager.setTagColor`). Like every row on
+    /// this page it carries no highlight id: its search entry lands on "Task list".
+    private var tagColorsSection: some View {
+        let tags = TaskFacets.tags(in: manager.tasks)
+        return Section {
+            if tags.isEmpty {
+                SettingsNoteRow("No tags yet", description: "Tags you add to tasks appear here.")
+            } else {
+                SettingsNoteRow("First tag sets the colour", description: "Untagged tasks use their source's colour.")
+            }
+            ForEach(tags, id: \.self) { tag in
+                LabeledContent {
+                    TaskColorPickerButton(
+                        selection: tagColorBinding(for: tag),
+                        accessibilityLabel: String(localized: "Colour of tag \(tag): \(manager.tagColor(for: tag).localizedName)")
+                    )
+                    .disabled(!manager.isReady)
+                } label: {
+                    SettingsRowLabel(Text(verbatim: "#\(tag)"))
+                }
+            }
+        } header: {
+            SettingsSectionHeader("Tag colours")
+        }
+    }
+
+    private func tagColorBinding(for tag: String) -> Binding<TaskColor> {
+        Binding(
+            get: { manager.tagColor(for: tag) },
+            set: { manager.setTagColor($0, for: tag) }
+        )
     }
 }
 
@@ -1380,6 +1489,8 @@ private struct JiraConnectSheet: View {
     @State private var site = ""
     @State private var email = ""
     @State private var token = ""
+    /// Saved only when Connect succeeds; Cancel keeps the colour the key had.
+    @State private var color = Defaults[.jiraTaskColor]
     @State private var problem: String?
     @State private var connecting: Task<Void, Never>?
 
@@ -1393,6 +1504,14 @@ private struct JiraConnectSheet: View {
             TextField("Email", text: $email, prompt: Text(verbatim: "you@example.com"))
             SecureField("API token", text: $token)
             Link("Create API token…", destination: JiraAPI.createTokenURL)
+            LabeledContent {
+                TaskColorPickerButton(
+                    selection: $color,
+                    accessibilityLabel: String(localized: "Jira colour: \(color.localizedName)")
+                )
+            } label: {
+                SettingsRowLabel("Jira colour", description: "For Jira tasks that have no tags.")
+            }
             if let problem {
                 Text(verbatim: problem)
                     .settingsDescriptionStyle(tint: .red)
@@ -1434,6 +1553,7 @@ private struct JiraConnectSheet: View {
                 problem = failure
             } else {
                 token = ""
+                Defaults[.jiraTaskColor] = color
                 dismiss()
             }
         }
@@ -1455,6 +1575,8 @@ private struct GitLabConnectSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var server = GitLabHost.defaultServer
     @State private var token = ""
+    /// Saved only when Connect succeeds; Cancel keeps the colour the key had.
+    @State private var color = Defaults[.gitlabTaskColor]
     @State private var problem: String?
     @State private var connecting: Task<Void, Never>?
 
@@ -1471,6 +1593,14 @@ private struct GitLabConnectSheet: View {
                 .settingsDescriptionStyle()
             if let createTokenURL {
                 Link("Create token…", destination: createTokenURL)
+            }
+            LabeledContent {
+                TaskColorPickerButton(
+                    selection: $color,
+                    accessibilityLabel: String(localized: "GitLab colour: \(color.localizedName)")
+                )
+            } label: {
+                SettingsRowLabel("GitLab colour", description: "For GitLab tasks that have no tags.")
             }
             if let problem {
                 Text(verbatim: problem)
@@ -1517,6 +1647,7 @@ private struct GitLabConnectSheet: View {
                 problem = failure
             } else {
                 token = ""
+                Defaults[.gitlabTaskColor] = color
                 dismiss()
             }
         }

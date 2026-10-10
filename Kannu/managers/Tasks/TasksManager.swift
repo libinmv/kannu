@@ -81,6 +81,8 @@ final class TasksManager: ObservableObject {
     /// Every task, in the user's order. Done, hidden and gone tasks keep their place.
     @Published private(set) var tasks: [TaskItem] = []
     @Published private(set) var drafts: [WorklogDraft] = []
+    /// Each tag's colour, keyed by `TaskColoring.key(for:)`; saved in tasks.json with the tasks.
+    @Published private(set) var tagColors: [String: TaskColor] = [:]
     @Published private(set) var loadState: LoadState = .loading
     /// The task being timed right now, if any.
     @Published private(set) var timing: Timing?
@@ -174,6 +176,21 @@ final class TasksManager: ObservableObject {
             MainActor.assumeIsolated { self?.objectWillChange.send() }
         }
         .store(in: &cancellables)
+        // The integration colours: `color(of:)` reads them, and the timed task's colour is the
+        // running timer's accent. `options: []` here too.
+        Publishers.MergeMany(
+            Defaults.publisher(.tasksLocalColor, options: []).map { _ in () }.eraseToAnyPublisher(),
+            Defaults.publisher(.jiraTaskColor, options: []).map { _ in () }.eraseToAnyPublisher(),
+            Defaults.publisher(.gitlabTaskColor, options: []).map { _ in () }.eraseToAnyPublisher()
+        )
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] in
+            MainActor.assumeIsolated {
+                self?.objectWillChange.send()
+                self?.refreshTimedTint()
+            }
+        }
+        .store(in: &cancellables)
         Task { await load() }
     }
 
@@ -241,7 +258,8 @@ final class TasksManager: ObservableObject {
             duration: TimeInterval(length),
             name: TimerSessionName.resolved(typed: typed, fallback: fallback),
             fallbackName: fallback,
-            playsSoundOnFinish: Defaults[.tasksSoundAtEstimate]
+            playsSoundOnFinish: Defaults[.tasksSoundAtEstimate],
+            tint: color(of: task).tint
         )
         // The id is minted inside startTimer; its .started event is already queued behind this.
         pendingLink = (timer.sessionID, taskID)
@@ -267,6 +285,16 @@ final class TasksManager: ObservableObject {
         guard let link, link.isPaused, TimerManager.shared.sessionID == link.session,
               TimerManager.shared.hasManualTimerRunning else { return }
         TimerManager.shared.resumeTimer()
+    }
+
+    /// Recolours the running timer after the timed task's colour may have changed: its tags, a
+    /// tag's colour, or its integration's colour. Called by those changes themselves, never from
+    /// `$tasks` or `$tagColors` (docs/REGRESSIONS.md entry 10). A session still waiting for its
+    /// `.started` counts as well.
+    private func refreshTimedTint() {
+        guard let target = link.map({ (session: $0.session, taskID: $0.taskID) }) ?? pendingLink,
+              let task = tasks.first(where: { $0.id == target.taskID }) else { return }
+        TimerManager.shared.updateSessionTint(color(of: task).tint, session: target.session)
     }
 
     private func handle(_ event: TimerSessionEvent) {
@@ -408,6 +436,46 @@ final class TasksManager: ObservableObject {
     /// The task's own tags, cleaned (`TaskItem.cleanedTags`). Kannu's only: never sent anywhere.
     func setTags(_ tags: [String], for taskID: UUID) {
         update(taskID) { $0.tags = TaskItem.cleanedTags(tags) }
+        refreshTimedTint()
+    }
+
+    /// A tag's colour; `.glass` when it has none.
+    func tagColor(for tag: String) -> TaskColor {
+        tagColors[TaskColoring.key(for: tag)] ?? .glass
+    }
+
+    /// One tag's colour, shared by every task carrying the tag. `.glass` removes the entry: it is
+    /// the default and never stored.
+    func setTagColor(_ color: TaskColor, for tag: String) {
+        setTagColors([tag: color])
+    }
+
+    /// Several tag colours in one save, for a sheet that stages its changes until Save. Each entry
+    /// is set as `setTagColor` sets it; a tag not named keeps its colour.
+    func setTagColors(_ colors: [String: TaskColor]) {
+        guard isReady else { return }
+        var updated = tagColors
+        for (tag, color) in colors {
+            let key = TaskColoring.key(for: tag)
+            guard !key.isEmpty else { continue }
+            updated[key] = color == .glass ? nil : color
+        }
+        guard updated != tagColors else { return }
+        tagColors = updated
+        persist()
+        refreshTimedTint()
+    }
+
+    /// The colour a task shows: strictly its first tag's, or its integration's when it has no tags
+    /// (`TaskColoring.color`).
+    func color(of task: TaskItem) -> TaskColor {
+        let integration = TaskColoring.integration(
+            for: task.source,
+            local: Defaults[.tasksLocalColor],
+            jira: Defaults[.jiraTaskColor],
+            gitlab: Defaults[.gitlabTaskColor]
+        )
+        return TaskColoring.color(tags: task.tags, tagColors: tagColors, integration: integration)
     }
 
     /// A local task's reminder time; nil clears it. The first schedule is where Kannu asks macOS
@@ -1375,6 +1443,7 @@ final class TasksManager: ObservableObject {
         }
         tasks = loadedTasks
         drafts = normalized
+        tagColors = file.tagColors
         loadState = .ready
         // What earlier launches told macOS. It may not hold all of it (notifications turned on
         // since, a file replaced), so `checkReminderPermission` below checks with macOS.
@@ -1398,7 +1467,7 @@ final class TasksManager: ObservableObject {
     }
 
     private var snapshot: TasksFile {
-        TasksFile(tasks: tasks, drafts: drafts)
+        TasksFile(tasks: tasks, drafts: drafts, tagColors: tagColors)
     }
 
     /// Saves on the store, off the main actor. Saves can land out of order; the revision lets the

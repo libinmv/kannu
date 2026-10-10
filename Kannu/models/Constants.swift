@@ -1556,6 +1556,11 @@ extension Defaults.Keys {
     static let tasksPopoverShowLocal = Key<Bool>("tasksPopoverShowLocal", default: true)
     static let tasksPopoverShowJira = Key<Bool>("tasksPopoverShowJira", default: true)
     static let tasksPopoverShowGitLab = Key<Bool>("tasksPopoverShowGitLab", default: true)
+    // Each integration's colour (`TaskColoring`): what a task with no tags shows. Tag colours live in
+    // tasks.json with the tags. `.glass` is the plain look tasks had before colours.
+    static let tasksLocalColor = Key<TaskColor>("tasksLocalColor", default: .glass)
+    static let jiraTaskColor = Key<TaskColor>("jiraTaskColor", default: .glass)
+    static let gitlabTaskColor = Key<TaskColor>("gitlabTaskColor", default: .glass)
 
     // Use Now Playing as the default media controller for new installs.
     static var defaultMediaController: MediaControllerType {
@@ -1712,3 +1717,5 @@ extension DisplayPlacement: Defaults.Serializable {}
 /// The Task list's filters live in the logic test target too (`TaskFacets.swift`).
 extension TaskSourceFilter: Defaults.Serializable {}
 extension TaskStatusFilter: Defaults.Serializable {}
+/// `TaskColor.swift` is in the logic test target as well.
+extension TaskColor: Defaults.Serializable {}

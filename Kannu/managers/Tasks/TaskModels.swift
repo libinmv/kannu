@@ -325,15 +325,24 @@ struct TasksFile: Codable, Equatable {
     var version: Int
     var tasks: [TaskItem]
     var drafts: [WorklogDraft]
+    /// Each tag's colour, keyed by `TaskColoring.key(for:)`. A tag without an entry is `.glass`,
+    /// which is never stored. Kannu's only, like the tags themselves.
+    var tagColors: [String: TaskColor]
 
-    init(version: Int = TasksFile.currentVersion, tasks: [TaskItem], drafts: [WorklogDraft]) {
+    init(
+        version: Int = TasksFile.currentVersion,
+        tasks: [TaskItem],
+        drafts: [WorklogDraft],
+        tagColors: [String: TaskColor] = [:]
+    ) {
         self.version = version
         self.tasks = tasks
         self.drafts = drafts
+        self.tagColors = tagColors
     }
 
     private enum CodingKeys: String, CodingKey {
-        case version, tasks, drafts
+        case version, tasks, drafts, tagColors
     }
 
     init(from decoder: Decoder) throws {
@@ -341,6 +350,20 @@ struct TasksFile: Codable, Equatable {
         version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
         tasks = try container.decodeIfPresent([TaskItem].self, forKey: .tasks) ?? []
         drafts = try container.decodeIfPresent([WorklogDraft].self, forKey: .drafts) ?? []
+        // Added after the first version, and only decoration: a missing or malformed value, or a
+        // colour this version does not know, never costs the file. Each entry decodes on its own,
+        // so one bad value costs only that tag's colour.
+        let rawColors = (try? container.decodeIfPresent([String: LossyString].self, forKey: .tagColors)) ?? [:]
+        tagColors = TaskColoring.cleanedTagColors(rawColors.compactMapValues(\.value))
+    }
+
+    /// A string, or nil when the value is anything else.
+    private struct LossyString: Decodable {
+        let value: String?
+
+        init(from decoder: Decoder) {
+            value = try? decoder.singleValueContainer().decode(String.self)
+        }
     }
 
     /// A segment still open in a file being loaded was being timed when Kannu stopped: a quit that

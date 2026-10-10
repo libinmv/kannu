@@ -149,6 +149,11 @@ struct NotchTimerView: View {
                 lockAccentColorIfNeeded()
             }
         }
+        // The colour the accent is built from changed (task tint, preset, or a new session with
+        // neither): the accent follows it.
+        .onChange(of: timerManager.sessionAccent) { _, _ in
+            lockAccentColorIfNeeded()
+        }
     }
 
     private var leftColumn: some View {
@@ -510,7 +515,7 @@ struct NotchTimerView: View {
     private var resolvedAccentColor: Color {
         switch colorMode {
         case .adaptive:
-            return timerManager.activePreset?.color ?? timerManager.timerColor
+            return timerManager.sessionAccent ?? timerManager.timerColor
         case .solid:
             return solidColor
         }

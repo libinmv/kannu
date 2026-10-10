@@ -99,6 +99,7 @@
 		AA10000000000000000003A1 /* TimerComposerMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000003A0 /* TimerComposerMetrics.swift */; };
 		AA10000000000000000004A3 /* TimerSidePage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000004A2 /* TimerSidePage.swift */; };
 		AA10000000000000000004A5 /* TasksHeaderVisibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000004A4 /* TasksHeaderVisibility.swift */; };
+		AA10000000000000000004A7 /* TaskColor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000004A6 /* TaskColor.swift */; };
 		AA10000000000000000000B7 /* ClipboardPanelPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B6 /* ClipboardPanelPlacement.swift */; };
 		AA10000000000000000000B9 /* HostedContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B8 /* HostedContent.swift */; };
 		AA10000000000000000000B3 /* AgentSecurityFindingGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B2 /* AgentSecurityFindingGroup.swift */; };
@@ -218,6 +219,7 @@
 		AA10000000000000000003A0 /* TimerComposerMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TimerComposerMetrics.swift; path = Kannu/sizing/TimerComposerMetrics.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000004A2 /* TimerSidePage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TimerSidePage.swift; path = Kannu/managers/TimerSidePage.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000004A4 /* TasksHeaderVisibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TasksHeaderVisibility.swift; path = Kannu/managers/Tasks/TasksHeaderVisibility.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000004A6 /* TaskColor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TaskColor.swift; path = Kannu/managers/Tasks/TaskColor.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000B6 /* ClipboardPanelPlacement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClipboardPanelPlacement.swift; path = Kannu/managers/Display/ClipboardPanelPlacement.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000B8 /* HostedContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HostedContent.swift; path = Kannu/helpers/HostedContent.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000B2 /* AgentSecurityFindingGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentSecurityFindingGroup.swift; path = Kannu/managers/AgentStatus/AgentSecurityFindingGroup.swift; sourceTree = SOURCE_ROOT; };
@@ -687,6 +689,7 @@
 				AA10000000000000000003A1 /* TimerComposerMetrics.swift in Sources */,
 				AA10000000000000000004A3 /* TimerSidePage.swift in Sources */,
 				AA10000000000000000004A5 /* TasksHeaderVisibility.swift in Sources */,
+				AA10000000000000000004A7 /* TaskColor.swift in Sources */,
 				AA10000000000000000000B7 /* ClipboardPanelPlacement.swift in Sources */,
 				AA10000000000000000000B9 /* HostedContent.swift in Sources */,
 				AA100000000000000000F008 /* TermsOfUse.swift in Sources */,

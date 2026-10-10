@@ -160,6 +160,7 @@ private struct ActiveTimerSection: View {
     @Default(.timerProgressStyle) private var progressStyle
     @Default(.timerIconColorMode) private var colorMode
     @Default(.timerSolidColor) private var solidColor
+    /// Not read here: observed so an edited preset colour redraws `sessionAccent`.
     @Default(.timerPresets) private var timerPresets
     @State private var isRenaming = false
     @State private var renameDraft = ""
@@ -279,15 +280,10 @@ private struct ActiveTimerSection: View {
     private var progressTint: Color {
         switch colorMode {
         case .adaptive:
-            return activePresetColor ?? timerManager.timerColor
+            return timerManager.sessionAccent ?? timerManager.timerColor
         case .solid:
             return solidColor
         }
-    }
-
-    private var activePresetColor: Color? {
-        guard let presetId = timerManager.activePresetId else { return nil }
-        return timerPresets.first { $0.id == presetId }?.color
     }
 }
 

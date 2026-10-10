@@ -36,7 +36,7 @@ All in `Kannu/components/Settings/SettingsComponents.swift`. Never rebuild these
 | A red error line under a control | `SettingsErrorText(message)` |
 | One or more buttons on a row | `SettingsActionRow` — trailing, never a lone left-hanging button (the one exception: a sub-page's "‹ Back" row, below) |
 | Overflow actions on a row | `SettingsMoreMenu { … }` (the "…" button) |
-| Removable tags, wrapping | `SettingsTagChip` inside a `SettingsFlowLayout` |
+| Removable tags, wrapping | `SettingsTagChip` inside a `SettingsFlowLayout` — a capsule; `tint:` washes it in a tag's colour |
 | Free-standing explanatory text | `.settingsDescriptionStyle()` (selectable, secondary, wraps) |
 | A spacing, a width, a dot size | `SettingsMetrics.<token>` — never a number in place |
 | A copy-to-pasteboard action for agents | `CopyForAgentButton` |

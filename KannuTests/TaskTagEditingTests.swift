@@ -131,4 +131,42 @@ final class TaskTagEditingTests: XCTestCase {
         XCTAssertEqual(Editing.removing("A", from: ["a", "b"]), ["b"])
         XCTAssertEqual(Editing.removing("c", from: ["a", "b"]), ["a", "b"])
     }
+
+    // MARK: - Order (the first tag gives the task its colour)
+
+    /// A dragged tag takes the place of the pill it is dropped on: after it when dropped on a later
+    /// pill, before it when dropped on an earlier one. Every other tag keeps its order.
+    func testMovingPutsTheTagAtTheIndexAndKeepsTheRestInOrder() {
+        let tags = ["a", "b", "c", "d"]
+        XCTAssertEqual(Editing.moving("a", to: 2, in: tags), ["b", "c", "a", "d"], "onto a later pill: after it")
+        XCTAssertEqual(Editing.moving("d", to: 1, in: tags), ["a", "d", "b", "c"], "onto an earlier pill: before it")
+        XCTAssertEqual(Editing.moving("b", to: 1, in: tags), tags, "onto itself: nothing moves")
+        XCTAssertEqual(Editing.moving("b", to: 2, in: tags), ["a", "c", "b", "d"], "Move Right")
+        XCTAssertEqual(Editing.moving("c", to: 1, in: tags), ["a", "c", "b", "d"], "Move Left")
+    }
+
+    func testMovingClampsTheIndex() {
+        let tags = ["a", "b", "c"]
+        XCTAssertEqual(Editing.moving("b", to: 99, in: tags), ["a", "c", "b"], "past the end is the last place")
+        XCTAssertEqual(Editing.moving("b", to: -5, in: tags), ["b", "a", "c"], "before the start is the first place")
+        XCTAssertEqual(Editing.moving("c", to: 3, in: tags), tags, "the last tag moved right stays last")
+        XCTAssertEqual(Editing.moving("a", to: -1, in: tags), tags, "the first tag moved left stays first")
+    }
+
+    func testMovingMatchesIgnoringCaseAndKeepsTheTagsSpelling() {
+        XCTAssertEqual(Editing.moving("WORK", to: 0, in: ["urgent", "Work"]), ["Work", "urgent"])
+        XCTAssertEqual(Editing.movingToFront("work", in: ["a", "b", "Work"]), ["Work", "a", "b"])
+    }
+
+    /// Text dropped from elsewhere, or a tag the task does not carry, moves nothing.
+    func testMovingATagTheTaskDoesNotCarryChangesNothing() {
+        XCTAssertEqual(Editing.moving("zzz", to: 0, in: ["a", "b"]), ["a", "b"])
+        XCTAssertEqual(Editing.moving("a", to: 0, in: []), [])
+        XCTAssertEqual(Editing.movingToFront("zzz", in: ["a", "b"]), ["a", "b"])
+    }
+
+    func testMovingToFrontMakesTheTagFirst() {
+        XCTAssertEqual(Editing.movingToFront("c", in: ["a", "b", "c"]), ["c", "a", "b"])
+        XCTAssertEqual(Editing.movingToFront("a", in: ["a", "b", "c"]), ["a", "b", "c"], "already first")
+    }
 }

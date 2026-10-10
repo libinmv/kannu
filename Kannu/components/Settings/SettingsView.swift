@@ -910,12 +910,15 @@ struct SettingsView: View {
 
             // Tasks
             SettingsSearchEntry(tab: .tasks, title: "Sources", keywords: ["tasks", "sources", "jira", "gitlab", "integrations", "connect", "issues"], highlightID: SettingsDeepLink.tasksSourcesHighlightID),
+            SettingsSearchEntry(tab: .tasks, title: "Local tasks colour", keywords: ["tasks", "local", "colour", "color", "tint", "glass", "integration"], highlightID: SettingsTab.tasks.highlightID(for: "Local tasks colour")),
             SettingsSearchEntry(tab: .tasks, title: "Jira Cloud", keywords: ["jira", "atlassian", "connect", "disconnect", "api token", "issues", "integration"], highlightID: SettingsDeepLink.tasksSourcesHighlightID),
             SettingsSearchEntry(tab: .tasks, title: "Sync Jira", keywords: ["jira", "sync", "issues", "fetch", "pause sync"], highlightID: SettingsTab.tasks.highlightID(for: "Sync Jira")),
+            SettingsSearchEntry(tab: .tasks, title: "Jira colour", keywords: ["jira", "tasks", "colour", "color", "tint", "glass", "integration"], highlightID: SettingsTab.tasks.highlightID(for: "Jira colour")),
             SettingsSearchEntry(tab: .tasks, title: "Refresh Jira issues", keywords: ["jira", "refresh", "reload", "synced", "rate limited", "offline"], highlightID: SettingsTab.tasks.highlightID(for: "Jira issues")),
             SettingsSearchEntry(tab: .tasks, title: "Issue filter (JQL)", keywords: ["jira", "jql", "filter", "query", "advanced", "issues"], highlightID: SettingsTab.tasks.highlightID(for: "Issue filter")),
             SettingsSearchEntry(tab: .tasks, title: "GitLab", keywords: ["gitlab", "connect", "disconnect", "personal access token", "self-managed", "issues", "merge requests", "integration"], highlightID: SettingsTab.tasks.highlightID(for: "GitLab")),
             SettingsSearchEntry(tab: .tasks, title: "Sync GitLab", keywords: ["gitlab", "sync", "issues", "fetch", "pause sync"], highlightID: SettingsTab.tasks.highlightID(for: "Sync GitLab")),
+            SettingsSearchEntry(tab: .tasks, title: "GitLab colour", keywords: ["gitlab", "tasks", "colour", "color", "tint", "glass", "integration"], highlightID: SettingsTab.tasks.highlightID(for: "GitLab colour")),
             SettingsSearchEntry(tab: .tasks, title: "Include merge requests", keywords: ["gitlab", "merge requests", "mr", "review", "reviewer", "pull requests"], highlightID: SettingsTab.tasks.highlightID(for: "Include merge requests")),
             SettingsSearchEntry(tab: .tasks, title: "Refresh GitLab items", keywords: ["gitlab", "refresh", "reload", "synced", "rate limited", "offline"], highlightID: SettingsTab.tasks.highlightID(for: "GitLab items")),
             SettingsSearchEntry(tab: .tasks, title: "Enable tasks", keywords: ["tasks", "todo", "to-do", "estimate", "time tracking", "actual time"], highlightID: SettingsTab.tasks.highlightID(for: "Enable tasks")),
@@ -929,6 +932,7 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .tasks, title: "Add a task", keywords: ["tasks", "add", "new task", "todo", "estimate"], highlightID: SettingsDeepLink.tasksListHighlightID),
             SettingsSearchEntry(tab: .tasks, title: "Task order", keywords: ["tasks", "order", "reorder", "move", "drag", "priority", "list", "tracked", "actual time", "start", "time a task"], highlightID: SettingsDeepLink.tasksListHighlightID),
             SettingsSearchEntry(tab: .tasks, title: "Task tags", keywords: ["tasks", "tags", "labels", "hashtag"], highlightID: SettingsDeepLink.tasksListHighlightID),
+            SettingsSearchEntry(tab: .tasks, title: "Tag colours", keywords: ["tasks", "tags", "colour", "color", "tint", "glass", "labels", "hashtag"], highlightID: SettingsDeepLink.tasksListHighlightID),
             SettingsSearchEntry(tab: .tasks, title: "Schedule a task", keywords: ["tasks", "schedule", "reminder", "notification", "remind me", "due"], highlightID: SettingsDeepLink.tasksListHighlightID),
             SettingsSearchEntry(tab: .tasks, title: "Done and hidden tasks", keywords: ["tasks", "done", "finished", "completed", "hidden", "reopen"], highlightID: SettingsDeepLink.tasksListHighlightID),
 

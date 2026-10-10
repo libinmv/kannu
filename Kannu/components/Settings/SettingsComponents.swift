@@ -519,12 +519,21 @@ struct SettingsMoreMenu<Items: View>: View {
 /// A tag on a task, "#writing ×", that removes itself when clicked: the whole chip is the × button,
 /// so it reads as one control to VoiceOver, "Remove tag writing", and needs no padding of its own —
 /// the bordered button pads itself. The name is the user's own text and renders verbatim.
+///
+/// A pill: a capsule bezel. A `tint` (a tag's colour) shows through that translucent bezel as a
+/// wash under it, so a coloured pill keeps the bezel's glass finish and its text stays the bezel's
+/// own; nil is the plain bezel. Under the bezel rather than over it, so the name is never tinted.
 struct SettingsTagChip: View {
     private let name: String
+    private let tint: Color?
     private let remove: () -> Void
 
-    init(_ name: String, remove: @escaping () -> Void) {
+    /// The wash under the bezel: enough to read as the colour, still the bezel's glass.
+    private static let tintOpacity: Double = 0.2
+
+    init(_ name: String, tint: Color? = nil, remove: @escaping () -> Void) {
         self.name = name
+        self.tint = tint
         self.remove = remove
     }
 
@@ -539,6 +548,14 @@ struct SettingsTagChip: View {
             }
         }
         .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+        .background {
+            if let tint {
+                Capsule()
+                    .fill(tint.opacity(Self.tintOpacity))
+                    .allowsHitTesting(false)
+            }
+        }
         .accessibilityLabel(Text(verbatim: String(localized: "Remove tag \(name)")))
     }
 }
