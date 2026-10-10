@@ -22,85 +22,8 @@ import Defaults
 #if canImport(AppKit)
 import AppKit
 
-// MARK: - Trackpad scroll monitor (NSEvent local monitor — NSView.scrollWheel is not
-// delivered when SwiftUI layers sit above the representable)
-
-private struct RulerScrollMonitor: NSViewRepresentable {
-    let onScroll: (CGFloat) -> Void
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        context.coordinator.installMonitor(on: view)
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        context.coordinator.onScroll = onScroll
-    }
-
-    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
-        coordinator.removeMonitor()
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onScroll: onScroll)
-    }
-
-    @MainActor
-    final class Coordinator: NSObject {
-        var onScroll: (CGFloat) -> Void
-        private var monitor: Any?
-        private weak var observedView: NSView?
-        private var lastEventTimestamp: TimeInterval = 0
-
-        init(onScroll: @escaping (CGFloat) -> Void) {
-            self.onScroll = onScroll
-        }
-
-        func installMonitor(on view: NSView) {
-            removeMonitor()
-            observedView = view
-            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-                guard let self else { return event }
-                guard self.shouldHandle(event, view: view) else { return event }
-                self.onScroll(event.scrollingDeltaX)
-                return nil
-            }
-        }
-
-        func removeMonitor() {
-            if let monitor {
-                NSEvent.removeMonitor(monitor)
-                self.monitor = nil
-            }
-            observedView = nil
-            lastEventTimestamp = 0
-        }
-
-        private func shouldHandle(_ event: NSEvent, view: NSView) -> Bool {
-            guard lastEventTimestamp != event.timestamp else { return false }
-            lastEventTimestamp = event.timestamp
-            guard isCursorOverView(view) else { return false }
-
-            let deltaX = event.scrollingDeltaX
-            let deltaY = event.scrollingDeltaY
-            guard abs(deltaX) > abs(deltaY), abs(deltaX) > 0.15 else { return false }
-
-            let phase = event.phase
-            let momentum = event.momentumPhase
-            guard phase != [] || momentum != [] else { return false }
-            return true
-        }
-
-        private func isCursorOverView(_ view: NSView) -> Bool {
-            guard let window = view.window else { return false }
-            let screenPoint = NSEvent.mouseLocation
-            let windowPoint = window.convertPoint(fromScreen: screenPoint)
-            let localPoint = view.convert(windowPoint, from: nil)
-            return view.bounds.contains(localPoint)
-        }
-    }
-}
+// The trackpad scroll monitor is the shared `ScrollWheelMonitor` (HorizontalSwipeMonitor.swift):
+// NSView.scrollWheel is not delivered when SwiftUI layers sit above the representable.
 
 // MARK: - Haptic
 
@@ -122,6 +45,9 @@ struct RulerTimerPicker: View {
     @Binding var seconds: Int
     let tintColor: Color
     let startAction: () -> Void
+    /// The pointer entered (true) or left (false) the ruler strip, whose sideways scroll sets the
+    /// minutes: `NotchTimerView` holds its tab-wide page swipe off meanwhile.
+    var onScrollAreaHover: (Bool) -> Void = { _ in }
 
     // Raw continuous value for smooth dragging
     @State private var totalMinutes: Double = 10.0
@@ -129,7 +55,9 @@ struct RulerTimerPicker: View {
     @State private var isDragging = false
     @State private var lastHapticMinute: Int = -1
     @State private var isSuppressingScrollGestures = false
-    private let scrollSuppressionToken = UUID()
+    /// `@State`, so the token survives a re-render: a plain `let` minted a new one each time, and a
+    /// release then named a token that was never inserted, leaving the notch's scroll gesture off.
+    @State private var scrollSuppressionToken = UUID()
 
     private let range: ClosedRange<Double> = 0...90
     private let tickSpacing: CGFloat = 10   // px per minute
@@ -174,12 +102,12 @@ struct RulerTimerPicker: View {
                         let isMajor = (m % 5 == 0)
 
                         // tick
-                        let tickH: CGFloat = isMajor ? 20 : 12
+                        let tickH: CGFloat = isMajor ? 16 : 10
                         let tickW: CGFloat = isMajor ? 2 : 1.5
                         let opacity: Double = isMajor ? 0.9 : 0.5
                         let rect = CGRect(
                             x: x - tickW / 2,
-                            y: isMajor ? 16 : 20,
+                            y: isMajor ? 14 : 18,
                             width: tickW,
                             height: tickH
                         )
@@ -202,18 +130,18 @@ struct RulerTimerPicker: View {
                         }
                     }
                 }
-                .frame(height: 52)
+                .frame(height: TimerComposerMetrics.rulerCanvasHeight)
 
                 // ── pointer triangle ──
                 Image(systemName: "arrowtriangle.up.fill")
                     .font(.system(size: 10, weight: .heavy))
                     .foregroundStyle(tintColor)
                     .frame(width: width)
-                    .offset(y: 48)
+                    .offset(y: TimerComposerMetrics.rulerPointerOffset)
 
                 // ── drag gesture overlay ──
                 Color.clear
-                    .frame(width: width, height: 60)
+                    .frame(width: width, height: TimerComposerMetrics.rulerAreaHeight)
                     .contentShape(Rectangle())
                     .gesture(
                         DragGesture(minimumDistance: 2)
@@ -258,18 +186,23 @@ struct RulerTimerPicker: View {
             )
 #if canImport(AppKit)
             .background {
-                RulerScrollMonitor { delta in
-                    applyTrackpadScroll(delta)
+                ScrollWheelMonitor { event in
+                    guard event.isHorizontalTrackpadScroll else { return false }
+                    applyTrackpadScroll(event.scrollingDeltaX)
+                    return true
                 }
             }
 #endif
             .onHover { hovering in
                 updateScrollGestureSuppression(hovering)
+                onScrollAreaHover(hovering)
             }
         }
-        .frame(height: 62)
+        // Sized by TimerComposerMetrics so the timer tab fits without the notch growing.
+        .frame(height: TimerComposerMetrics.rulerAreaHeight)
         .onDisappear {
             updateScrollGestureSuppression(false)
+            onScrollAreaHover(false)
         }
     }
 
@@ -283,10 +216,10 @@ struct RulerTimerPicker: View {
                 startAction()
             }) {
                 Text(String(localized: "Start Timer"))
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .font(.system(size: TimerComposerMetrics.buttonFontSize, weight: .semibold, design: .rounded))
                     .foregroundStyle(tintColor)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 10)
+                    .padding(.horizontal, 16)
+                    .frame(height: TimerComposerMetrics.rulerButtonHeight)
                     .background(
                         Capsule()
                             .fill(tintColor.opacity(0.18))
@@ -304,14 +237,15 @@ struct RulerTimerPicker: View {
 
             // Large time readout
             Text(formattedDisplayTime)
-                .font(.system(size: 34, weight: .semibold, design: .rounded))
+                .font(.system(size: TimerComposerMetrics.rulerReadoutFontSize, weight: .semibold, design: .rounded))
                 .monospacedDigit()
+                .frame(height: TimerComposerMetrics.rulerReadoutHeight)
                 .foregroundStyle(tintColor)
                 .contentTransition(.numericText())
                 .animation(.smooth(duration: 0.12), value: Int(totalMinutes.rounded()))
         }
         .padding(.horizontal, 6)
-        .padding(.top, 14)
+        .padding(.top, TimerComposerMetrics.rulerControlTopPadding)
     }
 
     // MARK: Helpers

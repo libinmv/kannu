@@ -142,7 +142,7 @@ struct AgentSecurityFinding: Equatable, Hashable, Identifiable, Codable {
     /// `AgentStatusNotificationBridge` already carry "never the chat's name", and the default ntfy
     /// topic is readable by anyone who knows it.
     var pushBody: String {
-        String(localized: "\(severity.label) severity, reported by \(SecurityFindingGuide.sourceName(source)). Details are in Settings › Agents › Security findings.")
+        String(localized: "\(severity.label) severity, reported by \(SecurityFindingGuide.sourceName(source)). Details are in Brain › Agents › Security findings.")
     }
 
     /// The same finding first seen at `date` — a rebuild that keeps every other field.

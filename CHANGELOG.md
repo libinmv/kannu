@@ -4,6 +4,583 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-10 - A two-finger swipe turns the timer tab's page over the preset cards too
+- **Developer label:** "swiping on any part of the tab shoulw work, current i think swipe does not work on top of preset capsules"
+- **Agent label:** Claude Code (Opus 5.5) — timer tab page swipe over the Presets page: the preset cards scroll in a `ScrollView` of a `LazyVStack` instead of a `List`, so the trackpad gesture reaches the tab's swipe monitor there too; the rule pinned by a new test
+- **Changes:**
+  - The Presets page of the timer tab's side column (`TimerSideColumn.presetsPage`) is a
+    `ScrollView(.vertical)` of a `LazyVStack`, in the Tasks page's style, instead of a SwiftUI
+    `List`. A `List` is an `NSTableView` in an `NSScrollView`, which can follow a trackpad gesture
+    in an event loop of its own once the gesture's first event reaches it; the tab's swipe monitor
+    is a local `NSEvent` monitor, which never sees events such a loop takes, so a swipe over the
+    preset cards did not turn the page. Each card keeps its 2 pt above and below, the same edge
+    fades, the same height (60 pt a preset plus 4, capped at the page height) and no scroll
+    indicators; the cards themselves are unchanged.
+  - Nothing else on the timer tab hosts a `List` or another scrolling view: the composer, ruler,
+    labels and name fields have none, and the Tasks page's vertical-only `ScrollView` gets no
+    sideways event the monitor takes, since the monitor consumes every horizontal-dominant
+    trackpad event before the view under the pointer sees it.
+  - Doc comments in `TimerSideColumn` and `HorizontalSwipeMonitor` state why the pages are
+    `ScrollView`s and never a `List`.
+  - Tests: `TimerSideColumnRulesTests` gains a rule that `TimerSideColumn.swift` builds no `List`
+    (`List {` or `List(`), with a planted-offender test for its scanner.
+
+### 2026-10-09 - Fixed buttons in the notch header keep their place; what comes and goes appears to their left
+- **Developer label:** "the refesh button in usage tab also should be one left, basically non changing buttons shoulkd have statis position priottized,  and dynamic ones come to their left only"
+- **Agent label:** Claude Code (Opus 5.5) — notch header order: the screen-recording and Do Not Disturb indicators, the Usage tab's Refresh button and the Tasks button sit left of the clipboard, timer, Brain and battery, so a fixed button never moves; the rule stated in AGENTS.md and pinned by a new test
+- **Changes:**
+  - `KannuHeader`'s trailing row now reads, left to right: screen-recording indicator, Do Not
+    Disturb indicator, Refresh (Usage tab only), Tasks, then clipboard, timer (popover mode), Brain
+    and battery. The row is trailing-aligned, so an item that appears or disappears pushes only
+    what is to its left; the buttons that are always there keep their place. Before, Refresh sat
+    between the clipboard and the timer, and both indicators sat right of Brain, so they shifted
+    the fixed buttons whenever they came and went. This corrects the previous entry's "front of the
+    trailing row" for the Tasks button: it is now the last of the items that come and go.
+  - The Refresh button fades in and out like the Tasks button: a plain `.transition(.opacity)`,
+    driven by an `.easeInOut(duration: 0.15)` animation on `currentView == .llmUsage`, since a tab
+    click changes the view with no transaction.
+  - AGENTS.md ("UI") states the principle: fixed buttons keep fixed positions on the right, and
+    buttons and indicators that come and go appear to their left.
+  - Comments in `TasksHeaderButton` and `NotchLLMUsageView` that still placed those buttons "first"
+    or "next to the clipboard icon" now describe the new order.
+  - Tests: new `HeaderOrderRulesTests` pins the order from the source (every item once, inside the
+    open, non-minimalistic block; what comes and goes left of the leftmost fixed button; each group
+    in its own order; the battery block last in the row) and the Refresh button's fade, each scanner
+    with planted offenders. `BrainNamingRulesTests` now ends the Brain button's span at the battery
+    block instead of the recording indicator, and the `TasksPopoverRulesTests` doc comment no longer
+    says the Tasks button sits first.
+
+### 2026-10-09 - The timer tab's page labels sit in the footer, it swipes anywhere, and its Tasks button sits left of the clipboard
+- **Developer label:** "i want the layout spacing differently, name this session optional change it to Do you want to name this session ? the swipe doesnt work on the whole surface area task and preset can be centered to the bottom of that subsection,and can go a line space below the current line we hold for the tabs in current design, creeoping that into footer is fine, but the tabs section both timer and task list can stay same, make the task scroller a bit wider and taller all tasks not needed as that same page has task list at top  near brain, also that should only be near brain in that promodo tab, also move it to left of clipboard, that change animation between tabs donot need to be comnplicated"
+- **Agent label:** Claude Code (Opus 5.5) — timer tab layout follow-up: "Tasks · Presets" in the footer, a tab-wide page swipe that leaves the ruler alone, a wider and taller task list without "All tasks ›", the Tasks header button left of the clipboard on the timer tab only, and the new session-name placeholder
+- **Changes:**
+  - The session name placeholder is "Do you want to name this session?" in the notch tab and in the
+    timer popover.
+  - "Tasks · Presets" no longer sits on top of the side column. It is a bottom overlay of the
+    column, centred on it and pushed 14 pt down into the notch's footer, so it takes no layout room
+    and neither the tab nor the notch grows. `TimerComposerMetrics.sidePagerHeight` and
+    `sidePagerFooterOffset` replace the old header metrics; the footer arithmetic (6 pt tab padding
+    plus the open notch's 12 pt bottom padding, 4 pt clear of the edge) is in the metric's doc
+    comment. The labels stay clickable, keep their VoiceOver picker, and the page switch keeps its
+    fade.
+  - The side column is 240 pt wide (was 210), and its page runs from the session name field's line
+    down to the tab's bottom line less a 4 pt inset, so the task list is wider and taller. The
+    stacked composer still fits beside it at the narrowest (640 pt) open notch.
+  - "All tasks ›" is gone, with its metrics and the column's link into Brain; an empty Tasks page
+    just says "No tasks".
+  - A two-finger sideways swipe turns the page anywhere on the tab, not only over the column:
+    `HorizontalSwipeMonitor` moved from `TimerSideColumn` to the background of `NotchTimerView`'s
+    whole tab, attached only with both pages and no timer running, and reaching down into the footer
+    (`pageSwipeFooterReach`) so the labels are swipeable too. Label clicks and swipes share
+    `NotchTimerView.selectSidePage`. Over the ruler the swipe stands aside, so a sideways scroll
+    there still sets the minutes (`RulerTimerPicker.onScrollAreaHover`, `isOverRuler`). Only
+    horizontal-dominant scrolls are taken, so a vertical scroll over the composer still reaches the
+    notch.
+  - `ScrollWheelMonitor` is offered only scrolls delivered to its own window, so a swipe inside the
+    Tasks or clipboard popover over the tab no longer turns the column's page behind it.
+  - The header's Tasks button moved to the front of the trailing row, left of the clipboard button.
+    With a timer tab it shows only on that tab; with no timer tab (the timer off, or shown as a
+    popover) it shows on every tab. The rule is the pure `TasksHeaderVisibility.isShown` (logic
+    target). It fades in and out with a plain 0.15 s opacity animation, and is still never built
+    with tasks off.
+  - Tests: new `TasksHeaderVisibilityTests` (truth table); `TasksPopoverRulesTests` now pins the
+    button before the clipboard button, shown through `TasksHeaderVisibility.isShown`, with its fade
+    animated on that gate; `TimerComposerMetricsTests` checks the list area, the footer labels, the
+    swipe area's reach and the 240 pt column at the narrowest notch; `TimerSideColumnRulesTests`
+    checks no "All tasks" link, the swipe hosted by `NotchTimerView` and reaching the footer, the
+    ruler exclusion honoured by `HorizontalSwipeMonitor`, the labels as a footer overlay, and no
+    `.help(`. Each new check has planted offenders.
+
+### 2026-10-07 - The timer tab's side column has Tasks and Presets pages you can swipe between
+- **Developer label:** "the focus break pills should be a sub tab which could be swipeable to see the task list latest order and a click available to full task list but here its for user to start easily, that is default main tab for anyone when they turn on itegrations else the deep work tab will be default view"
+- **Agent label:** Claude Code (Opus 5.5) — timer tab side column: Tasks · Presets pages with clickable labels and a two-finger swipe, Tasks first when Jira or GitLab is connected, ▶ to start a task, All tasks › into Brain
+- **Changes:**
+  - The timer tab's right-hand column (`TimerSideColumn`, 210 pt as before) has two pages. Tasks
+    lists the task order, each row with its key, title, "42m of 2h" and ▶, then "All tasks ›" into
+    Brain's Task list ("No tasks" plus the same link when empty). Presets is the preset cards,
+    unchanged. Tasks exists with tasks and the timer on, Presets with Show presets in the notch tab
+    on; with only one page there are no labels.
+  - With both, small "Tasks · Presets" labels switch pages (VoiceOver reads them as a two-option
+    picker), and so does a two-finger sideways swipe: once per gesture, only when clearly
+    horizontal and at least 40 pt. A vertical scroll still scrolls the list.
+  - The tab opens on Tasks when Jira or GitLab is connected (a host is set, whether Sync is on or
+    paused), otherwise on Presets. It is chosen afresh each time the tab appears and never saved.
+    The pure `TimerSidePage` (logic target) decides the first page and the swipe.
+  - ▶ starts the task through `TasksManager.start`; its name replaces a typed session name, and a
+    failed start does nothing else. `NotchTimerView` never touches `TasksManager`, and the Tasks
+    page is built only while shown, so the manager is never created with tasks off. Showing the
+    page refreshes a stale Jira or GitLab sync, as the Tasks popover does, never with the Keychain
+    dialog.
+  - The notch does not grow: the labels, rows and link take their sizes from
+    `TimerComposerMetrics`, and the composer's stacked layout follows whenever the column shows.
+    The Tasks list keeps at least two rows of room, so the first row's tooltip, which opens below,
+    is not clipped; the other rows' open above.
+  - Hovering the column holds off the notch's scroll gesture, so scrolling the preset or task list
+    no longer blurs or closes the notch. The ruler's scroll monitor moved into the shared
+    `ScrollWheelMonitor` (`HorizontalSwipeMonitor.swift`) with its behaviour unchanged, and both
+    scroll-suppression tokens are `@State`, so a re-render no longer loses them.
+  - Tests: `TimerSidePageTests` (the first-page truth table; swipe threshold, direction,
+    vertical-dominant gestures ignored, one flip per gesture, a scroll down and back up never
+    flips), `TimerComposerMetricsTests` (the column fits the 130 pt floor; one task leaves room
+    for its tooltip) and `TimerSideColumnRulesTests` (no `TasksManager` in `NotchTimerView`,
+    `@State` tokens, "connected" never reads Sync Jira or Sync GitLab, sync on appear, no
+    `.help(`), with planted offenders. The new notch files join `TasksPopoverRulesTests.newFiles`.
+
+### 2026-10-06 - The timer tab fits without the notch growing: the timer is smaller instead
+- **Developer label:** "rather than resizing the noth in timer tab, you could have just shrinked the timer, theresize looks like a glitch, please fix that"
+- **Agent label:** Timer composer sized by TimerComposerMetrics to the tab's existing budget; the notch-height change is reverted
+- **Changes:**
+  - Reverts the previous fix, which made the open notch 270 pt tall on the timer tab: the notch
+    jumped in size when you switched to the tab. The notch's sizing is exactly as before.
+  - The composer is smaller so it fits the tab's 130 pt budget with the session name field above it:
+    the name field is 24 pt, the duration fields 34 pt with 22 pt digits and a smaller caption,
+    Start/Reset 26 pt with 13 pt labels, and tighter padding and spacing. The ruler style's strip
+    is 46 pt and its Start Timer button and readout are smaller. The running-timer card is unchanged.
+  - Every one of those sizes is a named constant in `TimerComposerMetrics` (pure, in the logic
+    target), read by `NotchTimerView` and `RulerTimerPicker`.
+  - Tests: `TimerComposerMetricsTests` (every style — manual with presets, manual without, ruler —
+    fits the 130 pt floor with 4 pt to spare; buttons stay at least 24 pt tall) and
+    `TimerComposerMetricsRulesTests` (the views take their sizes from the metrics; nothing gives the
+    timer tab its own notch height), with planted offenders.
+
+### 2026-10-07 - Each task view has its own filter, and tags are added one at a time with clearer names
+- **Developer label:** "the filter applies outside in notch applies to list in the brain and that doesnt show any fiter applies, besides what to filter in drop down in notch is something local, the task list should show everything connected, but also provide a seperate view only filter and should apply on there. the tags and add tine manually have trailling ... for no reason, also please fix spacing and naming like these, for eg tag should add tags, with option to add multiple tags for a ticket, with the popup tag add ui to be adding 1 item at a time and giving option like create new tag or use existing tag"
+- **Agent label:** Claude Code (Opus 5.5) — Brain Tasks PR8: connection-only Sources, view-only Task list filter with a Filtered row, notch-only Show in notch filter, one-tag-at-a-time Tags sheet, naming and spacing pass
+- **Changes:**
+  - Sync Jira and Sync GitLab only decide what is fetched (`isJiraSyncOn` / `isGitLabSyncOn`). The
+    task order is now the connected baseline, `TaskOrdering.connectedFilter`: local tasks, Jira and
+    GitLab tasks (synced, paused or kept after a disconnect), GitLab merge requests while Include
+    merge requests is on or GitLab is not connected, and the task being timed. It reads no view
+    setting. A paused source's Sync row says "Sync paused. Jira tasks stay listed."
+  - The "Local tasks" switch, its search entry and the `showLocalTasks` key are gone, and so is
+    `TasksManager.isListed(_:)`. Inventory pins: 228 entries, 271 registrations, 265 ids.
+  - Brain's Task list filters are view-only. While they narrow, the list opens with a "Filtered" row
+    ("3 of 12 tasks") whose Show All resets source, project, status and tag; "No tasks match" offers
+    the same Show All. The Tasks page's "Task list" row and the Project and Tag pickers count every
+    connected task, not the filtered ones.
+  - The notch has its own filter, Show in notch (`tasksPopoverShowLocal`, `tasksPopoverShowJira`,
+    `tasksPopoverShowGitLab`, all on by default), through the pure `TaskOrdering.viewFilter` and
+    `isNarrowingView`. `TaskSourceMenu` binds only those keys, under a "Show in notch" header, with
+    the tooltip and accessibility label "Filter tasks"; a source that is not connected still offers
+    "Connect Jira…" / "Connect GitLab…" and is never counted as hidden.
+  - The popover's Up next, its count and its empty state follow Show in notch, with one quiet
+    "Filtered · Show all" line while a source is hidden. Adding a task with Local hidden turns Local
+    back on so the new task shows, and "The filter hides every open task." appears only when the
+    filter actually hides one.
+  - Add Tags opens the new `TaskTagsSheet`: the task's tags as removable chips
+    (`SettingsTagChip` in a `SettingsFlowLayout`), one "Add a tag" field, and under it "#name" for
+    tags in use and "Create tag “name”" for a new one, or a few quick picks while the field is empty.
+    Return adds a tag in use that starts with the text, or else creates the text, then clears the
+    field for the next tag; text that is already on the task adds nothing; Done adds any text still
+    typed before saving. At 10 tags the field disables with "10 tags is the most".
+  - Pure `TaskTagEditing` (logic target): `suggestions(for:existing:current:)`, `returnPick`,
+    `adding` and `removing`, all through `TaskItem.cleanedTags`.
+  - Names: the task ⋯ menu reads Set Estimate, Add Time, Add Tags, Schedule, Clear Schedule and
+    Delete, with no "…"; also Set End Time, Custom and Time to log's Log. Sheets confirm with Save,
+    Done, Add or Schedule. "Mark as Logged" and "Never Ask to Log" everywhere; every filter's
+    default reads "All".
+  - Row captions: the schedule is one segment ("Due Today 15:00", "Overdue Mon 10:00"), tags come
+    last, a merge request drops the "MR" word next to its !12 key, and GitLab states are
+    capitalised ("Open"). ▶ and ⋯ share one image scale, and every Done and hidden row ends in
+    Reopen or Show, then ⋯. The overview row's spacing uses the new `SettingsMetrics.iconGap`.
+  - docs/SETTINGS.md: the Task list's filter is view-only and shows a Filtered row; a menu item that
+    acts in place, opens a small sheet or asks a confirmation carries no ellipsis.
+  - Tests: TaskSourceFilterTests rewritten for the connected baseline and the notch filter; new
+    TaskTagEditingTests (use or create, prefix-first ranking, current tags excluded, case, leading
+    "#", 10-tag limit, 24-character cut, quick picks, what Return adds); TasksPopoverRulesTests
+    (TaskSourceMenu never reads the sync keys); TaskListRulesTests (the Filtered row resets all four
+    filters, no "…" in the task menu); pins in SettingsHighlightInventoryTests,
+    SettingsLayoutRulesTests, TaskFacetsTests, WorkDurationTests and WorklogDraftTests updated.
+
+### 2026-10-06 - Brain › Tasks gets a Task list page with filters, tags and reminders, real drag and drop, and shorter text
+- **Developer label:** "there should be drag and drop and for all explaination we give like this, try to make it cleaner; also where is seperate tab for task listing with filtered tabs and all"
+- **Agent label:** Brain Tasks PR7: Task list sub-page (Source/Project/Status/Tag filters, tags, local-task reminders), draggable/dropDestination reordering, copy pass
+- **Changes:**
+  - The Tasks page now holds Sources, the Tasks options, Time to log, Interrupted sessions and a
+    "Task list" row ("12 to do · 3 in progress") whose Open button swaps the tab's content for the
+    Task list (an in-tab view swap: Brain has no navigation stack). The Task list has a "‹ Tasks"
+    back row; Filters (Source as a segmented All | Local | Jira | GitLab, then Project, Status — To
+    Do + In Progress / To Do / In Progress — and Tag menus, all kept in Defaults:
+    `tasksListSourceFilter`, `tasksListProjectFilter`, `tasksListStatusFilter`,
+    `tasksListTagFilter`); Add a task; the task rows; and Done and hidden. "No tasks match" offers
+    Clear Filters. Any Tasks search or deep link closes the Task list so its row is on screen,
+    except the Task list's own deep link (`SettingsDeepLink.tasksListOpenID`, registered on the back
+    row), which opens it. The task order's count reads "15 open" (to do and in progress together).
+  - Pure `TaskFacets` (logic target): project from a Jira key prefix or a GitLab `references.full`
+    path (or the key `#project:N`, shown as "Project N", for a GitLab project known only by its
+    id; a filter saved as the old "Project N" label is rewritten to the key), status from the status category (a local task is In Progress once it has
+    recorded time; a GitLab issue is In Progress with an in-progress, doing or WIP label, a merge
+    request always), the filter match, and the projects and tags on offer.
+  - Model, all optional and decoded leniently so an older `tasks.json` still reads:
+    `RemoteTaskInfo.statusCategory` (Jira's `status.statusCategory.key`, carried through
+    `JiraAPI.remoteIssue`, `GitLabAPI.remoteIssue` and `TaskMerge`) and `labels` (GitLab labels,
+    decoded so another shape costs the labels, never the item); `TaskItem.tags` (Kannu only, never
+    sent: trimmed, no leading "#", at most 24 characters, at most 10, de-duplicated ignoring case)
+    and `scheduledAt` (local tasks only).
+  - The ⋯ menu gains Tags… (any task) and Schedule… / Clear Schedule (local tasks), through
+    `TaskValueSheet`. Rows show the schedule ("Today 15:00", "Tomorrow 09:30", "Overdue · Mon
+    10:00") and the tags ("#writing #urgent").
+  - Reminders: `TaskReminders` schedules a `UNUserNotificationCenter` notification with a Start
+    action, from the pure `TaskReminderPlan` (what to add or take back after each change: done,
+    hidden, deleted and cleared schedules are taken back; a reminder already shown is left alone).
+    Permission is asked only on the user's first schedule; the resend once it is allowed only adds,
+    so another task's reminder on screen stays. After the task file is read and whenever the Task
+    list opens, `TaskReminderPlan.reconcile` compares with what macOS actually holds (pending and
+    delivered, by the `kannu.task-reminder.` prefix): requests for tasks that are gone are taken
+    back, and while notifications are allowed any wanted reminder still ahead that macOS is missing
+    is added, so notifications turned on while Kannu was not running, or a replaced `tasks.json`,
+    are caught. Turning Enable tasks off takes back every task reminder, waiting or shown.
+    `TaskReminderCenter` is installed in `continueLaunch()` after the terms (a delegate and a
+    category only: no prompt, no file read, `TasksManager` stays lazy); Start times the task, a
+    click opens Brain on the Task list itself. A Start that cannot start (the timer is off, the task
+    is gone, the file could not be read) opens the Task list instead of doing nothing. Kannu never
+    starts a timer on its own. With notifications off, the Task list and the Schedule sheet show
+    "Notifications are off" with Open Notification Settings.
+  - Real drag and drop: each row is `.draggable(task.id.uuidString)` and a
+    `.dropDestination(for: String.self)`, replacing `ForEach.onMove`, which never drags inside a
+    grouped Form on macOS. An insertion line shows on the side the task will land. Drops go through
+    the pure `TaskOrdering.move(id:onto:in:listed:)` (dragged down, it lands after the target; up,
+    before it), and Move Up / Move Down now pass the active filters too, so moves count only the
+    rows shown. ⋯ › Move to Top / Up / Down stay. `TaskOrdering.moving(activeOffsets:)` and
+    `TasksManager.move(activeOffsets:)` are gone.
+  - Shorter copy across `TasksSettings.swift`, `TimeToLogSection.swift` and the notch Tasks
+    popover: each description says what the control does in about eight words, without "Off: …"
+    sentences or mechanics; footers keep only privacy and trust facts ("Tokens stay in your
+    Keychain. Kannu writes nothing until you choose Log.", "Jira watchers aren't emailed."); error
+    and recovery text stays specific but short.
+  - Search: new entries Task list, Task list filters, Task tags and Schedule a task, and the
+    existing Add a task, Task order and Done and hidden tasks entries, all land on the visible
+    "Task list" row (`SettingsDeepLink.tasksListHighlightID`, replacing `tasksOrderHighlightID`).
+    Inventory pins: 229 entries, 272 registrations, 266 ids.
+  - Tests: TaskFacetsTests (project, status, GitLab labels, filters, what the filters offer, a
+    filtered move, tag cleaning, coding of the new fields including odd and older files, the sync
+    carrying category and labels, a Project filter saved as a label), TaskReminderPlanTests (a
+    resend never takes anything back; the reconcile adds what macOS is missing, takes back what the
+    list no longer wants, and takes back everything with tasks off), TaskListRulesTests (rows use
+    `draggable`/`dropDestination` and never `onMove`, drops and moves pass the filters, permission is
+    asked only from `setSchedule`, only Start starts a task, with planted offenders; the reminder
+    and Task list deep-link wiring above), the drop cases
+    in TaskOrderTests and TaskSourceFilterTests, JiraDecodingTests expecting the category,
+    LaunchGateRulesTests (the delegate is installed only
+    in `continueLaunch()`, which asks nothing and builds no `TasksManager`), and BrainNamingRulesTests
+    allowing "Open Notification Settings" and the Notifications pane's URL. docs/SETTINGS.md
+    records the in-tab sub-page rule, names its back row as the one sanctioned lone leading
+    button, and replaces the old caption rule with the new copy rule (descriptions in about eight
+    words, footers for privacy and trust facts only, short specific errors).
+
+### 2026-10-04 - The notch has a Tasks button: what you are timing, what to log, and what is next
+- **Developer label:** "maybe a button with integration toggle for people to switch and then getting a click through to a tab in settings to manage integrations"
+- **Agent label:** Brain Tasks PR6: notch Tasks button and popover (Now, Log time?, Up next, source toggles, Manage tasks… to Brain › Tasks › Sources)
+- **Changes:**
+  - A Tasks button (SF Symbol `checklist`) in the open notch's header, after the timer button and
+    before the Brain button, shown only with Enable tasks on and the minimalistic UI off. A yellow
+    dot shows while a Time to log entry waits for an answer (asked, refused, or maybe logged; not
+    while it is being sent, nor after Not now). VoiceOver reads "Tasks" or "Tasks, 2 entries
+    waiting to be logged"; the tooltip is `.hoverTooltip`, never `.help`. It is its own view
+    (`TasksHeaderButton`), so `TasksManager` is created only with tasks on.
+  - Clicking it opens `TasksPopover` (the `TimerPopover` pattern): a header with the source menu,
+    Refresh with one caption line per synced source ("Jira · Synced 10:42", "GitLab · Offline",
+    "Rate limited until 10:52"), and a Brain glyph; Now (the task being timed: key, title, its
+    recorded time as a running clock, "42m of 2h" with "10m over" in orange, Pause/Resume and
+    Stop); Log time? (up to two cards, then "N more in Brain"); Up next (Add a task…, which adds a
+    local task at the top of the order, then the task order without the timed task: key, title,
+    "42m of 2h" and ▶, at most 6 rows, fewer under a Now card or Log time? cards); an empty state
+    ("Connect Jira or GitLab in Brain"); and Show all in Brain.
+  - The source menu (`TaskSourceMenu`) has check items Jira, GitLab and Local, bound to
+    `jiraEnabled`, `gitlabEnabled` and `showLocalTasks` (the Sources toggles in Brain). A source
+    that is not connected shows "Connect Jira…" / "Connect GitLab…" instead. Those, "Manage
+    tasks…" and the Brain glyph close the popover and open Brain › Productivity › Tasks at Sources
+    through the existing deep link (`SettingsDeepLink.tasksSourcesHighlightID`). A token is typed
+    only in Brain's Connect sheet, never in the notch.
+  - Opening the popover sets `vm.isTasksPopoverActive`, which `ContentView.hasAnyActivePopovers()`
+    now includes, so the notch does not auto-close under it. The button clears it when it leaves
+    (the notch closing, tasks or the minimalistic UI switched), and `KannuHeader` clears it when
+    tasks are turned off.
+  - The live time ticks only through `TimelineView(.periodic(from: .now, by: 1))`, while the Now
+    card is on screen and running; Refresh comes back on time after a rate limit through an explicit
+    `TimelineView`, with no polling. Opening the popover syncs Jira and GitLab only when their last
+    sync is stale, without the Keychain dialog; Refresh is the user's click and may ask for it.
+  - Log time? reuses Brain's Time to log card: `TimeToLogSection.swift` gains `WorklogDraftCard`,
+    which both places show (in the popover, stacked by a `LabeledContentStyle`), so Log, Retry and
+    Send Again still go only through `TasksManager.confirmWorklog`.
+  - `TasksManager` gains `pauseTiming()` and `resumeTiming()` (guarded like `stopTiming()`: only the
+    session timing a task). `SettingsDeepLink` gains `tasksOrderHighlightID` (Show all in Brain) and
+    `tasksTimeToLogHighlightID` (N more in Brain), both rows already registered: highlight inventory
+    unchanged at 225 entries, 273 registrations, 267 ids.
+  - Pure helpers in the logic target: `WorklogDrafts.isAskingNow` / `needsAnswer` /
+    `waitingCount`, `TaskOrdering.upNext` / `upNextRows`, `TaskTimeMath.progress` (Brain › Tasks'
+    task rows now use it too, unchanged), `WorkDuration.clock`, and `SourceSyncState.shortCaption` /
+    `rateLimitEnd`.
+  - Tests: TasksPopoverRulesTests (source scan with planted offenders: the popover sets the flag and
+    leaving clears it, `hasAnyActivePopovers` includes it, the button has `accessibilityLabel` and
+    `hoverTooltip` and sits after the timer button only with tasks on, no `.help(` in any
+    `components/Notch` or `components/AgentStatus` file — the CI side of the pre-commit check —
+    Manage tasks…, Connect… and the Brain glyph use the Sources deep link, no Keychain access and no
+    timers in the new views) and TasksPopoverLogicTests (the dot and the cards, Up next and its row
+    budget, "42m of 2h" and overtime from a whole minute, the clock, the sync captions).
+    docs/REGRESSIONS.md entry 9 names the new CI guard.
+
+### 2026-10-04 - Brain › Tasks: Time to log asks before your recorded time goes to Jira or GitLab
+- **Developer label:** "task will have option to add estimate and also record the actual time, work on how we could manage jira tickets well"
+- **Agent label:** Brain Tasks PR5: ask, then log — Jira worklogs and GitLab spent time, sent only from the user's click, written ahead, reconciled once
+- **Changes:**
+  - When timing a Jira or GitLab task ends (stop, a replaced session, or quitting Kannu), its
+    unlogged time is folded into one draft per task, rounded to the nearest 15 minutes (a total
+    that rounds to 0 carries over). A pause or a sleep only closes the segment, so no card appears
+    while the task is still being timed; time a crash left unfolded is offered at the next launch.
+  - New "Time to log" section in Brain › Productivity › Tasks, shown only while entries wait, with a
+    search entry and highlight. One card per entry: "Log 1h 15m to PROJ-123?" / "Log 45m to
+    group/app!12?", "started today 14:02 · Jira", an editable length (`WorkDuration.parse`, sent in
+    whole minutes), an optional comment for Jira, Log to Jira / Log to GitLab, Not now (the card
+    folds into one line until more time is added to it), and ⋯ with Keep local only, Never ask for
+    this task and Open in Jira / GitLab. Return in the length field does not send: only Log does. A
+    length typed for a Log that sent nothing survives the next fold and a relaunch: new time is
+    added to it instead of replacing it with the rounded total. A remote task's ⋯ in the task order
+    gains Never Ask to Log Time / Ask to Log Time.
+  - Only `TasksManager.confirmWorklog` sends anything, from Log, Retry or Send Again. It marks the
+    draft `.sending` and waits for `tasks.json` to be written before any request (a failed save
+    sends nothing); a relaunch that finds `.sending` treats it as uncertain, and its card says so
+    ("May already be logged — check GitLab", or for Jira that Retry checks Jira first). The token is
+    read from the Keychain off the main actor and used only with the site or server the time was
+    recorded against. After the last wait (the save, the Keychain dialog, Jira's check), Kannu looks
+    again immediately before building the request, so a Disconnect meanwhile sends nothing; a
+    request already out cannot be recalled, and an answer for an entry removed meanwhile is only
+    logged.
+  - Jira: `POST /rest/api/3/issue/{id}/worklog?adjustEstimate=auto&notifyUsers=false` with
+    `timeSpentSeconds`, `started` as `yyyy-MM-dd'T'HH:mm:ss.SSSZ` (`en_US_POSIX`, the Mac's offset),
+    an ADF comment only when one was typed, and `properties [{key:"kannu", value:{entry:<draft id>}}]`.
+    2xx is logged with the worklog id; 400/403/404 fail with Jira's own reason; 401 asks to
+    reconnect (and the Sources row shows the refused token); 429 and offline fail, retryable; a lost
+    answer (timeout, dropped connection, 502/504) is checked with one read-only `GET
+    …/worklog?startedAfter=…&startedBefore=…&expand=properties`, matching the marker, then author,
+    start and length: found is logged, missing fails retryable, a failed check stays uncertain. A
+    Jira retry always checks first, so an entry is never logged twice.
+  - GitLab: `POST /api/v4/projects/:id/issues/:iid/add_spent_time?duration=1h15m`, or
+    `merge_requests/:iid/add_spent_time` for a merge request, token only in `PRIVATE-TOKEN`. A
+    read_api token offers only Keep local only, and says why. A lost answer reads "May already be
+    logged — check GitLab" with Mark Logged and Send Again, since GitLab cannot identify one entry.
+  - Disconnect keeps the entries: kept local, or sent once reconnected to the same site or server.
+    Footers and the Connect sheets now say Kannu writes only when you log time; both Sources footers
+    still say the token is kept in your Keychain.
+  - New pure file in the logic target: `WorklogPoster` (the send and the one read-only check over
+    `IntegrationHTTP`). `JiraAPI` gains the worklog and check request builders, the marker match and
+    Jira's refusal reason; `GitLabAPI` the spend request and duration; `WorklogDrafts` the verdicts,
+    availability, card text and `deferredAt`; `JiraSite.apiURL` takes a query. App file:
+    `TimeToLogSection`.
+  - Tests: JiraWorklogRequestTests (`started` at +0000, +0530 and across DST, the marker, ADF,
+    `notifyUsers=false`, `adjustEstimate=auto`, the check request and matching),
+    GitLabSpendRequestTests (issue vs merge request path, duration format, `PRIVATE-TOKEN` only),
+    WorklogPosterTests (a `URLProtocol` stub: every outcome, exactly one check on Jira, none on
+    GitLab), WorklogDraftTests extended (15-minute rounding, `.sending` saved then relaunched is
+    uncertain with its card's reason, a typed length surviving the next fold, reconcile found is
+    logged, Not now, availability), WorklogConsentRulesTests (source scan with planted offenders:
+    the request builders and senders only inside `confirmWorklog`, it only from
+    `Kannu/components/`, write-ahead before the request, `canStillSend` after the last wait before
+    each request, no `.onSubmit` in a view that sends), and IntegrationSecretRulesTests
+    (Time to log never touches the Keychain). Highlight inventory 225 entries, 273 registrations, 267
+    ids.
+
+### 2026-10-04 - Brain › Tasks: GitLab as a source, with your issues and merge requests in the task order
+- **Developer label:** "not just jira, i want gotlab too"
+- **Agent label:** Brain Tasks PR4: GitLab read (gitlab.com and self-managed servers, issues and merge requests, token in the Keychain, read-only)
+- **Changes:**
+  - A GitLab row in Brain › Productivity › Tasks › Sources, below Jira Cloud and in the same shape:
+    "Connected as @dana · gitlab.com (can log time)", "(read-only)" or "Not connected", Connect… or
+    Disconnect…, Sync GitLab, Include merge requests (on by default), GitLab items with Refresh and
+    "Synced 10:42 · 5 items" / "Showing the first N" / "Offline" / "Rate limited until 10:52", Allow
+    Keychain Access when macOS asks, and Remove Token when a Disconnect could not delete it. The
+    Sources footer gains a GitLab line.
+  - Connect… opens a sheet: Server (starts at `https://gitlab.com`; any HTTPS server, with a port or a
+    path prefix, on a private or LAN address too), Personal access token in a `SecureField`, the
+    caption "`api` to log time; `read_api` lists only", and "Create token…" to
+    `<server>/-/user_settings/personal_access_tokens`. Kannu checks the token with `GET /api/v4/user`
+    and reads its scopes with `GET /api/v4/personal_access_tokens/self` before storing anything: a
+    token without `api` is shown read-only (`gitlabCanLogTime` off, also when the server will not
+    say: it refuses or redirects the scopes request, as before GitLab 15.5), and one that has neither
+    `api` nor `read_api` is refused. A scopes request that fails for a reason that may pass next time
+    (429, 5xx, timeout, offline, TLS) fails Connect with a try-again message instead of saving a
+    guess, since nothing reads the scopes again. Only then is `{baseURL, token}` saved
+    (`SecureSecretKey.gitlabCredential`) and the field cleared. Disconnect asks whether to keep or
+    remove the GitLab tasks on this Mac.
+  - Your open issues (`/issues?scope=assigned_to_me&state=opened`) and, with Include merge requests
+    on, the open merge requests assigned to you or waiting for your review
+    (`/merge_requests?scope=assigned_to_me…` and `?reviewer_username=<you>&state=opened&scope=all`)
+    join the task order: "group/app#45 · opened · 42m of 2h · GitLab spent 3h" and "group/app!12 · MR
+    · review requested", titles verbatim, with Open in GitLab and Hide in the ⋯ menu. Up to 2 pages
+    of 100 per list through `X-Next-Page` (6 requests a sync at most); more is reported as
+    incomplete and marks nothing gone. A merge request in both lists counts once. Turning Include
+    merge requests off takes the merge requests out of the task order at once, with no request (a
+    listing filter, as Sync GitLab is), and the next complete sync moves them to Done and hidden;
+    turning it on brings them back in place. Switching it during a sync drops that sync's result
+    and starts a new one; when no sync can run (offline, rate limited, Sync GitLab off), the next
+    page visit syncs.
+  - `RemoteTaskInfo` gains `gitlabKind` (issue or merge request) and `gitlabWebURL`, both optional, so
+    an existing `tasks.json` still reads, and an unknown kind reads as nil instead of costing the
+    file. A GitLab task matches on its global id with its kind (`issue:76`, `mr:31`), since issues and
+    merge requests number their ids separately. `TaskMerge` carries the project, number, kind and
+    page; switching server makes the old server's tasks gone.
+  - The token travels only in the `PRIVATE-TOKEN` header, never in a URL or a log, and only to the
+    Keychain item's own server (`GitLabHost.normalize`: HTTPS only, no user info, query, fragment,
+    `..`, percent escapes or IPv6 literals; checked again before every request). Requests use
+    `IntegrationHTTP` (ephemeral, 20 s, every redirect refused) with system trust only: a
+    self-signed certificate macOS does not trust fails the request. A `web_url` is kept and opened
+    only when it is on the same host, port and path prefix. A 429 honours `Retry-After`, else
+    GitLab's `RateLimit-Reset`, else 60 s (clamped to 1 s – 1 h).
+  - Each source syncs on its own: page appear (when over 5 minutes old, never after a refused token,
+    never with the Keychain dialog), Refresh, Connect, and switching Include merge requests. A Jira
+    failure never shows on or stops GitLab, and the other way round. Nothing at launch, no polling.
+  - `JiraSyncState` becomes `SourceSyncState`, shared by both sources. `TaskOrdering.listedFilter`
+    gains `showGitLab` and `showGitLabMergeRequests`. New pure file in the logic target: `GitLabAPI` (credential, decoders, request
+    builders, `X-Next-Page` paging, scopes, and `GitLabReader`, the fetch loop over `IntegrationHTTP`).
+    App file: `GitLabClient` (logging) with `GitLabCredentialStore` (Keychain off the main actor).
+    `HTTPOutcome` reads `RateLimit-Reset`; `HTTPExchange` carries the response for its headers.
+    Defaults: `gitlabEnabled`, `gitlabHost`, `gitlabUsername`, `gitlabAccountDisplayName`,
+    `gitlabCanLogTime`, `gitlabIncludeMergeRequests`. No time is logged to GitLab yet.
+  - Tests: GitLabHostTests, GitLabRequestTests, GitLabDecodingTests (handwritten fixtures, scope
+    detection), GitLabReaderTests (a `URLProtocol` stub: paging, the two-page cap, merge requests
+    counted once, a failed page failing the sync, `RateLimit-Reset`, scopes, a scopes request that
+    may pass next time failing Connect, a refused redirect), and GitLab cases in TaskMergeTests,
+    TaskModelCodingTests, HTTPOutcomeTests, TaskSourceFilterTests (Sync GitLab, and Include merge
+    requests hiding only merge requests) and IntegrationSecretRulesTests (`PRIVATE-TOKEN` set only in `GitLabAPI`,
+    the GitLab sync on appear non-interactive and never retrying a refused token, the token removal
+    result used). Highlight inventory 224 entries, 272 registrations, 266 ids; the TasksSettings
+    padding pin is 3 (the Connect GitLab sheet).
+
+### 2026-10-04 - Brain › Tasks: Jira Cloud as a source, with your Jira issues in the task order
+- **Developer label:** "what about jira page, i want a section in main brain in productivity for task management"
+- **Agent label:** Brain Tasks PR3: Jira read inside Productivity › Tasks (Sources section, read-only sync, token in the Keychain)
+- **Changes:**
+  - New Sources section at the top of Brain › Productivity › Tasks (shown while Enable tasks is on):
+    a Jira Cloud row ("Connected as Dana" or "Not connected", "Site acme.atlassian.net · Filter: my
+    open issues", Connect… or Disconnect…), Sync Jira, Jira issues with Refresh and "Synced 10:42 ·
+    12 issues" / "Showing the first 200 — narrow the filter" / "Offline" / "Rate limited until 10:52",
+    an Advanced Issue filter (JQL) with Reset, Allow Keychain Access when macOS asks, and Local tasks.
+    There is no separate Integrations page; GitLab follows in its own PR.
+  - Connect… opens a sheet (site, email, API token in a `SecureField`, "Create API token…"). Kannu
+    checks the token with `GET /rest/api/3/myself` before storing anything; only then does it go to
+    the Keychain (`SecureSecretKey.jiraCredential`, JSON with the site), and the field is cleared.
+    Disconnect asks, in a SwiftUI dialog, whether to keep or remove the Jira tasks on this Mac. If
+    the Keychain refuses to delete the saved token, Sources says it is still there, with Remove Token
+    to try again and where to find it in Keychain Access.
+  - Jira issues join the task order beside local tasks: "PROJ-123 · In Progress · 42m of 2h · Jira
+    logged 3h", titles verbatim, and a ⋯ menu with Open in Jira and Hide in place of Mark Done and
+    Delete. Done and hidden rows lead with the key. Turning off Local tasks or Sync Jira takes those
+    tasks out of the order, and Move Up / Down and drags count only the tasks on screen.
+  - A sync runs when the Tasks page appears and the last one is over 5 minutes old, on Refresh, and
+    right after Connect: nothing at launch, no timer, no polling. Once Jira has refused the token, or
+    the saved sign-in needs reconnecting, the page never syncs on its own again: only Refresh, Allow
+    Keychain Access or Connect retries, so a revoked token is not re-sent on every visit (repeated
+    failed sign-ins can lock the Atlassian account behind a CAPTCHA). `POST /rest/api/3/search/jql`, at
+    most 2 pages of 100; a 429 honours `Retry-After` (1 s to 1 h). `TaskMerge` folds the result into
+    the list on the main actor: matched on the issue id within the site, it keeps the user's order,
+    estimate, recorded time and hidden or done state; new issues are appended; only a complete fetch
+    marks missing active tasks gone, a capped one marks nothing, a failed one changes nothing, and a
+    different site's tasks go. The task being timed never goes: its row holds the Stop button, and
+    the first sync after its timing ends decides.
+  - Requests go through `IntegrationHTTP`: an ephemeral session (no cookies, cache or credential
+    storage), 20 s timeouts, every redirect refused, bodies over 5 MB dropped. The token is sent only
+    as HTTP Basic to the Keychain item's own `<site>.atlassian.net` host (`JiraSite.normalize`
+    refuses http, userinfo, other ports, IPs, look-alikes and non-ASCII), never in a URL or a log.
+  - Every Keychain access runs on a serial queue off the main actor; the page reads none. A sync the
+    page starts never shows the Keychain dialog: it shows Allow Keychain Access instead. Logs carry
+    counts and status codes only.
+  - Pure files in the logic target: `IntegrationHosts`, `HTTPOutcome`, `JiraAPI`, `TaskMerge`,
+    `IntegrationHTTP`, `JiraSyncState`; `TaskOrdering` gains a `listed` filter. App files: `JiraClient` (with
+    `JiraCredentialStore`). `SecureSecretsStore.read(_:allowInteraction:)`. Defaults: `showLocalTasks`,
+    `jiraEnabled`, `jiraSiteHost`, `jiraAccountID`, `jiraAccountDisplayName`, `jiraJQL`.
+  - Tests: JiraSiteTests, JiraRequestTests, JiraDecodingTests, TaskMergeTests, JiraSyncStateTests, HTTPOutcomeTests,
+    RedirectGuardTests (a `URLProtocol` stub: the redirect target is never asked for anything, with a
+    meta-test that an unguarded session would follow it), IntegrationSecretRulesTests (source scans
+    with planted offenders), TaskSourceFilterTests. Highlight inventory 220 entries, 268
+    registrations, 262 ids; the TasksSettings padding pin is 2 (the Connect sheet).
+
+### 2026-10-04 - Brain › Tasks: an ordered task list with estimates, and the actual time recorded by Kannu's timer
+- **Developer label:** "task will have option to add estimate and also record the actual time"
+- **Agent label:** Brain Tasks PR2: local tasks, estimates, timer session events, recorded actual time
+- **Changes:**
+  - New Brain › Tasks tab (Productivity group, after Notes, `checklist` icon): Enable tasks (off by
+    default), Default session length (25 min), Sound when the estimate is reached (off by default),
+    Add a task (title plus an estimate menu: none, 15m, 30m, 1h, 2h, 4h, 8h, Custom…), the task order
+    with "42m of 2h" and an orange "10m over", ▶ to time a task (■ while it is timed), a ⋯ menu (Set
+    Estimate…, Add Time Manually…, Move to Top / Up / Down, Mark Done, Delete…, disabled while timed),
+    Interrupted sessions (Set End Time… or Discard), and a Done and hidden disclosure with Reopen.
+  - `TimerManager.sessionEvents` sends started, paused, resumed and ended(stopped | replaced) for
+    timers started in Kannu only; `.ended` is sent before `resetTimer()` mints the next id, and a
+    replace ends the old session before the new one starts. `startTimer(playsSoundOnFinish:)`.
+  - `TasksManager` (lazy `@MainActor` singleton, nothing at launch) links a timed session to its task
+    and records segments from each event's own date; sleep closes and wake reopens without pausing the
+    timer; quit closes the open segment with one synchronous write; a segment found open at load
+    becomes an interrupted session that counts for nothing until the user sets its end.
+  - `tasks.json` in Application Support/Kannu/Tasks, written by the `TaskFileStore` actor: atomic,
+    mode 0600 (folder 0700), revision-ordered so a stale save is dropped, a corrupt file moved aside.
+  - Pure model in the logic target (`TimerSessionEvent`, `TaskModels`, `TaskTimeMath`, `TaskOrdering`,
+    `WorklogDrafts`, `TaskFileStore`): log entries round to the nearest 15 minutes, 0 makes no draft
+    and carries over; tracked totals stay exact. `TaskSource`/`RemoteTaskInfo` exist for later Jira
+    and GitLab work; no network, credentials or Keychain code.
+  - Tests: TaskModelCodingTests, TaskTimeMathTests, WorkDurationTests, TaskOrderTests,
+    WorklogDraftTests, TaskFileStoreTests, TimerSessionEventRulesTests (source scan with planted
+    offenders). Highlight inventory 214 entries, 263 registrations, 257 ids.
+
+### 2026-10-04 - Name a timer session before it starts, and rename it while it runs
+- **Developer label:** "in promod timer i need to able to name a timer session"
+- **Agent label:** Timer session names: an optional field before Start, click-to-rename while running
+- **Changes:**
+  - The timer tab in the notch, and the popover, have a one-line "Name this session (optional)"
+    field. The next session takes that name, whether it starts from a preset card (Focus, Break,
+    Deep Work) or from the custom Start. Without one it keeps the preset's name or "Custom Timer",
+    as before, and the field clears once the session starts. The notch stays open while you type.
+  - Clicking a running session's name in the notch or the popover turns it into a text field.
+    Return saves the new name, and so does anything else that ends the edit: a click elsewhere in
+    the tab or the popover card, a click into another app, closing the notch or the popover, or
+    switching tabs. Escape keeps the old name, and clearing it goes back to the default. The closed
+    notch shows the new name for a few seconds. Clock-app timers keep the Clock app's name.
+  - `TimerSessionName` (pure, in the logic target) makes a typed name one clean line of at most
+    40 characters, counting an emoji once, and never empty. `TimerManager.renameSession(to:session:)`
+    renames only timers started in Kannu, and only the session the rename began in
+    (`TimerManager.sessionID`), because a save on close can land after a new session started.
+  - Tests: `TimerSessionNameTests`, and `TimerNamingRulesTests`, which pins from the source that
+    every start path in both views takes the typed name, both views can rename a running session,
+    both save a rename when they go away and pass its session, and the notch saves when its window
+    goes to the background, with planted-offender self-tests for both scanners.
+
+### 2026-10-04 - Settings is now Brain, with a brain icon in the notch and ⌘, to open it
+- **Developer label:** "rename settings to brain and use that icon, it is more going to be a place where do all the management"
+- **Agent label:** Brain rename (user-visible text only), notch brain icon, live ⌘, command, BrainNamingRulesTests
+- **Changes:**
+  - Everywhere users see Kannu's Settings window it is now **Brain**: the window title (Kannu
+    Brain), the menu bar icon's menu and the notch's right-click menu, the search field (Search
+    Brain), the "Brain icon in notch" row together with its search entry (keywords brain, settings,
+    gear), the menu bar icon caption, the hints in the notch's Stats, Timer and agent views and the
+    timer popover, onboarding (the finish button and the "change this later" lines), the
+    security-finding advice, push text and analysis error, the closed-notch findings caption, the
+    Spotify login hints, the ADR policy-drafting prompt, and ReadMe.md. Code names do not change:
+    the `Settings` folder and types, `KannuSettingsWindow`, `settingsIconInNotch`, comments.
+  - The notch header's button shows the `brain` SF Symbol instead of `gear`, with an accessibility
+    label and a `.hoverTooltip` reading "Brain". Screen Assistant keeps `brain.head.profile`.
+  - Kept as "Settings", because none of them is Kannu's window: every "System Settings" string and
+    the "Open … Settings" menu items that open macOS panes, "Settings file:" (an agent's config),
+    BetterDisplay's Settings, the Clipboard section header, "Global Settings", the permission
+    callout's default "Open Settings" button, "Battery Settings" and "Open Model Settings".
+  - ⌘, works. `commands` held a `CommandGroup(replacing: .appSettings)` that no scene attached, so
+    the shortcut did nothing. It is now attached to the app's scene, reads "Brain…", carries
+    `.keyboardShortcut(",", modifiers: .command)`, and still brings the Terms of Use back before
+    they are accepted. Like any menu key equivalent it fires while Kannu is the active app, which
+    the Brain window (and the terms and onboarding windows) make it; with only the notch on screen
+    the key belongs to the app in front. The never-attached "Check for Updates…" group is removed
+    rather than attached, because the Kannu menu built by `installTopMenuItemsIfNeeded` already
+    carries that item.
+  - `docs/SETTINGS.md` says the window is shown to users as Brain while the code keeps the Settings
+    names. `Localizable.xcstrings` is untouched, as for every recent string: the new keys show in
+    English in every locale until the catalog is synced and translated.
+  - New `BrainNamingRulesTests`: scans every string literal under `Kannu/` (comments skipped; plain,
+    multi-line, raw and interpolated literals read correctly) and fails on "Settings" outside an
+    11-entry allowlist plus the phrase "System Settings", each entry with its reason and each
+    required to match exactly one string. It also pins the window title, the header's `brain`
+    symbol, label and tooltip (no `gear`, no `.help(`, no `brain.head.profile`), the attached ⌘,
+    command with its terms guard, the menus, the search field and the renamed row's search
+    keywords, and carries a planted-offender self-test. `SettingsHighlightInventoryTests` counts
+    are unchanged (208 entries, 257 registrations, 251 ids): the rename swaps one entry and its id.
+
 ### 2026-10-01 - Quit Kannu has a row in Settings, and searching "quit" or "exit" finds it
 - **Developer label:** "the settings should have a quit app, or at least on search of quit or exit i should get the tab with that button to come up as result"
 - **Agent label:** Settings Quit row + search entry, pinned by the highlight inventory
