@@ -199,7 +199,9 @@ private struct ActiveTimerSection: View {
                             isRenaming = true
                             DispatchQueue.main.async { renameFocused = true }
                         }
-                        .help(String(localized: "Click to rename"))
+                        // `.help` never renders here: Kannu is never the active app (docs/TOOLTIPS.md).
+                        // The title is the popover's top row, so the bubble opens below it.
+                        .hoverTooltip(String(localized: "Click to rename"), edge: .below, pointingHandCursor: true)
                         .accessibilityAddTraits(.isButton)
                         .accessibilityHint(Text("Renames this timer session"))
                 } else {

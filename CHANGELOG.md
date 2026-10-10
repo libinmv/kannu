@@ -4,6 +4,16 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-10 - The timer popover's "Click to rename" hint shows on hover
+- **Developer label:** "on the lyrics icon in music tab, on persistent mouse hovered over it for few seconds show tool tip, keep that as general design principle for such icons"
+- **Agent label:** Claude Code (Opus 5.5) — tooltip principle follow-up: a dead .help on the timer popover's session title, found by the new tooltip coverage scan
+- **Changes:**
+  - The timer popover's session title used `.help("Click to rename")`, which never renders in the
+    notch or its popovers because Kannu is never the active app (docs/TOOLTIPS.md). It now uses
+    `.hoverTooltip(..., edge: .below, pointingHandCursor: true)`, like the notch's own title.
+  - Found when the tooltip coverage scan (#89, which widens the `.help` guard to `Timer/`) ran
+    over this branch.
+
 ### 2026-10-06 - The timer tab fits without the notch growing: the timer is smaller instead
 - **Developer label:** "rather than resizing the noth in timer tab, you could have just shrinked the timer, theresize looks like a glitch, please fix that"
 - **Agent label:** Timer composer sized by TimerComposerMetrics to the tab's existing budget; the notch-height change is reverted
