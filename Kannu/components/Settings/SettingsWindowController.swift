@@ -46,7 +46,7 @@ class SettingsWindowController: NSWindowController {
     private func setupWindow() {
         guard let window = window else { return }
         
-        window.title = "Kannu Settings"
+        window.title = String(localized: "Kannu Brain")
         window.titlebarAppearsTransparent = false
         window.titleVisibility = .visible
         window.toolbarStyle = .unified

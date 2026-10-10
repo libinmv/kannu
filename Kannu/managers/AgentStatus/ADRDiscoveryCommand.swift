@@ -81,7 +81,7 @@ enum ADRDiscoveryCommand {
         write the file with just those, create the folder if needed, and check it with python3 -m json.tool. \
         ADR also reads "approved" and "forbidden" lists, but they take ADR catalog ids of AI tools (such as \
         claude-code) and never flag an MCP server, so leave them out unless I ask. Finish by telling me to \
-        choose the file in Kannu: Settings, Agent Security, ADR scans, Advanced, ADR scan policy, Choose.
+        choose the file in Kannu: Brain, Agent Security, ADR scans, Advanced, ADR scan policy, Choose.
         """
 }
 
