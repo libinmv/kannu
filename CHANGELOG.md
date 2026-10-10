@@ -4,6 +4,55 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-10 - The timer popover's "Click to rename" hint shows on hover
+- **Developer label:** "on the lyrics icon in music tab, on persistent mouse hovered over it for few seconds show tool tip, keep that as general design principle for such icons"
+- **Agent label:** Claude Code (Opus 5.5) — tooltip principle follow-up: a dead .help on the timer popover's session title, found by the new tooltip coverage scan
+- **Changes:**
+  - The timer popover's session title used `.help("Click to rename")`, which never renders in the
+    notch or its popovers because Kannu is never the active app (docs/TOOLTIPS.md). It now uses
+    `.hoverTooltip(..., edge: .below, pointingHandCursor: true)`, like the notch's own title.
+  - Found when the tooltip coverage scan (#89, which widens the `.help` guard to `Timer/`) ran
+    over this branch.
+
+### 2026-10-06 - The timer tab fits without the notch growing: the timer is smaller instead
+- **Developer label:** "rather than resizing the noth in timer tab, you could have just shrinked the timer, theresize looks like a glitch, please fix that"
+- **Agent label:** Timer composer sized by TimerComposerMetrics to the tab's existing budget; the notch-height change is reverted
+- **Changes:**
+  - Reverts the previous fix, which made the open notch 270 pt tall on the timer tab: the notch
+    jumped in size when you switched to the tab. The notch's sizing is exactly as before.
+  - The composer is smaller so it fits the tab's 130 pt budget with the session name field above it:
+    the name field is 24 pt, the duration fields 34 pt with 22 pt digits and a smaller caption,
+    Start/Reset 26 pt with 13 pt labels, and tighter padding and spacing. The ruler style's strip
+    is 46 pt and its Start Timer button and readout are smaller. The running-timer card is unchanged.
+  - Every one of those sizes is a named constant in `TimerComposerMetrics` (pure, in the logic
+    target), read by `NotchTimerView` and `RulerTimerPicker`.
+  - Tests: `TimerComposerMetricsTests` (every style — manual with presets, manual without, ruler —
+    fits the 130 pt floor with 4 pt to spare; buttons stay at least 24 pt tall) and
+    `TimerComposerMetricsRulesTests` (the views take their sizes from the metrics; nothing gives the
+    timer tab its own notch height), with planted offenders.
+
+### 2026-10-04 - Name a timer session before it starts, and rename it while it runs
+- **Developer label:** "in promod timer i need to able to name a timer session"
+- **Agent label:** Timer session names: an optional field before Start, click-to-rename while running
+- **Changes:**
+  - The timer tab in the notch, and the popover, have a one-line "Name this session (optional)"
+    field. The next session takes that name, whether it starts from a preset card (Focus, Break,
+    Deep Work) or from the custom Start. Without one it keeps the preset's name or "Custom Timer",
+    as before, and the field clears once the session starts. The notch stays open while you type.
+  - Clicking a running session's name in the notch or the popover turns it into a text field.
+    Return saves the new name, and so does anything else that ends the edit: a click elsewhere in
+    the tab or the popover card, a click into another app, closing the notch or the popover, or
+    switching tabs. Escape keeps the old name, and clearing it goes back to the default. The closed
+    notch shows the new name for a few seconds. Clock-app timers keep the Clock app's name.
+  - `TimerSessionName` (pure, in the logic target) makes a typed name one clean line of at most
+    40 characters, counting an emoji once, and never empty. `TimerManager.renameSession(to:session:)`
+    renames only timers started in Kannu, and only the session the rename began in
+    (`TimerManager.sessionID`), because a save on close can land after a new session started.
+  - Tests: `TimerSessionNameTests`, and `TimerNamingRulesTests`, which pins from the source that
+    every start path in both views takes the typed name, both views can rename a running session,
+    both save a rename when they go away and pass its session, and the notch saves when its window
+    goes to the background, with planted-offender self-tests for both scanners.
+
 ### 2026-10-01 - Quit Kannu has a row in Settings, and searching "quit" or "exit" finds it
 - **Developer label:** "the settings should have a quit app, or at least on search of quit or exit i should get the tab with that button to come up as result"
 - **Agent label:** Settings Quit row + search entry, pinned by the highlight inventory
