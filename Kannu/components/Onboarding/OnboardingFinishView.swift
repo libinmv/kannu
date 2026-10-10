@@ -39,7 +39,7 @@ struct OnboardingFinishView: View {
                 .font(.largeTitle)
                 .fontWeight(.bold)
 
-            Text("You can now enjoy the app. If you want to tweak things further, you can always visit the settings.")
+            Text("You can now enjoy the app. If you want to tweak things further, you can always open Brain.")
                 .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
@@ -50,7 +50,7 @@ struct OnboardingFinishView: View {
 
             VStack(spacing: 12) {
                 Button(action: onOpenSettings) {
-                    Label("Customize in Settings", systemImage: "gear")
+                    Label("Customize in Brain", systemImage: "brain")
                         .controlSize(.large)
                 }
                 .controlSize(.large)
