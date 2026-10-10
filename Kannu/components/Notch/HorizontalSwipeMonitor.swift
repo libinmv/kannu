@@ -122,6 +122,10 @@ extension NSEvent {
 /// (horizontal-dominant) events: a vertical scroll still reaches the list, or the notch, under it.
 /// A plain mouse wheel has no gesture phase and is left alone.
 ///
+/// A local monitor never sees events taken by a nested event-tracking loop, so a view on the tab
+/// that follows a trackpad gesture in a loop of its own (a SwiftUI `List`'s table view) keeps the
+/// swipe from it. The side column's pages are `ScrollView`s for that reason (`TimerSideColumn`).
+///
 /// While `isSuspended` is true it hands every event back untouched: the pointer is over the ruler,
 /// whose own sideways scroll sets the minutes.
 struct HorizontalSwipeMonitor: View {

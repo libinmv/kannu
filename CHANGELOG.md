@@ -4,6 +4,27 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-10 - A two-finger swipe turns the timer tab's page over the preset cards too
+- **Developer label:** "swiping on any part of the tab shoulw work, current i think swipe does not work on top of preset capsules"
+- **Agent label:** Claude Code (Opus 5.5) — timer tab page swipe over the Presets page: the preset cards scroll in a `ScrollView` of a `LazyVStack` instead of a `List`, so the trackpad gesture reaches the tab's swipe monitor there too; the rule pinned by a new test
+- **Changes:**
+  - The Presets page of the timer tab's side column (`TimerSideColumn.presetsPage`) is a
+    `ScrollView(.vertical)` of a `LazyVStack`, in the Tasks page's style, instead of a SwiftUI
+    `List`. A `List` is an `NSTableView` in an `NSScrollView`, which can follow a trackpad gesture
+    in an event loop of its own once the gesture's first event reaches it; the tab's swipe monitor
+    is a local `NSEvent` monitor, which never sees events such a loop takes, so a swipe over the
+    preset cards did not turn the page. Each card keeps its 2 pt above and below, the same edge
+    fades, the same height (60 pt a preset plus 4, capped at the page height) and no scroll
+    indicators; the cards themselves are unchanged.
+  - Nothing else on the timer tab hosts a `List` or another scrolling view: the composer, ruler,
+    labels and name fields have none, and the Tasks page's vertical-only `ScrollView` gets no
+    sideways event the monitor takes, since the monitor consumes every horizontal-dominant
+    trackpad event before the view under the pointer sees it.
+  - Doc comments in `TimerSideColumn` and `HorizontalSwipeMonitor` state why the pages are
+    `ScrollView`s and never a `List`.
+  - Tests: `TimerSideColumnRulesTests` gains a rule that `TimerSideColumn.swift` builds no `List`
+    (`List {` or `List(`), with a planted-offender test for its scanner.
+
 ### 2026-10-09 - Fixed buttons in the notch header keep their place; what comes and goes appears to their left
 - **Developer label:** "the refesh button in usage tab also should be one left, basically non changing buttons shoulkd have statis position priottized,  and dynamic ones come to their left only"
 - **Agent label:** Claude Code (Opus 5.5) — notch header order: the screen-recording and Do Not Disturb indicators, the Usage tab's Refresh button and the Tasks button sit left of the clipboard, timer, Brain and battery, so a fixed button never moves; the rule stated in AGENTS.md and pinned by a new test

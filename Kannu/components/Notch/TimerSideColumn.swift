@@ -39,6 +39,12 @@ import SwiftUI
 /// created while tasks are off (the `TasksHeaderButton` pattern). Hovering the column holds the
 /// notch's own scroll gesture off, or scrolling a list would blur or close the notch.
 ///
+/// Both pages scroll in a `ScrollView` of a `LazyVStack`, never a `List`: a `List`'s table view
+/// keeps the trackpad gesture from the tab's swipe monitor, and a swipe over it does not turn the
+/// page (`presetsPage`; `TimerSideColumnRulesTests` holds the rule). The `ScrollView` scrolls only
+/// vertically, and the monitor takes every sideways (horizontal-dominant) event before the view
+/// under the pointer sees it, so the swipe works over the rows too.
+///
 /// Tooltips are `.hoverTooltip`; `.help` never renders in the notch (docs/REGRESSIONS.md entry 9).
 struct TimerSideColumn: View {
     private typealias M = TimerComposerMetrics
@@ -169,7 +175,12 @@ struct TimerSideColumn: View {
         }
     }
 
-    /// The preset cards, unchanged from before the column had pages.
+    /// The preset cards, unchanged from before the column had pages. A `ScrollView` of a
+    /// `LazyVStack`, as the Tasks page has it, never a `List`: a `List` is an `NSTableView` in an
+    /// `NSScrollView`, which can follow a trackpad gesture in an event loop of its own once the
+    /// gesture's first, often motionless, event reaches it (the swipe monitor hands that one back).
+    /// A local monitor never sees the events such a loop takes, so a swipe over the cards did not
+    /// turn the page. Each card keeps the 2 pt above and below that was its list row inset.
     @ViewBuilder
     private var presetsPage: some View {
         if presets.isEmpty {
@@ -184,18 +195,16 @@ struct TimerSideColumn: View {
             let computedHeight = CGFloat(presets.count) * 60 + 4
             let listHeight = min(pageHeight, computedHeight)
             ZStack {
-                List {
-                    ForEach(presets) { preset in
-                        TimerPresetCard(preset: preset, isActive: activePresetID == preset.id) {
-                            startPreset(preset)
+                ScrollView(.vertical) {
+                    LazyVStack(spacing: 0) {
+                        ForEach(presets) { preset in
+                            TimerPresetCard(preset: preset, isActive: activePresetID == preset.id) {
+                                startPreset(preset)
+                            }
+                            .padding(.vertical, 2)
                         }
-                        .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0))
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
                     }
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
                 .scrollIndicators(.never)
 
                 SideListEdgeFades()

@@ -34,6 +34,8 @@ import XCTest
 /// - the column has no "All tasks ›" link into Brain any more;
 /// - the page swipe sits behind the whole tab (`NotchTimerView`), not the column, reaches down into
 ///   the footer, and stands aside over the ruler, whose own sideways scroll sets the minutes;
+/// - the column hosts no `List`: a `List`'s scroll view keeps the trackpad gesture from the tab's
+///   swipe monitor, so a swipe over its rows (the preset cards, once) does not turn the page;
 /// - "Tasks · Presets" is a bottom overlay pushed into the footer, never part of the column's stack;
 /// - the numbers `TimerComposerMetrics` mirrors from the open notch still match their sources;
 /// - no `.help(` in the touched notch files (docs/REGRESSIONS.md entry 9).
@@ -116,6 +118,12 @@ final class TimerSideColumnRulesTests: XCTestCase {
             ruler: Self.code(try Self.raw(Self.rulerPath)),
             monitor: Self.code(try Self.raw(Self.swipeMonitorPath))
         ), [])
+    }
+
+    /// A `List`'s scroll view (an `NSTableView`) keeps the trackpad gesture from the tab's swipe
+    /// monitor, so a swipe over the preset cards did not turn the page. The pages are `ScrollView`s.
+    func testTheColumnHostsNoList() throws {
+        XCTAssertEqual(Self.listUses(in: Self.code(try Self.raw(Self.sideColumnPath))), [])
     }
 
     /// The labels hang in the footer as an overlay, so the tab never grows for them.
@@ -215,6 +223,22 @@ final class TimerSideColumnRulesTests: XCTestCase {
         XCTAssertEqual(Self.swipeHostProblems(notch: notch, column: notch), ["TimerSideColumn still hosts HorizontalSwipeMonitor"])
         let short = notch.replacingOccurrences(of: ".padding(.bottom, -TimerComposerMetrics.pageSwipeFooterReach)", with: "")
         XCTAssertEqual(Self.swipeHostProblems(notch: short, column: column), ["the page swipe does not reach into the footer"])
+    }
+
+    func testTheListScannerCatchesPlantedOffenders() {
+        let good = Self.code("""
+            // List { in a comment is prose
+            ScrollView(.vertical) { LazyVStack(spacing: 0) { ForEach(presets) { _ in } } }
+            SideListEdgeFades()
+            .listStyle(.plain)
+            let listHeight = min(pageHeight, computedHeight)
+            ClipboardItemsList()
+            """)
+        XCTAssertEqual(Self.listUses(in: good), [])
+        XCTAssertEqual(Self.listUses(in: "        List {").count, 1)
+        XCTAssertEqual(Self.listUses(in: "        List{").count, 1)
+        XCTAssertEqual(Self.listUses(in: "        List(presets) { preset in").count, 1)
+        XCTAssertEqual(Self.listUses(in: "        ZStack { List(selection: $picked) {").count, 1)
     }
 
     func testThePagerPlacementScannerCatchesPlantedOffenders() {
@@ -399,6 +423,24 @@ final class TimerSideColumnRulesTests: XCTestCase {
             problems.append("pager is used outside the footer overlay")
         }
         return problems
+    }
+
+    /// Code lines that build a SwiftUI `List` (`List {` or `List(`): the word `List` on its own, not
+    /// part of a longer name such as `SideListEdgeFades`, followed by a brace or a parenthesis.
+    private static func listUses(in code: String) -> [String] {
+        code.split(separator: "\n").filter { line in
+            var searchStart = line.startIndex
+            while let found = line.range(of: "List", range: searchStart..<line.endIndex) {
+                searchStart = found.upperBound
+                if found.lowerBound > line.startIndex {
+                    let before = line[line.index(before: found.lowerBound)]
+                    if before.isLetter || before.isNumber || before == "_" { continue }
+                }
+                let next = line[found.upperBound...].first { !$0.isWhitespace }
+                if next == "{" || next == "(" { return true }
+            }
+            return false
+        }.map(String.init)
     }
 
     /// How often `word` appears with no identifier character either side (`hasPager` is not `pager`).
