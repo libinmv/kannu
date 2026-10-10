@@ -57,6 +57,8 @@ struct RankedProcessPopover: View {
                         .padding(10)
                 }
                 .buttonStyle(PlainButtonStyle())
+                .hoverTooltip(String(localized: "Close"), edge: .below)
+                .accessibilityLabel(String(localized: "Close"))
             }
             .overlay(alignment: .center) {
                 PopoverHoverSensor { hovering in

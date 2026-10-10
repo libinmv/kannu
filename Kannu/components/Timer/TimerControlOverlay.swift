@@ -30,16 +30,16 @@ struct TimerControlOverlay: View {
 
     private var pauseForeground: Color { .white }
 
-    private var helpText: String {
-        timerManager.isPaused ? "Resume" : "Pause"
+    private var pauseLabel: String {
+        timerManager.isPaused ? String(localized: "Resume") : String(localized: "Pause")
     }
 
     private var secondaryIcon: String {
         timerManager.isOvertime ? "stop.fill" : "xmark"
     }
 
-    private var secondaryHelp: String {
-        timerManager.isOvertime ? "Stop" : "Cancel"
+    private var secondaryLabel: String {
+        timerManager.isOvertime ? String(localized: "Stop") : String(localized: "Cancel")
     }
 
     private var buttonSize: CGFloat {
@@ -61,7 +61,7 @@ struct TimerControlOverlay: View {
                     icon: pauseIcon,
                     foreground: pauseForeground,
                     background: Color.white.opacity(0.14),
-                    help: helpText,
+                    accessibilityLabel: pauseLabel,
                     action: togglePause
                 )
                 .disabled(!timerManager.allowsManualInteraction)
@@ -71,7 +71,7 @@ struct TimerControlOverlay: View {
                 icon: secondaryIcon,
                 foreground: timerManager.isOvertime ? Color.white : Color.white,
                 background: timerManager.isOvertime ? Color.red.opacity(0.24) : Color.white.opacity(0.14),
-                help: secondaryHelp,
+                accessibilityLabel: secondaryLabel,
                 action: stopTimer
             )
             .disabled(!timerManager.allowsManualInteraction)
@@ -114,7 +114,11 @@ private struct ControlButton: View {
     let icon: String
     let foreground: Color
     let background: Color
-    let help: String
+    /// Accessibility label only — no hover bubble. TimerControlWindowManager sizes this panel to
+    /// its `fittingSize` (height = notch height), so a bubble above or below the row would fall
+    /// outside the window and never show. `.help(...)` never rendered here either: the app is
+    /// never active (docs/TOOLTIPS.md, fitted-panel exception).
+    let accessibilityLabel: String
     let action: () -> Void
 
     @State private var isHovering = false
@@ -130,7 +134,7 @@ private struct ControlButton: View {
                 .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
-        .help(help)
+        .accessibilityLabel(accessibilityLabel)
         .onHover { hovering in isHovering = hovering }
     }
 }

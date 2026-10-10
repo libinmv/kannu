@@ -472,6 +472,8 @@ struct NotchClipboardList: View {
                             .clipShape(Circle())
                     }
                     .buttonStyle(PlainButtonStyle())
+                    .hoverTooltip(String(localized: "Clear History"), edge: .below)
+                    .accessibilityLabel(String(localized: "Clear History"))
                 }
             }
             .padding(.horizontal, 20)
@@ -665,6 +667,11 @@ struct NoteListView: View {
         }
     }
 
+    /// The magnifying glass opens search and/or the colour filter, whichever is enabled.
+    private var searchToggleTooltip: String {
+        enableNoteSearch ? String(localized: "Search Notes") : String(localized: "Filter Notes")
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -701,6 +708,7 @@ struct NoteListView: View {
                     .buttonStyle(PlainButtonStyle())
                     .disabled(appleNotesSync.isSyncing)
                     .hoverTooltip(String(localized: "Sync with Apple Notes"), edge: .below)
+                    .accessibilityLabel(String(localized: "Sync with Apple Notes"))
                 }
 
                 if enableNoteSearch || enableNoteColorFiltering {
@@ -719,6 +727,8 @@ struct NoteListView: View {
                             .clipShape(Circle())
                     }
                     .buttonStyle(PlainButtonStyle())
+                    .hoverTooltip(searchToggleTooltip, edge: .below)
+                    .accessibilityLabel(searchToggleTooltip)
                 }
 
                 if enableCreateFromClipboard {
@@ -732,7 +742,8 @@ struct NoteListView: View {
                             .clipShape(Circle())
                     }
                     .buttonStyle(PlainButtonStyle())
-                    .hoverTooltip("Create from Clipboard", edge: .below)
+                    .hoverTooltip(String(localized: "Create from Clipboard"), edge: .below)
+                    .accessibilityLabel(String(localized: "Create from Clipboard"))
                 }
                 
                 if !notes.isEmpty {
@@ -746,6 +757,8 @@ struct NoteListView: View {
                             .clipShape(Circle())
                     }
                     .buttonStyle(PlainButtonStyle())
+                    .hoverTooltip(String(localized: "Clear Notes"), edge: .below)
+                    .accessibilityLabel(String(localized: "Clear Notes"))
                 }
 
                 Button(action: onCreate) {
@@ -758,6 +771,8 @@ struct NoteListView: View {
                         .clipShape(Circle())
                 }
                 .buttonStyle(PlainButtonStyle())
+                .hoverTooltip(String(localized: "New Note"), edge: .below)
+                .accessibilityLabel(String(localized: "New Note"))
             }
             .padding(.horizontal, 16) // Reduced from 20
             .padding(.top, 8)
@@ -780,6 +795,8 @@ struct NoteListView: View {
                                         .foregroundStyle(.secondary)
                                 }
                                 .buttonStyle(.plain)
+                                .hoverTooltip(String(localized: "Clear Search"), edge: .below)
+                                .accessibilityLabel(String(localized: "Clear Search"))
                             }
                         }
                         .padding(.horizontal, 10)
@@ -816,10 +833,18 @@ struct NoteListView: View {
                                                 selectedColorFilter = (selectedColorFilter == index) ? nil : index
                                             }
                                         }
+                                        // `.above`: an earlier sibling in the VStack draws
+                                        // underneath, while the notes grid below draws on top.
+                                        .hoverTooltip(NoteItem.colorNames[index], edge: .above)
+                                        .accessibilityLabel(NoteItem.colorNames[index])
+                                        .accessibilityAddTraits(.isButton)
                                 }
                             }
                             .padding(.horizontal, 16)
                         }
+                        // A ScrollView clips both axes; without this the bubble is swallowed.
+                        // The row is ~150pt against its 160pt maximum, so nothing scrolls today.
+                        .scrollClipDisabled()
                     }
                 }
                 .transition(.move(edge: .top).combined(with: .opacity))
@@ -911,7 +936,11 @@ struct NoteRow: View {
     @State private var isHovered = false
     @State private var isCopied = false
     @Default(.enableNotePinning) var enableNotePinning
-    
+
+    private var pinTooltip: String {
+        note.isPinned ? String(localized: "Unpin Note") : String(localized: "Pin Note")
+    }
+
     var body: some View {
         ZStack(alignment: .topTrailing) {
             HStack(spacing: isCompact ? 8 : 12) {
@@ -972,6 +1001,10 @@ struct NoteRow: View {
                                     .clipShape(Circle())
                             }
                             .buttonStyle(PlainButtonStyle())
+                            // `.below`: rows sit in a ScrollView and the first rows are the most
+                            // hovered; the grid's bottom padding leaves room under the last one.
+                            .hoverTooltip(pinTooltip, edge: .below)
+                            .accessibilityLabel(pinTooltip)
                         }
 
                         Button(action: {
@@ -1002,6 +1035,8 @@ struct NoteRow: View {
                                 .clipShape(Circle())
                         }
                         .buttonStyle(PlainButtonStyle())
+                        .hoverTooltip(String(localized: "Copy"), edge: .below)
+                        .accessibilityLabel(String(localized: "Copy"))
 
                         Button(action: onDelete) {
                             Image(systemName: "trash")
@@ -1012,6 +1047,8 @@ struct NoteRow: View {
                                 .clipShape(Circle())
                         }
                         .buttonStyle(PlainButtonStyle())
+                        .hoverTooltip(String(localized: "Delete Note"), edge: .below)
+                        .accessibilityLabel(String(localized: "Delete Note"))
                     }
                     .padding(.horizontal, isCompact ? 6 : 8)
                     .padding(.vertical, isCompact ? 2 : 3)
@@ -1132,11 +1169,19 @@ struct NoteEditorView: View {
                                         colorIndex = index
                                     }
                                 }
+                                // `.above`: the toolbar is an earlier VStack sibling and draws
+                                // underneath; the editor below would draw over a `.below` bubble.
+                                .hoverTooltip(NoteItem.colorNames[index], edge: .above)
+                                .accessibilityLabel(NoteItem.colorNames[index])
+                                .accessibilityAddTraits(.isButton)
                         }
                     }
                     .padding(.vertical, 4)
                     .padding(.horizontal, 4)
                 }
+                // A ScrollView clips both axes; without this the bubble is swallowed.
+                // The row is ~144pt against its 160pt maximum, so nothing scrolls today.
+                .scrollClipDisabled()
                 .frame(maxWidth: 160)
             }
             .padding(.leading, 16)
@@ -1197,6 +1242,8 @@ struct NoteEditorView: View {
                                 }
                                 .buttonStyle(.plain)
                                 .offset(x: 4, y: -4) // Move out slightly for better accessibility
+                                .hoverTooltip(String(localized: "Remove Image"), edge: .above)
+                                .accessibilityLabel(String(localized: "Remove Image"))
                             }
                             .padding(12)
                             .padding(.bottom, 20) // Moved higher as requested

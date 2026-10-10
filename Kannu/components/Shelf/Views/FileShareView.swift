@@ -158,6 +158,9 @@ struct FileShareView: View {
                         isSwitchHover = hovering
                         vm.setAutoCloseSuppression(hovering, token: autoCloseToken)
                     }
+                    // Driven by the handler above: one hover source. Top-right corner, so below.
+                    .hoverTooltip(String(localized: "Share Service"), edge: .below, isHovering: isSwitchHover)
+                    .accessibilityLabel(String(localized: "Share Service"))
                     .popover(isPresented: $showQuickSharePopover, arrowEdge: .bottom) {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Quick Share")

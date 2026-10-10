@@ -175,7 +175,10 @@ struct MinimalisticMusicPlayerView: View {
         HoverButton(
             icon: enableLyrics ? "quote.bubble.fill" : "quote.bubble",
             iconColor: enableLyrics ? brandAccentColor : .white,
-            scale: .medium
+            scale: .medium,
+            // Top-right corner of the notch: the bubble must open downwards.
+            tooltip: MusicControlButton.lyrics.label,
+            tooltipEdge: .below
         ) {
             enableLyrics.toggle()
         }
@@ -692,6 +695,7 @@ struct MinimalisticMusicPlayerView: View {
             foregroundColor: .white,
             pressEffect: .none,
             symbolEffectStyle: .replace,
+            tooltip: MusicControlButton.playPause.label,
             action: {
                 musicManager.togglePlay()
             }
@@ -705,6 +709,7 @@ struct MinimalisticMusicPlayerView: View {
 
     private func controlButton(
         icon: String,
+        tooltip: String,
         size: CGFloat = 18,
         isActive: Bool = false,
         activeColor: Color? = nil,
@@ -725,6 +730,7 @@ struct MinimalisticMusicPlayerView: View {
             symbolEffectStyle: symbolEffect,
             externalTriggerToken: trigger?.token,
             externalTriggerEffect: trigger?.pressEffect,
+            tooltip: tooltip,
             action: action
         )
     }
@@ -760,6 +766,7 @@ struct MinimalisticMusicPlayerView: View {
         case .trackBackward:
             controlButton(
                 icon: "backward.fill",
+                tooltip: control.label,
                 size: 18,
                 pressEffect: .nudge(-skipMagnitude),
                 symbolEffect: .replace,
@@ -769,6 +776,7 @@ struct MinimalisticMusicPlayerView: View {
         case .trackForward:
             controlButton(
                 icon: "forward.fill",
+                tooltip: control.label,
                 size: 18,
                 pressEffect: .nudge(skipMagnitude),
                 symbolEffect: .replace,
@@ -778,6 +786,7 @@ struct MinimalisticMusicPlayerView: View {
         case .seekBackward:
             controlButton(
                 icon: "gobackward.10",
+                tooltip: control.label,
                 size: 18,
                 pressEffect: .wiggle(.counterClockwise),
                 symbolEffect: .wiggle,
@@ -787,6 +796,7 @@ struct MinimalisticMusicPlayerView: View {
         case .seekForward:
             controlButton(
                 icon: "goforward.10",
+                tooltip: control.label,
                 size: 18,
                 pressEffect: .wiggle(.clockwise),
                 symbolEffect: .wiggle,
@@ -794,11 +804,16 @@ struct MinimalisticMusicPlayerView: View {
                 action: { musicManager.seek(by: seekInterval) }
             )
         case .shuffle:
-            controlButton(icon: "shuffle", isActive: musicManager.isShuffled) {
+            controlButton(icon: "shuffle", tooltip: control.label, isActive: musicManager.isShuffled) {
                 Task { musicManager.toggleShuffle() }
             }
         case .repeatMode:
-            controlButton(icon: repeatIcon, isActive: musicManager.repeatMode != .off, symbolEffect: .replace) {
+            controlButton(
+                icon: repeatIcon,
+                tooltip: control.label,
+                isActive: musicManager.repeatMode != .off,
+                symbolEffect: .replace
+            ) {
                 Task { musicManager.toggleRepeat() }
             }
         case .mediaOutput:
@@ -808,6 +823,7 @@ struct MinimalisticMusicPlayerView: View {
         case .lyrics:
             controlButton(
                 icon: enableLyrics ? "quote.bubble.fill" : "quote.bubble",
+                tooltip: control.label,
                 isActive: enableLyrics,
                 activeColor: brandAccentColor,
                 symbolEffect: .replace
@@ -848,14 +864,14 @@ struct MinimalisticMusicPlayerView: View {
                 frameSize: CGSize(width: 36, height: 36),
                 cornerRadius: 14,
                 foregroundColor: .white.opacity(0.85),
-                symbolEffectStyle: .replace
+                symbolEffectStyle: .replace,
+                tooltip: MusicControlButton.mediaOutput.label
             ) {
                 isPopoverPresented.toggle()
                 if isPopoverPresented {
                     routeManager.refreshDevices()
                 }
             }
-            .accessibilityLabel("Media output")
             .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
                 MediaOutputSelectorPopover(
                     routeManager: routeManager,
@@ -908,14 +924,14 @@ struct MinimalisticMusicPlayerView: View {
                 frameSize: CGSize(width: 36, height: 36),
                 cornerRadius: 14,
                 foregroundColor: .white.opacity(0.85),
-                symbolEffectStyle: .replace
+                symbolEffectStyle: .replace,
+                tooltip: MusicControlButton.airPlay.label
             ) {
                 isPopoverPresented.toggle()
                 if isPopoverPresented {
                     Task { await airPlayManager.refreshDevices() }
                 }
             }
-            .accessibilityLabel("AirPlay")
             .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
                 AirPlaySelectorPopover(
                     airPlayManager: airPlayManager,
@@ -1050,6 +1066,9 @@ private struct MinimalisticSquircircleButton: View {
     let symbolEffectStyle: SymbolEffectStyle
     let externalTriggerToken: Int?
     let externalTriggerEffect: PressEffect?
+    /// Hover bubble text, doubling as the accessibility label (docs/TOOLTIPS.md).
+    let tooltip: String?
+    let tooltipEdge: HoverTooltipEdge
     let action: () -> Void
 
     @State private var isHovering = false
@@ -1069,6 +1088,8 @@ private struct MinimalisticSquircircleButton: View {
         symbolEffectStyle: SymbolEffectStyle = .none,
         externalTriggerToken: Int? = nil,
         externalTriggerEffect: PressEffect? = nil,
+        tooltip: String? = nil,
+        tooltipEdge: HoverTooltipEdge = .above,
         action: @escaping () -> Void
     ) {
         self.icon = icon
@@ -1081,6 +1102,8 @@ private struct MinimalisticSquircircleButton: View {
         self.symbolEffectStyle = symbolEffectStyle
         self.externalTriggerToken = externalTriggerToken
         self.externalTriggerEffect = externalTriggerEffect
+        self.tooltip = tooltip
+        self.tooltipEdge = tooltipEdge
         self.action = action
     }
 
@@ -1105,6 +1128,8 @@ private struct MinimalisticSquircircleButton: View {
                 isHovering = hovering
             }
         }
+        // Driven by the hover handler above, so the button keeps a single hover source.
+        .iconButtonTooltip(tooltip, edge: tooltipEdge, isHovering: isHovering)
         .onChange(of: externalTriggerToken) { _, newToken in
             guard let newToken, newToken != lastExternalTriggerToken else { return }
             lastExternalTriggerToken = newToken

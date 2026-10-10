@@ -30,6 +30,11 @@ struct HoverButton: View {
     var contentTransition: ContentTransition = .symbolEffect
     var externalTriggerToken: Int? = nil
     var externalTriggerEffect: PressEffect? = nil
+    /// Shown as a hover bubble and read as the accessibility label. Every icon-only notch button
+    /// passes one (docs/TOOLTIPS.md); `nil` only where there is no notch to draw it in.
+    var tooltip: String? = nil
+    /// `.above` for a button low in its container, `.below` for one near the top.
+    var tooltipEdge: HoverTooltipEdge = .above
     var action: () -> Void
     
     @State private var isHovering = false
@@ -84,6 +89,8 @@ struct HoverButton: View {
                 isHovering = hovering
             }
         }
+        // Driven by the hover handler above, so the button keeps a single hover source.
+        .iconButtonTooltip(tooltip, edge: tooltipEdge, isHovering: isHovering)
         .onChange(of: externalTriggerToken) { _, newToken in
             guard let newToken, newToken != lastExternalTriggerToken else { return }
             lastExternalTriggerToken = newToken
