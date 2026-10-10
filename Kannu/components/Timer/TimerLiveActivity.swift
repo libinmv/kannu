@@ -47,6 +47,7 @@ struct TimerLiveActivity: View {
     @Default(.timerProgressStyle) private var progressStyle
     @Default(.timerIconColorMode) private var colorMode
     @Default(.timerSolidColor) private var solidColor
+    /// Not read here: observed so an edited preset colour redraws `sessionAccent`.
     @Default(.timerPresets) private var timerPresets
     @Default(.timerControlWindowEnabled) private var controlWindowEnabled
     @Default(.enableMinimalisticUI) private var enableMinimalisticUI
@@ -151,7 +152,7 @@ struct TimerLiveActivity: View {
     private var glyphColor: Color {
         switch colorMode {
         case .adaptive:
-            return activePresetColor ?? timerManager.timerColor
+            return timerManager.sessionAccent ?? timerManager.timerColor
         case .solid:
             return solidColor
         }
@@ -171,11 +172,6 @@ struct TimerLiveActivity: View {
 
     private var showsInfoSection: Bool {
         shouldDisplayLabel || (showsBarProgress && !showsCountdown)
-    }
-
-    private var activePresetColor: Color? {
-        guard let presetId = timerManager.activePresetId else { return nil }
-        return timerPresets.first { $0.id == presetId }?.color
     }
 
     private var middleSectionWidth: CGFloat {

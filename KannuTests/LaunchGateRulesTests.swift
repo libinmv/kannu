@@ -65,7 +65,8 @@ final class LaunchGateRulesTests: XCTestCase {
         for forbidden in ["AgentHookInstaller", "CursorAgentStatusMonitor", "SecurityFindingsStore",
                           "createKannuWindow", "adjustWindowPosition", "syncStatusItem",
                           "autoEnableLaunchAtLogin", "showOnboardingWindow", "LockScreenWeatherManager",
-                          "SystemHUDManager", "configureProviderDefaultsIfNeeded", "installTopMenuItems"] {
+                          "SystemHUDManager", "configureProviderDefaultsIfNeeded", "installTopMenuItems",
+                          "TaskReminderCenter", "UNUserNotificationCenter"] {
             XCTAssertFalse(preGate.contains(forbidden), "\(forbidden) now runs before the Terms of Use are accepted")
         }
         for allowed in ["HangWatchdog.shared.start()", "CrashReporter.shared.start()",
@@ -87,6 +88,20 @@ final class LaunchGateRulesTests: XCTestCase {
         for name in Self.heldSingletons {
             XCTAssertTrue(proceed.contains("_ = \(name)\n"), "continueLaunch no longer starts \(name)")
         }
+    }
+
+    /// Task reminders answer their Start button through a delegate set once the terms are
+    /// accepted. Setting it asks nothing: the permission prompt belongs to the user's first
+    /// schedule (`TaskListRulesTests`), and `TasksManager` stays lazy.
+    func testTheReminderDelegateIsInstalledAfterTheTerms() throws {
+        let source = try Self.appDelegate()
+        let proceed = Self.code(try XCTUnwrap(Self.body(ofFunction: "continueLaunch", in: source)))
+        XCTAssertEqual(Self.occurrences(of: "TaskReminderCenter.shared.install()", in: Self.code(source)), 1,
+                       "the reminder delegate is installed somewhere other than continueLaunch, or twice")
+        XCTAssertTrue(proceed.contains("TaskReminderCenter.shared.install()"),
+                      "continueLaunch no longer installs the reminder delegate: a reminder's Start does nothing")
+        XCTAssertFalse(proceed.contains("requestAuthorization"), "the launch asks for notifications")
+        XCTAssertFalse(proceed.contains("TasksManager"), "the launch builds TasksManager, which reads tasks.json")
     }
 
     /// The App struct runs before the delegate; it must not do work of its own.

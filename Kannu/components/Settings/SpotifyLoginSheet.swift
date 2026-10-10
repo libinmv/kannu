@@ -64,7 +64,7 @@ struct SpotifyLoginSheet: View {
                 } label: {
                     Label("Open in Browser", systemImage: "safari")
                 }
-                .help("Spotify often blocks in-app logins. Sign in via your normal browser, then paste sp_dc in Settings.")
+                .help("Spotify often blocks in-app logins. Sign in via your normal browser, then paste sp_dc in Brain.")
                 Button("Reset Session") {
                     NotificationCenter.default.post(name: .spotifyLoginSheetReset, object: nil)
                     statusText = "Session cleared. Sign in again to capture the cookie."
@@ -197,7 +197,7 @@ struct SpotifyLoginWebView: NSViewRepresentable {
                     "Blocked embedded OAuth navigation to host=\(url.host ?? "", privacy: .public)"
                 )
                 onStatus(
-                    "Google blocks in-app sign-in. Use email & password, Apple, or tap “Open in Browser” to sign in there and paste sp_dc in Settings."
+                    String(localized: "Google blocks in-app sign-in. Use email & password, Apple, or tap “Open in Browser” to sign in there and paste sp_dc in Brain.")
                 )
                 webView.load(URLRequest(url: SpotifyLoginConstants.googleSignInRedirectURL))
                 return
@@ -250,7 +250,7 @@ struct SpotifyLoginWebView: NSViewRepresentable {
             if navigationAction.targetFrame == nil, let url = navigationAction.request.url {
                 if Self.isBlockedOAuthHost(url.host) {
                     onStatus(
-                        "Google blocks in-app sign-in. Use email & password, Apple, or tap “Open in Browser” to sign in there and paste sp_dc in Settings."
+                        String(localized: "Google blocks in-app sign-in. Use email & password, Apple, or tap “Open in Browser” to sign in there and paste sp_dc in Brain.")
                     )
                     return nil
                 }

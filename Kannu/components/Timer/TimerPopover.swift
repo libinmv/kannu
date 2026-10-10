@@ -33,7 +33,9 @@ struct TimerPopover: View {
     @State private var customHours: Int = 0
     @State private var customMinutes: Int = 10
     @State private var customSeconds: Int = 0
-    
+    /// The name typed for the next session (`TimerSessionName`); cleared once a session starts.
+    @State private var pendingSessionName = ""
+
     private var customDurationInSeconds: TimeInterval {
         TimeInterval(customHours * 3600 + customMinutes * 60 + customSeconds)
     }
@@ -45,8 +47,15 @@ struct TimerPopover: View {
             if timerManager.isTimerActive {
                 ActiveTimerSection(timerManager: timerManager)
             } else {
+                TextField(String(localized: "Do you want to name this session?"), text: $pendingSessionName)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: pendingSessionName) { _, newValue in
+                        if newValue.count > TimerSessionName.maxLength {
+                            pendingSessionName = String(newValue.prefix(TimerSessionName.maxLength))
+                        }
+                    }
                 CustomTimerSection(hours: $customHours, minutes: $customMinutes, seconds: $customSeconds, startAction: startCustomTimer)
-                    .onChange(of: customHours) { _, _ in updateStoredCustomDuration() }
+.onChange(of: customHours) { _, _ in updateStoredCustomDuration() }
                     .onChange(of: customMinutes) { _, _ in updateStoredCustomDuration() }
                     .onChange(of: customSeconds) { _, _ in updateStoredCustomDuration() }
             }
@@ -100,16 +109,27 @@ struct TimerPopover: View {
         let duration = customDurationInSeconds
         guard duration > 0 else { return }
         withAnimation(.smooth) {
-            timerManager.startTimer(duration: duration, name: String(localized: "Custom Timer"))
+            startSession(duration: duration, fallback: String(localized: "Custom Timer"))
         }
         dismiss()
     }
-    
+
     private func startPreset(_ preset: TimerPreset) {
         withAnimation(.smooth) {
-            timerManager.startTimer(duration: preset.duration, name: preset.name, preset: preset)
+            startSession(duration: preset.duration, preset: preset, fallback: preset.name)
         }
         dismiss()
+    }
+
+    /// Every session started from the popover: the typed name, or the preset's or "Custom Timer".
+    private func startSession(duration: TimeInterval, preset: TimerPreset? = nil, fallback: String) {
+        timerManager.startTimer(
+            duration: duration,
+            name: TimerSessionName.resolved(typed: pendingSessionName, fallback: fallback),
+            preset: preset,
+            fallbackName: fallback
+        )
+        pendingSessionName = ""
     }
 }
 
@@ -140,16 +160,56 @@ private struct ActiveTimerSection: View {
     @Default(.timerProgressStyle) private var progressStyle
     @Default(.timerIconColorMode) private var colorMode
     @Default(.timerSolidColor) private var solidColor
+    /// Not read here: observed so an edited preset colour redraws `sessionAccent`.
     @Default(.timerPresets) private var timerPresets
-    
+    @State private var isRenaming = false
+    @State private var renameDraft = ""
+    /// The session the rename began in (`TimerManager.sessionID`).
+    @State private var renamingSessionID: UUID?
+    @FocusState private var renameFocused: Bool
+
+    private func commitRename() {
+        guard isRenaming, let session = renamingSessionID else { return }
+        isRenaming = false
+        renamingSessionID = nil
+        timerManager.renameSession(to: renameDraft, session: session)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(timerManager.timerName)
-                    .font(.system(size: 15, weight: .semibold))
-                    .lineLimit(1)
-                    .foregroundColor(.primary)
-                
+                if isRenaming {
+                    TextField(String(localized: "Session name"), text: $renameDraft)
+                        .font(.system(size: 15, weight: .semibold))
+                        .textFieldStyle(.plain)
+                        .focused($renameFocused)
+                        .onSubmit { commitRename() }
+                        .onExitCommand { isRenaming = false }
+                        .onChange(of: renameFocused) { _, focused in
+                            if !focused { commitRename() }
+                        }
+                } else if timerManager.hasManualTimerRunning {
+                    Text(timerManager.timerName)
+                        .font(.system(size: 15, weight: .semibold))
+                        .lineLimit(1)
+                        .foregroundColor(.primary)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            renameDraft = timerManager.timerName
+                            renamingSessionID = timerManager.sessionID
+                            isRenaming = true
+                            DispatchQueue.main.async { renameFocused = true }
+                        }
+                        .help(String(localized: "Click to rename"))
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityHint(Text("Renames this timer session"))
+                } else {
+                    Text(timerManager.timerName)
+                        .font(.system(size: 15, weight: .semibold))
+                        .lineLimit(1)
+                        .foregroundColor(.primary)
+                }
+
                 Text(timerManager.formattedRemainingTime())
                     .font(.system(size: 28, weight: .bold, design: .monospaced))
                     .foregroundStyle(timerManager.isOvertime ? Color.red : Color.primary)
@@ -184,9 +244,16 @@ private struct ActiveTimerSection: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(Color.white.opacity(0.08))
+        // A click on the card that no control takes ends typing, which saves a rename.
+        .background(
+            Color.white.opacity(0.08)
+                .contentShape(Rectangle())
+                .onTapGesture { renameFocused = false }
+        )
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .animation(.smooth, value: timerManager.isPaused)
+        // Closing the popover removes this view without a focus change.
+        .onDisappear { commitRename() }
     }
     
     private func togglePause() {
@@ -213,15 +280,10 @@ private struct ActiveTimerSection: View {
     private var progressTint: Color {
         switch colorMode {
         case .adaptive:
-            return activePresetColor ?? timerManager.timerColor
+            return timerManager.sessionAccent ?? timerManager.timerColor
         case .solid:
             return solidColor
         }
-    }
-
-    private var activePresetColor: Color? {
-        guard let presetId = timerManager.activePresetId else { return nil }
-        return timerPresets.first { $0.id == presetId }?.color
     }
 }
 
@@ -304,7 +366,7 @@ private struct PresetList: View {
                 .padding(.leading, 4)
             
             if presets.isEmpty {
-                Text("Configure presets in Settings")
+                Text("Configure presets in Brain")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .padding(12)

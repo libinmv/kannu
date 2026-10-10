@@ -116,7 +116,7 @@ struct SecurityFindingGuide: Equatable {
                     String(localized: "Review the change and undo anything that wasn't requested."))
         case .policy:
             return (String(localized: "Your agent policy (~/.kannu/agent-policy.json) names this command or tool. With blocking on, Kannu refused the call and told the agent why; with it off, the call ran and this is the report."),
-                    String(localized: "If the agent needs it, edit the policy or turn blocking off in Settings › Agents › Agent policy. If not, check what the agent was trying to do and why."))
+                    String(localized: "If the agent needs it, edit the policy or turn blocking off in Brain › Agents › Agent policy. If not, check what the agent was trying to do and why."))
         case .mcpServerAdded:
             return (String(localized: "A new MCP server was added to an AI tool's settings; it runs with that tool's access."),
                     String(localized: "Confirm it was added on purpose and comes from a trusted source; if not, remove it from the settings file."))
