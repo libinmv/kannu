@@ -4,6 +4,93 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-04 - Brain › Tasks: an ordered task list with estimates, and the actual time recorded by Kannu's timer
+- **Developer label:** "task will have option to add estimate and also record the actual time"
+- **Agent label:** Brain Tasks PR2: local tasks, estimates, timer session events, recorded actual time
+- **Changes:**
+  - New Brain › Tasks tab (Productivity group, after Notes, `checklist` icon): Enable tasks (off by
+    default), Default session length (25 min), Sound when the estimate is reached (off by default),
+    Add a task (title plus an estimate menu: none, 15m, 30m, 1h, 2h, 4h, 8h, Custom…), the task order
+    with "42m of 2h" and an orange "10m over", ▶ to time a task (■ while it is timed), a ⋯ menu (Set
+    Estimate…, Add Time Manually…, Move to Top / Up / Down, Mark Done, Delete…, disabled while timed),
+    Interrupted sessions (Set End Time… or Discard), and a Done and hidden disclosure with Reopen.
+  - `TimerManager.sessionEvents` sends started, paused, resumed and ended(stopped | replaced) for
+    timers started in Kannu only; `.ended` is sent before `resetTimer()` mints the next id, and a
+    replace ends the old session before the new one starts. `startTimer(playsSoundOnFinish:)`.
+  - `TasksManager` (lazy `@MainActor` singleton, nothing at launch) links a timed session to its task
+    and records segments from each event's own date; sleep closes and wake reopens without pausing the
+    timer; quit closes the open segment with one synchronous write; a segment found open at load
+    becomes an interrupted session that counts for nothing until the user sets its end.
+  - `tasks.json` in Application Support/Kannu/Tasks, written by the `TaskFileStore` actor: atomic,
+    mode 0600 (folder 0700), revision-ordered so a stale save is dropped, a corrupt file moved aside.
+  - Pure model in the logic target (`TimerSessionEvent`, `TaskModels`, `TaskTimeMath`, `TaskOrdering`,
+    `WorklogDrafts`, `TaskFileStore`): log entries round to the nearest 15 minutes, 0 makes no draft
+    and carries over; tracked totals stay exact. `TaskSource`/`RemoteTaskInfo` exist for later Jira
+    and GitLab work; no network, credentials or Keychain code.
+  - Tests: TaskModelCodingTests, TaskTimeMathTests, WorkDurationTests, TaskOrderTests,
+    WorklogDraftTests, TaskFileStoreTests, TimerSessionEventRulesTests (source scan with planted
+    offenders). Highlight inventory 214 entries, 263 registrations, 257 ids.
+
+### 2026-10-04 - Name a timer session before it starts, and rename it while it runs
+- **Developer label:** "in promod timer i need to able to name a timer session"
+- **Agent label:** Timer session names: an optional field before Start, click-to-rename while running
+- **Changes:**
+  - The timer tab in the notch, and the popover, have a one-line "Name this session (optional)"
+    field. The next session takes that name, whether it starts from a preset card (Focus, Break,
+    Deep Work) or from the custom Start. Without one it keeps the preset's name or "Custom Timer",
+    as before, and the field clears once the session starts. The notch stays open while you type.
+  - Clicking a running session's name in the notch or the popover turns it into a text field.
+    Return saves the new name, and so does anything else that ends the edit: a click elsewhere in
+    the tab or the popover card, a click into another app, closing the notch or the popover, or
+    switching tabs. Escape keeps the old name, and clearing it goes back to the default. The closed
+    notch shows the new name for a few seconds. Clock-app timers keep the Clock app's name.
+  - `TimerSessionName` (pure, in the logic target) makes a typed name one clean line of at most
+    40 characters, counting an emoji once, and never empty. `TimerManager.renameSession(to:session:)`
+    renames only timers started in Kannu, and only the session the rename began in
+    (`TimerManager.sessionID`), because a save on close can land after a new session started.
+  - Tests: `TimerSessionNameTests`, and `TimerNamingRulesTests`, which pins from the source that
+    every start path in both views takes the typed name, both views can rename a running session,
+    both save a rename when they go away and pass its session, and the notch saves when its window
+    goes to the background, with planted-offender self-tests for both scanners.
+
+### 2026-10-04 - Settings is now Brain, with a brain icon in the notch and ⌘, to open it
+- **Developer label:** "rename settings to brain and use that icon, it is more going to be a place where do all the management"
+- **Agent label:** Brain rename (user-visible text only), notch brain icon, live ⌘, command, BrainNamingRulesTests
+- **Changes:**
+  - Everywhere users see Kannu's Settings window it is now **Brain**: the window title (Kannu
+    Brain), the menu bar icon's menu and the notch's right-click menu, the search field (Search
+    Brain), the "Brain icon in notch" row together with its search entry (keywords brain, settings,
+    gear), the menu bar icon caption, the hints in the notch's Stats, Timer and agent views and the
+    timer popover, onboarding (the finish button and the "change this later" lines), the
+    security-finding advice, push text and analysis error, the closed-notch findings caption, the
+    Spotify login hints, the ADR policy-drafting prompt, and ReadMe.md. Code names do not change:
+    the `Settings` folder and types, `KannuSettingsWindow`, `settingsIconInNotch`, comments.
+  - The notch header's button shows the `brain` SF Symbol instead of `gear`, with an accessibility
+    label and a `.hoverTooltip` reading "Brain". Screen Assistant keeps `brain.head.profile`.
+  - Kept as "Settings", because none of them is Kannu's window: every "System Settings" string and
+    the "Open … Settings" menu items that open macOS panes, "Settings file:" (an agent's config),
+    BetterDisplay's Settings, the Clipboard section header, "Global Settings", the permission
+    callout's default "Open Settings" button, "Battery Settings" and "Open Model Settings".
+  - ⌘, works. `commands` held a `CommandGroup(replacing: .appSettings)` that no scene attached, so
+    the shortcut did nothing. It is now attached to the app's scene, reads "Brain…", carries
+    `.keyboardShortcut(",", modifiers: .command)`, and still brings the Terms of Use back before
+    they are accepted. Like any menu key equivalent it fires while Kannu is the active app, which
+    the Brain window (and the terms and onboarding windows) make it; with only the notch on screen
+    the key belongs to the app in front. The never-attached "Check for Updates…" group is removed
+    rather than attached, because the Kannu menu built by `installTopMenuItemsIfNeeded` already
+    carries that item.
+  - `docs/SETTINGS.md` says the window is shown to users as Brain while the code keeps the Settings
+    names. `Localizable.xcstrings` is untouched, as for every recent string: the new keys show in
+    English in every locale until the catalog is synced and translated.
+  - New `BrainNamingRulesTests`: scans every string literal under `Kannu/` (comments skipped; plain,
+    multi-line, raw and interpolated literals read correctly) and fails on "Settings" outside an
+    11-entry allowlist plus the phrase "System Settings", each entry with its reason and each
+    required to match exactly one string. It also pins the window title, the header's `brain`
+    symbol, label and tooltip (no `gear`, no `.help(`, no `brain.head.profile`), the attached ⌘,
+    command with its terms guard, the menus, the search field and the renamed row's search
+    keywords, and carries a planted-offender self-test. `SettingsHighlightInventoryTests` counts
+    are unchanged (208 entries, 257 registrations, 251 ids): the rename swaps one entry and its id.
+
 ### 2026-10-01 - Quit Kannu has a row in Settings, and searching "quit" or "exit" finds it
 - **Developer label:** "the settings should have a quit app, or at least on search of quit or exit i should get the tab with that button to come up as result"
 - **Agent label:** Settings Quit row + search entry, pinned by the highlight inventory

@@ -78,6 +78,13 @@
 		AA100000000000000000008F /* DiagnosticScrub.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100000000000000000008E /* DiagnosticScrub.swift */; };
 		AA1000000000000000000091 /* DisplayPlacementResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000090 /* DisplayPlacementResolver.swift */; };
 		AA10000000000000000000B1 /* ClosedNotchVisibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000AF /* ClosedNotchVisibility.swift */; };
+		AA10000000000000000000C7 /* TimerSessionName.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000C6 /* TimerSessionName.swift */; };
+		AA10000000000000000000D3 /* TimerSessionEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000D2 /* TimerSessionEvent.swift */; };
+		AA10000000000000000000D5 /* TaskModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000D4 /* TaskModels.swift */; };
+		AA10000000000000000000D7 /* TaskTimeMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000D6 /* TaskTimeMath.swift */; };
+		AA10000000000000000000D9 /* TaskOrdering.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000D8 /* TaskOrdering.swift */; };
+		AA10000000000000000000DB /* WorklogDrafts.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000DA /* WorklogDrafts.swift */; };
+		AA10000000000000000000DD /* TaskFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000DC /* TaskFileStore.swift */; };
 		AA10000000000000000000B7 /* ClipboardPanelPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B6 /* ClipboardPanelPlacement.swift */; };
 		AA10000000000000000000B9 /* HostedContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B8 /* HostedContent.swift */; };
 		AA10000000000000000000B3 /* AgentSecurityFindingGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B2 /* AgentSecurityFindingGroup.swift */; };
@@ -176,6 +183,13 @@
 		AA100000000000000000008E /* DiagnosticScrub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DiagnosticScrub.swift; path = Kannu/managers/DiagnosticScrub.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000090 /* DisplayPlacementResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DisplayPlacementResolver.swift; path = Kannu/managers/Display/DisplayPlacementResolver.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000AF /* ClosedNotchVisibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClosedNotchVisibility.swift; path = Kannu/managers/Display/ClosedNotchVisibility.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000C6 /* TimerSessionName.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TimerSessionName.swift; path = Kannu/managers/TimerSessionName.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000D2 /* TimerSessionEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TimerSessionEvent.swift; path = Kannu/managers/TimerSessionEvent.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000D4 /* TaskModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TaskModels.swift; path = Kannu/managers/Tasks/TaskModels.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000D6 /* TaskTimeMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TaskTimeMath.swift; path = Kannu/managers/Tasks/TaskTimeMath.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000D8 /* TaskOrdering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TaskOrdering.swift; path = Kannu/managers/Tasks/TaskOrdering.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000DA /* WorklogDrafts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WorklogDrafts.swift; path = Kannu/managers/Tasks/WorklogDrafts.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000DC /* TaskFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TaskFileStore.swift; path = Kannu/managers/Tasks/TaskFileStore.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000B6 /* ClipboardPanelPlacement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClipboardPanelPlacement.swift; path = Kannu/managers/Display/ClipboardPanelPlacement.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000B8 /* HostedContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HostedContent.swift; path = Kannu/helpers/HostedContent.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000B2 /* AgentSecurityFindingGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AgentSecurityFindingGroup.swift; path = Kannu/managers/AgentStatus/AgentSecurityFindingGroup.swift; sourceTree = SOURCE_ROOT; };
@@ -624,6 +638,13 @@
 				AA100000000000000000008F /* DiagnosticScrub.swift in Sources */,
 				AA1000000000000000000091 /* DisplayPlacementResolver.swift in Sources */,
 				AA10000000000000000000B1 /* ClosedNotchVisibility.swift in Sources */,
+				AA10000000000000000000C7 /* TimerSessionName.swift in Sources */,
+				AA10000000000000000000D3 /* TimerSessionEvent.swift in Sources */,
+				AA10000000000000000000D5 /* TaskModels.swift in Sources */,
+				AA10000000000000000000D7 /* TaskTimeMath.swift in Sources */,
+				AA10000000000000000000D9 /* TaskOrdering.swift in Sources */,
+				AA10000000000000000000DB /* WorklogDrafts.swift in Sources */,
+				AA10000000000000000000DD /* TaskFileStore.swift in Sources */,
 				AA10000000000000000000B7 /* ClipboardPanelPlacement.swift in Sources */,
 				AA10000000000000000000B9 /* HostedContent.swift in Sources */,
 				AA100000000000000000F008 /* TermsOfUse.swift in Sources */,

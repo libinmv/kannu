@@ -418,7 +418,7 @@ enum ADRHighAlertMode: String, CaseIterable, Defaults.Serializable, Identifiable
         case .glyphOnly:
             return String(localized: "Only a small shield beside the traffic light; no pill.")
         case .off:
-            return String(localized: "Nothing in the closed notch. Findings still appear in the panel and in Settings.")
+            return String(localized: "Nothing in the closed notch. Findings still appear in the panel and in Brain.")
         }
     }
 
@@ -1507,7 +1507,16 @@ extension Defaults.Keys {
     static let savedNotes = Key<[NoteItem]>("savedNotes", default: [])
     static let enableAppleNotesSync = Key<Bool>("enableAppleNotesSync", default: false)
     static let appleNotesLastSyncDate = Key<Date?>("appleNotesLastSyncDate", default: nil)
-    
+
+    // MARK: Tasks Feature
+    // The tasks themselves live in Application Support/Kannu/Tasks/tasks.json (TaskFileStore),
+    // not here: they hold recorded time, and a Defaults write is a whole-plist rewrite.
+    static let enableTasks = Key<Bool>("enableTasks", default: false)
+    /// How long a task's timer runs when the task has no estimate left, in minutes.
+    static let tasksDefaultSessionMinutes = Key<Int>("tasksDefaultSessionMinutes", default: 25)
+    /// Off by default: a task's timer runs on past its estimate silently.
+    static let tasksSoundAtEstimate = Key<Bool>("tasksSoundAtEstimate", default: false)
+
     // Use Now Playing as the default media controller for new installs.
     static var defaultMediaController: MediaControllerType {
         .nowPlaying

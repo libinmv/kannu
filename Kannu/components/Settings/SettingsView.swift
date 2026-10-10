@@ -64,6 +64,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
     case shelf
     case shortcuts
     case notes
+    case tasks
     case agentStatus
     case agentSecurity
     case llmUsage
@@ -77,7 +78,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .general, .appearance:                                          return .core
         case .media, .liveActivities, .lockScreen, .devices:                 return .mediaAndDisplay
         case .hudAndOSD, .battery:                                           return .system
-        case .timer, .notes:                                      return .productivity
+        case .timer, .notes, .tasks:                              return .productivity
         case .clipboard, .screenAssistant, .shelf,
              .downloads, .shortcuts:                                         return .utilities
         case .stats:                                              return .developer
@@ -106,6 +107,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .shelf: return String(localized: "Shelf")
         case .shortcuts: return String(localized: "Shortcuts")
         case .notes: return String(localized: "Notes")
+        case .tasks: return String(localized: "Tasks")
         case .agentStatus: return String(localized: "Agents")
         case .agentSecurity: return String(localized: "Agent Security")
         case .llmUsage: return String(localized: "Usage")
@@ -132,6 +134,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .shelf: return "books.vertical"
         case .shortcuts: return "keyboard"
         case .notes: return "note.text"
+        case .tasks: return "checklist"
         case .agentStatus: return "light.beacon.max"
         case .agentSecurity: return "shield.lefthalf.filled"
         case .llmUsage: return "gauge.with.dots.needle.bottom.50percent"
@@ -158,6 +161,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .shelf: return .brown
         case .shortcuts: return .orange
         case .notes: return Color(red: 0.979, green: 0.716, blue: 0.153, opacity: 1.000)
+        case .tasks: return .green
         case .agentStatus: return .yellow
         case .agentSecurity: return .orange
         case .llmUsage: return .cyan
@@ -529,6 +533,7 @@ struct SettingsView: View {
             // Productivity
             .timer,
             .notes,
+            .tasks,
             // Utilities
             .clipboard,
             .screenAssistant,
@@ -613,7 +618,7 @@ struct SettingsView: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(Color.secondary)
 
-                TextField("Search Settings", text: $text)
+                TextField("Search Brain", text: $text)
                     .textFieldStyle(.plain)
                     .focused($isFocused)
                     .onSubmit(triggerFirstSuggestion)
@@ -829,7 +834,7 @@ struct SettingsView: View {
 
             // Appearance
             SettingsSearchEntry(tab: .appearance, title: "Main screen style", keywords: ["dynamic island", "pill", "non-notch", "display style", "notch style"], highlightID: SettingsTab.appearance.highlightID(for: "Main screen style")),
-            SettingsSearchEntry(tab: .appearance, title: "Settings icon in notch", keywords: ["settings button", "toolbar"], highlightID: SettingsTab.appearance.highlightID(for: "Settings icon in notch")),
+            SettingsSearchEntry(tab: .appearance, title: "Brain icon in notch", keywords: ["brain", "settings", "gear", "settings button", "toolbar"], highlightID: SettingsTab.appearance.highlightID(for: "Brain icon in notch")),
             SettingsSearchEntry(tab: .appearance, title: "Enable window shadow", keywords: ["shadow", "appearance"], highlightID: SettingsTab.appearance.highlightID(for: "Enable window shadow")),
             SettingsSearchEntry(tab: .appearance, title: "Corner radius scaling", keywords: ["corner radius", "shape"], highlightID: SettingsTab.appearance.highlightID(for: "Corner radius scaling")),
             SettingsSearchEntry(tab: .appearance, title: "Use simpler close animation", keywords: ["close animation", "notch"], highlightID: SettingsTab.appearance.highlightID(for: "Use simpler close animation")),
@@ -892,6 +897,14 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .timer, title: "Solid colour", keywords: ["timer colour", "custom"], highlightID: SettingsTab.timer.highlightID(for: "Solid colour")),
             SettingsSearchEntry(tab: .timer, title: "Progress style", keywords: ["progress", "bar", "ring"], highlightID: SettingsTab.timer.highlightID(for: "Progress style")),
             SettingsSearchEntry(tab: .timer, title: "Accent colour", keywords: ["accent", "timer"], highlightID: SettingsTab.timer.highlightID(for: "Accent colour")),
+
+            // Tasks
+            SettingsSearchEntry(tab: .tasks, title: "Enable tasks", keywords: ["tasks", "todo", "to-do", "estimate", "time tracking", "actual time"], highlightID: SettingsTab.tasks.highlightID(for: "Enable tasks")),
+            SettingsSearchEntry(tab: .tasks, title: "Default session length", keywords: ["tasks", "session", "length", "minutes", "pomodoro", "timer"], highlightID: SettingsTab.tasks.highlightID(for: "Default session length")),
+            SettingsSearchEntry(tab: .tasks, title: "Sound when the estimate is reached", keywords: ["tasks", "sound", "estimate", "alarm", "chime", "overtime"], highlightID: SettingsTab.tasks.highlightID(for: "Sound when the estimate is reached")),
+            SettingsSearchEntry(tab: .tasks, title: "Add a task", keywords: ["tasks", "add", "new task", "todo", "estimate"], highlightID: SettingsTab.tasks.highlightID(for: "Add a task")),
+            SettingsSearchEntry(tab: .tasks, title: "Task order", keywords: ["tasks", "order", "reorder", "move", "priority", "list", "tracked", "actual time", "start", "time a task"], highlightID: SettingsTab.tasks.highlightID(for: "Task order")),
+            SettingsSearchEntry(tab: .tasks, title: "Done and hidden tasks", keywords: ["tasks", "done", "finished", "completed", "hidden", "reopen"], highlightID: SettingsTab.tasks.highlightID(for: "Done and hidden tasks")),
 
             // Stats
             SettingsSearchEntry(tab: .stats, title: "Enable system stats monitoring", keywords: ["stats", "monitoring"], highlightID: SettingsTab.stats.highlightID(for: "Enable system stats monitoring")),
@@ -1057,6 +1070,10 @@ struct SettingsView: View {
             SettingsForm(tab: .notes) {
                 NotesSettingsView()
             }
+        case .tasks:
+            SettingsForm(tab: .tasks) {
+                TasksSettings()
+            }
         case .llmUsage:
             SettingsForm(tab: .llmUsage) {
                 UsageSettings()
@@ -1139,7 +1156,7 @@ struct GeneralSettings: View {
             }
 
             Section {
-                SettingsRow("Menubar icon", description: "The eye in the menu bar. Click it to open the notch on the display you are on; right-click for Settings, updates, restart and quit.") {
+                SettingsRow("Menubar icon", description: "The eye in the menu bar. Click it to open the notch on the display you are on; right-click for Brain, updates, restart and quit.") {
                     Defaults.Toggle(key: .menubarIcon) {
                         Text("Menubar icon")
                     }
@@ -3883,9 +3900,9 @@ struct Appearance: View {
             Section {
                 Toggle("Always show tabs", isOn: $coordinator.alwaysShowTabs)
                 Defaults.Toggle(key: .settingsIconInNotch) {
-                    Text("Settings icon in notch")
+                    Text("Brain icon in notch")
                 }
-                .settingsHighlight(id: highlightID("Settings icon in notch"))
+                .settingsHighlight(id: highlightID("Brain icon in notch"))
                 Defaults.Toggle(key: .enableShadow) {
                     Text("Enable window shadow")
                 }
