@@ -443,6 +443,27 @@ control — are written up in **docs/TOOLTIPS.md** with the reasoning and a chec
 
 **Gap:** none of this is unit-testable; a new tooltip still has to be hovered in a real build.
 
+**2026-10-09 addendum — both halves recurred, outside the scanned folders.** Asked to make every
+icon-only notch control show a tooltip (it started with the lyrics button), the inventory found
+the rule already broken twice more:
+
+- `TimerControlOverlay.ControlButton` used `.help(help)`. It lives in `Kannu/components/Timer/`,
+  which the hook's grep never scanned, so the `.help()` ban did not reach it. Its panel is fitted
+  to the button row, so no bubble can show there either: it now carries `accessibilityLabel:` only.
+- `TimerControlButton` (`NotchTimerView`) had the self-hovering `.hoverTooltip(_:edge:)` **and**
+  its own `.onHover` for the highlight — rule 3's two hover sources, written after rule 3 was.
+  It now drives the bubble from its one handler via `.hoverTooltip(_:edge:isHovering:)`.
+
+Most icon buttons had no tooltip at all, so VoiceOver read SF Symbol names. They all have one now,
+the text doubling as the accessibility label; shared buttons take `tooltip:`.
+
+**Guard — widened.** The hook's `.help(` grep covers eight folders (`Notch`, `AgentStatus`,
+`Music`, `Timer`, `Clipboard`, `Tabs`, `Shelf`, `Stats`). `KannuTests/NotchTooltipCoverageRulesTests`
+runs over the same eight with comments and strings stripped, and fails on a `.help(`, on a shared
+icon button called without `tooltip:`, and on an icon-only `Button` without `.hoverTooltip(` in its
+modifier chain (allowlist with reasons; planted offenders prove the scanner). Placement — `edge`,
+`alignment:`, clipping — is still only checkable by hovering a real build (docs/TOOLTIPS.md).
+
 ---
 
 ## 10. Never derive observer semantics from the *last* `@Published` bump

@@ -98,6 +98,8 @@ struct KannuHeader: View {
                                 }
                         }
                         .buttonStyle(PlainButtonStyle())
+                        .hoverTooltip(String(localized: "Clipboard"), edge: .below)
+                        .accessibilityLabel(String(localized: "Clipboard"))
                         .popover(isPresented: $showClipboardPopover, arrowEdge: .bottom) {
                             ClipboardPopover()
                         }
@@ -161,6 +163,8 @@ struct KannuHeader: View {
                                 }
                         }
                         .buttonStyle(PlainButtonStyle())
+                        .hoverTooltip(String(localized: "Timer"), edge: .below)
+                        .accessibilityLabel(String(localized: "Timer"))
                         .popover(isPresented: $showTimerPopover, arrowEdge: .bottom) {
                             TimerPopover()
                         }
@@ -189,6 +193,8 @@ struct KannuHeader: View {
                                 }
                         }
                         .buttonStyle(PlainButtonStyle())
+                        .hoverTooltip(String(localized: "Settings"), edge: .below)
+                        .accessibilityLabel(String(localized: "Settings"))
                     }
                     
                     // Screen Recording Indicator

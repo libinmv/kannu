@@ -23,9 +23,13 @@
 import SwiftUI
 
 struct TabButton: View {
-    let label: String
+    /// Hover bubble text, doubling as the accessibility label (docs/TOOLTIPS.md).
+    let tooltip: String
     let icon: String
     let selected: Bool
+    /// The caller's hover reaction (hover-to-switch). Routed through this button's own handler so
+    /// the tab keeps a single hover source — a second `.onHover` at the call site fights this one.
+    var onHover: ((Bool) -> Void)? = nil
     let onClick: () -> Void
     @State private var isHovered = false
 
@@ -43,12 +47,18 @@ struct TabButton: View {
                 .contentShape(Circle())
         }
         .buttonStyle(PlainButtonStyle())
-        .onHover { isHovered = $0 }
+        .onHover { hovering in
+            isHovered = hovering
+            onHover?(hovering)
+        }
+        // The tab row is at the top of the notch, so the bubble opens downwards.
+        .hoverTooltip(tooltip, edge: .below, isHovering: isHovered)
+        .accessibilityLabel(tooltip)
     }
 }
 
 #Preview {
-    TabButton(label: "Home", icon: "tray.fill", selected: true) {
+    TabButton(tooltip: "Home", icon: "tray.fill", selected: true) {
         print("Tapped")
     }
 }

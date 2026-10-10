@@ -4,6 +4,32 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-10 - Every icon-only control in the notch names itself in a tooltip, starting with the lyrics button
+- **Developer label:** "on the lyrics icon in music tab, on persistent mouse hovered over it for few seconds show tool tip, keep that as general design principle for such icons"
+- **Agent label:** Claude Code (Opus 5.5) — notch tooltip principle: hover-driven bubble for shared icon buttons, every icon-only control covered, coverage scan and widened .help guard
+- **Changes:**
+  - Of 74 icon-only notch controls, 55 had no tooltip (the lyrics button among them, in both
+    players) and 2 used `.help`, which never renders in the notch. Every one now shows a tooltip
+    after the existing 0.4 s hover, and the same text is its accessibility label, so VoiceOver no
+    longer reads SF Symbol names.
+  - `HoverTooltip.swift`: the bubble and its show/hide timing are shared. The existing
+    `.hoverTooltip(_:edge:)` keeps its look and 22 pt offset; a new
+    `.hoverTooltip(_:edge:alignment:isHovering:)` is driven by a control's own hover state (one
+    hover source, docs/TOOLTIPS.md rule 3) and sits 8 pt clear of the control, so it never covers a
+    large glyph. `alignment: .leading` serves controls at a window's left edge.
+  - Shared buttons take `tooltip:`: `HoverButton`, the minimal player's squircle buttons,
+    `TabButton` (which now owns the tab's only hover handler; hover-to-switch moved into its
+    `onHover:`), and `TimerControlButton` (its second hover source is gone). The music rows use
+    `MusicControlButton.label`; the corner lyrics buttons open below.
+  - Header clipboard, timer and gear buttons, Notes, the clipboard popover and panel, the share
+    switch and the process popover all name their icon buttons. Note colours get localized names.
+  - The floating music and timer overlays are fitted to their button row, so no bubble can show
+    there: they get accessibility labels only (the timer overlay's dead `.help` is removed).
+  - docs/TOOLTIPS.md states the principle; AGENTS.md points to it; REGRESSIONS entry 9 gains a
+    dated addendum. The pre-commit `.help(` scan widens from 2 folders to 8, and the new
+    `NotchTooltipCoverageRulesTests` fails on a `.help(`, a shared icon button without `tooltip:`,
+    or an icon-only `Button` without `.hoverTooltip(` (allowlist with reasons, planted offenders).
+
 ### 2026-10-01 - Quit Kannu has a row in Settings, and searching "quit" or "exit" finds it
 - **Developer label:** "the settings should have a quit app, or at least on search of quit or exit i should get the tab with that button to come up as result"
 - **Agent label:** Settings Quit row + search entry, pinned by the highlight inventory

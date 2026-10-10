@@ -69,6 +69,8 @@ When asked to find, audit, or modify something: load the relevant skills first; 
 
 Preserve the existing product philosophy. Don't redesign unless explicitly asked, don't add unnecessary UI, don't add animations for flair. Respect reduced-motion preferences where relevant. Preserve notch positioning and window behavior. Avoid hard-coded assumptions that only hold on one Mac configuration; consider Retina scaling, display sizes, and light/dark appearance. If existing UI already implements the intended behavior, modify it rather than rebuilding it.
 
+Every icon-only notch control gets a hover tooltip that doubles as its accessibility label — `.hoverTooltip(...)`, never `.help(...)`, which never renders in the notch. Read `docs/TOOLTIPS.md` before adding one.
+
 ### Debugging
 
 Reproduce or trace the actual failure → identify the root cause → explain it briefly → make the smallest appropriate fix → check for regressions. Never paper over a problem with arbitrary delays, retries, or force unwraps. For timing/lifecycle bugs, investigate app/window lifecycle, main-actor isolation, Task cancellation, timers, notification observers, process termination, and state synchronization **before** adding sleeps or polling.

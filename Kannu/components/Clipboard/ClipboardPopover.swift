@@ -116,6 +116,8 @@ struct ClipboardPopoverHeader: View {
                 }
                 .buttonStyle(PlainButtonStyle())
                 .disabled(selectedTab == .history ? clipboardManager.clipboardHistory.isEmpty : clipboardManager.pinnedItems.isEmpty)
+                .hoverTooltip(clearTooltip, edge: .below)
+                .accessibilityLabel(clearTooltip)
             }
             .padding(.horizontal, 14)
             .padding(.top, 10)
@@ -152,6 +154,8 @@ struct ClipboardPopoverHeader: View {
                             .font(.system(size: 9))
                     }
                     .buttonStyle(PlainButtonStyle())
+                    .hoverTooltip(String(localized: "Clear Search"), edge: .below)
+                    .accessibilityLabel(String(localized: "Clear Search"))
                 }
             }
             .padding(.horizontal, 10)
@@ -163,6 +167,10 @@ struct ClipboardPopoverHeader: View {
             .padding(.horizontal, 14)
         }
         .padding(.bottom, 6)
+    }
+
+    private var clearTooltip: String {
+        selectedTab == .history ? String(localized: "Clear History") : String(localized: "Clear Favorites")
     }
 }
 
@@ -253,6 +261,8 @@ struct ClipboardPopoverItemRow: View {
                             .foregroundColor(isPinned ? .red : .gray)
                     }
                     .buttonStyle(PlainButtonStyle())
+                    .hoverTooltip(favoriteTooltip, edge: .below)
+                    .accessibilityLabel(favoriteTooltip)
                     
                     // Copy button
                     Button(action: {
@@ -263,6 +273,8 @@ struct ClipboardPopoverItemRow: View {
                             .foregroundColor(.green)
                     }
                     .buttonStyle(PlainButtonStyle())
+                    .hoverTooltip(String(localized: "Copy"), edge: .below)
+                    .accessibilityLabel(String(localized: "Copy"))
                     
                     // Delete button
                     Button(action: {
@@ -277,6 +289,8 @@ struct ClipboardPopoverItemRow: View {
                             .foregroundColor(.red)
                     }
                     .buttonStyle(PlainButtonStyle())
+                    .hoverTooltip(String(localized: "Delete"), edge: .below)
+                    .accessibilityLabel(String(localized: "Delete"))
                 }
             }
         }
@@ -296,6 +310,10 @@ struct ClipboardPopoverItemRow: View {
         }
     }
     
+    private var favoriteTooltip: String {
+        isPinned ? String(localized: "Remove Favorite") : String(localized: "Add Favorite")
+    }
+
     private func timeAgoString(from date: Date) -> String {
         let interval = Date().timeIntervalSince(date)
         

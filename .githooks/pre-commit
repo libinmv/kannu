@@ -89,13 +89,27 @@ fi
 # ACTIVE app. Kannu is LSUIElement with a non-activating notch panel, so it is never
 # active and .help() is dead there — it silently does nothing. Eight call sites shipped
 # that way. Use .hoverTooltip(...) instead (docs/TOOLTIPS.md).
+# The scan covers every folder whose views render in the notch or its fitted panels. It
+# once covered only Notch/ and AgentStatus/, and a .help() shipped in Timer/ unseen
+# (docs/REGRESSIONS.md entry 9). KannuTests/NotchTooltipCoverageRulesTests lists the
+# same eight folders and also requires a tooltip on every icon-only button.
 # Strip the file:line: prefix before testing for a comment, or the doc comments that
 # explain this very rule trip the check.
-dead_help="$(grep -rn '\.help(' Kannu/components/Notch Kannu/components/AgentStatus 2>/dev/null \
+notch_view_dirs=(
+  Kannu/components/Notch
+  Kannu/components/AgentStatus
+  Kannu/components/Music
+  Kannu/components/Timer
+  Kannu/components/Clipboard
+  Kannu/components/Tabs
+  Kannu/components/Shelf
+  Kannu/components/Stats
+)
+dead_help="$(grep -rn '\.help(' "${notch_view_dirs[@]}" 2>/dev/null \
   | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true)"
 if [[ -n "${dead_help}" ]]; then
   cat <<EOF
-ERROR: .help(...) found in a notch view. It never renders there.
+ERROR: .help(...) found in a notch view (${notch_view_dirs[*]##*/}). It never renders there.
 
 ${dead_help}
 

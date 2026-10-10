@@ -62,6 +62,7 @@ struct MusicControlOverlay: View {
         case .track:
             return ButtonConfig(
                 icon: "backward.fill",
+                label: MusicControlButton.trackBackward.label,
                 pressEffect: trackBackwardPressEffect,
                 symbolEffect: .replace,
                 action: { MusicManager.shared.previousTrack() }
@@ -69,6 +70,7 @@ struct MusicControlOverlay: View {
         case .tenSecond:
             return ButtonConfig(
                 icon: "gobackward.10",
+                label: MusicControlButton.seekBackward.label,
                 pressEffect: tenSecondBackwardPressEffect,
                 symbolEffect: .wiggle,
                 action: { MusicManager.shared.seek(by: -seekInterval) }
@@ -81,6 +83,7 @@ struct MusicControlOverlay: View {
         case .track:
             return ButtonConfig(
                 icon: "forward.fill",
+                label: MusicControlButton.trackForward.label,
                 pressEffect: trackForwardPressEffect,
                 symbolEffect: .replace,
                 action: { MusicManager.shared.nextTrack() }
@@ -88,6 +91,7 @@ struct MusicControlOverlay: View {
         case .tenSecond:
             return ButtonConfig(
                 icon: "goforward.10",
+                label: MusicControlButton.seekForward.label,
                 pressEffect: tenSecondForwardPressEffect,
                 symbolEffect: .wiggle,
                 action: { MusicManager.shared.seek(by: seekInterval) }
@@ -98,6 +102,7 @@ struct MusicControlOverlay: View {
     private var playPauseConfig: ButtonConfig {
         ButtonConfig(
             icon: musicManager.isPlaying ? "pause.fill" : "play.fill",
+            label: musicManager.isPlaying ? String(localized: "Pause") : String(localized: "Play"),
             pressEffect: .none,
             symbolEffect: .replace,
             action: { MusicManager.shared.togglePlay() }
@@ -121,6 +126,7 @@ struct MusicControlOverlay: View {
                 externalTriggerToken: backwardGestureTrigger?.token,
                 externalTriggerEffect: backwardGestureTrigger?.pressEffect,
                 isEnabled: controlsEnabled,
+                accessibilityLabel: backwardConfig.label,
                 action: backwardConfig.action
             )
 
@@ -134,6 +140,7 @@ struct MusicControlOverlay: View {
                 externalTriggerToken: nil,
                 externalTriggerEffect: nil,
                 isEnabled: controlsEnabled,
+                accessibilityLabel: playPauseConfig.label,
                 action: playPauseConfig.action
             )
 
@@ -147,6 +154,7 @@ struct MusicControlOverlay: View {
                 externalTriggerToken: forwardGestureTrigger?.token,
                 externalTriggerEffect: forwardGestureTrigger?.pressEffect,
                 isEnabled: controlsEnabled,
+                accessibilityLabel: forwardConfig.label,
                 action: forwardConfig.action
             )
         }
@@ -166,6 +174,7 @@ struct MusicControlOverlay: View {
 
     private struct ButtonConfig {
         let icon: String
+        let label: String
         let pressEffect: FloatingMediaButton.PressEffect
         let symbolEffect: FloatingMediaButton.SymbolEffectStyle
         let action: () -> Void
@@ -182,6 +191,10 @@ private struct FloatingMediaButton: View {
     let externalTriggerToken: Int?
     let externalTriggerEffect: PressEffect?
     let isEnabled: Bool
+    /// Accessibility label only — no hover bubble. MusicControlWindowManager sizes this panel to
+    /// its `fittingSize` (height = notch height), so a bubble above or below the row would fall
+    /// outside the window and never show (docs/TOOLTIPS.md, fitted-panel exception).
+    let accessibilityLabel: String
     let action: () -> Void
 
     @State private var isHovering = false
@@ -205,6 +218,7 @@ private struct FloatingMediaButton: View {
                 .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         }
         .buttonStyle(PlainButtonStyle())
+        .accessibilityLabel(accessibilityLabel)
         .offset(x: pressOffset)
         .rotationEffect(.degrees(rotationAngle))
         .disabled(!isEnabled)

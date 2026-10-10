@@ -225,6 +225,8 @@ struct ClipboardPanelHeader: View {
                 }
                 .buttonStyle(PlainButtonStyle())
                 .disabled(selectedTab == .history ? clipboardManager.clipboardHistory.isEmpty : clipboardManager.pinnedItems.isEmpty)
+                .hoverTooltip(clearTooltip, edge: .below)
+                .accessibilityLabel(clearTooltip)
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
@@ -261,6 +263,8 @@ struct ClipboardPanelHeader: View {
                             .font(.system(size: 10))
                     }
                     .buttonStyle(PlainButtonStyle())
+                    .hoverTooltip(String(localized: "Clear Search"), edge: .below)
+                    .accessibilityLabel(String(localized: "Clear Search"))
                 }
             }
             .padding(.horizontal, 12)
@@ -272,6 +276,10 @@ struct ClipboardPanelHeader: View {
             .padding(.horizontal, 16)
         }
         .padding(.bottom, 8)
+    }
+
+    private var clearTooltip: String {
+        selectedTab == .history ? String(localized: "Clear History") : String(localized: "Clear Favorites")
     }
 }
 
@@ -362,6 +370,8 @@ struct ClipboardPanelItemRow: View {
                             .foregroundColor(isPinned ? .red : .gray)
                     }
                     .buttonStyle(PlainButtonStyle())
+                    .hoverTooltip(favoriteTooltip, edge: .below)
+                    .accessibilityLabel(favoriteTooltip)
                     
                     // Copy button
                     Button(action: {
@@ -382,6 +392,8 @@ struct ClipboardPanelItemRow: View {
                             .foregroundColor(justCopied ? .green : .green)
                     }
                     .buttonStyle(PlainButtonStyle())
+                    .hoverTooltip(String(localized: "Copy"), edge: .below)
+                    .accessibilityLabel(String(localized: "Copy"))
                     
                     // Delete button
                     Button(action: {
@@ -396,6 +408,8 @@ struct ClipboardPanelItemRow: View {
                             .foregroundColor(.red)
                     }
                     .buttonStyle(PlainButtonStyle())
+                    .hoverTooltip(String(localized: "Delete"), edge: .below)
+                    .accessibilityLabel(String(localized: "Delete"))
                 }
             }
         }
@@ -415,6 +429,10 @@ struct ClipboardPanelItemRow: View {
         }
     }
     
+    private var favoriteTooltip: String {
+        isPinned ? String(localized: "Remove Favorite") : String(localized: "Add Favorite")
+    }
+
     private func timeAgoString(from date: Date) -> String {
         let interval = Date().timeIntervalSince(date)
         
@@ -453,6 +471,10 @@ private struct NativeStyleCloseButton: View {
                 isHovered = hovering
             }
         }
+        // Far-left of the panel (x=16, 13pt wide): a trailing-aligned bubble would grow off the
+        // window's left edge, so it lines up with the button's leading edge instead.
+        .hoverTooltip(String(localized: "Close"), edge: .below, alignment: .leading, isHovering: isHovered)
+        .accessibilityLabel(String(localized: "Close"))
     }
 }
 

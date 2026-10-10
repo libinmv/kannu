@@ -870,7 +870,17 @@ struct NoteItem: Codable, Identifiable, Defaults.Serializable, Hashable {
     }
     
     static let colors: [Color] = [.yellow, .blue, .red, .green, .purple, .orange]
-    
+
+    /// Display names for `colors`, index for index: the swatches' tooltip and accessibility label.
+    static let colorNames: [String] = [
+        String(localized: "Yellow"),
+        String(localized: "Blue"),
+        String(localized: "Red"),
+        String(localized: "Green"),
+        String(localized: "Purple"),
+        String(localized: "Orange")
+    ]
+
     // Directory for storing note image files
     static let noteImageDataDirectory: URL = {
         let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!

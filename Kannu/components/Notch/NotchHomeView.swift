@@ -183,7 +183,10 @@ struct MusicPlayerView: View {
         HoverButton(
             icon: enableLyrics ? "quote.bubble.fill" : "quote.bubble",
             iconColor: enableLyrics ? musicManager.brandAccentColor : .white,
-            scale: .medium
+            scale: .medium,
+            // Top-right corner of the notch: the bubble must open downwards.
+            tooltip: MusicControlButton.lyrics.label,
+            tooltipEdge: .below
         ) {
             enableLyrics.toggle()
         }
@@ -612,13 +615,15 @@ struct MusicControlsView: View {
         case .playPause:
             HoverButton(
                 icon: musicManager.isPlaying ? (musicManager.isLiveStream ? "stop.fill" : "pause.fill") : "play.fill",
-                scale: .large
+                scale: .large,
+                tooltip: control.label
             ) {
                 MusicManager.shared.togglePlay()
             }
         case .trackBackward:
             playbackButton(
                 icon: "backward.fill",
+                tooltip: control.label,
                 press: .nudge(-skipMagnitude),
                 trigger: skipGestureTrigger(for: .trackBackward)
             ) {
@@ -627,6 +632,7 @@ struct MusicControlsView: View {
         case .trackForward:
             playbackButton(
                 icon: "forward.fill",
+                tooltip: control.label,
                 press: .nudge(skipMagnitude),
                 trigger: skipGestureTrigger(for: .trackForward)
             ) {
@@ -635,6 +641,7 @@ struct MusicControlsView: View {
         case .seekBackward:
             playbackButton(
                 icon: "gobackward.10",
+                tooltip: control.label,
                 press: .wiggle(.counterClockwise),
                 trigger: skipGestureTrigger(for: .seekBackward)
             ) {
@@ -643,6 +650,7 @@ struct MusicControlsView: View {
         case .seekForward:
             playbackButton(
                 icon: "goforward.10",
+                tooltip: control.label,
                 press: .wiggle(.clockwise),
                 trigger: skipGestureTrigger(for: .seekForward)
             ) {
@@ -652,7 +660,8 @@ struct MusicControlsView: View {
             HoverButton(
                 icon: "shuffle",
                 iconColor: musicManager.isShuffled ? brandAccentColor : .white,
-                scale: .medium
+                scale: .medium,
+                tooltip: control.label
             ) {
                 MusicManager.shared.toggleShuffle()
             }
@@ -660,7 +669,8 @@ struct MusicControlsView: View {
             HoverButton(
                 icon: repeatIcon,
                 iconColor: repeatIconColor,
-                scale: .medium
+                scale: .medium,
+                tooltip: control.label
             ) {
                 MusicManager.shared.toggleRepeat()
             }
@@ -672,7 +682,8 @@ struct MusicControlsView: View {
             HoverButton(
                 icon: enableLyrics ? "quote.bubble.fill" : "quote.bubble",
                 iconColor: enableLyrics ? brandAccentColor : .white,
-                scale: .medium
+                scale: .medium,
+                tooltip: control.label
             ) {
                 enableLyrics.toggle()
             }
@@ -686,6 +697,7 @@ struct MusicControlsView: View {
 
     private func playbackButton(
         icon: String,
+        tooltip: String,
         press: HoverButton.PressEffect?,
         trigger: SkipTrigger?,
         action: @escaping () -> Void
@@ -695,7 +707,8 @@ struct MusicControlsView: View {
             scale: .medium,
             pressEffect: press,
             externalTriggerToken: trigger?.token,
-            externalTriggerEffect: trigger?.pressEffect
+            externalTriggerEffect: trigger?.pressEffect,
+            tooltip: tooltip
         ) {
             action()
         }
@@ -1046,13 +1059,17 @@ private struct MediaOutputPickerButton: View {
     @EnvironmentObject private var vm: KannuViewModel
 
     var body: some View {
-        HoverButton(icon: buttonIcon, iconColor: .white, scale: .medium) {
+        HoverButton(
+            icon: buttonIcon,
+            iconColor: .white,
+            scale: .medium,
+            tooltip: MusicControlButton.mediaOutput.label
+        ) {
             isPopoverPresented.toggle()
             if isPopoverPresented {
                 routeManager.refreshDevices()
             }
         }
-        .accessibilityLabel("Media output")
         .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
             MediaOutputSelectorPopover(
                 routeManager: routeManager,
@@ -1102,13 +1119,17 @@ private struct AirPlayPickerButton: View {
     }
 
     var body: some View {
-        HoverButton(icon: "airplayaudio", iconColor: .white, scale: .medium) {
+        HoverButton(
+            icon: "airplayaudio",
+            iconColor: .white,
+            scale: .medium,
+            tooltip: MusicControlButton.airPlay.label
+        ) {
             isPopoverPresented.toggle()
             if isPopoverPresented {
                 Task { await airPlayManager.refreshDevices() }
             }
         }
-        .accessibilityLabel("AirPlay")
         .popover(isPresented: $isPopoverPresented, arrowEdge: .bottom) {
             AirPlaySelectorPopover(
                 airPlayManager: airPlayManager,
@@ -1185,6 +1206,10 @@ struct MediaOutputSelectorPopover: View {
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
+                // Top-left of the popover: open below, and grow rightwards so the bubble stays
+                // inside the popover's window.
+                .hoverTooltip(muteTooltip, edge: .below, alignment: .leading)
+                .accessibilityLabel(muteTooltip)
 
                 Slider(
                     value: Binding(
@@ -1273,6 +1298,10 @@ struct MediaOutputSelectorPopover: View {
 
     private var volumePercentage: String {
         "\(Int(round(volumeModel.level * 100)))%"
+    }
+
+    private var muteTooltip: String {
+        volumeModel.isMuted ? String(localized: "Unmute") : String(localized: "Mute")
     }
 }
 

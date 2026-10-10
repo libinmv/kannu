@@ -178,7 +178,7 @@ struct NotchTimerView: View {
                         icon: pauseIconName,
                         foreground: .white.opacity(0.95),
                         background: timerAccentColor.opacity(0.32),
-                        accessibilityLabel: pauseAccessibilityLabel,
+                        tooltip: pauseAccessibilityLabel,
                         action: togglePauseAction
                     )
 
@@ -186,7 +186,7 @@ struct NotchTimerView: View {
                         icon: "xmark",
                         foreground: .white.opacity(0.95),
                         background: Color.white.opacity(0.16),
-                        accessibilityLabel: String(localized: "Cancel"),
+                        tooltip: String(localized: "Cancel"),
                         action: stopTimerAction
                     )
                 } else {
@@ -194,7 +194,7 @@ struct NotchTimerView: View {
                         icon: "stop.fill",
                         foreground: .white.opacity(0.95),
                         background: Color.white.opacity(0.16),
-                        accessibilityLabel: String(localized: "Stop"),
+                        tooltip: String(localized: "Stop"),
                         action: stopTimerAction
                     )
                 }
@@ -553,7 +553,8 @@ private struct TimerControlButton: View {
     let icon: String
     let foreground: Color
     let background: Color
-    let accessibilityLabel: String
+    /// Hover bubble text, doubling as the accessibility label (docs/TOOLTIPS.md).
+    let tooltip: String
     let action: () -> Void
 
     @State private var isHovering = false
@@ -570,8 +571,11 @@ private struct TimerControlButton: View {
         }
         .buttonStyle(.plain)
         .contentShape(Circle())
-        .hoverTooltip(accessibilityLabel, edge: .below)
+        // One hover source: this handler drives both the highlight and the bubble. The
+        // self-hovering `.hoverTooltip(_:edge:)` used to sit here too, a second handler.
         .onHover { hovering in isHovering = hovering }
+        .hoverTooltip(tooltip, edge: .below, isHovering: isHovering)
+        .accessibilityLabel(tooltip)
     }
 }
 
