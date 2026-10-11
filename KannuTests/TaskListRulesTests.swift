@@ -26,6 +26,9 @@ import XCTest
 ///   the filters. ⋯ › Move to Top / Up / Down stay.
 /// - Task reminders ask macOS for notifications only from the user's first schedule, never at
 ///   launch, and Kannu never starts a timer on its own.
+/// - The filters are the Task list's own and say so: while they narrow, the list opens with a
+///   "Filtered" row whose Show All resets all four; the overview counts every task.
+/// - The task ⋯ menu's items act in place or open a small sheet, so none ends in "…".
 final class TaskListRulesTests: XCTestCase {
     private static let repoRoot = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
@@ -68,6 +71,69 @@ final class TaskListRulesTests: XCTestCase {
                        ["⋯ › Move Up is gone or ignores the filters"])
         // Prose about onMove is not a use of it.
         XCTAssertEqual(Self.dragProblems(in: good + Self.code("// .onMove never drags here\n")), [])
+    }
+
+    // MARK: - The view filter says so
+
+    func testANarrowedListSaysFilteredAndShowAllResetsEveryFilter() throws {
+        XCTAssertEqual(Self.filteredRowProblems(in: try Self.read(Self.settingsPath)), [])
+    }
+
+    func testTheFilteredRowScannerCatchesPlantedOffenders() {
+        let good = Self.code("""
+            private func showAll() {
+                sourceFilter = .all
+                projectFilter = TaskFacets.anyProject
+                statusFilter = .toDoAndInProgress
+                tagFilter = TaskFacets.anyTag
+            }
+            private var tasksSection: some View {
+                if filter.isNarrowing {
+                    SettingsActionRow("Filtered", description: String(localized: "\\(rows.count) of \\(total) tasks")) {
+                        Button("Show All", action: showAll)
+                    }
+                }
+                ForEach(rows) { task in }
+            }
+            let counts = TaskFacets.counts(manager.activeTasks)
+            """)
+        XCTAssertEqual(Self.filteredRowProblems(in: good), [])
+        XCTAssertEqual(Self.filteredRowProblems(in: good.replacingOccurrences(of: "tagFilter = TaskFacets.anyTag", with: "")),
+                       ["Show All leaves tagFilter = TaskFacets.anyTag out"])
+        XCTAssertEqual(Self.filteredRowProblems(in: good.replacingOccurrences(of: "if filter.isNarrowing {", with: "if true {")),
+                       ["the Filtered row does not show only while the filters narrow"])
+        XCTAssertEqual(Self.filteredRowProblems(in: good.replacingOccurrences(of: "Button(\"Show All\", action: showAll)", with: "")),
+                       ["the Filtered row has no Show All"])
+        let last = good.replacingOccurrences(of: "ForEach(rows) { task in }", with: "")
+            .replacingOccurrences(of: "private var tasksSection: some View {", with: "private var tasksSection: some View {\nForEach(rows) { task in }")
+        XCTAssertEqual(Self.filteredRowProblems(in: last), ["the Filtered row is not above the rows"])
+        XCTAssertEqual(Self.filteredRowProblems(in: good.replacingOccurrences(of: "TaskFacets.counts(manager.activeTasks)", with: "TaskFacets.counts(rows)")),
+                       ["the Task list row does not count every task"])
+    }
+
+    func testTheTaskMenuItemsCarryNoEllipsis() throws {
+        let titles = Self.menuTitles(in: try Self.read(Self.settingsPath))
+        XCTAssertGreaterThan(titles.count, 8, "the scan found almost no menu items — check the marker, not the rule")
+        for title in ["Set Estimate", "Add Time", "Add Tags", "Schedule", "Delete"] {
+            XCTAssertTrue(titles.contains(title), "\(title) is not in the task ⋯ menu")
+        }
+        XCTAssertEqual(titles.filter { $0.contains("…") }, [])
+    }
+
+    func testTheMenuTitleScannerCatchesPlantedOffenders() {
+        let menu = Self.code("""
+            private func moreItems(for task: TaskItem, isTimed: Bool) -> some View {
+                Button("Add Tags") { sheet = .tags }
+                if task.source == .local {
+                    Button("Schedule…") { sheet = .schedule }
+                }
+                Button(link.title) { open() }
+                Button("Delete…", role: .destructive) { pendingDelete = task }
+            }
+            Button("Connect…") { sheet = .connectJira }
+            """)
+        XCTAssertEqual(Self.menuTitles(in: menu), ["Add Tags", "Schedule…", "Delete…"], "only the menu's own literal titles")
+        XCTAssertEqual(Self.menuTitles(in: "Button(\"x\")"), [], "no menu, no titles")
     }
 
     // MARK: - Reminders
@@ -179,6 +245,43 @@ final class TaskListRulesTests: XCTestCase {
         return problems
     }
 
+    /// The Filtered row: inside `if filter.isNarrowing {`, above the rows, with a Show All whose
+    /// `showAll()` resets all four filters; and the Tasks page's Task list row counts every task.
+    static func filteredRowProblems(in source: String) -> [String] {
+        var problems: [String] = []
+        let resets = ["sourceFilter = .all", "projectFilter = TaskFacets.anyProject",
+                      "statusFilter = .toDoAndInProgress", "tagFilter = TaskFacets.anyTag"]
+        let showAll = block(after: "func showAll()", in: source) ?? ""
+        for reset in resets where !showAll.contains(reset) {
+            problems.append("Show All leaves \(reset) out")
+        }
+        let marker = "SettingsActionRow(\"Filtered\""
+        if !(block(after: "if filter.isNarrowing {", in: source)?.contains(marker) ?? false) {
+            problems.append("the Filtered row does not show only while the filters narrow")
+        }
+        if !(block(after: marker, in: source)?.contains("Button(\"Show All\", action: showAll)") ?? false) {
+            problems.append("the Filtered row has no Show All")
+        }
+        if let row = source.range(of: marker), let rows = source.range(of: "ForEach(rows)"), row.lowerBound < rows.lowerBound {
+            // Above the rows.
+        } else {
+            problems.append("the Filtered row is not above the rows")
+        }
+        if !source.contains("TaskFacets.counts(manager.activeTasks)") {
+            problems.append("the Task list row does not count every task")
+        }
+        return problems
+    }
+
+    /// The literal titles of the task ⋯ menu's buttons (`moreItems(for:)`).
+    static func menuTitles(in source: String) -> [String] {
+        guard let menu = block(after: "func moreItems(for task: TaskItem", in: source),
+              let pattern = try? NSRegularExpression(pattern: #"Button\("([^"]*)""#) else { return [] }
+        return pattern.matches(in: menu, range: NSRange(menu.startIndex..., in: menu)).compactMap { match in
+            Range(match.range(at: 1), in: menu).map { String(menu[$0]) }
+        }
+    }
+
     /// `requestAuthorization(options:` only in TaskReminders.swift; `requestPermission()` called
     /// only inside `TasksManager.setSchedule`, which must call it.
     static func permissionProblems(in sources: [String: String]) -> [String] {
@@ -235,6 +338,19 @@ final class TaskListRulesTests: XCTestCase {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             return !trimmed.hasPrefix("//") && !trimmed.hasPrefix("*") && !trimmed.hasPrefix("/*")
         }.joined(separator: "\n") + "\n"
+    }
+
+    /// The balanced `{ … }` that the first `marker` opens (the first brace after it), or nil.
+    private static func block(after marker: String, in source: String) -> String? {
+        guard let start = source.range(of: marker),
+              let open = source[start.lowerBound...].firstIndex(of: "{") else { return nil }
+        var depth = 0
+        var index = open
+        repeat {
+            if source[index] == "{" { depth += 1 } else if source[index] == "}" { depth -= 1 }
+            index = source.index(after: index)
+        } while index < source.endIndex && depth > 0
+        return String(source[open..<index])
     }
 
     private static func occurrences(of needle: String, in haystack: String) -> Int {

@@ -27,7 +27,7 @@ import SwiftUI
 ///
 /// A card: "Log 1h 15m to PROJ-123?", "started today 14:02 · Jira", the length (editable, read
 /// with `WorkDuration.parse`), a comment for Jira, Log to Jira / Log to GitLab, Not now, and ⋯ with
-/// Keep local only, Never ask for this task and Open in Jira / GitLab. A card that cannot be sent
+/// Keep local only, Never ask to log and Open in Jira / GitLab. A card that cannot be sent
 /// from here — not connected, another site, a read-only GitLab token — says why and offers Keep
 /// local only. Rows only, in the `SettingsComponents` shapes (docs/SETTINGS.md); issue keys and
 /// server reasons render verbatim.
@@ -228,7 +228,7 @@ private struct WorklogDraftRow: View {
                     .disabled(typedSeconds == nil)
             case .uncertain where source == .gitlab:
                 // GitLab keeps no entry Kannu could find again: the user looks, then says.
-                Button("Mark Logged") { manager.markWorklogLogged(draft.id) }
+                Button("Mark as Logged") { manager.markWorklogLogged(draft.id) }
                 Button("Send Again") { manager.confirmWorklog(draft.id, seconds: draft.seconds, comment: nil) }
             case .uncertain:
                 // Jira is checked for the entry first; it is sent again only if it is not there.
@@ -249,7 +249,7 @@ private struct WorklogDraftRow: View {
                 Button("Keep Local Only") { manager.keepWorklogLocal(draft.id) }
             }
             if let task {
-                Button("Never Ask for This Task") { manager.setAsksToLogTime(false, for: task.id) }
+                Button("Never Ask to Log") { manager.setAsksToLogTime(false, for: task.id) }
             }
         }
         if let openLink {
@@ -273,7 +273,7 @@ private struct WorklogDraftRow: View {
     private var deferredRow: some View {
         LabeledContent {
             HStack(spacing: SettingsMetrics.rowContent) {
-                Button("Log…") { manager.askAboutWorklogAgain(draft.id) }
+                Button("Log") { manager.askAboutWorklogAgain(draft.id) }
                 SettingsMoreMenu {
                     moreItems
                 }

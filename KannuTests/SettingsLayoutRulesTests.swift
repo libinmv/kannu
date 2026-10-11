@@ -154,6 +154,7 @@ final class SettingsLayoutRulesTests: XCTestCase {
                                              // cards, previews, the colour popover
         "SpotifyAuthSettingsSection.swift": 1,     // the sign-in card
         "SpotifyLoginSheet.swift": 1,        // a sheet, not a Form
+        "TaskTagsSheet.swift": 1,            // Add Tags is its own sheet now: a sheet pads its own content
         "TasksSettings.swift": 3,            // the estimate, add-time and end-time sheet, and
                                              // the Connect Jira and Connect GitLab sheets: a sheet
                                              // pads its own content

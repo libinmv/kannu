@@ -162,7 +162,7 @@ enum WorklogDrafts {
         isOpen(draft.state) && !(draft.state == .awaiting && draft.deferredAt != nil)
     }
 
-    /// Whether the draft waits for the user's answer — Log, Retry, Mark Logged or Keep local only —
+    /// Whether the draft waits for the user's answer — Log, Retry, Mark as Logged or Keep local only —
     /// which lights the yellow dot on the notch's Tasks button. One being sent does not wait for
     /// anything, and Not now is an answer.
     static func needsAnswer(_ draft: WorklogDraft) -> Bool {

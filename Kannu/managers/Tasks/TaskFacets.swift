@@ -58,7 +58,8 @@ enum TaskStatusFilter: String, CaseIterable, Identifiable {
 
     var localizedName: String {
         switch self {
-        case .toDoAndInProgress: return String(localized: "To Do + In Progress")
+        // Every listed task is one or the other, so this reads like every other filter's default.
+        case .toDoAndInProgress: return String(localized: "All")
         case .toDo: return String(localized: "To Do")
         case .inProgress: return String(localized: "In Progress")
         }
@@ -156,6 +157,22 @@ enum TaskFacets {
             return category == inProgressCategory ? .inProgress : .toDo
         }
         return remote.gitlabKind == .mergeRequest ? .inProgress : .toDo
+    }
+
+    /// How a remote task's status reads in a row caption. Jira's status names are Jira's own and
+    /// read verbatim. GitLab sends its states lower case ("opened", "merged"): they read as words,
+    /// "Open", "Merged", and a merge request's "review requested" as "Review requested". Nil for a
+    /// local task or an empty status.
+    static func statusName(for task: TaskItem) -> String? {
+        guard let status = task.remote?.status, !status.isEmpty else { return nil }
+        guard task.source == .gitlab else { return status }
+        switch status {
+        case "opened": return String(localized: "Open")
+        case "closed": return String(localized: "Closed")
+        case "merged": return String(localized: "Merged")
+        case "locked": return String(localized: "Locked")
+        default: return status.prefix(1).uppercased() + status.dropFirst()
+        }
     }
 
     /// Jira's status-category key for In Progress.

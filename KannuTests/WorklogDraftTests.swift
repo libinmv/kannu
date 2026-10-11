@@ -234,7 +234,7 @@ final class WorklogDraftTests: XCTestCase {
         XCTAssertEqual(resolution.event, .succeeded)
         XCTAssertNil(resolution.message)
         XCTAssertEqual(WorklogDrafts.transition(.sending, on: resolution.event), .logged, "a lost answer, then found")
-        XCTAssertEqual(WorklogDrafts.transition(.uncertain, on: .succeeded), .logged, "Mark Logged on an uncertain entry")
+        XCTAssertEqual(WorklogDrafts.transition(.uncertain, on: .succeeded), .logged, "Mark as Logged on an uncertain entry")
         XCTAssertFalse(WorklogDrafts.isOpen(.logged))
     }
 

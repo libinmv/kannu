@@ -20,7 +20,7 @@
 
 import XCTest
 
-/// Lengths as people type them into Set Estimate… and Add Time Manually….
+/// Lengths as people type them into Set Estimate and Add Time.
 final class WorkDurationTests: XCTestCase {
     func testTheUsualSpellings() {
         let cases: [(String, Int)] = [

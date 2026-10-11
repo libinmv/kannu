@@ -63,9 +63,11 @@ final class SettingsHighlightInventoryTests: XCTestCase {
         // instead, and four new entries (Task list, its filters, tags, schedule) land on it.
         // Then the Task list's back row registered `tasksListOpenID`, the deep link that opens the
         // sub-page itself ("Show all in Brain", a reminder's click); no search entry uses it.
-        XCTAssertEqual(inventory.entries.count, 229, "search entries")
-        XCTAssertEqual(inventory.registrations.values.reduce(0, +), 272, "row registrations")
-        XCTAssertEqual(inventory.registrations.count, 266, "distinct registered ids")
+        // 2026-10-07: the Sources switches only connect now, so the "Local tasks" row, its id and
+        // its search entry are gone (one fewer of each).
+        XCTAssertEqual(inventory.entries.count, 228, "search entries")
+        XCTAssertEqual(inventory.registrations.values.reduce(0, +), 271, "row registrations")
+        XCTAssertEqual(inventory.registrations.count, 265, "distinct registered ids")
     }
 
     func testOnlyTheKnownRowsTakeTheirIdBuilderFromAParent() throws {

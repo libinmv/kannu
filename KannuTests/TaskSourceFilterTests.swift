@@ -20,9 +20,12 @@
 
 import XCTest
 
-/// With a source switched off (Local tasks, Sync Jira, Sync GitLab), its tasks leave the task order but keep
-/// their place in the file. Moves and drags count only what is on screen, so one click on Move Up
-/// always changes what the user sees, and a drag lands where it was dropped.
+/// Two filters, never one. The connected baseline (`connectedFilter`) is every task Kannu holds:
+/// Sync Jira and Sync GitLab only decide what is fetched, so a paused source's tasks stay, and only
+/// Include merge requests narrows it. A view narrows the baseline with a filter of its own — the
+/// notch's Show in notch (`viewFilter`) — that changes nothing else. Moves and drags count only
+/// what is on screen, so one click on Move Up always changes what the user sees, and a drag lands
+/// where it was dropped.
 final class TaskSourceFilterTests: XCTestCase {
     typealias Order = TaskOrdering
 
@@ -33,6 +36,15 @@ final class TaskSourceFilterTests: XCTestCase {
         }
     }
 
+    private func gitlab(_ title: String, kind: GitLabKind?) -> TaskItem {
+        let remote = RemoteTaskInfo(
+            remoteID: title, key: title, hostScope: "https://gitlab.com", status: "opened", isDoneRemotely: false,
+            remoteEstimateSeconds: nil, remoteSpentSeconds: nil, gitlabProjectID: 8, gitlabIID: 1,
+            lastSeenAt: Date(timeIntervalSince1970: 0), gitlabKind: kind
+        )
+        return TaskItem(source: .gitlab, title: title, remote: remote)
+    }
+
     private func titles(_ tasks: [TaskItem]) -> String {
         tasks.map(\.title).joined(separator: " ")
     }
@@ -41,56 +53,76 @@ final class TaskSourceFilterTests: XCTestCase {
         tasks.first { $0.title == title }!.id
     }
 
-    private let jiraOnly = Order.listedFilter(showLocal: false, showJira: true, showGitLab: false, showGitLabMergeRequests: true, alwaysListed: nil)
+    private let everything = Order.connectedFilter(showGitLabMergeRequests: true, alwaysListed: nil)
+    private let jiraOnly = Order.viewFilter(showLocal: false, showJira: true, showGitLab: false, alwaysListed: nil)
 
-    func testTheFilterFollowsTheSources() {
-        let list = tasks("a J b K")
-        XCTAssertEqual(titles(Order.active(list, listed: jiraOnly)), "J K")
-        XCTAssertEqual(titles(Order.active(list, listed: Order.listedFilter(showLocal: true, showJira: false, showGitLab: true, showGitLabMergeRequests: true, alwaysListed: nil))), "a b")
-        XCTAssertEqual(titles(Order.active(list, listed: Order.listedFilter(showLocal: true, showJira: true, showGitLab: true, showGitLabMergeRequests: true, alwaysListed: nil))), "a J b K")
-        XCTAssertEqual(titles(Order.active(list)), "a J b K", "the default lists every active task")
+    // MARK: - The connected baseline
+
+    /// Every source, whatever is synced: the baseline reads no switch but Include merge requests.
+    func testTheBaselineListsEveryConnectedTask() {
+        let list = tasks("a J b K") + [gitlab("I", kind: .issue), gitlab("M", kind: .mergeRequest)]
+        XCTAssertEqual(titles(Order.active(list, listed: everything)), "a J b K I M")
+        XCTAssertEqual(titles(Order.active(list)), "a J b K I M", "the default lists every active task")
+        var finished = list
+        finished[0].visibility = .done
+        XCTAssertEqual(titles(Order.active(finished, listed: everything)), "J b K I M", "done tasks are never in the order")
     }
 
-    func testGitLabTasksFollowSyncGitLabAlone() {
-        var list = tasks("a J")
-        list.append(TaskItem(source: .gitlab, title: "G"))
-        let gitlabOff = Order.listedFilter(showLocal: true, showJira: true, showGitLab: false, showGitLabMergeRequests: true, alwaysListed: nil)
-        let gitlabOnly = Order.listedFilter(showLocal: false, showJira: false, showGitLab: true, showGitLabMergeRequests: true, alwaysListed: nil)
-        XCTAssertEqual(titles(Order.active(list, listed: gitlabOff)), "a J")
-        XCTAssertEqual(titles(Order.active(list, listed: gitlabOnly)), "G")
-        let timedG = Order.listedFilter(showLocal: true, showJira: true, showGitLab: false, showGitLabMergeRequests: true, alwaysListed: id("G", in: list))
-        XCTAssertEqual(titles(Order.active(list, listed: timedG)), "a J G", "the timed task shows whatever its source's switch says")
-    }
-
-    /// Include merge requests off takes the merge requests out of the task order at once, whatever a
+    /// Include merge requests off takes the merge requests out of the baseline at once, whatever a
     /// sync in flight or a failed one still holds; issues stay. A GitLab task from a file written
     /// before the kind existed reads as an issue here, so it never vanishes.
     func testIncludeMergeRequestsOffHidesOnlyMergeRequests() {
-        func gitlab(_ title: String, kind: GitLabKind?) -> TaskItem {
-            let remote = RemoteTaskInfo(
-                remoteID: title, key: title, hostScope: "https://gitlab.com", status: "opened", isDoneRemotely: false,
-                remoteEstimateSeconds: nil, remoteSpentSeconds: nil, gitlabProjectID: 8, gitlabIID: 1,
-                lastSeenAt: Date(timeIntervalSince1970: 0), gitlabKind: kind
-            )
-            return TaskItem(source: .gitlab, title: title, remote: remote)
-        }
         let list = tasks("a J") + [gitlab("I", kind: .issue), gitlab("M", kind: .mergeRequest), gitlab("O", kind: nil)]
-        let withMergeRequests = Order.listedFilter(showLocal: true, showJira: true, showGitLab: true, showGitLabMergeRequests: true, alwaysListed: nil)
-        let issuesOnly = Order.listedFilter(showLocal: true, showJira: true, showGitLab: true, showGitLabMergeRequests: false, alwaysListed: nil)
-        XCTAssertEqual(titles(Order.active(list, listed: withMergeRequests)), "a J I M O")
+        let issuesOnly = Order.connectedFilter(showGitLabMergeRequests: false, alwaysListed: nil)
+        XCTAssertEqual(titles(Order.active(list, listed: everything)), "a J I M O")
         XCTAssertEqual(titles(Order.active(list, listed: issuesOnly)), "a J I O")
-        XCTAssertEqual(titles(Order.movingUp(id("O", in: list), in: list, listed: issuesOnly)), "a J O I M", "a move steps over the hidden merge request")
-        let gitlabOff = Order.listedFilter(showLocal: true, showJira: true, showGitLab: false, showGitLabMergeRequests: true, alwaysListed: nil)
-        XCTAssertEqual(titles(Order.active(list, listed: gitlabOff)), "a J", "Sync GitLab off still hides every GitLab task")
-        let timedM = Order.listedFilter(showLocal: true, showJira: true, showGitLab: true, showGitLabMergeRequests: false, alwaysListed: id("M", in: list))
+        XCTAssertEqual(titles(Order.movingUp(id("O", in: list), in: list, listed: issuesOnly)), "a J O I M",
+                       "a move steps over the hidden merge request")
+        let timedM = Order.connectedFilter(showGitLabMergeRequests: false, alwaysListed: id("M", in: list))
         XCTAssertEqual(titles(Order.active(list, listed: timedM)), "a J I M O", "the timed merge request keeps its Stop button")
     }
 
-    func testTheTimedTaskIsAlwaysListed() {
-        let list = tasks("a J b")
-        let listed = Order.listedFilter(showLocal: false, showJira: true, showGitLab: false, showGitLabMergeRequests: true, alwaysListed: id("b", in: list))
-        XCTAssertEqual(titles(Order.active(list, listed: listed)), "J b")
+    // MARK: - The notch's view filter
+
+    func testTheNotchFilterFollowsShowInNotch() {
+        let list = tasks("a J b") + [gitlab("G", kind: .issue)]
+        XCTAssertEqual(titles(Order.active(list, listed: jiraOnly)), "J")
+        let noJira = Order.viewFilter(showLocal: true, showJira: false, showGitLab: true, alwaysListed: nil)
+        XCTAssertEqual(titles(Order.active(list, listed: noJira)), "a b G")
+        let noGitLab = Order.viewFilter(showLocal: true, showJira: true, showGitLab: false, alwaysListed: nil)
+        XCTAssertEqual(titles(Order.active(list, listed: noGitLab)), "a J b")
+        let all = Order.viewFilter(showLocal: true, showJira: true, showGitLab: true, alwaysListed: nil)
+        XCTAssertEqual(titles(Order.active(list, listed: all)), "a J b G")
     }
+
+    /// The notch narrows what the baseline holds and never brings back what it left out: with
+    /// Include merge requests off, Show in notch's GitLab shows the issues only.
+    func testTheNotchFilterComposesWithTheBaseline() {
+        let list = tasks("a J") + [gitlab("I", kind: .issue), gitlab("M", kind: .mergeRequest)]
+        let baseline = Order.active(list, listed: Order.connectedFilter(showGitLabMergeRequests: false, alwaysListed: nil))
+        let gitlabOnly = Order.viewFilter(showLocal: false, showJira: false, showGitLab: true, alwaysListed: nil)
+        XCTAssertEqual(titles(Order.active(baseline, listed: gitlabOnly)), "I")
+        XCTAssertEqual(titles(baseline), "a J I", "the view filter changed nothing in the baseline")
+    }
+
+    func testTheTimedTaskAlwaysPassesTheNotchFilter() {
+        let list = tasks("a J b") + [gitlab("G", kind: .issue)]
+        let timedB = Order.viewFilter(showLocal: false, showJira: true, showGitLab: false, alwaysListed: id("b", in: list))
+        XCTAssertEqual(titles(Order.active(list, listed: timedB)), "J b")
+        let timedG = Order.viewFilter(showLocal: true, showJira: true, showGitLab: false, alwaysListed: id("G", in: list))
+        XCTAssertEqual(titles(Order.active(list, listed: timedG)), "a J b G")
+    }
+
+    /// The notch says "Filtered" exactly while a source is hidden.
+    func testTheNotchFilterNarrowsOnlyWhileASourceIsHidden() {
+        XCTAssertFalse(Order.isNarrowingView(showLocal: true, showJira: true, showGitLab: true))
+        XCTAssertTrue(Order.isNarrowingView(showLocal: false, showJira: true, showGitLab: true))
+        XCTAssertTrue(Order.isNarrowingView(showLocal: true, showJira: false, showGitLab: true))
+        XCTAssertTrue(Order.isNarrowingView(showLocal: true, showJira: true, showGitLab: false))
+        XCTAssertTrue(Order.isNarrowingView(showLocal: false, showJira: false, showGitLab: false))
+    }
+
+    // MARK: - Moves count what is shown
 
     func testMovesStepOverTasksOfAHiddenSource() {
         let list = tasks("J a b K")

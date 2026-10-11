@@ -36,6 +36,7 @@ All in `Kannu/components/Settings/SettingsComponents.swift`. Never rebuild these
 | A red error line under a control | `SettingsErrorText(message)` |
 | One or more buttons on a row | `SettingsActionRow` — trailing, never a lone left-hanging button (the one exception: a sub-page's "‹ Back" row, below) |
 | Overflow actions on a row | `SettingsMoreMenu { … }` (the "…" button) |
+| Removable tags, wrapping | `SettingsTagChip` inside a `SettingsFlowLayout` |
 | Free-standing explanatory text | `.settingsDescriptionStyle()` (selectable, secondary, wraps) |
 | A spacing, a width, a dot size | `SettingsMetrics.<token>` — never a number in place |
 | A copy-to-pasteboard action for agents | `CopyForAgentButton` |
@@ -56,6 +57,7 @@ section describes it, it does not define it.
 | A slider or stepper's whole trailing column | 220 | `sliderWidth` |
 | Its readout, trailing, monospaced digits | minWidth 40 | `valueColumn` |
 | The ready dot in a status line | 7 | `statusDot` |
+| A control's title to its glyph ("Open ›", a tag chip's ×) | 4 | `iconGap` |
 | Inside a card | 12 | `cardPadding` |
 
 - **No ad-hoc type in a row.** `.caption`, `.caption2` and `.system(size:)` do not belong on text
@@ -114,11 +116,17 @@ section describes it, it does not define it.
   - A caller that means the sub-page itself (a notch "Show all" link, a notification click) uses
     a deep link of its own, registered on the back row (`SettingsDeepLink.tasksListOpenID`); the
     tab opens the sub-page for that id alone. Search entries keep pointing at the opening row.
+  - The Task list's filters are view-only: they narrow that page and nothing else, and while they
+    hide anything the list opens with a "Filtered" row ("3 of 12 tasks") whose Show All clears them.
 - Every row with a `settingsSearchIndex` entry carries a `.settingsHighlight(id:)` whose id
   matches the entry exactly (`SettingsHighlightInventoryTests` pins the pairing and the counts;
   the counts move only as a deliberate edit).
 - A row's description says what the control does, in about 8 words. No "Off: …" sentence, no
   mechanics, and no repeat of the title.
+- A menu item that acts in place, opens a small sheet or asks a confirmation carries no ellipsis
+  ("Add Tags", "Set Estimate", "Delete"); a confirmation alone does not earn one. "…" marks only a
+  menu item that goes on to a connect flow or another window ("Connect Jira…", "Manage tasks…").
+  The Sources rows' "Connect…" and "Disconnect…" are row buttons, not menu items, and keep theirs.
 - Footers carry privacy or trust facts only ("Tasks and their time stay on this Mac."), one short
   line each.
 - Error and recovery text is specific but short: what failed, and the one thing to do next.

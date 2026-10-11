@@ -4,6 +4,55 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-07 - Each task view has its own filter, and tags are added one at a time with clearer names
+- **Developer label:** "the filter applies outside in notch applies to list in the brain and that doesnt show any fiter applies, besides what to filter in drop down in notch is something local, the task list should show everything connected, but also provide a seperate view only filter and should apply on there. the tags and add tine manually have trailling ... for no reason, also please fix spacing and naming like these, for eg tag should add tags, with option to add multiple tags for a ticket, with the popup tag add ui to be adding 1 item at a time and giving option like create new tag or use existing tag"
+- **Agent label:** Claude Code (Opus 5.5) — Brain Tasks PR8: connection-only Sources, view-only Task list filter with a Filtered row, notch-only Show in notch filter, one-tag-at-a-time Tags sheet, naming and spacing pass
+- **Changes:**
+  - Sync Jira and Sync GitLab only decide what is fetched (`isJiraSyncOn` / `isGitLabSyncOn`). The
+    task order is now the connected baseline, `TaskOrdering.connectedFilter`: local tasks, Jira and
+    GitLab tasks (synced, paused or kept after a disconnect), GitLab merge requests while Include
+    merge requests is on or GitLab is not connected, and the task being timed. It reads no view
+    setting. A paused source's Sync row says "Sync paused. Jira tasks stay listed."
+  - The "Local tasks" switch, its search entry and the `showLocalTasks` key are gone, and so is
+    `TasksManager.isListed(_:)`. Inventory pins: 228 entries, 271 registrations, 265 ids.
+  - Brain's Task list filters are view-only. While they narrow, the list opens with a "Filtered" row
+    ("3 of 12 tasks") whose Show All resets source, project, status and tag; "No tasks match" offers
+    the same Show All. The Tasks page's "Task list" row and the Project and Tag pickers count every
+    connected task, not the filtered ones.
+  - The notch has its own filter, Show in notch (`tasksPopoverShowLocal`, `tasksPopoverShowJira`,
+    `tasksPopoverShowGitLab`, all on by default), through the pure `TaskOrdering.viewFilter` and
+    `isNarrowingView`. `TaskSourceMenu` binds only those keys, under a "Show in notch" header, with
+    the tooltip and accessibility label "Filter tasks"; a source that is not connected still offers
+    "Connect Jira…" / "Connect GitLab…" and is never counted as hidden.
+  - The popover's Up next, its count and its empty state follow Show in notch, with one quiet
+    "Filtered · Show all" line while a source is hidden. Adding a task with Local hidden turns Local
+    back on so the new task shows, and "The filter hides every open task." appears only when the
+    filter actually hides one.
+  - Add Tags opens the new `TaskTagsSheet`: the task's tags as removable chips
+    (`SettingsTagChip` in a `SettingsFlowLayout`), one "Add a tag" field, and under it "#name" for
+    tags in use and "Create tag “name”" for a new one, or a few quick picks while the field is empty.
+    Return adds a tag in use that starts with the text, or else creates the text, then clears the
+    field for the next tag; text that is already on the task adds nothing; Done adds any text still
+    typed before saving. At 10 tags the field disables with "10 tags is the most".
+  - Pure `TaskTagEditing` (logic target): `suggestions(for:existing:current:)`, `returnPick`,
+    `adding` and `removing`, all through `TaskItem.cleanedTags`.
+  - Names: the task ⋯ menu reads Set Estimate, Add Time, Add Tags, Schedule, Clear Schedule and
+    Delete, with no "…"; also Set End Time, Custom and Time to log's Log. Sheets confirm with Save,
+    Done, Add or Schedule. "Mark as Logged" and "Never Ask to Log" everywhere; every filter's
+    default reads "All".
+  - Row captions: the schedule is one segment ("Due Today 15:00", "Overdue Mon 10:00"), tags come
+    last, a merge request drops the "MR" word next to its !12 key, and GitLab states are
+    capitalised ("Open"). ▶ and ⋯ share one image scale, and every Done and hidden row ends in
+    Reopen or Show, then ⋯. The overview row's spacing uses the new `SettingsMetrics.iconGap`.
+  - docs/SETTINGS.md: the Task list's filter is view-only and shows a Filtered row; a menu item that
+    acts in place, opens a small sheet or asks a confirmation carries no ellipsis.
+  - Tests: TaskSourceFilterTests rewritten for the connected baseline and the notch filter; new
+    TaskTagEditingTests (use or create, prefix-first ranking, current tags excluded, case, leading
+    "#", 10-tag limit, 24-character cut, quick picks, what Return adds); TasksPopoverRulesTests
+    (TaskSourceMenu never reads the sync keys); TaskListRulesTests (the Filtered row resets all four
+    filters, no "…" in the task menu); pins in SettingsHighlightInventoryTests,
+    SettingsLayoutRulesTests, TaskFacetsTests, WorkDurationTests and WorklogDraftTests updated.
+
 ### 2026-10-06 - Brain › Tasks gets a Task list page with filters, tags and reminders, real drag and drop, and shorter text
 - **Developer label:** "there should be drag and drop and for all explaination we give like this, try to make it cleaner; also where is seperate tab for task listing with filtered tabs and all"
 - **Agent label:** Brain Tasks PR7: Task list sub-page (Source/Project/Status/Tag filters, tags, local-task reminders), draggable/dropDestination reordering, copy pass

@@ -25,26 +25,45 @@ import Foundation
 /// it was. The moves below therefore step over them: Move Up swaps with the previous *active* task,
 /// so one click always changes what the user sees.
 ///
-/// The same goes for tasks of a source the user switched off (Local tasks, Sync Jira, Sync GitLab): `listed`
-/// says which active tasks are on screen, and every move and drop counts only those. Its default
-/// lists every active task.
+/// Which active tasks are on screen is `listed`: the connected baseline (`connectedFilter`),
+/// narrowed by a view's own filter — the Task list's filters in Brain, Show in notch in the notch.
+/// Every move and drop counts only the listed tasks. Its default lists every active task.
 enum TaskOrdering {
     typealias Listed = (TaskItem) -> Bool
 
-    /// Which tasks the task order shows, by source. The task being timed always shows, so it can be
-    /// stopped from the list. Jira and GitLab tasks show while their source is synced, and also
-    /// while it is not connected at all: tasks kept after a disconnect stay where the user can see
-    /// them. `showGitLabMergeRequests` (Include merge requests) narrows the GitLab tasks the same way,
-    /// so switching it off takes the merge requests out at once, without waiting for a sync.
-    static func listedFilter(showLocal: Bool, showJira: Bool, showGitLab: Bool, showGitLabMergeRequests: Bool, alwaysListed: UUID?) -> Listed {
+    /// The connected baseline: every task Kannu holds, whatever any view shows. Local tasks always;
+    /// Jira and GitLab tasks always — synced, with their sync paused, or kept after a disconnect —
+    /// because Sync Jira and Sync GitLab only decide what is fetched. Only Include merge requests,
+    /// which says what GitLab is asked for, narrows it: off (`showGitLabMergeRequests` false), the
+    /// merge requests leave the order at once, without waiting for a sync. The task being timed
+    /// always shows, so it can be stopped from the list. Reads no view setting.
+    static func connectedFilter(showGitLabMergeRequests: Bool, alwaysListed: UUID?) -> Listed {
+        { task in
+            if task.id == alwaysListed { return true }
+            switch task.source {
+            case .local, .jira: return true
+            case .gitlab: return showGitLabMergeRequests || task.remote?.gitlabKind != .mergeRequest
+            }
+        }
+    }
+
+    /// A view's own filter by source — the notch's Show in notch (`tasksPopoverShowLocal` and the
+    /// rest). It changes nothing but what that view shows: compose it with the connected baseline
+    /// (`active(_:listed:)` on `TasksManager.activeTasks`). The task being timed always passes.
+    static func viewFilter(showLocal: Bool, showJira: Bool, showGitLab: Bool, alwaysListed: UUID?) -> Listed {
         { task in
             if task.id == alwaysListed { return true }
             switch task.source {
             case .local: return showLocal
             case .jira: return showJira
-            case .gitlab: return showGitLab && (showGitLabMergeRequests || task.remote?.gitlabKind != .mergeRequest)
+            case .gitlab: return showGitLab
             }
         }
+    }
+
+    /// Whether that view filter hides a source, so the view says it is filtered.
+    static func isNarrowingView(showLocal: Bool, showJira: Bool, showGitLab: Bool) -> Bool {
+        !(showLocal && showJira && showGitLab)
     }
 
     /// The tasks in the task order, top first.
