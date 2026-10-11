@@ -38,7 +38,20 @@ class TimerManager: ObservableObject {
     @Published var lastUpdated: Date = .distantPast
     @Published var activePresetId: UUID?
     @Published private(set) var activeSource: TimerSource = .none
-    
+    /// What a renamed session goes back to when its name is cleared: the preset's name, or
+    /// "Custom Timer" (`TimerSessionName`).
+    private(set) var sessionDefaultName: String = "Timer"
+    /// New for every session, so a rename begun in one session never lands on the next.
+    private(set) var sessionID = UUID()
+    /// Started, paused, resumed and ended, said explicitly for timers started in Kannu. Listeners
+    /// use this, never `$isTimerActive` or `$isPaused`: a replace changes both twice in one turn
+    /// and arrives as no change at all (docs/REGRESSIONS.md entry 10). Sent on the caller's thread;
+    /// each event carries its own date, so a listener may hop to another queue.
+    let sessionEvents = PassthroughSubject<TimerSessionEvent, Never>()
+    /// Whether this session plays the timer sound when it runs out. A task's session plays it only
+    /// when the user asked for a sound at the estimate.
+    private var playsSoundOnFinish = true
+
     // Timer progress (0.0 to 1.0, or >1.0 for overtime)
     var progress: Double {
         guard totalDuration > 0 else { return 0.0 }
@@ -137,9 +150,24 @@ class TimerManager: ObservableObject {
     }
     
     // MARK: - Timer Methods
-    func startTimer(duration: TimeInterval, name: String = "Timer", preset: TimerPreset? = nil) {
+    /// `name` is what the session shows; `fallbackName`, when given, is the default a cleared name
+    /// returns to (the user may have typed `name` over it). `playsSoundOnFinish` false runs the
+    /// session into overtime silently.
+    func startTimer(
+        duration: TimeInterval,
+        name: String = "Timer",
+        preset: TimerPreset? = nil,
+        fallbackName: String? = nil,
+        playsSoundOnFinish: Bool = true
+    ) {
         if activeSource == .external {
             endExternalTimer(triggerSmoothClose: false)
+        }
+
+        // A session of ours still running is replaced: it ends, under its own id, before the new
+        // id is minted below.
+        if isTimerActive {
+            emit(.ended(.replaced))
         }
 
         // Stop any existing timer
@@ -153,6 +181,9 @@ class TimerManager: ObservableObject {
         isFinished = false
         isOvertime = false
         timerName = name
+        sessionDefaultName = fallbackName ?? name
+        sessionID = UUID()
+        self.playsSoundOnFinish = playsSoundOnFinish
         totalDuration = duration
         remainingTime = duration
         elapsedTime = 0
@@ -160,7 +191,8 @@ class TimerManager: ObservableObject {
         lastUpdated = Date()
 
         activePresetId = preset?.id
-        
+        emit(.started)
+
         // Start countdown timer
         timerInstance = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
@@ -199,6 +231,8 @@ class TimerManager: ObservableObject {
             return
         }
 
+        // Before resetTimer(), which mints the next session's id.
+        emit(.ended(.stopped))
         timerInstance?.invalidate()
         timerInstance = nil
         soundPlayer?.stop()
@@ -217,6 +251,8 @@ class TimerManager: ObservableObject {
             return
         }
 
+        // Before resetTimer(), which mints the next session's id.
+        emit(.ended(.stopped))
         // Immediate stop for user action (stop button)
         timerInstance?.invalidate()
         timerInstance = nil
@@ -233,6 +269,7 @@ class TimerManager: ObservableObject {
         isPaused = true
         timerInstance?.invalidate()
         timerInstance = nil
+        emit(.paused)
     }
     
     func resumeTimer() {
@@ -240,7 +277,8 @@ class TimerManager: ObservableObject {
         guard isTimerActive && isPaused else { return }
         isPaused = false
         lastUpdated = Date()
-        
+        emit(.resumed)
+
         // Resume countdown timer with same logic as start timer
         timerInstance = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
@@ -346,6 +384,9 @@ class TimerManager: ObservableObject {
             isTimerActive = false
         }
         timerName = "Timer"
+        sessionDefaultName = "Timer"
+        sessionID = UUID()
+        playsSoundOnFinish = true
         totalDuration = 0
         remainingTime = 0
         elapsedTime = 0
@@ -354,6 +395,28 @@ class TimerManager: ObservableObject {
         isOvertime = false
         activePresetId = nil
         activeSource = .none
+    }
+
+    /// Renames the running session. Only a timer started in Kannu: a Clock-app timer's name is the
+    /// Clock app's (`SystemTimerBridge`). A cleared name goes back to the session's default.
+    /// `session` is the `sessionID` the rename began in; a later session is left alone.
+    func renameSession(to text: String, session: UUID) {
+        guard activeSource == .manual, isTimerActive,
+              let name = TimerSessionName.renamed(
+                text,
+                begunIn: session,
+                current: sessionID,
+                currentName: timerName,
+                fallback: sessionDefaultName
+              ) else { return }
+        timerName = name
+    }
+
+    /// Sends `kind` for the current session. Only a timer started in Kannu has session events: a
+    /// mirrored Clock-app timer never sends one, whatever path it takes through here.
+    private func emit(_ kind: TimerSessionEvent.Kind) {
+        guard activeSource == .manual else { return }
+        sessionEvents.send(TimerSessionEvent(kind: kind, session: sessionID, at: Date()))
     }
 
     // MARK: - Derived State
@@ -390,6 +453,8 @@ class TimerManager: ObservableObject {
     }
     
     private func playTimerSound() {
+        // One guard for both tick closures (start and resume) that call this.
+        guard playsSoundOnFinish else { return }
         var soundURL: URL?
         
         // Check for custom timer sound first

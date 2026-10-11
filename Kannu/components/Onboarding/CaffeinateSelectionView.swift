@@ -35,7 +35,7 @@ struct CaffeinateSelectionView: View {
                 .fontWeight(.bold)
                 .padding(.top, 24)
 
-            Text("Long agent runs die if the Mac falls asleep. Choose how Kannu should handle it. You can change this later in settings.")
+            Text("Long agent runs die if the Mac falls asleep. Choose how Kannu should handle it. You can change this later in Brain.")
                 .multilineTextAlignment(.center)
                 .font(.body)
                 .foregroundColor(.secondary)

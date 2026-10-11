@@ -48,6 +48,8 @@ enum SettingsMetrics {
     static let valueColumn: CGFloat = 40
     /// The ready/not-ready dot in a status line.
     static let statusDot: CGFloat = 7
+    /// Between a control's title and its glyph: "Open ›", and a tag chip's name and its ×.
+    static let iconGap: CGFloat = 4
     /// Inside a card (a callout, an expanded detail panel) — the one place padding belongs.
     static let cardPadding: CGFloat = 12
     static let cardCornerRadius: CGFloat = 12
@@ -511,6 +513,83 @@ struct SettingsMoreMenu<Items: View>: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+/// A tag on a task, "#writing ×", that removes itself when clicked: the whole chip is the × button,
+/// so it reads as one control to VoiceOver, "Remove tag writing", and needs no padding of its own —
+/// the bordered button pads itself. The name is the user's own text and renders verbatim.
+struct SettingsTagChip: View {
+    private let name: String
+    private let remove: () -> Void
+
+    init(_ name: String, remove: @escaping () -> Void) {
+        self.name = name
+        self.remove = remove
+    }
+
+    var body: some View {
+        Button(action: remove) {
+            HStack(spacing: SettingsMetrics.iconGap) {
+                Text(verbatim: "#\(name)")
+                    .lineLimit(1)
+                Image(systemName: "xmark")
+                    .imageScale(.small)
+                    .accessibilityHidden(true)
+            }
+        }
+        .buttonStyle(.bordered)
+        .accessibilityLabel(Text(verbatim: String(localized: "Remove tag \(name)")))
+    }
+}
+
+/// Lays its subviews out left to right, wrapping onto a new line when the next one does not fit:
+/// the tag chips. Each subview takes its ideal size, capped at the width offered.
+struct SettingsFlowLayout: Layout {
+    var spacing: CGFloat = SettingsMetrics.footerStack
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(subviews, width: proposal.width ?? .infinity)
+        let width = rows.map(\.width).max() ?? 0
+        let height = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(0, rows.count - 1))
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(subviews, width: bounds.width) {
+            var x = bounds.minX
+            for item in row.items {
+                subviews[item.index].place(at: CGPoint(x: x, y: y), anchor: .topLeading,
+                                           proposal: ProposedViewSize(item.size))
+                x += item.size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private struct Row {
+        var items: [(index: Int, size: CGSize)] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    private func arrange(_ subviews: Subviews, width: CGFloat) -> [Row] {
+        var rows: [Row] = []
+        var row = Row()
+        for index in subviews.indices {
+            var size = subviews[index].sizeThatFits(.unspecified)
+            size.width = min(size.width, width)
+            if !row.items.isEmpty, row.width + spacing + size.width > width {
+                rows.append(row)
+                row = Row()
+            }
+            row.width = row.items.isEmpty ? size.width : row.width + spacing + size.width
+            row.height = max(row.height, size.height)
+            row.items.append((index, size))
+        }
+        if !row.items.isEmpty { rows.append(row) }
+        return rows
     }
 }
 

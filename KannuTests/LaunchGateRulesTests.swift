@@ -65,9 +65,14 @@ final class LaunchGateRulesTests: XCTestCase {
         for forbidden in ["AgentHookInstaller", "CursorAgentStatusMonitor", "SecurityFindingsStore",
                           "createKannuWindow", "adjustWindowPosition", "syncStatusItem",
                           "autoEnableLaunchAtLogin", "showOnboardingWindow", "LockScreenWeatherManager",
-                          "SystemHUDManager", "configureProviderDefaultsIfNeeded", "installTopMenuItems"] {
+                          "SystemHUDManager", "configureProviderDefaultsIfNeeded", "installTopMenuItems",
+                          "UNUserNotificationCenter", "requestAuthorization", "TasksManager", "TaskFileStore",
+                          "launchDidContinue"] {
             XCTAssertFalse(preGate.contains(forbidden), "\(forbidden) now runs before the Terms of Use are accepted")
         }
+        // The one exception, a delegate that asks nothing: testTheReminderDelegateIsInstalledBeforeTheGate.
+        XCTAssertTrue(preGate.contains("TaskReminderCenter.shared.install()"),
+                      "the reminder delegate is no longer set before the gate: a click that launches Kannu is lost")
         for allowed in ["HangWatchdog.shared.start()", "CrashReporter.shared.start()",
                         "SparkleUpdaterController.shared.configure()", "MediaRemoteAdapterReaper"] {
             XCTAssertTrue(invariants.contains(allowed), "\(allowed) no longer runs whatever the user decides")
@@ -87,6 +92,48 @@ final class LaunchGateRulesTests: XCTestCase {
         for name in Self.heldSingletons {
             XCTAssertTrue(proceed.contains("_ = \(name)\n"), "continueLaunch no longer starts \(name)")
         }
+    }
+
+    /// A task reminder clicked while Kannu is not running launches it, and macOS hands the click to
+    /// the delegate set by the time `applicationDidFinishLaunching` returns — so the delegate is the
+    /// one thing installed before the gate (CodeRabbit on #86: installed in `continueLaunch()`, it
+    /// missed that click). Installing it asks nothing, reads no file and builds nothing; the click
+    /// waits in `TaskReminderCenter` until `continueLaunch()` has run, and is answered last. The
+    /// permission prompt still belongs to the user's first schedule (`TaskListRulesTests`), and
+    /// `TasksManager` stays lazy.
+    func testTheReminderDelegateIsInstalledBeforeTheGate() throws {
+        XCTAssertEqual(Self.reminderProblems(appDelegate: try Self.appDelegate(), reminders: try Self.reminders()), [])
+    }
+
+    func testTheReminderScannerSeesPlantedOffenders() throws {
+        let delegate = try Self.appDelegate()
+        let reminders = try Self.reminders()
+        let install = "        TaskReminderCenter.shared.install()\n"
+        let drain = "        TaskReminderCenter.shared.launchDidContinue()\n"
+        let setDelegate = "        center.delegate = self\n"
+        // Installed in continueLaunch again: the click that launched Kannu is lost.
+        let late = delegate.replacingOccurrences(of: install, with: "").replacingOccurrences(of: drain, with: install + drain)
+        XCTAssertEqual(Self.reminderProblems(appDelegate: late, reminders: reminders),
+                       ["the reminder delegate is not installed before the Terms of Use are checked"])
+        // The pre-gate install grew teeth.
+        let asks = delegate.replacingOccurrences(of: install, with: install + "        Task { _ = await TaskReminders.requestPermission() }\n")
+        XCTAssertEqual(Self.reminderProblems(appDelegate: asks, reminders: reminders), ["the launch asks for notifications"])
+        let builds = delegate.replacingOccurrences(of: install, with: install + "        TasksManager.shared.checkReminderPermission()\n")
+        XCTAssertEqual(Self.reminderProblems(appDelegate: builds, reminders: reminders),
+                       ["the launch builds TasksManager, which reads tasks.json"])
+        // install() itself asks, or reads the task file.
+        let asking = reminders.replacingOccurrences(of: setDelegate, with: setDelegate + "        Task { _ = await TaskReminders.requestPermission() }\n")
+        XCTAssertEqual(Self.reminderProblems(appDelegate: delegate, reminders: asking), ["the launch asks for notifications"])
+        let reading = reminders.replacingOccurrences(of: setDelegate, with: setDelegate + "        _ = TasksManager.shared\n")
+        XCTAssertEqual(Self.reminderProblems(appDelegate: delegate, reminders: reading),
+                       ["the launch builds TasksManager, which reads tasks.json"])
+        // A click answered the moment it arrives, or never answered at all.
+        let eager = reminders.replacingOccurrences(of: Self.heldUntilLaunch, with: "self.answer(reminder)")
+        XCTAssertEqual(Self.reminderProblems(appDelegate: delegate, reminders: eager),
+                       ["a reminder's click is answered before the launch continued"])
+        let silent = delegate.replacingOccurrences(of: drain, with: "")
+        XCTAssertEqual(Self.reminderProblems(appDelegate: silent, reminders: reminders),
+                       ["continueLaunch never answers the clicks that waited for it, or not last"])
     }
 
     /// The App struct runs before the delegate; it must not do work of its own.
@@ -144,10 +191,54 @@ final class LaunchGateRulesTests: XCTestCase {
         XCTAssertFalse(Self.code("    // AgentHookInstaller used to run here\n").contains("AgentHookInstaller"))
     }
 
+    // MARK: - The reminder delegate rule
+
+    /// The line that holds a click back until the launch continued.
+    private static let heldUntilLaunch =
+        "if self.launchContinued { self.answer(reminder) } else { self.waiting.append(reminder) }"
+
+    /// The rule as problems: none for the real sources. `install()`, the pre-gate part of the launch
+    /// and nothing else may set the delegate; none of them may ask or build `TasksManager`; a click
+    /// waits for the launch, which answers it last.
+    static func reminderProblems(appDelegate: String, reminders: String) -> [String] {
+        var problems: [String] = []
+        let launch = code(body(ofFunction: "applicationDidFinishLaunching", in: appDelegate) ?? "")
+        let invariants = code(body(ofFunction: "startLaunchInvariants", in: appDelegate) ?? "")
+        let proceed = code(body(ofFunction: "continueLaunch", in: appDelegate) ?? "")
+        let install = code(body(ofFunction: "install", in: reminders) ?? "")
+        let installed = launch.range(of: "TaskReminderCenter.shared.install()")?.lowerBound
+        let checked = launch.range(of: "TermsOfUse.isAccepted(")?.lowerBound
+        if occurrences(of: "TaskReminderCenter.shared.install()", in: code(appDelegate)) != 1
+            || installed == nil || checked == nil || installed! > checked! {
+            problems.append("the reminder delegate is not installed before the Terms of Use are checked")
+        }
+        let preGate = launch + invariants + install
+        if preGate.contains("requestAuthorization") || preGate.contains("requestPermission") {
+            problems.append("the launch asks for notifications")
+        }
+        if preGate.contains("TasksManager") || preGate.contains("TaskFileStore") {
+            problems.append("the launch builds TasksManager, which reads tasks.json")
+        }
+        if !code(reminders).contains(heldUntilLaunch) {
+            problems.append("a reminder's click is answered before the launch continued")
+        }
+        let drained = proceed.range(of: "TaskReminderCenter.shared.launchDidContinue()")?.lowerBound
+        let shelf = proceed.range(of: "handleIncomingShelfURLs(waiting)")?.lowerBound
+        if occurrences(of: "launchDidContinue()", in: code(appDelegate)) != 1
+            || drained == nil || shelf == nil || drained! < shelf! {
+            problems.append("continueLaunch never answers the clicks that waited for it, or not last")
+        }
+        return problems
+    }
+
     // MARK: - Helpers
 
     private static func appDelegate() throws -> String {
         try String(contentsOf: repoRoot.appendingPathComponent("Kannu/KannuApp.swift"), encoding: .utf8)
+    }
+
+    private static func reminders() throws -> String {
+        try String(contentsOf: repoRoot.appendingPathComponent("Kannu/managers/Tasks/TaskReminders.swift"), encoding: .utf8)
     }
 
     /// A function's body: from its declaration to the next member declaration at the same indent.

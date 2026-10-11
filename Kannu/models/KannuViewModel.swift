@@ -55,6 +55,8 @@ class KannuViewModel: NSObject, ObservableObject {
     @Published var isStatsPopoverActive: Bool = false
     @Published var isMediaOutputPopoverActive: Bool = false
     @Published var isTimerPopoverActive: Bool = false
+    /// The header's Tasks popover is open (`TasksHeaderButton`): the notch stays open under it.
+    @Published var isTasksPopoverActive: Bool = false
     @Published var shouldRecheckHover: Bool = false
     @Published var isScrollGestureActive: Bool = false
     private var scrollGestureSuppressionTokens: Set<UUID> = []
