@@ -18,7 +18,7 @@ Kannu is a fork of [Atoll](https://github.com/Ebullioscopic/Atoll), which itself
 - **Custom notch skins** — upload a background image clipped to the notch shape, with optional dark scrim for readability.
 - **Mobile notifications (optional)** — push agent state changes to iPhone, Apple Watch, or Android via ntfy, Pushover, or a custom webhook.
 - Media controls, live activities, lock screen widgets, stats, timers, clipboard, and shelf.
-- **Keyboard shortcuts off by default** — enable globally in Settings → Shortcuts when you want hotkeys.
+- **Keyboard shortcuts off by default** — enable globally in Brain → Shortcuts when you want hotkeys.
 
 Calendar, terminal, and color picker features from the Atoll/Boring.Notch lineage are removed in this fork.
 
@@ -47,7 +47,7 @@ Kannu requests permissions only when you use the related feature. The app is not
 - **Audio Capture** — used for real-time waveform/audio-activity features.
 - **Developer Tools** — optional, used for advanced Focus detection mode.
 
-For detailed prompts and one-click setup actions, open **Settings** in Kannu. Contributor docs are in [CONTRIBUTING.md](CONTRIBUTING.md).
+For detailed prompts and one-click setup actions, open **Brain** in Kannu. Contributor docs are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Install (Pre-built DMG)
 
@@ -88,15 +88,15 @@ Application support data is stored under `~/Library/Application Support/Kannu/`.
 ## Quick Start
 
 1. Launch Kannu and complete onboarding.
-2. Open **Settings → Agents** and install editor hooks for Cursor (recommended).
+2. Open **Brain → Agents** and install editor hooks for Cursor (recommended).
 3. Run an AI agent in Cursor — the notch shows the traffic-light status when collapsed.
-4. Optionally upload a notch skin under **Settings → Appearance → Notch skin**.
+4. Optionally upload a notch skin under **Brain → Appearance → Notch skin**.
 
 
 
 ## Mobile Notifications Setup
 
-1. Open **Settings → Agents → Mobile Notifications**.
+1. Open **Brain → Agents → Mobile Notifications**.
 2. Enable mobile notifications and choose a provider:
   - **ntfy** — create a topic at [ntfy.sh](https://ntfy.sh) or self-host. Install the ntfy app on iPhone or Android and subscribe to your topic.
   - **Pushover** — use your user key and app token from [pushover.net](https://pushover.net).

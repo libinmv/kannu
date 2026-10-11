@@ -217,7 +217,7 @@ struct NotchAgentStatusView: View {
                     .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .hoverTooltip(String(localized: "Security findings — click for Settings"), edge: .below, pointingHandCursor: true)
+                .hoverTooltip(String(localized: "Security findings — click to open Brain"), edge: .below, pointingHandCursor: true)
             }
             Spacer(minLength: 0)
             if smartCaffeinate {
@@ -246,8 +246,8 @@ struct NotchAgentStatusView: View {
                 .buttonStyle(.plain)
                 .hoverTooltip(
                     caffeinate.isKeepingAwake
-                        ? String(localized: "Keeping awake — agent running. Click for Settings.")
-                        : String(localized: "Smart caffeinate on. Click for Settings.")
+                        ? String(localized: "Keeping awake — agent running. Click to open Brain.")
+                        : String(localized: "Smart caffeinate on. Click to open Brain.")
                 , edge: .below, pointingHandCursor: true)
                 .accessibilityLabel("Smart caffeinate is on")
                 .accessibilityHint("Opens caffeinate settings")
