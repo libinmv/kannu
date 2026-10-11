@@ -1846,6 +1846,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NotchSpaceManager.shared.notchSpace.windows.remove(window)
             window.close()
             self.window = nil
+            // The single-window lifecycle reuses `vm` for the next window, and the views that held
+            // suppression tokens or set a popover flag are gone without an `.onDisappear`. Reset
+            // after the old content view is detached: it still observes `vm`, and a popover flag
+            // flipping to false there schedules a `vm.close()` against the window built next.
+            vm.resetTransientInteractionState()
         }
     }
 
