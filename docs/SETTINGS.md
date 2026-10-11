@@ -1,5 +1,7 @@
 # Settings construction rules
 
+Shown to users as **Brain**; code keeps the Settings names.
+
 How a Settings section is built in Kannu. These rules exist so every tab reads like System
 Settings, and so anything informational on screen can be selected and copied. They are enforced,
 not advisory: `KannuTests/SettingsLayoutRulesTests.swift` scans the sources under

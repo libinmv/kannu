@@ -154,6 +154,8 @@ final class SettingsLayoutRulesTests: XCTestCase {
                                              // cards, previews, the colour popover
         "SpotifyAuthSettingsSection.swift": 1,     // the sign-in card
         "SpotifyLoginSheet.swift": 1,        // a sheet, not a Form
+        "TasksSettings.swift": 2,            // the estimate, add-time and end-time sheet, and
+                                             // the Connect Jira sheet: a sheet pads its own content
     ]
 
     func testNoRowPadsItself() {
