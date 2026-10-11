@@ -1,5 +1,7 @@
 # Settings construction rules
 
+Shown to users as **Brain**; code keeps the Settings names.
+
 How a Settings section is built in Kannu. These rules exist so every tab reads like System
 Settings, and so anything informational on screen can be selected and copied. They are enforced,
 not advisory: `KannuTests/SettingsLayoutRulesTests.swift` scans the sources under
@@ -32,7 +34,7 @@ All in `Kannu/components/Settings/SettingsComponents.swift`. Never rebuild these
 | A read-only trailing value (path, date, count) | `SettingsValueText(value)` |
 | A status line with a ready dot | `SettingsStatusText(text, isReady:)` |
 | A red error line under a control | `SettingsErrorText(message)` |
-| One or more buttons on a row | `SettingsActionRow` — trailing, never a lone left-hanging button |
+| One or more buttons on a row | `SettingsActionRow` — trailing, never a lone left-hanging button (the one exception: a sub-page's "‹ Back" row, below) |
 | Overflow actions on a row | `SettingsMoreMenu { … }` (the "…" button) |
 | Free-standing explanatory text | `.settingsDescriptionStyle()` (selectable, secondary, wraps) |
 | A spacing, a width, a dot size | `SettingsMetrics.<token>` — never a number in place |
@@ -102,10 +104,24 @@ section describes it, it does not define it.
   `DisclosureGroup` labelled **Advanced** (collapsed by default), keeping the section glanceable.
   Rows inside it carry no highlight ids; their search entries point at the disclosure's own id,
   so search always lands on something visible (the ADR scans section is the model).
+- A sub-page is an in-tab view swap (Brain has no navigation stack): a row with an Open button
+  swaps the tab's content, and the sub-page starts with a "‹ Back" row. The same rule applies:
+  its rows carry no highlight ids, their search entries land on the row that opens it, and a
+  search or deep link into the tab closes the sub-page (Tasks › Task list is the model).
+  - The back row is a lone leading borderless `Button` with a chevron `Label`, alone in its own
+    `Section` — the one sanctioned lone left-hanging button, because it is navigation, not an
+    action on a row. Nothing else takes this shape.
+  - A caller that means the sub-page itself (a notch "Show all" link, a notification click) uses
+    a deep link of its own, registered on the back row (`SettingsDeepLink.tasksListOpenID`); the
+    tab opens the sub-page for that id alone. Search entries keep pointing at the opening row.
 - Every row with a `settingsSearchIndex` entry carries a `.settingsHighlight(id:)` whose id
   matches the entry exactly (`SettingsHighlightInventoryTests` pins the pairing and the counts;
   the counts move only as a deliberate edit).
-- Captions and footers state what the thing does and what "off" means, in plain words.
+- A row's description says what the control does, in about 8 words. No "Off: …" sentence, no
+  mechanics, and no repeat of the title.
+- Footers carry privacy or trust facts only ("Tasks and their time stay on this Mac."), one short
+  line each.
+- Error and recovery text is specific but short: what failed, and the one thing to do next.
 - Badges (`customBadge`, `comingSoonTag`, `alphaBadge`, `proFeatureBadge`) are decorative chips
   and stay unselectable — they are the pinned exceptions in `SettingsLayoutRulesTests`, along
   with labels inside tappable cards. A new exception is added to that pin with a reason, not

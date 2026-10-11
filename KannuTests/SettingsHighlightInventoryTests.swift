@@ -58,9 +58,14 @@ final class SettingsHighlightInventoryTests: XCTestCase {
 
     func testCountsArePinned() throws {
         let inventory = try Self.inventory()
-        XCTAssertEqual(inventory.entries.count, 208, "search entries")
-        XCTAssertEqual(inventory.registrations.values.reduce(0, +), 257, "row registrations")
-        XCTAssertEqual(inventory.registrations.count, 251, "distinct registered ids")
+        // 2026-10-06: Brain › Tasks' Add a task, Task order and Done and hidden rows moved into the
+        // Task list sub-page and gave up their ids; the one visible "Task list" row registers
+        // instead, and four new entries (Task list, its filters, tags, schedule) land on it.
+        // Then the Task list's back row registered `tasksListOpenID`, the deep link that opens the
+        // sub-page itself ("Show all in Brain", a reminder's click); no search entry uses it.
+        XCTAssertEqual(inventory.entries.count, 229, "search entries")
+        XCTAssertEqual(inventory.registrations.values.reduce(0, +), 272, "row registrations")
+        XCTAssertEqual(inventory.registrations.count, 266, "distinct registered ids")
     }
 
     func testOnlyTheKnownRowsTakeTheirIdBuilderFromAParent() throws {
