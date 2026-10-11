@@ -40,12 +40,15 @@ struct KannuApp: App {
         MenuBarExtra("Kannu", isInserted: .constant(false)) {
             EmptyView()
         }
+        // SwiftUI builds the main menu only from commands attached to a scene. Menu key
+        // equivalents fire while Kannu is the active app, which the Brain window makes it.
+        .commands { commands }
     }
 
     @CommandsBuilder
     var commands: some Commands {
         CommandGroup(replacing: .appSettings) {
-            Button("Settings…") {
+            Button(String(localized: "Brain…")) {
                 // Settings runs the agent-hook migrations; nothing does that before the terms
                 // are accepted, so before then this brings the terms back instead.
                 guard appDelegate.launchContinued else {
@@ -54,13 +57,7 @@ struct KannuApp: App {
                 }
                 SettingsWindowController.shared.showWindow()
             }
-        }
-        CommandGroup(after: .appInfo) {
-            if SparkleUpdaterController.shared.isEnabled {
-                Button("Check for Updates…") {
-                    SparkleUpdaterController.shared.checkForUpdates(nil)
-                }
-            }
+            .keyboardShortcut(",", modifiers: .command)
         }
     }
 }
@@ -837,7 +834,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func statusItemMenu() -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(withTitle: String(localized: "Settings"),
+        menu.addItem(withTitle: String(localized: "Brain"),
                      action: #selector(statusMenuOpenSettings), keyEquivalent: "").target = self
         if SparkleUpdaterController.shared.isEnabled {
             menu.addItem(withTitle: String(localized: "Check for Updates…"),
