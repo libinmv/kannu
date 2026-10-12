@@ -823,7 +823,9 @@ final class SystemTimerBridge {
             if didComplete {
                 self.logDebug("Timer finished; scheduling delayed cleanup")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3.2) {
-                    if TimerManager.shared.isExternalTimerActive {
+                    // Only the finished timer this cleanup was scheduled for: a Clock timer started
+                    // inside the 3.2 s is running, not finished, and is left alone.
+                    if TimerManager.shared.isExternalTimerActive, TimerManager.shared.isFinished {
                         self.logDebug("Delayed cleanup firing; ending external timer")
                         TimerManager.shared.endExternalTimer(triggerSmoothClose: false)
                     }
