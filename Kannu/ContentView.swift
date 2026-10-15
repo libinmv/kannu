@@ -224,12 +224,17 @@ struct ContentView: View {
     @State private var agentHoverTask: Task<Void, Never>?
 
     /// Non-notch hide-until-hover reveal windows. `revealHoldDeadline` keeps the island on
-    /// screen; `agentLightDeadline` keeps the traffic light lit. Both are refreshed by agent
-    /// activity and on hover-exit, and are per-screen because the island, its hover state and
-    /// its offset are all per-`ContentView` — see `performViewTeardown` for cancellation.
+    /// screen; `agentLightDeadline` keeps the traffic light lit. Both are refreshed when the
+    /// published light changes and on hover-exit, and are per-screen because the island, its
+    /// hover state and its offset are all per-`ContentView` — see `performViewTeardown` for
+    /// cancellation.
     @State private var revealHoldDeadline: Date?
     @State private var agentLightDeadline: Date?
     @State private var revealExpiryTask: Task<Void, Never>?
+    /// The light pair `noteAgentActivityPulse` last re-armed for: a pulse re-arms the reveal
+    /// only when the published light actually changed, never on bare session activity.
+    @State private var lastRevealedLightState: AgentTrafficLightState?
+    @State private var lastRevealedLightShown: Bool?
 
     @State private var gestureProgress: CGFloat = .zero
     @State private var skipGestureActiveDirection: MusicManager.SkipDirection?
@@ -2308,8 +2313,8 @@ struct ContentView: View {
 
     // MARK: - Non-notch reveal windows
 
-    /// An agent did something: pull the island back into view and relight the traffic light,
-    /// each for its own window. Only meaningful when the island is hidden by default.
+    /// The traffic light changed: pull the island back into view and relight the light, each
+    /// for its own window. Only meaningful when the island is hidden by default.
     private func noteAgentActivityPulse() {
         guard hideUntilHoverAppliesHere || isPhysicalNotchScreen, enableAgentStatusFeature else { return }
         // Strict collapse: the running-agent heartbeat keeps other consumers informed but
@@ -2319,6 +2324,16 @@ struct ContentView: View {
         if agentStatusMonitor.consumeActivityPulseWasHeartbeatOnly() && !physicalNotchAgentBandFollowsHeartbeat {
             return
         }
+        // Only a *published* light change re-arms the windows. Session-list churn also bumps the
+        // pulse (every hook write of a working chat moves `updatedAt`), and re-arming on each one
+        // pinned the island out for as long as a chat stayed green — the reveal is a glance at a
+        // change, not a mirror of activity. The values read here are post-gate
+        // (`TrafficLightPersistenceGate`), so a sub-second green → ended → green blip never
+        // reaches this comparison either.
+        guard agentLight.trafficLightState != lastRevealedLightState
+            || agentLight.shouldShowTrafficLight != lastRevealedLightShown else { return }
+        lastRevealedLightState = agentLight.trafficLightState
+        lastRevealedLightShown = agentLight.shouldShowTrafficLight
         let now = Date()
         let lightDeadline = now.addingTimeInterval(notchRevealHoldSeconds)
         let holdDeadline = now.addingTimeInterval(notchRevealHoldSeconds)
