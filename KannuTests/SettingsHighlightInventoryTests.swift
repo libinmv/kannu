@@ -58,9 +58,14 @@ final class SettingsHighlightInventoryTests: XCTestCase {
 
     func testCountsArePinned() throws {
         let inventory = try Self.inventory()
-        XCTAssertEqual(inventory.entries.count, 208, "search entries")
-        XCTAssertEqual(inventory.registrations.values.reduce(0, +), 257, "row registrations")
-        XCTAssertEqual(inventory.registrations.count, 251, "distinct registered ids")
+        // 2026-10-15: fullscreen hiding became findable. The "Hide DynamicIsland Options" picker
+        // registered an id, and two new entries land on it — "Hide in fullscreen", and
+        // "Accessibility access", whose own row exists only while the grant is missing, so its
+        // entry targets the always-visible picker. The conditional row also registers its id for
+        // the highlight when it is built. Two more entries, registrations and ids.
+        XCTAssertEqual(inventory.entries.count, 210, "search entries")
+        XCTAssertEqual(inventory.registrations.values.reduce(0, +), 259, "row registrations")
+        XCTAssertEqual(inventory.registrations.count, 253, "distinct registered ids")
     }
 
     func testOnlyTheKnownRowsTakeTheirIdBuilderFromAParent() throws {

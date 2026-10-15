@@ -4,6 +4,35 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-15 - The new fallback file's project ids stay unique next to the task branches
+- **Developer label:** "i have observed the notch to not crawl back while playing media in amazon prime in full screen"
+- **Agent label:** Claude Code (Fable 5) — project-file id renumbering only, no code change
+- **Changes:**
+  - `FullscreenFallbackVerdict.swift`'s two `project.pbxproj` ids moved from `…00E2`/`…00E3` to
+    `…05A2`/`…05A3`: the open task-stack branches already use the `E0`–`F1` range for their own
+    files, and merging both would have put duplicate ids in one project file.
+
+### 2026-10-15 - The notch hides over fullscreen video again: detection re-checks when playback starts, and survives a missing Accessibility grant
+- **Developer label:** "i have observed the notch to not crawl back while playing media in amazon prime in full screen"
+- **Agent label:** Claude Code (Fable 5) — fullscreen media detection re-checked on its real inputs, with a menu-bar fallback when `AXFullScreen` cannot be read
+- **Changes:**
+  - Fullscreen detection ran only on a space change, so fullscreen entered before pressing play was
+    never re-checked and the notch stayed out for the whole video. It now also re-checks when the
+    now-playing app or its play state changes and when the hide option changes — all through the
+    existing 500 ms settle, no polling.
+  - Without the Accessibility grant the "really fullscreen?" check silently answered no, so every
+    re-signed install stopped hiding for good (the grant dies with the code identity). It now falls
+    back to `FullscreenFallbackVerdict`: fullscreen when the window covers the whole screen frame
+    (nothing maximized can) or when that screen's menu bar is gone. A maximized window keeps the
+    menu bar, so the old maximized-hides-the-notch regression stays fixed; the one blind spot is a
+    menu bar set to auto-hide, and the one-time log says so.
+  - Brain › Media shows an "Accessibility access" row under the hide picker while the grant is
+    missing, with an Open System Settings button. The picker registered a highlight id, and two
+    search entries ("Hide in fullscreen", "Accessibility access") land on it — the conditional row
+    is never a search target.
+  - Guards: `FullscreenFallbackVerdictTests`; the settings inventory counts moved by the two new
+    entries and registrations.
+
 ### 2026-10-01 - Quit Kannu has a row in Settings, and searching "quit" or "exit" finds it
 - **Developer label:** "the settings should have a quit app, or at least on search of quit or exit i should get the tab with that button to come up as result"
 - **Agent label:** Settings Quit row + search entry, pinned by the highlight inventory
