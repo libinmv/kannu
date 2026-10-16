@@ -437,7 +437,8 @@ the type system or the build says so.
 
 **Guard — exists.** `.githooks/pre-commit` rejects any `.help(` in those directories, requires
 `HoverTooltip.swift` to keep a bare `.fixedSize()`, and rejects `fixedSize(horizontal:)` in that one
-file — not directory-wide; `AgentTrafficLightLiveActivity` uses it legitimately.
+file — not directory-wide; `AgentTrafficLightLiveActivity` uses it legitimately. No CI job runs the
+hook, so `TasksPopoverRulesTests.testNoNotchViewUsesHelp` runs the same `.help(` scan in CI.
 The layout rules that cannot be grepped — `edge` versus container clipping, one hover source per
 control — are written up in **docs/TOOLTIPS.md** with the reasoning and a checklist.
 

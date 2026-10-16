@@ -57,8 +57,9 @@ struct NotchLLMUsageView: View {
         let active = enabled.filter { isActiveProvider($0) }
 
         VStack(alignment: .leading, spacing: 6) {
-            // Refresh control moved to KannuHeader, next to the clipboard icon
-            // (icon-only, shown while this tab is active) — no longer needed here.
+            // Refresh control moved to KannuHeader's trailing row, with the items that come and
+            // go, left of the fixed buttons (icon-only, shown while this tab is active) — no
+            // longer needed here.
             HStack(alignment: .top, spacing: 10) {
                 ForEach(active) { provider in
                     card(for: provider)
