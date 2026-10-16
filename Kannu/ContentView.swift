@@ -80,6 +80,7 @@ struct ContentView: View {
     @Default(.timerProgressStyle) var timerProgressStyle
     @Default(.timerIconColorMode) var timerIconColorMode
     @Default(.timerSolidColor) var timerSolidColor
+    /// Not read here: observed so an edited preset colour redraws `timerManager.sessionAccent`.
     @Default(.timerPresets) var timerPresets
     @Default(.showCapsLockLabel) var showCapsLockLabel
     @Default(.capsLockIndicatorTintMode) var capsLockTintMode
@@ -937,7 +938,7 @@ struct ContentView: View {
             }
             .sensoryFeedback(.alignment, trigger: haptics)
             .contextMenu {
-                Button("Settings") {
+                Button("Brain") {
                     SettingsWindowController.shared.showWindow()
                 }
             }
@@ -1903,11 +1904,7 @@ struct ContentView: View {
     private var timerAccentColor: Color {
         switch timerIconColorMode {
         case .adaptive:
-            if let presetId = timerManager.activePresetId,
-               let preset = timerPresets.first(where: { $0.id == presetId }) {
-                return preset.color
-            }
-            return timerManager.timerColor
+            return timerManager.sessionAccent ?? timerManager.timerColor
         case .solid:
             return timerSolidColor
         }
@@ -2697,6 +2694,7 @@ struct ContentView: View {
          vm.isColorPickerPopoverActive || 
          vm.isStatsPopoverActive ||
          vm.isTimerPopoverActive ||
+         vm.isTasksPopoverActive ||
          vm.isMediaOutputPopoverActive
     }
 

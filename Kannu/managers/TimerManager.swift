@@ -37,8 +37,24 @@ class TimerManager: ObservableObject {
     @Published var isOvertime: Bool = false // Timer has gone past 0 and is counting negative
     @Published var lastUpdated: Date = .distantPast
     @Published var activePresetId: UUID?
+    /// The colour of the task this session times, when it has one; the accent sites read it
+    /// through `sessionAccent`, ahead of the preset's colour. Cleared with every session.
+    @Published private(set) var sessionTint: Color?
     @Published private(set) var activeSource: TimerSource = .none
-    
+    /// What a renamed session goes back to when its name is cleared: the preset's name, or
+    /// "Custom Timer" (`TimerSessionName`).
+    private(set) var sessionDefaultName: String = "Timer"
+    /// New for every session, so a rename begun in one session never lands on the next.
+    private(set) var sessionID = UUID()
+    /// Started, paused, resumed and ended, said explicitly for timers started in Kannu. Listeners
+    /// use this, never `$isTimerActive` or `$isPaused`: a replace changes both twice in one turn
+    /// and arrives as no change at all (docs/REGRESSIONS.md entry 10). Sent on the caller's thread;
+    /// each event carries its own date, so a listener may hop to another queue.
+    let sessionEvents = PassthroughSubject<TimerSessionEvent, Never>()
+    /// Whether this session plays the timer sound when it runs out. A task's session plays it only
+    /// when the user asked for a sound at the estimate.
+    private var playsSoundOnFinish = true
+
     // Timer progress (0.0 to 1.0, or >1.0 for overtime)
     var progress: Double {
         guard totalDuration > 0 else { return 0.0 }
@@ -125,26 +141,53 @@ class TimerManager: ObservableObject {
     private var timerInstance: Timer?
     private var cancellables = Set<AnyCancellable>()
     private var soundPlayer: AVAudioPlayer?
+    /// The delayed close armed by a stop or a finished Clock timer (`scheduleSmoothClose`), kept so
+    /// a session started inside its 3 s can cancel it, and the session it was armed for, so a
+    /// repeated completion report does not re-arm it.
+    private var smoothCloseWork: DispatchWorkItem?
+    private var smoothCloseSession: UUID?
     // MARK: - Initialization
     private init() {
         // Simple initialization
     }
-    
+
     deinit {
         timerInstance?.invalidate()
+        smoothCloseWork?.cancel()
         soundPlayer?.stop()
         cancellables.removeAll()
     }
     
     // MARK: - Timer Methods
-    func startTimer(duration: TimeInterval, name: String = "Timer", preset: TimerPreset? = nil) {
+    /// `name` is what the session shows; `fallbackName`, when given, is the default a cleared name
+    /// returns to (the user may have typed `name` over it). `playsSoundOnFinish` false runs the
+    /// session into overtime silently. `tint` is the timed task's colour, the session's accent ahead
+    /// of the preset's (`sessionAccent`).
+    func startTimer(
+        duration: TimeInterval,
+        name: String = "Timer",
+        preset: TimerPreset? = nil,
+        fallbackName: String? = nil,
+        playsSoundOnFinish: Bool = true,
+        tint: Color? = nil
+    ) {
         if activeSource == .external {
             endExternalTimer(triggerSmoothClose: false)
         }
 
-        // Stop any existing timer
+        // A session of ours still running is replaced: it ends, under its own id, before the new
+        // id is minted below.
+        if isTimerActive {
+            emit(.ended(.replaced))
+        }
+
+        // Stop the previous session's countdown, its finished alarm (which loops until stopped) and
+        // the smooth close its stop armed, which would otherwise end this session 3 s in.
         timerInstance?.invalidate()
-        
+        timerInstance = nil
+        soundPlayer?.stop()
+        cancelSmoothClose()
+
         // Start new timer
         withAnimation(.smooth) {
             isTimerActive = true
@@ -153,6 +196,9 @@ class TimerManager: ObservableObject {
         isFinished = false
         isOvertime = false
         timerName = name
+        sessionDefaultName = fallbackName ?? name
+        sessionID = UUID()
+        self.playsSoundOnFinish = playsSoundOnFinish
         totalDuration = duration
         remainingTime = duration
         elapsedTime = 0
@@ -160,30 +206,39 @@ class TimerManager: ObservableObject {
         lastUpdated = Date()
 
         activePresetId = preset?.id
-        
-        // Start countdown timer
+        sessionTint = tint
+        emit(.started)
+
+        scheduleTicks()
+    }
+
+    /// The 1 s countdown. Each tick queues its work on the main actor, so a stop or a new session
+    /// can land between the tick firing and the job running; the job belongs to the session that
+    /// scheduled it and leaves any other alone (a stale job used to read the reset's
+    /// `remainingTime == 0` as a finish and ring the alarm with no timer showing).
+    private func scheduleTicks() {
+        let session = sessionID
         timerInstance = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
-            
+
             Task { @MainActor in
-                if !self.isPaused {
-                    if self.remainingTime > 0 {
-                        // Normal countdown
-                        self.remainingTime -= 1
-                        self.elapsedTime = self.totalDuration - self.remainingTime
-                        self.lastUpdated = Date()
-                    } else if self.remainingTime == 0 {
-                        // Timer just finished - play sound and start overtime
-                        self.isFinished = true
-                        self.isOvertime = true
-                        self.playTimerSound()
-                        self.remainingTime = -1
-                        self.lastUpdated = Date()
-                    } else {
-                        // Overtime - count negative
-                        self.remainingTime -= 1
-                        self.lastUpdated = Date()
-                    }
+                guard self.sessionID == session, !self.isPaused else { return }
+                if self.remainingTime > 0 {
+                    // Normal countdown
+                    self.remainingTime -= 1
+                    self.elapsedTime = self.totalDuration - self.remainingTime
+                    self.lastUpdated = Date()
+                } else if self.remainingTime == 0 {
+                    // Timer just finished - play sound and start overtime
+                    self.isFinished = true
+                    self.isOvertime = true
+                    self.playTimerSound()
+                    self.remainingTime = -1
+                    self.lastUpdated = Date()
+                } else {
+                    // Overtime - count negative
+                    self.remainingTime -= 1
+                    self.lastUpdated = Date()
                 }
             }
         }
@@ -199,16 +254,19 @@ class TimerManager: ObservableObject {
             return
         }
 
+        // Before resetTimer(), which mints the next session's id.
+        emit(.ended(.stopped))
         timerInstance?.invalidate()
         timerInstance = nil
         soundPlayer?.stop()
-        
-        // Smooth close animation for live activity
-        if isTimerActive {
+
+        // Smooth close animation for live activity, armed after the reset so it belongs to the
+        // idle session the reset begins (the reset gives the session a new id).
+        let wasActive = isTimerActive
+        resetTimer()
+        if wasActive {
             scheduleSmoothClose()
         }
-        
-        resetTimer()
     }
     
     func forceStopTimer() {
@@ -217,6 +275,8 @@ class TimerManager: ObservableObject {
             return
         }
 
+        // Before resetTimer(), which mints the next session's id.
+        emit(.ended(.stopped))
         // Immediate stop for user action (stop button)
         timerInstance?.invalidate()
         timerInstance = nil
@@ -233,6 +293,7 @@ class TimerManager: ObservableObject {
         isPaused = true
         timerInstance?.invalidate()
         timerInstance = nil
+        emit(.paused)
     }
     
     func resumeTimer() {
@@ -240,33 +301,9 @@ class TimerManager: ObservableObject {
         guard isTimerActive && isPaused else { return }
         isPaused = false
         lastUpdated = Date()
-        
-        // Resume countdown timer with same logic as start timer
-        timerInstance = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            
-            Task { @MainActor in
-                if !self.isPaused {
-                    if self.remainingTime > 0 {
-                        // Normal countdown
-                        self.remainingTime -= 1
-                        self.elapsedTime = self.totalDuration - self.remainingTime
-                        self.lastUpdated = Date()
-                    } else if self.remainingTime == 0 {
-                        // Timer just finished - play sound and start overtime
-                        self.isFinished = true
-                        self.isOvertime = true
-                        self.playTimerSound()
-                        self.remainingTime = -1
-                        self.lastUpdated = Date()
-                    } else {
-                        // Overtime - count negative
-                        self.remainingTime -= 1
-                        self.lastUpdated = Date()
-                    }
-                }
-            }
-        }
+        emit(.resumed)
+
+        scheduleTicks()
     }
 
     func adoptExternalTimer(name: String, totalDuration: TimeInterval, remaining: TimeInterval, isPaused: Bool) {
@@ -275,8 +312,10 @@ class TimerManager: ObservableObject {
         timerInstance?.invalidate()
         timerInstance = nil
         soundPlayer?.stop()
+        cancelSmoothClose()
 
         activeSource = .external
+        sessionID = UUID()
 
         let clampedTotal = totalDuration > 0 ? totalDuration : max(totalDuration, remaining)
 
@@ -292,6 +331,7 @@ class TimerManager: ObservableObject {
         isFinished = false
         isOvertime = remaining < 0
         activePresetId = nil
+        sessionTint = nil
         lastUpdated = Date()
     }
 
@@ -306,6 +346,12 @@ class TimerManager: ObservableObject {
             self.totalDuration = max(totalDuration, self.totalDuration)
         } else if self.totalDuration <= 0 {
             self.totalDuration = max(self.totalDuration, remaining)
+        }
+
+        // A Clock timer restarted while its finished predecessor's close is still pending reaches
+        // this update, not `adoptExternalTimer`: the close would end the running timer at 3 s.
+        if remaining > 0 {
+            cancelSmoothClose()
         }
 
         remainingTime = remaining
@@ -330,15 +376,13 @@ class TimerManager: ObservableObject {
     func endExternalTimer(triggerSmoothClose: Bool) {
         guard activeSource == .external else { return }
 
-        if triggerSmoothClose && isTimerActive {
-            scheduleSmoothClose()
-        } else {
-            withAnimation(.smooth) {
-                isTimerActive = false
-            }
-        }
-
+        // The reset already closes with the `.smooth` animation; the smooth close is armed after it
+        // for the same reason as in `stopTimer`.
+        let closesSmoothly = triggerSmoothClose && isTimerActive
         resetTimer()
+        if closesSmoothly {
+            scheduleSmoothClose()
+        }
     }
     
     private func resetTimer() {
@@ -346,6 +390,9 @@ class TimerManager: ObservableObject {
             isTimerActive = false
         }
         timerName = "Timer"
+        sessionDefaultName = "Timer"
+        sessionID = UUID()
+        playsSoundOnFinish = true
         totalDuration = 0
         remainingTime = 0
         elapsedTime = 0
@@ -353,13 +400,49 @@ class TimerManager: ObservableObject {
         isFinished = false
         isOvertime = false
         activePresetId = nil
+        sessionTint = nil
         activeSource = .none
+    }
+
+    /// Renames the running session. Only a timer started in Kannu: a Clock-app timer's name is the
+    /// Clock app's (`SystemTimerBridge`). A cleared name goes back to the session's default.
+    /// `session` is the `sessionID` the rename began in; a later session is left alone.
+    func renameSession(to text: String, session: UUID) {
+        guard activeSource == .manual, isTimerActive,
+              let name = TimerSessionName.renamed(
+                text,
+                begunIn: session,
+                current: sessionID,
+                currentName: timerName,
+                fallback: sessionDefaultName
+              ) else { return }
+        timerName = name
+    }
+
+    /// Recolours the running session when its task's colour changes. `session` is the `sessionID`
+    /// the task was started in; a later session keeps its own colour.
+    func updateSessionTint(_ tint: Color?, session: UUID) {
+        guard session == sessionID, activeSource == .manual, isTimerActive, sessionTint != tint else { return }
+        sessionTint = tint
+    }
+
+    /// Sends `kind` for the current session. Only a timer started in Kannu has session events: a
+    /// mirrored Clock-app timer never sends one, whatever path it takes through here.
+    private func emit(_ kind: TimerSessionEvent.Kind) {
+        guard activeSource == .manual else { return }
+        sessionEvents.send(TimerSessionEvent(kind: kind, session: sessionID, at: Date()))
     }
 
     // MARK: - Derived State
     var activePreset: TimerPreset? {
         guard let presetId = activePresetId else { return nil }
         return Defaults[.timerPresets].first { $0.id == presetId }
+    }
+
+    /// The session's adaptive accent: the timed task's colour, else the preset's. Every accent site
+    /// reads this, never `activePreset?.color` (TaskColorRulesTests).
+    var sessionAccent: Color? {
+        sessionTint ?? activePreset?.color
     }
 
     var isExternalTimerActive: Bool {
@@ -380,16 +463,47 @@ class TimerManager: ObservableObject {
         case external
     }
 
+    /// Waits 3 seconds, then smoothly closes the live activity. Armed for one session: a session
+    /// started inside those 3 s cancels it (`startTimer`, `adoptExternalTimer`), and the block
+    /// re-checks the session before touching `isTimerActive`, because every start rotates
+    /// `sessionID`. A plain `asyncAfter` block used to end whichever session it found running.
+    /// A close already pending for the session is left as armed: a finished Clock timer is reported
+    /// again every second while it rings, and re-arming on each report would hold the live activity
+    /// open until the Clock timer was dismissed.
     private func scheduleSmoothClose() {
-        // Wait 3 seconds then smoothly close the live activity
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+        if smoothCloseWork != nil, smoothCloseSession == sessionID { return }
+        cancelSmoothClose()
+        let session = sessionID
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            // Only the armed item runs (a replaced one was cancelled), so the slot is this item's.
+            self.smoothCloseWork = nil
+            self.smoothCloseSession = nil
+            guard self.sessionID == session else { return }
             withAnimation(.easeInOut(duration: 1.0)) {
                 self.isTimerActive = false
             }
+            if self.activeSource == .external {
+                // A finished Clock timer: the close also ends its session, otherwise `activeSource`
+                // stays `.external` and Start and pause stay disabled until the next Clock timer. The
+                // close above already animated `isTimerActive`, so the reset's own close is a no-op.
+                self.resetTimer()
+            }
         }
+        smoothCloseWork = work
+        smoothCloseSession = session
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: work)
+    }
+
+    private func cancelSmoothClose() {
+        smoothCloseWork?.cancel()
+        smoothCloseWork = nil
+        smoothCloseSession = nil
     }
     
     private func playTimerSound() {
+        // One guard for both tick closures (start and resume) that call this.
+        guard playsSoundOnFinish else { return }
         var soundURL: URL?
         
         // Check for custom timer sound first

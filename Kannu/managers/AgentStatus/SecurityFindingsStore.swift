@@ -858,7 +858,7 @@ final class SecurityFindingsStore: ObservableObject {
     }
 
     func analysisPlan(for session: AgentSessionStatus) -> Result<AnalysisPlan, AnalysisFailure> {
-        guard Defaults[.adrDetectionEnabled] else { return .failure(AnalysisFailure(String(localized: "Session analysis is off (Settings › Security findings)."))) }
+        guard Defaults[.adrDetectionEnabled] else { return .failure(AnalysisFailure(String(localized: "Session analysis is off (Brain › Security findings)."))) }
         guard let uv = ADRConnection.shared.detection.uv else {
             return .failure(AnalysisFailure(String(localized: "ADR Detection checkout is not ready: \(ADRConnection.shared.detection.caption)")))
         }
