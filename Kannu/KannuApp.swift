@@ -40,12 +40,15 @@ struct KannuApp: App {
         MenuBarExtra("Kannu", isInserted: .constant(false)) {
             EmptyView()
         }
+        // SwiftUI builds the main menu only from commands attached to a scene. Menu key
+        // equivalents fire while Kannu is the active app, which the Brain window makes it.
+        .commands { commands }
     }
 
     @CommandsBuilder
     var commands: some Commands {
         CommandGroup(replacing: .appSettings) {
-            Button("Settings…") {
+            Button(String(localized: "Brain…")) {
                 // Settings runs the agent-hook migrations; nothing does that before the terms
                 // are accepted, so before then this brings the terms back instead.
                 guard appDelegate.launchContinued else {
@@ -54,13 +57,7 @@ struct KannuApp: App {
                 }
                 SettingsWindowController.shared.showWindow()
             }
-        }
-        CommandGroup(after: .appInfo) {
-            if SparkleUpdaterController.shared.isEnabled {
-                Button("Check for Updates…") {
-                    SparkleUpdaterController.shared.checkForUpdates(nil)
-                }
-            }
+            .keyboardShortcut(",", modifiers: .command)
         }
     }
 }
@@ -837,7 +834,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func statusItemMenu() -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(withTitle: String(localized: "Settings"),
+        menu.addItem(withTitle: String(localized: "Brain"),
                      action: #selector(statusMenuOpenSettings), keyEquivalent: "").target = self
         if SparkleUpdaterController.shared.isEnabled {
             menu.addItem(withTitle: String(localized: "Check for Updates…"),
@@ -890,6 +887,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // a freeze at the terms still leaves a note), the updater (a corrected build must still be
         // able to arrive), and the reaper, which only ever stops Kannu's own orphaned helpers.
         startLaunchInvariants()
+
+        // The task reminders' delegate, before the gate: a click on a reminder while Kannu is not
+        // running launches it, and macOS hands the response to whatever delegate is set when this
+        // method returns — set once the launch continued, it missed the click. Installing sets the
+        // delegate and its Start button only: no permission prompt, no file read, no `TasksManager`.
+        // The response waits inside `TaskReminderCenter` until the launch has continued.
+        TaskReminderCenter.shared.install()
 
         // Nothing else — no helper, no permission prompt, no hook written into ~/.claude or ~/.cursor,
         // no notch — until the current Terms of Use are accepted. UI tests skip the gate.
@@ -972,7 +976,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         _ = CaffeinateManager.shared
         extensionXPCServiceHost.start()
         extensionRPCServer.start()
-        
+
         // Migrate legacy progress bar settings
         Defaults.Keys.migrateProgressBarStyle()
         Defaults.Keys.migrateMusicAuxControls()
@@ -1381,6 +1385,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             shelfURLsAwaitingAcceptance.removeAll()
             _ = handleIncomingShelfURLs(waiting)
         }
+
+        // Last of all: a task reminder clicked while Kannu was launching, or while the terms were
+        // up, is answered now that the Settings window and `TasksManager` may be built.
+        TaskReminderCenter.shared.launchDidContinue()
     }
 
     private func installTopMenuItemsIfNeeded() {

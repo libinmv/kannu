@@ -39,6 +39,7 @@ struct MinimalisticMusicPlayerView: View {
     @State private var hudDragging: Bool = false
     @State private var hudLastDragged: Date = .distantPast
     @Default(.enableLyrics) private var enableLyrics
+    /// Not read here: observed so an edited preset colour redraws `sessionAccent`.
     @Default(.timerPresets) private var timerPresets
     private let lyricsButtonReservedWidth: CGFloat = 34
     private let seekInterval: TimeInterval = 10
@@ -250,13 +251,7 @@ struct MinimalisticMusicPlayerView: View {
     }
 
     private var timerCountdownColor: Color {
-        let baseColor: Color
-        if let presetId = timerManager.activePresetId,
-           let preset = timerPresets.first(where: { $0.id == presetId }) {
-            baseColor = preset.color
-        } else {
-            baseColor = timerManager.timerColor
-        }
+        let baseColor = timerManager.sessionAccent ?? timerManager.timerColor
         return baseColor.ensureMinimumBrightness(factor: 0.75)
     }
 
