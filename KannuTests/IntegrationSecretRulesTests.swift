@@ -41,7 +41,9 @@ final class IntegrationSecretRulesTests: XCTestCase {
     private static let repoRoot = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()   // KannuTests/
         .deletingLastPathComponent()   // repo root
-    private static let settingsPath = "Kannu/components/Settings/TasksSettings.swift"
+    /// Brain › Tasks: the overview and every page below it, and the Connect sheets.
+    private static let settingsPaths = ["TasksSettings", "TaskSourcePages", "TaskConnectSheets", "TaskRowList",
+                                        "AllTasksPage", "TaskDetailPage"].map { "Kannu/components/Settings/\($0).swift" }
     private static let tasksDirectory = "Kannu/managers/Tasks"
 
     static let keychainAPIs = ["SecureSecretsStore", "KeychainReader", "SecItem", "JiraCredentialStore", "GitLabCredentialStore"]
@@ -59,14 +61,21 @@ final class IntegrationSecretRulesTests: XCTestCase {
         for name in try FileManager.default.contentsOfDirectory(atPath: folder.path) where name.hasSuffix(".swift") {
             sources[name] = try read("\(tasksDirectory)/\(name)")
         }
-        sources["TasksSettings.swift"] = try read(settingsPath)
+        for path in settingsPaths {
+            sources[String(path.split(separator: "/").last ?? "")] = try read(path)
+        }
         return sources
+    }
+
+    /// Every Brain › Tasks file, one after another.
+    private static func tasksPages() throws -> String {
+        try settingsPaths.map(read).joined(separator: "\n")
     }
 
     // MARK: - The rules, on the real sources
 
     func testTheTasksPageNeverTouchesTheKeychain() throws {
-        let page = try Self.read(Self.settingsPath)
+        let page = try Self.tasksPages()
         XCTAssertTrue(page.contains(".onAppear"), "the page no longer syncs on appear: the lifecycle scan is vacuous")
         XCTAssertEqual(Self.keychainUses(in: Self.lifecycleBlocks(in: page).joined(separator: "\n")), [])
         XCTAssertEqual(Self.keychainUses(in: page), [])
@@ -119,7 +128,7 @@ final class IntegrationSecretRulesTests: XCTestCase {
     }
 
     func testEachSourceRowSyncsOnAppear() throws {
-        let page = try Self.read(Self.settingsPath)
+        let page = try Self.read(Self.settingsPaths[0])
         let lifecycle = Self.lifecycleBlocks(in: page).joined(separator: "\n")
         for function in Self.onAppearSyncs {
             XCTAssertTrue(lifecycle.contains("\(function)()"), "\(function) is not called from a lifecycle block")

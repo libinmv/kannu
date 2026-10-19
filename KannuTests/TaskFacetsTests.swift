@@ -43,6 +43,58 @@ final class TaskFacetsTests: XCTestCase {
         return TaskItem(title: title, segments: segments, tags: tags)
     }
 
+    // MARK: - Brain › Tasks' tree: sources, projects, Find
+
+    func testEachSourceCountsItsTasks() {
+        let tasks = [jira("PROJ-1"), jira("PROJ-2"), gitlab("group/app#3"), local("Write")]
+        XCTAssertEqual(Facets.sourceCounts(tasks), [.jira: 2, .gitlab: 1, .local: 1])
+        XCTAssertEqual(Facets.sourceCounts([]), [:])
+        XCTAssertEqual(TaskSourceFilter(.local), .local)
+        XCTAssertEqual(TaskSourceFilter(.jira), .jira)
+        XCTAssertEqual(TaskSourceFilter(.gitlab), .gitlab)
+    }
+
+    func testProjectsReadByTheirLastNameAndNoProjectComesLast() {
+        let tasks = [gitlab("b/app#1"), gitlab("a/app#2"), gitlab("a/app#3"), gitlab("group/Zeta#4"),
+                     gitlab("#5", projectID: nil), gitlab("group/beta!6", kind: .mergeRequest)]
+        XCTAssertEqual(Facets.projectCounts(in: tasks), [
+            .init(key: "a/app", count: 2), .init(key: "b/app", count: 1), .init(key: "group/beta", count: 1),
+            .init(key: "group/Zeta", count: 1), .init(key: Facets.noProject, count: 1),
+        ], "by short name ignoring case, then by full key; no project last")
+        XCTAssertEqual(Facets.projectShortName("discern_security/applications/ds-vendors"), "ds-vendors")
+        XCTAssertEqual(Facets.projectShortName("PROJ"), "PROJ")
+        XCTAssertEqual(Facets.projectShortName("#project:9"), String(localized: "Project \(9)"))
+        XCTAssertEqual(Facets.projectShortName(Facets.noProject), String(localized: "No project"))
+        XCTAssertEqual(Facets.projectGroup("discern_security/applications/ds-vendors"), "discern_security/applications")
+        XCTAssertNil(Facets.projectGroup("PROJ"))
+        XCTAssertNil(Facets.projectGroup("#project:9"))
+        XCTAssertNil(Facets.projectGroup(Facets.noProject))
+    }
+
+    func testAProjectPageListsOnlyItsProject() {
+        let tasks = [gitlab("a/app#1"), gitlab("b/app#2"), gitlab("#3", projectID: nil)]
+        let page = TaskFilter(source: .gitlab, project: "a/app")
+        XCTAssertEqual(tasks.filter { Facets.matches($0, filter: page) }.map(\.title), ["a/app#1"])
+        let none = TaskFilter(source: .gitlab, project: Facets.noProject)
+        XCTAssertEqual(tasks.filter { Facets.matches($0, filter: none) }.map(\.title), ["#3"])
+    }
+
+    func testFindNarrowsLikeAFilterButSpacesHideNothing() {
+        var filter = TaskFilter.all
+        filter.query = "   "
+        XCTAssertFalse(filter.isNarrowing, "spaces alone hide nothing")
+        filter.query = "proj-2"
+        XCTAssertTrue(filter.isNarrowing)
+        let tasks = [jira("PROJ-1"), jira("PROJ-2", tags: ["docs"]), local("Write the docs")]
+        XCTAssertEqual(tasks.filter { Facets.matches($0, filter: filter) }.map(\.title), ["PROJ-2"])
+        filter.query = "docs"
+        XCTAssertEqual(tasks.filter { Facets.matches($0, filter: filter) }.map(\.title), ["PROJ-2", "Write the docs"],
+                       "a tag or a title")
+        filter.source = .local
+        XCTAssertEqual(tasks.filter { Facets.matches($0, filter: filter) }.map(\.title), ["Write the docs"],
+                       "with the other filters, not instead of them")
+    }
+
     // MARK: - Project
 
     func testTheProjectComesFromTheKey() {

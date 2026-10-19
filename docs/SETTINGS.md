@@ -107,17 +107,29 @@ section describes it, it does not define it.
   Rows inside it carry no highlight ids; their search entries point at the disclosure's own id,
   so search always lands on something visible (the ADR scans section is the model).
 - A sub-page is an in-tab view swap (Brain has no navigation stack): a row with an Open button
-  swaps the tab's content, and the sub-page starts with a "‹ Back" row. The same rule applies:
-  its rows carry no highlight ids, their search entries land on the row that opens it, and a
-  search or deep link into the tab closes the sub-page (Tasks › Task list is the model).
+  ("40 open ›") swaps the tab's content, and the sub-page starts with a back row. The same rule
+  applies: its rows carry no highlight ids, their search entries land on the row that opens it,
+  and a search or deep link into the tab returns to the tab's first page (Brain › Tasks is the
+  model).
+  - Sub-pages may nest, as a tree: the tab keeps a path of pages, opening one appends it, and the
+    back row goes up one level and names where it goes ("‹ GitLab", "‹ Tasks"). A page opens at its
+    top; going back scrolls to the row that opened it. Search entries for any page below the first
+    land on the first page's row that leads there (Brain › Tasks: a source's settings land on the
+    source's row).
   - The back row is a lone leading borderless `Button` with a chevron `Label`, alone in its own
     `Section` — the one sanctioned lone left-hanging button, because it is navigation, not an
     action on a row. Nothing else takes this shape.
-  - A caller that means the sub-page itself (a notch "Show all" link, a notification click) uses
-    a deep link of its own, registered on the back row (`SettingsDeepLink.tasksListOpenID`); the
-    tab opens the sub-page for that id alone. Search entries keep pointing at the opening row.
-  - The Task list's filters are view-only: they narrow that page and nothing else, and while they
-    hide anything the list opens with a "Filtered" row ("3 of 12 tasks") whose Show All clears them.
+  - A caller that means a sub-page itself (a notch "Show all" link, a notification click) uses
+    a deep link of its own, registered on that page's back row (`SettingsDeepLink.tasksListOpenID`
+    opens All tasks); the tab opens the page for that id alone. Search entries keep pointing at the
+    opening row.
+  - All tasks' filters are view-only: they narrow that page and nothing else, and while they or its
+    Find field hide anything the list opens with a "Filtered" row ("3 of 12 tasks") whose Show All
+    clears them.
+- A long list of similar rows (tasks) keeps each row to its title, one short caption and at most
+  two trailing controls: the row's main action (▶) and a › to the item's own page, where everything
+  about it lives. Its other actions go in a `.contextMenu` that opens with "Show Details" — never a
+  ⋯ menu on every row — and moves the menu offered are also accessibility actions.
 - Every row with a `settingsSearchIndex` entry carries a `.settingsHighlight(id:)` whose id
   matches the entry exactly (`SettingsHighlightInventoryTests` pins the pairing and the counts;
   the counts move only as a deliberate edit).

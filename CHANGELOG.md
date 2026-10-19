@@ -4,6 +4,36 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-18 - Brain › Tasks is a tree: Source › Project › Task, with All tasks beside it
+- **Developer label:** "this task list page is a mess, how would you clean it up, follow a different design and inward pages and tree but should be clean to manage tasks from different places"
+- **Agent label:** Claude Code (Opus 5.5) — Brain › Tasks rebuilt as nested pages with one shared row design, split out of one 1,727-line file
+- **Changes:**
+  - The overview lists the sources (Local tasks, Jira Cloud, GitLab), each with "N open ›", then All tasks, Time to log, Interrupted sessions and the Tasks options. A source not connected offers Connect…, and its page too while it still holds kept tasks. A source with a problem reads "Needs attention" there, and shows the problem in full on its page.
+  - A source's page holds its connection rows: Connect or Disconnect, problems, Keychain access, Sync, colour, Refresh, and Jira's issue filter or GitLab's merge requests. These used to sit on the overview. Then come its projects, one row each ("ds-vendors", group path below, "40 open ›"), or its tasks directly when there is one project or none. Local tasks has its colour, Add a task and its tasks.
+  - A project's page lists its tasks; their captions drop the project the page already names ("#4326").
+  - A task's page is new. It shows the title with its short key and status and ▶/■; labels; tags as chips that remove themselves, with Add Tags; time and overtime, with Set Estimate and Add Time; the same facts as the notch card; a local task's reminder; Open in Jira or GitLab and an "Ask to log its time" switch; then Mark Done, Archive or Delete, or Reopen and Restore once closed or archived. Deleting the task leaves its page.
+  - All tasks replaces the Task list. A Find row holds a search field (never saved) and one Filter menu with the Source, Project, Status and Tag filters and Show All; its icon fills while filtering. "Filtered · 3 of 12 tasks" and Show All now cover Find too. Recently closed, the Archive and Tag colours fold up at the end.
+  - Every list shares one row: colour dot, title (two lines at most), one short caption (`TaskRowCaption`), ▶/■ and ›. The ⋯ menu on every row became a right-click menu that opens with Show Details and keeps every item. Move Up and Move Down are also accessibility actions. Drag to reorder is unchanged, and closed and archived rows lead with the short key.
+  - Navigation is a path of pages. Each page opens at its top; the back row goes up one level and names where it goes ("‹ GitLab"); going back scrolls to the row that opened the page. A search or deep link returns to the overview, scrolled to its row, except All tasks' own link ("Show all in Brain", a reminder's click).
+  - Search entries for a source page's rows now land on that source's row on the overview. Two new deep links, `tasksLocalSourceHighlightID` and `tasksGitLabSourceHighlightID`, name those rows. Two new entries, "Local tasks" and "Find a task", were added. The dead `landingOnABuiltRow` redirect is gone, since those rows no longer depend on a connection.
+  - `TasksSettings.swift` was split into flat files beside it: `TaskSourcePages`, `TaskConnectSheets`, `TaskRowList`, `AllTasksPage` and `TaskDetailPage`.
+  - docs/SETTINGS.md: sub-pages may nest as a tree; the back row names its parent; long lists keep their overflow in a right-click menu with a › to the item's page.
+  - Tests:
+    - `TaskListRulesTests` pins the shared rows, the right-click menu and the page path.
+    - `SettingsHighlightInventoryTests` pins that rows below the overview register nothing and that each page's entries land on the row that opens it. Counts are now 235 entries, 266 registrations and 260 ids.
+    - `TaskColorRulesTests`, `IntegrationSecretRulesTests` (the Keychain scan covers all six files) and `SettingsLayoutRulesTests` point at the new files.
+
+### 2026-10-18 - The pieces for a Brain › Tasks tree: counts per source and project, Find, and a short row caption
+- **Developer label:** "this task list page is a mess, how would you clean it up, follow a different design and inward pages and tree but should be clean to manage tasks from different places"
+- **Agent label:** Claude Code (Opus 5.5) — pure helpers for the Source › Project › Task tree, tested before any view uses them
+- **Changes:**
+  - `TaskFacets.sourceCounts` and `TaskFacets.projectCounts(in:)` give each source and each project its number of tasks; projects sort by their short name, then by full key, with "No project" last.
+  - `TaskFacets.projectShortName` ("ds-vendors" for "discern_security/applications/ds-vendors") and `projectGroup` (the group path that tells two "app" projects apart). `TaskDetailSummary.shortKey` now uses the short name and can drop the project ("#4326") where a page already names it.
+  - `TaskSourceFilter(_:)` turns a source into its filter.
+  - `TaskFilter.query` holds what All tasks' Find field will hold. It is matched with `TaskSearch` alongside the four filters and is never saved; spaces alone hide nothing.
+  - `TaskRowCaption` is the one line under a task's title: the short key, the status unless it is GitLab's "Open", timing now or paused, time against the estimate and any overtime (orange), when it is due (orange once overdue), and the tags. With nothing tracked and no estimate it says nothing about time, instead of "No estimate" on every new task.
+  - Tests: `TaskRowCaptionTests` (new), and four `TaskFacetsTests` for counts, short names, project pages and Find.
+
 ### 2026-10-18 - The notch's estimate is typed, in minutes, hours or days, with the presets one click away
 - **Developer label:** "in notch ability to add estimate is drop down, change it to allow hours days and minutes, or something with more flexibility without breaking our design"
 - **Agent label:** Claude Code (Opus 5.5) — typed estimate field in the timer tab's task form; a day unit for typed lengths

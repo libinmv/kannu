@@ -40,7 +40,8 @@ final class TaskColorRulesTests: XCTestCase {
         .deletingLastPathComponent()   // repo root
     static let popoverPath = "Kannu/components/Notch/TasksPopover.swift"
     static let sideColumnPath = "Kannu/components/Notch/TimerSideColumn.swift"
-    static let settingsPath = "Kannu/components/Settings/TasksSettings.swift"
+    /// Brain's task rows, which every list in Brain › Tasks shares.
+    static let settingsPath = "Kannu/components/Settings/TaskRowList.swift"
     static let viewsPath = "Kannu/components/Tasks/TaskColorViews.swift"
     static let tagsSheetPath = "Kannu/components/Settings/TaskTagsSheet.swift"
 

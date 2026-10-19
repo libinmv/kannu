@@ -71,9 +71,13 @@ final class SettingsHighlightInventoryTests: XCTestCase {
         // lands on the "Task list" row (four entries in all).
         // 2026-10-17: the archive. "Done and hidden tasks" became "Recently closed tasks", and a
         // new "Archived tasks" entry lands on the same visible "Task list" row (one more entry).
-        XCTAssertEqual(inventory.entries.count, 233, "search entries")
-        XCTAssertEqual(inventory.registrations.values.reduce(0, +), 274, "row registrations")
-        XCTAssertEqual(inventory.registrations.count, 268, "distinct registered ids")
+        // 2026-10-18: Brain › Tasks became a tree. The nine connection and colour rows moved onto
+        // their source's page and gave up their ids (nine fewer of each); the overview's new
+        // "Local tasks" row registers one; "Task list" became "All tasks"; two new entries, "Local
+        // tasks" and "Find a task", land on overview rows.
+        XCTAssertEqual(inventory.entries.count, 235, "search entries")
+        XCTAssertEqual(inventory.registrations.values.reduce(0, +), 266, "row registrations")
+        XCTAssertEqual(inventory.registrations.count, 260, "distinct registered ids")
     }
 
     func testOnlyTheKnownRowsTakeTheirIdBuilderFromAParent() throws {
@@ -138,26 +142,36 @@ final class SettingsHighlightInventoryTests: XCTestCase {
         XCTAssertEqual(withoutRow, [])
     }
 
-    func testRowsBuiltOnlyWhileConnectedAreRedirectedUntilThen() throws {
-        // Jira's and GitLab's rows past Connect exist only while that source is connected, so search
-        // lands their entries on the source's own row until then (`landingOnABuiltRow`). Each list
-        // must name exactly the rows `TaskSourcesSection` builds inside its connected block, or a
-        // new row would scroll to nothing again (CodeRabbit on #90: Jira colour, GitLab colour).
+    /// Brain › Tasks' pages below the overview exist only while open, so nothing on them may carry
+    /// a highlight id: a search landing there would scroll to nothing (docs/SETTINGS.md). All tasks'
+    /// own deep link is on its back row, which the overview's file builds.
+    func testTheRowsBelowTheTasksOverviewRegisterNothing() throws {
         let sources = try Self.sources()
-        let settingsView = try XCTUnwrap(sources["SettingsView.swift"])
-        let tasks = try XCTUnwrap(sources["TasksSettings.swift"])
-        for (list, opening, indent) in [("jiraRowsWhileConnected", "if isConnected {", "            "),
-                                        ("gitLabRowsWhileConnected", "if isGitLabConnected {", "        ")] {
-            let listed = try XCTUnwrap(Self.matches(#"static let \#(list) = \[([^\]]*)\]"#, in: settingsView).first, list)[1]
-            let titles = Set(Self.matches(#""([^"]+)""#, in: listed).map { $0[1] })
-            let start = try XCTUnwrap(tasks.range(of: "\n\(indent)\(opening)\n"), opening)
-            let end = try XCTUnwrap(tasks.range(of: "\n\(indent)}\n", range: start.upperBound..<tasks.endIndex), opening)
-            let block = String(tasks[start.upperBound..<end.lowerBound])
-            let built = Set(Self.matches(#"settingsHighlight\(id: highlightID\("([^"]+)"\)\)"#, in: block).map { $0[1] })
-            XCTAssertFalse(built.isEmpty, "no rows found inside `\(opening)`")
-            XCTAssertEqual(titles, built, "\(list) must name the rows built inside `\(opening)`")
+        for name in ["TaskSourcePages.swift", "TaskRowList.swift", "AllTasksPage.swift", "TaskDetailPage.swift"] {
+            let page = try XCTUnwrap(sources[name], name)
+            XCTAssertFalse(page.contains("settingsHighlight("), "\(name) registers a highlight id on a row search cannot reach")
+            XCTAssertFalse(page.contains("highlightID("), "\(name) names a highlight id")
         }
-        XCTAssertTrue(settingsView.contains(".map(landingOnABuiltRow)"), "search no longer redirects them")
+    }
+
+    /// A source page's rows land on that source's row on the overview, which opens the page; the
+    /// overview's All tasks row takes the entries for All tasks and a task's page.
+    func testTasksPageEntriesLandOnTheRowThatOpensThem() throws {
+        let inventory = try Self.inventory()
+        let landing = Dictionary(inventory.entries.filter { $0.tab == "tasks" }.map { ($0.title, $0.highlight) },
+                                 uniquingKeysWith: { first, _ in first })
+        let rows: [String: [String]] = [
+            "tasksLocalSourceHighlightID": ["Local tasks", "Local tasks colour"],
+            "tasksSourcesHighlightID": ["Jira Cloud", "Sync Jira", "Jira colour", "Refresh Jira issues", "Issue filter (JQL)"],
+            "tasksGitLabSourceHighlightID": ["GitLab", "Sync GitLab", "GitLab colour", "Include merge requests", "Refresh GitLab items"],
+            "tasksListHighlightID": ["All tasks", "Find a task", "Add a task", "Task order", "Tag colours", "Archived tasks"],
+        ]
+        for (link, titles) in rows {
+            let id = try XCTUnwrap(inventory.deepLinks[link], link)
+            for title in titles {
+                XCTAssertEqual(landing[title] ?? nil, id, "\"\(title)\" must land on the row \(link) names")
+            }
+        }
     }
 
     // MARK: - Parsing

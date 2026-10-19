@@ -248,7 +248,8 @@ struct TaskDetailSummary: Equatable {
     /// "PROJ-123" as Jira writes it; for GitLab, the project's last path component and the number,
     /// "ds-vendors #4264" / "ds-vendors !12" — the full `group/sub/project#4264` key is what used to
     /// eat the card. A project known only by its id reads "Project 42 #7". Nil for a local task.
-    static func shortKey(for task: TaskItem) -> String? {
+    /// `withProject: false` drops the GitLab project, "#4264", where the page already names it.
+    static func shortKey(for task: TaskItem, withProject: Bool = true) -> String? {
         guard let remote = task.remote else { return nil }
         switch task.source {
         case .local:
@@ -258,11 +259,8 @@ struct TaskDetailSummary: Equatable {
         case .gitlab:
             guard let iid = remote.gitlabIID else { return remote.key }
             let mark = remote.gitlabKind == .mergeRequest ? "!" : "#"
-            guard let project = TaskFacets.project(for: task) else { return mark + String(iid) }
-            let name = project.hasPrefix(TaskFacets.projectIDPrefix)
-                ? TaskFacets.projectName(project)
-                : String(project.split(separator: "/").last ?? Substring(project))
-            return "\(name) \(mark)\(iid)"
+            guard withProject, let project = TaskFacets.project(for: task) else { return mark + String(iid) }
+            return "\(TaskFacets.projectShortName(project)) \(mark)\(iid)"
         }
     }
 
@@ -303,4 +301,64 @@ struct TaskDetailSummary: Equatable {
             .day()
             .month(.abbreviated)
     }
+}
+
+/// The one line under a task's title in Brain's task lists, as segments the view joins with " · "
+/// and colours (an alert reads orange). Kept short so a row stays two lines: the short key ("#4326"
+/// alone on its project's page), the source's status unless it says nothing (GitLab's "Open"),
+/// timing now or paused, time against the estimate and any overtime, when it is due, and the tags.
+/// What the source has logged, and every other fact, is on the task's own page.
+struct TaskRowCaption: Equatable {
+    struct Segment: Equatable {
+        let text: String
+        var isAlert = false
+    }
+
+    enum Timing: Equatable {
+        case running
+        case paused
+    }
+
+    let segments: [Segment]
+
+    init(task: TaskItem, tracked: Int, timing: Timing?, now: Date, onProjectPage: Bool = false,
+         calendar: Calendar = .current) {
+        var segments: [Segment] = []
+        if let key = TaskDetailSummary.shortKey(for: task, withProject: !onProjectPage) {
+            segments.append(Segment(text: key))
+        }
+        // GitLab's "opened" is every open issue's state: it tells one row from another nothing.
+        let saysNothing = task.source == .gitlab && task.remote?.status == "opened"
+        if !saysNothing, let status = TaskFacets.statusName(for: task) {
+            segments.append(Segment(text: status))
+        }
+        switch timing {
+        case .running: segments.append(Segment(text: String(localized: "Timing now")))
+        case .paused: segments.append(Segment(text: String(localized: "Paused")))
+        case nil: break
+        }
+        // Nothing tracked and no estimate: "No estimate" on every new task was only noise.
+        let estimate = task.effectiveEstimateSeconds
+        if tracked >= 60 || estimate != nil {
+            let progress = TaskTimeMath.progress(tracked: tracked, estimate: estimate)
+            segments.append(Segment(text: progress.text))
+            if let over = progress.over {
+                segments.append(Segment(text: String(localized: "\(WorkDuration.format(over)) over"), isAlert: true))
+            }
+        }
+        if task.source == .local, let scheduled = task.scheduledAt {
+            let when = TaskReminderPlan.when(scheduled, now: now, calendar: calendar)
+            segments.append(Segment(text: TaskDetailSummary.dueText(scheduled, when: when), isAlert: when == .overdue))
+        } else if let due = task.remote?.dueDate {
+            let day = TaskDetailSummary.dueDayText(due, now: now, calendar: calendar)
+            segments.append(Segment(text: day.text, isAlert: day.isOverdue))
+        }
+        if !task.tags.isEmpty {
+            segments.append(Segment(text: task.tags.map { "#\($0)" }.joined(separator: " ")))
+        }
+        self.segments = segments
+    }
+
+    /// The caption as one string, for VoiceOver and tests.
+    var text: String { segments.map(\.text).joined(separator: " · ") }
 }

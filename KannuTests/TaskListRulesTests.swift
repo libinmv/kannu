@@ -18,29 +18,35 @@
 
 import XCTest
 
-/// Brain › Tasks › Task list, pinned in the source the way `LaunchGateRulesTests` pins the launch:
+/// Brain › Tasks' lists, pinned in the source the way `LaunchGateRulesTests` pins the launch:
 ///
 /// - Rows reorder by real drag and drop. `ForEach.onMove` never drags inside a grouped `Form` on
 ///   macOS (the user's "there should be drag and drop"), so each row is `draggable` and a
 ///   `dropDestination`, and the drop goes through `TasksManager.move(_:onto:filter:)`, which honours
-///   the filters. ⋯ › Move to Top / Up / Down stay.
+///   the filters. Right-click › Move to Top / Up / Down stay.
 /// - Task reminders ask macOS for notifications only from the user's first schedule, never at
 ///   launch, and Kannu never starts a timer on its own.
-/// - The filters are the Task list's own and say so: while they narrow, the list opens with a
-///   "Filtered" row whose Show All resets all four; the overview counts every task.
-/// - The task ⋯ menu's items act in place or open a small sheet, so none ends in "…".
+/// - All tasks' filters are its own and say so: while they or Find narrow, the list opens with a
+///   "Filtered" row whose Show All resets all of them; the overview counts every task.
+/// - The task menu's items act in place or open a small sheet, so none ends in "…".
+/// - Brain › Tasks is a tree (David: "inward pages and tree"): a path of pages, one level per
+///   back row, and search or a deep link returning to the overview.
 final class TaskListRulesTests: XCTestCase {
     private static let repoRoot = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
         .deletingLastPathComponent()
+    /// The overview, the tree, the sheets.
     private static let settingsPath = "Kannu/components/Settings/TasksSettings.swift"
+    /// The task rows every list shares.
+    private static let rowsPath = "Kannu/components/Settings/TaskRowList.swift"
+    private static let allTasksPath = "Kannu/components/Settings/AllTasksPage.swift"
     private static let managerPath = "Kannu/managers/Tasks/TasksManager.swift"
     private static let remindersPath = "Kannu/managers/Tasks/TaskReminders.swift"
 
     // MARK: - Drag and drop
 
     func testRowsDragAndDropInsteadOfOnMove() throws {
-        XCTAssertEqual(Self.dragProblems(in: try Self.read(Self.settingsPath)), [])
+        XCTAssertEqual(Self.dragProblems(in: try Self.read(Self.rowsPath)), [])
     }
 
     func testTheDragScannerCatchesPlantedOffenders() {
@@ -76,7 +82,7 @@ final class TaskListRulesTests: XCTestCase {
     // MARK: - The view filter says so
 
     func testANarrowedListSaysFilteredAndShowAllResetsEveryFilter() throws {
-        XCTAssertEqual(Self.filteredRowProblems(in: try Self.read(Self.settingsPath)), [])
+        XCTAssertEqual(Self.filteredRowProblems(in: try Self.read(Self.allTasksPath), overview: try Self.read(Self.settingsPath)), [])
     }
 
     func testTheFilteredRowScannerCatchesPlantedOffenders() {
@@ -93,31 +99,64 @@ final class TaskListRulesTests: XCTestCase {
                         Button("Show All", action: showAll)
                     }
                 }
-                ForEach(rows) { task in }
+                TaskRowList(filter: filter, context: context)
             }
-            let counts = TaskFacets.counts(manager.activeTasks)
             """)
-        XCTAssertEqual(Self.filteredRowProblems(in: good), [])
-        XCTAssertEqual(Self.filteredRowProblems(in: good.replacingOccurrences(of: "tagFilter = TaskFacets.anyTag", with: "")),
+        let overview = "let counts = TaskFacets.counts(manager.activeTasks)\n"
+        XCTAssertEqual(Self.filteredRowProblems(in: good, overview: overview), [])
+        XCTAssertEqual(Self.filteredRowProblems(in: good.replacingOccurrences(of: "tagFilter = TaskFacets.anyTag", with: ""), overview: overview),
                        ["Show All leaves tagFilter = TaskFacets.anyTag out"])
-        XCTAssertEqual(Self.filteredRowProblems(in: good.replacingOccurrences(of: "if filter.isNarrowing {", with: "if true {")),
+        XCTAssertEqual(Self.filteredRowProblems(in: good.replacingOccurrences(of: "if filter.isNarrowing {", with: "if true {"), overview: overview),
                        ["the Filtered row does not show only while the filters narrow"])
-        XCTAssertEqual(Self.filteredRowProblems(in: good.replacingOccurrences(of: "Button(\"Show All\", action: showAll)", with: "")),
+        XCTAssertEqual(Self.filteredRowProblems(in: good.replacingOccurrences(of: "Button(\"Show All\", action: showAll)", with: ""), overview: overview),
                        ["the Filtered row has no Show All"])
-        let last = good.replacingOccurrences(of: "ForEach(rows) { task in }", with: "")
-            .replacingOccurrences(of: "private var tasksSection: some View {", with: "private var tasksSection: some View {\nForEach(rows) { task in }")
-        XCTAssertEqual(Self.filteredRowProblems(in: last), ["the Filtered row is not above the rows"])
-        XCTAssertEqual(Self.filteredRowProblems(in: good.replacingOccurrences(of: "TaskFacets.counts(manager.activeTasks)", with: "TaskFacets.counts(rows)")),
-                       ["the Task list row does not count every task"])
+        let last = good.replacingOccurrences(of: "TaskRowList(filter: filter, context: context)", with: "")
+            .replacingOccurrences(of: "private var tasksSection: some View {", with: "private var tasksSection: some View {\nTaskRowList(filter: filter, context: context)")
+        XCTAssertEqual(Self.filteredRowProblems(in: last, overview: overview), ["the Filtered row is not above the rows"])
+        XCTAssertEqual(Self.filteredRowProblems(in: good, overview: "let counts = TaskFacets.counts(rows)\n"),
+                       ["the All tasks row does not count every task"])
     }
 
     func testTheTaskMenuItemsCarryNoEllipsis() throws {
-        let titles = Self.menuTitles(in: try Self.read(Self.settingsPath))
+        let titles = Self.menuTitles(in: try Self.read(Self.rowsPath))
         XCTAssertGreaterThan(titles.count, 8, "the scan found almost no menu items — check the marker, not the rule")
         for title in ["Set Estimate", "Add Time", "Add Tags", "Schedule", "Delete"] {
             XCTAssertTrue(titles.contains(title), "\(title) is not in the task ⋯ menu")
         }
         XCTAssertEqual(titles.filter { $0.contains("…") }, [])
+    }
+
+    /// David: the rows were "a mess" of ⋯ menus. A row's overflow is its right-click menu, opening
+    /// with Show Details; the › opens the task's page; Move Up and Move Down stay reachable from
+    /// the keyboard and VoiceOver as accessibility actions.
+    func testARowsMoreIsItsRightClickMenu() throws {
+        let rows = try Self.read(Self.rowsPath)
+        XCTAssertFalse(rows.contains("SettingsMoreMenu"), "a task row grew a ⋯ menu again")
+        let menu = try XCTUnwrap(Self.block(after: ".contextMenu", in: rows), "the rows have no right-click menu")
+        XCTAssertTrue(menu.hasPrefix("{\n            Button(\"Show Details\") { context.open(.task(task.id)) }"),
+                      "Show Details is not first: \(menu.prefix(120))")
+        XCTAssertTrue(menu.contains("moreItems(for: task"), "the right-click menu lost the task's items")
+        XCTAssertTrue(rows.contains(".accessibilityAction(named: Text(\"Move Up\")) { manager.moveUp(task.id, filter: filter) }"))
+        XCTAssertTrue(rows.contains(".accessibilityAction(named: Text(\"Move Down\")) { manager.moveDown(task.id, filter: filter) }"))
+        XCTAssertTrue(rows.contains("TaskRowCaption(task: task"), "the rows no longer use the one short caption")
+    }
+
+    /// The tree is a path of pages: opening appends, the back row removes one level and names its
+    /// parent, a page opens at its top and going back scrolls to the row it came from, and a task
+    /// deleted from its page leaves it.
+    func testBrainTasksIsAPathOfPages() throws {
+        let settings = try Self.read(Self.settingsPath)
+        XCTAssertTrue(settings.contains("open: { path.append($0) }"), "opening a page does not go one level in")
+        XCTAssertTrue(settings.contains("TasksBackRow(parent: parent) { returnTo = Self.scrollTarget(of: path.removeLast()) }"),
+                      "the back row does not go up one level, or forgets the row it came from")
+        XCTAssertTrue(settings.contains("let parent = path.dropLast().last.map(Self.title) ?? Self.overviewTitle"),
+                      "the back row does not name the page it goes back to")
+        XCTAssertTrue(settings.contains(".id(path)"), "a page no longer opens at its top")
+        XCTAssertTrue(settings.contains("proxy.scrollTo(target, anchor: .center)"), "going back loses the row it came from")
+        XCTAssertTrue(settings.contains("if path != wasOpen { returnTo = id }"), "a search from a page lands on a rebuilt page unscrolled")
+        XCTAssertTrue(settings.contains("path.removeAll { $0 == .task(task.id) }"), "a deleted task's page stays open")
+        XCTAssertTrue(settings.contains("row.settingsHighlight(id: SettingsDeepLink.tasksListOpenID)"),
+                      "All tasks' back row no longer carries its deep link")
     }
 
     func testTheMenuTitleScannerCatchesPlantedOffenders() {
@@ -227,8 +266,8 @@ final class TaskListRulesTests: XCTestCase {
         XCTAssertTrue(settings.contains("if !isOn { TaskReminders.withdrawAll() }"), "turning tasks off leaves reminders waiting")
         XCTAssertTrue(menu.contains("case .taskList: return SettingsDeepLink.tasksListOpenID"),
                       "Show all in Brain lands on the row, not the Task list")
-        XCTAssertTrue(settings.contains("showsTaskList = id == SettingsDeepLink.tasksListOpenID"),
-                      "the Task list's deep link does not open it")
+        XCTAssertTrue(settings.contains("path = id == SettingsDeepLink.tasksListOpenID ? [.allTasks] : []"),
+                      "All tasks' deep link does not open it, or another link does not return to the overview")
         XCTAssertTrue(reminders.contains("otherwise: { TasksBrainDestination.taskList.open() },"),
                       "a Start that cannot start is a silent no-op")
         let failed = try XCTUnwrap(manager.range(of: "loadState = .failed(reason)"))
@@ -316,8 +355,8 @@ final class TaskListRulesTests: XCTestCase {
     }
 
     /// The Filtered row: inside `if filter.isNarrowing {`, above the rows, with a Show All whose
-    /// `showAll()` resets all four filters; and the Tasks page's Task list row counts every task.
-    static func filteredRowProblems(in source: String) -> [String] {
+    /// `showAll()` resets all four filters; and the overview's All tasks row counts every task.
+    static func filteredRowProblems(in source: String, overview: String) -> [String] {
         var problems: [String] = []
         let resets = ["sourceFilter = .all", "projectFilter = TaskFacets.anyProject",
                       "statusFilter = .toDoAndInProgress", "tagFilter = TaskFacets.anyTag"]
@@ -332,13 +371,13 @@ final class TaskListRulesTests: XCTestCase {
         if !(block(after: marker, in: source)?.contains("Button(\"Show All\", action: showAll)") ?? false) {
             problems.append("the Filtered row has no Show All")
         }
-        if let row = source.range(of: marker), let rows = source.range(of: "ForEach(rows)"), row.lowerBound < rows.lowerBound {
+        if let row = source.range(of: marker), let rows = source.range(of: "TaskRowList(filter: filter"), row.lowerBound < rows.lowerBound {
             // Above the rows.
         } else {
             problems.append("the Filtered row is not above the rows")
         }
-        if !source.contains("TaskFacets.counts(manager.activeTasks)") {
-            problems.append("the Task list row does not count every task")
+        if !overview.contains("TaskFacets.counts(manager.activeTasks)") {
+            problems.append("the All tasks row does not count every task")
         }
         return problems
     }

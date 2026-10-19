@@ -37,6 +37,15 @@ enum TaskSourceFilter: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The filter that lists one source's tasks: a source's page in Brain › Tasks.
+    init(_ source: TaskSource) {
+        switch source {
+        case .local: self = .local
+        case .jira: self = .jira
+        case .gitlab: self = .gitlab
+        }
+    }
+
     var description: String {
         switch self {
         case .all: return String(localized: "Tasks from every source.")
@@ -80,7 +89,7 @@ enum TaskStatusFacet: Equatable {
     case inProgress
 }
 
-/// The Task list's four filters together.
+/// The Task list's four filters together, and what its Find field holds.
 struct TaskFilter: Equatable {
     var source: TaskSourceFilter = .all
     /// `TaskFacets.anyProject`, `TaskFacets.noProject`, or a project as `TaskFacets.project` names it.
@@ -88,10 +97,17 @@ struct TaskFilter: Equatable {
     var status: TaskStatusFilter = .toDoAndInProgress
     /// `TaskFacets.anyTag`, or a tag (matched ignoring case).
     var tag: String = TaskFacets.anyTag
+    /// The words typed in All tasks' Find field (`TaskSearch.matches`). Never saved: the page opens
+    /// with every task, and only the four filters persist.
+    var query: String = ""
 
     static let all = TaskFilter()
 
-    var isNarrowing: Bool { self != .all }
+    /// Whether anything is hidden. Spaces alone in Find hide nothing.
+    var isNarrowing: Bool {
+        source != .all || project != TaskFacets.anyProject || status != .toDoAndInProgress
+            || tag != TaskFacets.anyTag || !query.allSatisfy(\.isWhitespace)
+    }
 }
 
 /// What the Task list filters on, worked out from a task alone. Pure, so the logic target tests it.
@@ -136,6 +152,22 @@ enum TaskFacets {
     static func projectName(_ key: String) -> String {
         guard key.hasPrefix(projectIDPrefix), let id = Int(key.dropFirst(projectIDPrefix.count)) else { return key }
         return String(localized: "Project \(id)")
+    }
+
+    /// How a project reads as a row: a GitLab path's last component ("ds-vendors" for
+    /// "discern_security/applications/ds-vendors"), a Jira key prefix as it is, "Project 42" for an
+    /// id-only GitLab project, and "No project" for `noProject`.
+    static func projectShortName(_ key: String) -> String {
+        if key == noProject { return String(localized: "No project") }
+        if key.hasPrefix(projectIDPrefix) { return projectName(key) }
+        return String(key.split(separator: "/").last ?? Substring(key))
+    }
+
+    /// The group a GitLab project sits in, "discern_security/applications": what tells two
+    /// "app" projects apart. Nil for a project with no group, a Jira project and `noProject`.
+    static func projectGroup(_ key: String) -> String? {
+        guard !key.hasPrefix("#"), let slash = key.lastIndex(of: "/"), slash > key.startIndex else { return nil }
+        return String(key[..<slash])
     }
 
     /// A stored Project filter in today's form. Before the key, an id-only project was stored as
@@ -225,7 +257,7 @@ enum TaskFacets {
             let wanted = filter.tag.lowercased()
             guard task.tags.contains(where: { $0.lowercased() == wanted }) else { return false }
         }
-        return true
+        return TaskSearch.matches(task, query: filter.query)
     }
 
     /// The tasks a Task list move counts: those `listed` already shows that also pass `filter`, so a
@@ -255,6 +287,34 @@ enum TaskFacets {
             result.append(tag)
         }
         return result.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    /// How many tasks each source has: the "40 open" on Brain › Tasks' source rows.
+    static func sourceCounts(_ tasks: [TaskItem]) -> [TaskSource: Int] {
+        tasks.reduce(into: [:]) { $0[$1.source, default: 0] += 1 }
+    }
+
+    /// One project and how many tasks it has: a row on a source's page.
+    struct ProjectCount: Equatable {
+        /// A project key as `project(for:)` gives it, or `noProject`; ready for `TaskFilter.project`.
+        let key: String
+        let count: Int
+    }
+
+    /// The projects among `tasks`, each with its count: by short name ignoring case, then by the
+    /// full key, so two "app" projects keep one order; tasks with no project come last.
+    static func projectCounts(in tasks: [TaskItem]) -> [ProjectCount] {
+        var counts: [String: Int] = [:]
+        for task in tasks { counts[project(for: task) ?? noProject, default: 0] += 1 }
+        let named = counts.keys.filter { $0 != noProject }.sorted { lhs, rhs in
+            switch projectShortName(lhs).localizedCaseInsensitiveCompare(projectShortName(rhs)) {
+            case .orderedAscending: return true
+            case .orderedDescending: return false
+            case .orderedSame: return lhs < rhs
+            }
+        }
+        let none = counts[noProject].map { [ProjectCount(key: noProject, count: $0)] } ?? []
+        return named.map { ProjectCount(key: $0, count: counts[$0] ?? 0) } + none
     }
 
     /// How many are To Do and how many In Progress: the "12 to do · 3 in progress" on the Task list row.
