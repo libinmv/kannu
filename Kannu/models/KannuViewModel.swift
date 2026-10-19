@@ -96,6 +96,26 @@ class KannuViewModel: NSObject, ObservableObject {
         isAutoCloseSuppressed = false
     }
 
+    /// Clears the interaction state only the hosted views ever release: the two suppression token
+    /// sets and every popover flag `ContentView.hasAnyActivePopovers()` reads.
+    ///
+    /// The window-rebuild path (display or resolution change) drops the views and reuses this view
+    /// model, and `.onDisappear` is unreliable for borderless panels (see `onViewTeardown`), so a
+    /// token held by a hovered view or a popover flag left `true` would otherwise survive into the
+    /// new window — a notch that never auto-closes and never scrolls. `close()` clears the tokens
+    /// too, but the rebuild only calls it while the notch is already closed.
+    /// `NotchTeardownRulesTests` pins the flag list against `hasAnyActivePopovers()`.
+    func resetTransientInteractionState() {
+        resetScrollGestureSuppression()
+        resetAutoCloseSuppression()
+        isBatteryPopoverActive = false
+        isClipboardPopoverActive = false
+        isColorPickerPopoverActive = false
+        isStatsPopoverActive = false
+        isMediaOutputPopoverActive = false
+        isTimerPopoverActive = false
+    }
+
     private func focusClipboardTabIfNeeded() {
         guard !Defaults[.enableMinimalisticUI] else { return }
         guard Defaults[.enableClipboardManager] else { return }
