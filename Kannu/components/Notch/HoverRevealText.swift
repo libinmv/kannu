@@ -24,7 +24,10 @@ import SwiftUI
 /// The layout is exactly a truncating `Text` with the same line limit: the truncated text defines
 /// the frame, so nothing around it moves — a card's `ViewThatFits` sees the same heights hovered or
 /// not. While revealing, the full text is drawn over it inside the same clipped frame and offset.
-/// Whether the text is clipped is measured (the full copy's size against the frame), not guessed.
+/// Whether the text is clipped is measured (the full copy's size against the frame), not guessed:
+/// each size is written straight to state as it appears and changes (`SizeReader`). It used to
+/// travel through two preference keys, whose `onPreferenceChange` reported zero sizes here and
+/// never the real ones — so nothing ever counted as clipped and nothing slid.
 ///
 /// Not `MarqueeText`: that is a wrap-around ticker for the music title, needing a fixed width and
 /// running for as long as it is on screen. This runs only while hovered and only when clipped
@@ -78,27 +81,28 @@ struct HoverRevealText: View {
         isVertical ? fullSize.height - frameSize.height : fullSize.width - frameSize.width
     }
 
+    /// What starts (or stops) a slide: the hover, and whether the text is clipped. The sizes can
+    /// arrive after the hover does (text that appears under the pointer), so being measured as
+    /// clipped starts the slide too, instead of a hover that found nothing to reveal.
+    private var trigger: SlideTrigger {
+        SlideTrigger(isActive: isActive, isClipped: HoverRevealMotion.shouldReveal(overflow: Double(overflow), reduceMotion: false))
+    }
+
     var body: some View {
         content
             .lineLimit(lines)
             .opacity(isRevealing ? 0 : 1)
-            .background(GeometryReader { proxy in
-                Color.clear.preference(key: FrameSizeKey.self, value: proxy.size)
-            })
+            .background(SizeReader(size: $frameSize))
             .overlay(alignment: .topLeading) {
                 fullText
-                    .background(GeometryReader { proxy in
-                        Color.clear.preference(key: FullSizeKey.self, value: proxy.size)
-                    })
+                    .background(SizeReader(size: $fullSize))
                     .offset(x: isVertical ? 0 : offset, y: isVertical ? offset : 0)
                     .opacity(isRevealing ? 1 : 0)
                     .accessibilityHidden(true)
             }
             .clipped()
-            .onPreferenceChange(FrameSizeKey.self) { frameSize = $0 }
-            .onPreferenceChange(FullSizeKey.self) { fullSize = $0 }
             .modifier(OwnHover(enabled: activeOverride == nil, isHovering: $isHovering))
-            .task(id: isActive) { await slide() }
+            .task(id: trigger) { await slide() }
             .modifier(FullLabel(label: label))
     }
 
@@ -112,8 +116,8 @@ struct HoverRevealText: View {
         }
     }
 
-    /// One slide per hover. Leaving hover changes the task's id, which cancels this one; the next
-    /// (inactive) run settles everything back.
+    /// One slide per hover. Leaving hover changes the task's id (`trigger`), which cancels this one;
+    /// the next (inactive) run settles everything back.
     private func slide() async {
         guard isActive, HoverRevealMotion.shouldReveal(overflow: Double(overflow), reduceMotion: reduceMotion) else {
             settle()
@@ -145,14 +149,22 @@ struct HoverRevealText: View {
     }
 }
 
-private struct FrameSizeKey: PreferenceKey {
-    static var defaultValue: CGSize = .zero
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
+private struct SlideTrigger: Equatable {
+    let isActive: Bool
+    let isClipped: Bool
 }
 
-private struct FullSizeKey: PreferenceKey {
-    static var defaultValue: CGSize = .zero
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
+/// Writes the size of the view it backs into state, as it appears and whenever it changes.
+private struct SizeReader: View {
+    @Binding var size: CGSize
+
+    var body: some View {
+        GeometryReader { proxy in
+            Color.clear
+                .onAppear { size = proxy.size }
+                .onChange(of: proxy.size) { _, new in size = new }
+        }
+    }
 }
 
 /// The view's own `.onHover`, only when no parent drives it.

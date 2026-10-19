@@ -128,4 +128,32 @@ final class TasksPopoverLogicTests: XCTestCase {
         XCTAssertNil(SourceSyncState.offline.rateLimitEnd)
         XCTAssertNil(SourceSyncState.synced(at: now, count: 1, complete: true).rateLimitEnd)
     }
+
+    // MARK: - Refresh, in the popover and the timer tab's toolbar
+
+    func testTheSyncLinesAndTheTooltipNameOnlyTheSourcesThatSync() {
+        let time = { (date: Date) in date.formatted(date: .omitted, time: .shortened) }
+        let synced = SourceSyncState.synced(at: now, count: 3, complete: true)
+        XCTAssertEqual(TaskSyncSummary.lines(jira: synced, gitlab: .offline, now: now),
+                       ["Jira · Synced \(time(now))", "GitLab · Offline"])
+        XCTAssertEqual(TaskSyncSummary.lines(jira: nil, gitlab: .offline, now: now), ["GitLab · Offline"],
+                       "a source whose sync is off has no line")
+        XCTAssertEqual(TaskSyncSummary.tooltip(jira: synced, gitlab: .offline, now: now),
+                       "Jira: Synced \(time(now)) · GitLab: Offline", "one line: a tooltip never wraps")
+        XCTAssertEqual(TaskSyncSummary.tooltip(jira: synced, gitlab: nil, now: now), "Jira: Synced \(time(now))")
+    }
+
+    func testRefreshNeedsAReadableListAndOneSourceFreeToSync() {
+        let later = now.addingTimeInterval(600)
+        let limited = SourceSyncState.rateLimited(until: later)
+        XCTAssertTrue(TaskSyncSummary.canRefresh(isReady: true, jira: .idle, gitlab: nil, at: now), "one source on is enough")
+        XCTAssertFalse(TaskSyncSummary.canRefresh(isReady: false, jira: .idle, gitlab: .idle, at: now), "the task list is not readable")
+        XCTAssertFalse(TaskSyncSummary.canRefresh(isReady: true, jira: nil, gitlab: nil, at: now), "nothing syncs")
+        XCTAssertFalse(TaskSyncSummary.canRefresh(isReady: true, jira: limited, gitlab: nil, at: now), "rate limited")
+        XCTAssertTrue(TaskSyncSummary.canRefresh(isReady: true, jira: limited, gitlab: nil, at: later), "the limit has run out")
+        XCTAssertTrue(TaskSyncSummary.canRefresh(isReady: true, jira: limited, gitlab: .offline, at: now), "GitLab is free")
+        XCTAssertEqual(TaskSyncSummary.rateLimitEnds(jira: limited, gitlab: .rateLimited(until: now)), [now, later],
+                       "earliest first, so the view redraws at each")
+        XCTAssertEqual(TaskSyncSummary.rateLimitEnds(jira: .idle, gitlab: nil), [])
+    }
 }

@@ -58,6 +58,20 @@ final class WorkDurationTests: XCTestCase {
         XCTAssertEqual(WorkDuration.parse("1000h"), 1000 * 3600)
     }
 
+    /// David: estimates in days too. A day is a workday (`hoursPerDay`), as GitLab and Jira count it.
+    func testDaysAreWorkdays() {
+        XCTAssertEqual(WorkDuration.hoursPerDay, 8)
+        XCTAssertEqual(WorkDuration.parse("2d 3h"), 19 * 3600)
+        XCTAssertEqual(WorkDuration.parse("1.5d"), 12 * 3600)
+        XCTAssertEqual(WorkDuration.parse("2 days"), 16 * 3600)
+        XCTAssertEqual(WorkDuration.parse("1 day 30m"), 8 * 3600 + 30 * 60)
+        XCTAssertEqual(WorkDuration.parse("1D"), 8 * 3600)
+        XCTAssertEqual(WorkDuration.parse("125d"), 1000 * 3600, "the longest length, in days")
+        XCTAssertNil(WorkDuration.parse("126d"), "past the longest length")
+        XCTAssertNil(WorkDuration.parse("2dd"))
+        XCTAssertEqual(WorkDuration.format(WorkDuration.parse("2d") ?? 0), "16h", "shown in hours")
+    }
+
     func testWhatIsFormattedParsesBack() {
         for seconds in [0, 60, 15 * 60, 42 * 60, 3600, 72 * 60, 8 * 3600, 26 * 3600 + 60] {
             XCTAssertEqual(WorkDuration.parse(WorkDuration.format(seconds)), seconds, WorkDuration.format(seconds))

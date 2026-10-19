@@ -62,6 +62,13 @@ struct TaskSourceMenu: View {
     @Default(.gitlabHost) private var gitlabHost
     /// Closes the popover, then opens Brain there.
     let openBrain: (TasksBrainDestination) -> Void
+    /// The popover's header glyph, or the timer tab's rail icon (`TimerRailIcon`'s square).
+    var style: Style = .header
+
+    enum Style {
+        case header
+        case rail
+    }
 
     /// A source that is not connected has no check item, so it never counts as hidden: its kept
     /// tasks show (the popover reads the keys the same way).
@@ -85,16 +92,52 @@ struct TaskSourceMenu: View {
                     Toggle("GitLab", isOn: $showGitLab)
                 }
             }
+            if isNarrowing {
+                // Every source back in the notch, without unticking each.
+                Button(String(localized: "Show all")) {
+                    showLocal = true
+                    showJira = true
+                    showGitLab = true
+                }
+            }
             Divider()
             Button("Manage tasks…") { openBrain(.sources) }
         } label: {
-            Image(systemName: isNarrowing ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                .imageScale(.large)
+            switch style {
+            case .header:
+                Image(systemName: isNarrowing ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                    .imageScale(.large)
+            case .rail:
+                Image(systemName: "line.3.horizontal.decrease")
+                    .font(.system(size: TimerComposerMetrics.railGlyphSize, weight: .semibold))
+            }
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
+        // The rail's square is drawn around the menu, not in its label: a borderless menu draws
+        // only its label's glyph. Brighter while it hides a source, as the header's glyph fills.
+        .modifier(RailSquare(isOn: style == .rail, isActive: isNarrowing))
         .accessibilityLabel("Filter tasks")
         .hoverTooltip(String(localized: "Filter tasks"), edge: .below)
+    }
+}
+
+/// The rail icon's 21 pt square around the filter menu, in the rail style only.
+private struct RailSquare: ViewModifier {
+    let isOn: Bool
+    let isActive: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isOn {
+            content
+                .foregroundStyle(Color.white.opacity(0.85))
+                .frame(width: TimerComposerMetrics.railButtonSize, height: TimerComposerMetrics.railButtonSize)
+                .background(RailIconBackground(isActive: isActive))
+                .contentShape(Rectangle())
+        } else {
+            content
+        }
     }
 }

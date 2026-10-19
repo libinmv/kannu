@@ -93,3 +93,39 @@ enum SourceSyncState: Equatable {
         return now.timeIntervalSince(lastSuccess) >= staleAfter
     }
 }
+
+/// The notch's Refresh, wherever it is drawn (the Tasks popover's header, the timer tab's task
+/// toolbar): what each source's last sync found, and whether a click would sync anything. A nil
+/// state is a source whose sync is off; it has no line and is never refreshed.
+enum TaskSyncSummary {
+    /// "Jira · Synced 10:42", "GitLab · Offline": one line per source that syncs.
+    static func lines(jira: SourceSyncState?, gitlab: SourceSyncState?, now: Date) -> [String] {
+        var lines: [String] = []
+        if let jira { lines.append(String(localized: "Jira · \(jira.shortCaption(now: now))")) }
+        if let gitlab { lines.append(String(localized: "GitLab · \(gitlab.shortCaption(now: now))")) }
+        return lines
+    }
+
+    /// The same on one line, for a tooltip (which never wraps): "Jira: Synced 10:42 · GitLab: Offline".
+    static func tooltip(jira: SourceSyncState?, gitlab: SourceSyncState?, now: Date) -> String {
+        var parts: [String] = []
+        if let jira { parts.append(String(localized: "Jira: \(jira.shortCaption(now: now))")) }
+        if let gitlab { parts.append(String(localized: "GitLab: \(gitlab.shortCaption(now: now))")) }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Whether Refresh may be clicked: the task list is readable and at least one source syncs and
+    /// is not rate limited at `date`. A limit that has run out no longer counts.
+    static func canRefresh(isReady: Bool, jira: SourceSyncState?, gitlab: SourceSyncState?, at date: Date) -> Bool {
+        guard isReady else { return false }
+        return [jira, gitlab].contains { state in
+            guard let state else { return false }
+            return state.rateLimitEnd.map { $0 <= date } ?? true
+        }
+    }
+
+    /// When a running rate limit ends, earliest first, so a view can redraw then and only then.
+    static func rateLimitEnds(jira: SourceSyncState?, gitlab: SourceSyncState?) -> [Date] {
+        [jira?.rateLimitEnd, gitlab?.rateLimitEnd].compactMap { $0 }.sorted()
+    }
+}

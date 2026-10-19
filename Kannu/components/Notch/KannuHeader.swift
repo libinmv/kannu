@@ -296,14 +296,15 @@ struct KannuHeader: View {
 }
 
 private extension KannuHeader {
-    /// The Tasks button: with tasks on, on the timer tab, or on every tab when there is no timer
-    /// tab (the timer off, or shown as a popover). The timer tab exists exactly as
-    /// `TabSelectionView` builds it.
+    /// The Tasks button: with tasks on, where the timer tab's task column cannot show — on that
+    /// tab while a timer runs, or on every tab when there is no timer tab (the timer off, or shown
+    /// as a popover). The timer tab exists exactly as `TabSelectionView` builds it.
     var showsTasksButton: Bool {
         TasksHeaderVisibility.isShown(
             enableTasks: enableTasks,
             currentViewIsTimer: coordinator.currentView == .timer,
-            timerTabExists: enableTimerFeature && timerDisplayMode == .tab
+            timerTabExists: enableTimerFeature && timerDisplayMode == .tab,
+            timerIsRunning: timerManager.isTimerActive
         )
     }
 

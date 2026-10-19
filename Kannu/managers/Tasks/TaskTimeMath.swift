@@ -140,13 +140,17 @@ enum TaskTimeMath {
     }
 }
 
-/// A length of time as people type it and read it: "1h 12m", "72m", "1.5h", "90".
+/// A length of time as people type it and read it: "1h 12m", "72m", "1.5h", "90", "2d 3h".
 enum WorkDuration {
     /// The longest length accepted, so a typo cannot record a year.
     static let maxSeconds = 1_000 * 3600
+    /// A typed day is a workday, as GitLab and Jira count one by default: "2d" is 16 hours of work.
+    /// Lengths are still shown in hours (`format`), so "2d" reads back as "16h".
+    static let hoursPerDay = 8
 
-    /// Seconds, or nil when the text is not a length. A bare number is minutes. Units: h, hr, hrs,
-    /// hour, hours, m, min, mins, minute, minutes; a decimal comma reads as a point.
+    /// Seconds, or nil when the text is not a length. A bare number is minutes. Units: d, day, days
+    /// (`hoursPerDay` each), h, hr, hrs, hour, hours, m, min, mins, minute, minutes; a decimal comma
+    /// reads as a point.
     static func parse(_ text: String) -> Int? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             .replacingOccurrences(of: ",", with: ".")
@@ -172,6 +176,7 @@ enum WorkDuration {
             let unitStart = index
             while index < trimmed.endIndex, trimmed[index].isLetter { index = trimmed.index(after: index) }
             switch trimmed[unitStart..<index] {
+            case "d", "day", "days": total += value * Double(hoursPerDay) * 3600
             case "h", "hr", "hrs", "hour", "hours": total += value * 3600
             case "m", "min", "mins", "minute", "minutes": total += value * 60
             default: return nil

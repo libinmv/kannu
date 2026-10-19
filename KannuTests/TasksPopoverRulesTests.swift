@@ -52,7 +52,13 @@ final class TasksPopoverRulesTests: XCTestCase {
     /// The timer tab's side column (Tasks · Presets) and its swipe monitor are notch task views too.
     static let sideColumnPath = "Kannu/components/Notch/TimerSideColumn.swift"
     static let swipeMonitorPath = "Kannu/components/Notch/HorizontalSwipeMonitor.swift"
-    static let newFiles = [buttonPath, popoverPath, menuPath, sideColumnPath, swipeMonitorPath]
+    /// The Time to log cards, shared by the popover and the timer tab's task column.
+    static let logTimeCardsPath = "Kannu/components/Notch/LogTimeCards.swift"
+    /// The timer tab's task form, in the composer's place.
+    static let taskFormPath = "Kannu/components/Notch/TimerTaskForm.swift"
+    /// The timer tab's rail icons.
+    static let railIconPath = "Kannu/components/Notch/TimerRailIcon.swift"
+    static let newFiles = [buttonPath, popoverPath, menuPath, sideColumnPath, swipeMonitorPath, logTimeCardsPath, taskFormPath, railIconPath]
     static let notchDirectories = ["Kannu/components/Notch", "Kannu/components/AgentStatus"]
     static let keychainAPIs = ["SecureSecretsStore", "KeychainReader", "SecItem", "JiraCredentialStore", "GitLabCredentialStore"]
     static let tickers = ["Timer.publish", "Timer.scheduledTimer", "Timer(timeInterval", ".autoconnect()", "DispatchSourceTimer"]
@@ -220,7 +226,8 @@ final class TasksPopoverRulesTests: XCTestCase {
                 TasksHeaderVisibility.isShown(
                     enableTasks: enableTasks,
                     currentViewIsTimer: coordinator.currentView == .timer,
-                    timerTabExists: enableTimerFeature && timerDisplayMode == .tab
+                    timerTabExists: enableTimerFeature && timerDisplayMode == .tab,
+                    timerIsRunning: timerManager.isTimerActive
                 )
             }
             """
@@ -239,16 +246,18 @@ final class TasksPopoverRulesTests: XCTestCase {
                        ["TasksHeaderButton() is not shown only with tasks on"])
         XCTAssertEqual(Self.placementProblems(in: plant("timerTabExists: enableTimerFeature && timerDisplayMode == .tab", "timerTabExists: true")),
                        ["TasksHeaderVisibility.isShown is not given the header's own state"])
+        XCTAssertEqual(Self.placementProblems(in: plant("timerIsRunning: timerManager.isTimerActive", "timerIsRunning: false")),
+                       ["TasksHeaderVisibility.isShown is not given the header's own state"])
         XCTAssertEqual(Self.placementProblems(in: plant(".transition(.opacity)", ".transition(.scale)")),
                        ["the Tasks button does not simply fade"])
         let afterClipboard = """
             if vm.notchState == .open && !enableMinimalisticUI {
                 if Defaults[.enableClipboardManager] { Button { Image(systemName: "doc.on.clipboard") } }
-                if TasksHeaderVisibility.isShown(enableTasks: enableTasks, currentViewIsTimer: coordinator.currentView == .timer, timerTabExists: enableTimerFeature && timerDisplayMode == .tab) {
+                if TasksHeaderVisibility.isShown(enableTasks: enableTasks, currentViewIsTimer: coordinator.currentView == .timer, timerTabExists: enableTimerFeature && timerDisplayMode == .tab, timerIsRunning: timerManager.isTimerActive) {
                     TasksHeaderButton().transition(.opacity)
                 }
             }
-            .animation(.easeInOut(duration: 0.15), value: TasksHeaderVisibility.isShown(enableTasks: enableTasks, currentViewIsTimer: coordinator.currentView == .timer, timerTabExists: enableTimerFeature && timerDisplayMode == .tab))
+            .animation(.easeInOut(duration: 0.15), value: TasksHeaderVisibility.isShown(enableTasks: enableTasks, currentViewIsTimer: coordinator.currentView == .timer, timerTabExists: enableTimerFeature && timerDisplayMode == .tab, timerIsRunning: timerManager.isTimerActive))
             """
         XCTAssertEqual(Self.placementProblems(in: afterClipboard), ["TasksHeaderButton() is not before the clipboard button"])
         XCTAssertEqual(Self.placementProblems(in: plant(".animation(.easeInOut(duration: 0.15), value: showsTasksButton)\n", "")),
@@ -448,7 +457,8 @@ final class TasksPopoverRulesTests: XCTestCase {
                 problems.append("TasksHeaderButton() is not shown only with tasks on")
             }
             if !(gate.contains("currentViewIsTimer: coordinator.currentView == .timer")
-                 && gate.contains("timerTabExists: enableTimerFeature && timerDisplayMode == .tab")) {
+                 && gate.contains("timerTabExists: enableTimerFeature && timerDisplayMode == .tab")
+                 && gate.contains("timerIsRunning: timerManager.isTimerActive")) {
                 problems.append("TasksHeaderVisibility.isShown is not given the header's own state")
             }
             // A tab click changes `currentView` with no transaction: without this the fade never runs.

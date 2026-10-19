@@ -121,7 +121,8 @@ struct RemoteTaskInfo: Codable, Equatable {
     /// when it has none.
     var checklistDone: Int? = nil
     var checklistTotal: Int? = nil
-    /// GitLab issues only: merge requests that close or mention it (`merge_requests_count`).
+    /// GitLab issues only: merge requests that close it when merged (`merge_requests_count`, the
+    /// same set `closed_by` lists).
     var linkedMergeRequests: Int? = nil
     /// GitLab issues only, Premium: the iteration's title, or "Iteration 5" for an untitled one.
     var iteration: String? = nil

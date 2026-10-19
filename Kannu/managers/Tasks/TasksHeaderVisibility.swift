@@ -21,16 +21,19 @@ import Foundation
 /// When the open notch's header shows its Tasks button (`TasksHeaderButton`), left of the
 /// clipboard button.
 ///
-/// Tasks belong with the timer: where there is a timer tab (the timer on, shown as a tab), the
-/// button shows only while that tab is current, since that is where a task is started and the
-/// other tabs have nothing to time. With no timer tab (the timer off, or shown as a popover) there
-/// is no such place, so the button shows on every tab. Never with tasks off: the button's view
+/// Tasks belong with the timer. Where there is a timer tab (the timer on, shown as a tab), that tab
+/// is their home: its task column has the list, search, the filter, Refresh and Time to log, so
+/// the button would only repeat it there. The column hides while a timer runs, and then the button
+/// shows on that tab, for the running task's clock, Up next and Time to log. The other tabs have
+/// nothing to time and never show it. With no timer tab (the timer off, or shown as a popover)
+/// there is no column, so the button shows on every tab. Never with tasks off: the button's view
 /// builds `TasksManager`, which must not exist then.
 ///
 /// Pure, in the logic target. `KannuHeader` passes its own state; the rules test pins that it does.
 enum TasksHeaderVisibility {
-    static func isShown(enableTasks: Bool, currentViewIsTimer: Bool, timerTabExists: Bool) -> Bool {
+    static func isShown(enableTasks: Bool, currentViewIsTimer: Bool, timerTabExists: Bool, timerIsRunning: Bool) -> Bool {
         guard enableTasks else { return false }
-        return currentViewIsTimer || !timerTabExists
+        guard timerTabExists else { return true }
+        return currentViewIsTimer && timerIsRunning
     }
 }

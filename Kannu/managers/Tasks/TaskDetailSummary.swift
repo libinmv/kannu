@@ -44,11 +44,19 @@ struct TaskDetailSummary: Equatable {
     }
 
     /// One cell of the card's fact grid: an SF Symbol and a few words. `isAlert` reads in orange
-    /// (overdue, conflicts, a health status that is not on track).
+    /// (overdue, conflicts, a health status that is not on track). A fact with an `action` is a
+    /// button on the card.
     struct Fact: Equatable {
         let icon: String
         let text: String
         var isAlert = false
+        var action: Action? = nil
+    }
+
+    /// What tapping a fact opens.
+    enum Action: Equatable {
+        /// The merge requests that close the issue (`TasksManager.linkedMergeRequests`).
+        case linkedMergeRequests
     }
 
     /// The issue's title, never prefixed by its key: a GitLab path key would eat the lines.
@@ -71,6 +79,9 @@ struct TaskDetailSummary: Equatable {
     let showsTime: Bool
     /// "10m over" once a minute or more past the estimate; the view shows it in orange.
     let overtime: String?
+    /// A muted line where the facts go, for a local task never timed: without it the card had
+    /// nothing between its title and Start.
+    let note: String?
     /// Only a local task can be deleted: a remote one would come back on the next sync.
     let canDelete: Bool
     /// "Open in Jira" / "Open in GitLab"; nil for a local task.
@@ -94,6 +105,9 @@ struct TaskDetailSummary: Equatable {
         overtime = progress.over.map { String(localized: "\(WorkDuration.format($0)) over") }
 
         facts = Self.facts(for: task, now: now, selfNames: selfNames, calendar: calendar)
+        note = task.source == .local && task.segments.isEmpty && tracked == 0
+            ? String(localized: "No time recorded yet. Start the task to track it.")
+            : nil
 
         canDelete = task.source == .local
         switch task.source {
@@ -119,8 +133,8 @@ struct TaskDetailSummary: Equatable {
 
     // MARK: - Facts
 
-    /// In the order they matter on a 240 pt card: what needs attention, then planning, then who,
-    /// then activity. A local task has its reminder and its own recorded time instead.
+    /// In the order they matter on the card: what needs attention and the linked merge requests,
+    /// then planning, then who, then activity. A local task has its reminder and its own recorded time instead.
     private static func facts(for task: TaskItem, now: Date, selfNames: Set<String>, calendar: Calendar) -> [Fact] {
         var facts: [Fact] = []
         let remote = task.remote
@@ -138,6 +152,13 @@ struct TaskDetailSummary: Equatable {
         if let health = remote?.healthStatus.flatMap(healthText) {
             facts.append(Fact(icon: "heart.text.square", text: health.text, isAlert: health.isAlert))
         }
+        // Up with what needs attention: it opens the merge requests, so it must be among the four
+        // facts the card has room for.
+        if let linked = remote?.linkedMergeRequests, linked > 0 {
+            facts.append(Fact(icon: "arrow.triangle.pull",
+                              text: linked == 1 ? String(localized: "1 linked MR") : String(localized: "\(linked) linked MRs"),
+                              action: .linkedMergeRequests))
+        }
         if let milestone = remote?.milestone { facts.append(Fact(icon: "flag", text: milestone)) }
         if let iteration = remote?.iteration { facts.append(Fact(icon: "hourglass", text: iteration)) }
         if let weight = remote?.weight { facts.append(Fact(icon: "scalemass", text: String(localized: "Weight \(weight)"))) }
@@ -147,10 +168,6 @@ struct TaskDetailSummary: Equatable {
         if let person { facts.append(Fact(icon: "person", text: person)) }
         if let done = remote?.checklistDone, let total = remote?.checklistTotal, total > 0 {
             facts.append(Fact(icon: "checklist", text: String(localized: "\(done) of \(total) done")))
-        }
-        if let linked = remote?.linkedMergeRequests, linked > 0 {
-            facts.append(Fact(icon: "arrow.triangle.pull",
-                              text: linked == 1 ? String(localized: "1 linked MR") : String(localized: "\(linked) linked MRs")))
         }
         if let comments = remote?.commentCount, comments > 0 {
             facts.append(Fact(icon: "bubble.left",

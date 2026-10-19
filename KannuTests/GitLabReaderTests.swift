@@ -228,6 +228,53 @@ final class GitLabReaderTests: XCTestCase {
         XCTAssertEqual(fetch.failure, .http(.rateLimited(retryAfter: 30)))
     }
 
+    // MARK: - Linked merge requests
+
+    private static let closingAnswer = #"[{"id": 901, "iid": 12, "project_id": 8, "title": "Add uploads", "state": "merged", "web_url": "https://gitlab.example.com/group/app/-/merge_requests/12"}]"#
+
+    func testTheMergeRequestsThatCloseAnIssue() async throws {
+        StubProtocol.reset { _ in Answer(headers: ["X-Next-Page": ""], body: Self.closingAnswer) }
+        let result = await reader.closingMergeRequests(credential, projectID: 8, iid: 45)
+        guard case .success(let read) = result else { return XCTFail("\(result)") }
+        XCTAssertEqual(read.items.map(\.reference), ["!12"])
+        XCTAssertTrue(read.complete)
+        XCTAssertEqual(StubProtocol.requests().map { $0.url?.path }, ["/api/v4/projects/8/issues/45/closed_by"], "one page, read-only")
+        XCTAssertEqual(StubProtocol.requests().first?.httpMethod, "GET")
+    }
+
+    func testMoreThanOnePageOfMergeRequestsIsIncomplete() async throws {
+        StubProtocol.reset { _ in Answer(headers: ["X-Next-Page": "2"], body: Self.closingAnswer) }
+        let result = await reader.closingMergeRequests(credential, projectID: 8, iid: 45)
+        guard case .success(let read) = result else { return XCTFail("\(result)") }
+        XCTAssertFalse(read.complete, "the page offers the issue on GitLab for the rest")
+        XCTAssertEqual(StubProtocol.requests().count, 1, "never a second page")
+    }
+
+    func testTheMergeRequestListFailsAsTheSyncDoes() async throws {
+        StubProtocol.reset { _ in Answer(status: 401, body: #"{"message":"401 Unauthorized"}"#) }
+        let refused = await reader.closingMergeRequests(credential, projectID: 8, iid: 45)
+        XCTAssertEqual(refused.failureValue, .http(.auth(401)))
+
+        StubProtocol.reset { _ in Answer(status: 429, headers: ["Retry-After": "30"], body: "{}") }
+        let limited = await reader.closingMergeRequests(credential, projectID: 8, iid: 45)
+        XCTAssertEqual(limited.failureValue, .http(.rateLimited(retryAfter: 30)))
+
+        StubProtocol.reset { request in
+            request.url?.host == Self.server
+                ? Answer(status: 302, headers: ["Location": "https://evil.example/collect"], body: "")
+                : Answer(body: Self.closingAnswer)
+        }
+        let redirected = await reader.closingMergeRequests(credential, projectID: 8, iid: 45)
+        XCTAssertEqual(redirected.failureValue, .http(.redirected(302)))
+        XCTAssertEqual(StubProtocol.requests().compactMap(\.url?.host), [Self.server], "the redirect is never followed")
+
+        StubProtocol.reset { _ in Answer(body: Self.closingAnswer) }
+        let other = GitLabCredential(baseURL: "http://gitlab.example.com", token: Self.token)
+        let refusedServer = await reader.closingMergeRequests(other, projectID: 8, iid: 45)
+        XCTAssertEqual(refusedServer.failureValue, .badServer)
+        XCTAssertTrue(StubProtocol.requests().isEmpty)
+    }
+
     // MARK: - Connect
 
     private static let userJSON = #"{"id": 1, "username": "dana", "name": "Dana Smith"}"#
@@ -314,5 +361,13 @@ final class GitLabReaderTests: XCTestCase {
         XCTAssertEqual(verified, .failed(.badServer))
         XCTAssertEqual(fetched.failure, .badServer)
         XCTAssertTrue(StubProtocol.requests().isEmpty)
+    }
+}
+
+private extension Result {
+    /// The failure, or nil for a success: for comparing results whose success is not Equatable.
+    var failureValue: Failure? {
+        if case .failure(let failure) = self { return failure }
+        return nil
     }
 }

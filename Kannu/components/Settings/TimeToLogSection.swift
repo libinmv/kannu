@@ -94,6 +94,20 @@ struct WorklogDraftCard: View {
     }
 }
 
+/// The notch's hook into a Time to log card's fields: called with the entry and whether one of its
+/// fields has focus, so the notch can stay open while the user types (`vm.setAutoCloseSuppression`
+/// under the entry's id). Nil in Brain, whose window stays open on its own.
+private struct WorklogFieldFocusKey: EnvironmentKey {
+    static let defaultValue: ((UUID, Bool) -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    var worklogFieldFocus: ((UUID, Bool) -> Void)? {
+        get { self[WorklogFieldFocusKey.self] }
+        set { self[WorklogFieldFocusKey.self] = newValue }
+    }
+}
+
 /// One entry's card: a row whose label says what would be logged where, and whose trailing column
 /// holds the fields and the answers.
 private struct WorklogDraftRow: View {
@@ -102,12 +116,16 @@ private struct WorklogDraftRow: View {
         let url: URL
     }
 
+    private enum Field { case length, comment }
+
     let draft: WorklogDraft
     let task: TaskItem?
     let availability: WorklogDrafts.Availability
     let openLink: Link?
     @State private var durationText: String
     @State private var comment: String
+    @FocusState private var focusedField: Field?
+    @Environment(\.worklogFieldFocus) private var reportFieldFocus
 
     init(draft: WorklogDraft, task: TaskItem?, availability: WorklogDrafts.Availability, openLink: Link?) {
         self.draft = draft
@@ -131,10 +149,19 @@ private struct WorklogDraftRow: View {
     private var showsFields: Bool { isReady && (draft.state == .awaiting || draft.state == .failed || isSending) }
 
     var body: some View {
-        if draft.state == .awaiting && draft.deferredAt != nil {
-            deferredRow
-        } else {
-            card
+        Group {
+            if draft.state == .awaiting && draft.deferredAt != nil {
+                deferredRow
+            } else {
+                card
+            }
+        }
+        .onChange(of: focusedField) { _, field in
+            reportFieldFocus?(draft.id, field != nil)
+        }
+        // A sent entry, or one whose length changed, is drawn again from scratch (`.id`).
+        .onDisappear {
+            reportFieldFocus?(draft.id, false)
         }
     }
 
@@ -149,10 +176,12 @@ private struct WorklogDraftRow: View {
                         TextField("Length", text: $durationText, prompt: Text(verbatim: "1h 15m"))
                             .labelsHidden()
                             .disabled(isSending)
+                            .focused($focusedField, equals: .length)
                         if source == .jira {
                             TextField("Comment", text: $comment, prompt: Text("Comment (optional)"))
                                 .labelsHidden()
                                 .disabled(isSending)
+                                .focused($focusedField, equals: .comment)
                         }
                     }
                 }

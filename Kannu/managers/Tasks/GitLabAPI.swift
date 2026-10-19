@@ -177,6 +177,29 @@ struct GitLabItem: Decodable, Equatable {
     }
 }
 
+/// A merge request that closes an issue when merged (`closed_by`): a row of the task card's linked
+/// merge requests page. What GitLab's `merge_requests_count` counts, so the card's "2 linked MRs"
+/// opens a list of two.
+struct LinkedMergeRequest: Equatable, Identifiable {
+    enum State: String, Equatable {
+        case opened, merged, closed, locked
+    }
+
+    /// The global id.
+    let id: Int
+    let iid: Int
+    /// Cleaned; the reference when GitLab sent none.
+    let title: String
+    /// `!12` in the issue's own project, `group/app!12` from another.
+    let reference: String
+    /// Nil for a state this version does not know.
+    let state: State?
+    let isDraft: Bool
+    let author: String?
+    /// Its page, only when it is on the connected server.
+    let webURL: URL?
+}
+
 /// One field of a server answer read on its own: a value in a shape this version does not expect
 /// becomes nil instead of failing the object around it.
 struct LenientField<Value: Decodable & Equatable>: Decodable, Equatable {
@@ -321,6 +344,35 @@ enum GitLabAPI {
             path: "/projects/\(projectID)/\(collection)/\(iid)/add_spent_time",
             query: [URLQueryItem(name: "duration", value: duration)]
         ).map { request(url: $0, method: "POST", credential: credential) }
+    }
+
+    /// `GET /projects/:id/issues/:iid/closed_by`: the merge requests that close the issue when merged
+    /// (`LinkedMergeRequest`), one page of `pageSize`. Nil for a project or number that is not one,
+    /// or a server Kannu would not send to. Read-only.
+    static func closingMergeRequestsRequest(_ credential: GitLabCredential, projectID: Int, iid: Int) -> URLRequest? {
+        guard projectID > 0, iid > 0 else { return nil }
+        return GitLabHost.apiURL(
+            base: credential.baseURL,
+            path: "/projects/\(projectID)/issues/\(iid)/closed_by",
+            query: [URLQueryItem(name: "per_page", value: String(pageSize)), URLQueryItem(name: "page", value: "1")]
+        ).map { request(url: $0, method: "GET", credential: credential) }
+    }
+
+    /// A merge request from `closed_by` as the linked page shows it: `!12` when it is in the issue's
+    /// project, the full reference when not; its page kept only when it is on `base`.
+    static func linkedMergeRequest(from item: GitLabItem, base: String, issueProjectID: Int) -> LinkedMergeRequest {
+        let short = "!" + String(item.iid)
+        let reference = item.projectID == issueProjectID ? short : (item.references?.full.flatMap(TaskItem.cleanedTitle) ?? short)
+        return LinkedMergeRequest(
+            id: item.id,
+            iid: item.iid,
+            title: TaskItem.cleanedTitle(item.title ?? "") ?? reference,
+            reference: reference,
+            state: item.state.flatMap(LinkedMergeRequest.State.init(rawValue:)),
+            isDraft: item.draft?.value ?? false,
+            author: item.author?.value?.name.flatMap(TaskItem.cleanedTitle),
+            webURL: item.webURL.flatMap { GitLabHost.isWebURL($0, onServer: base) ? URL(string: $0) : nil }
+        )
     }
 
     /// GitLab's own reason for refusing a request: its `message` (a string, or a field-to-errors
@@ -551,6 +603,25 @@ struct GitLabReader {
             issueCount: issueCount,
             mergeRequestCount: items.count - issueCount
         )
+    }
+
+    /// The merge requests that close an issue (`closed_by`), one page. `complete` is false when
+    /// GitLab has more than it sent; the page then offers the issue itself on GitLab.
+    func closingMergeRequests(_ credential: GitLabCredential, projectID: Int, iid: Int) async -> Result<(items: [LinkedMergeRequest], complete: Bool), Failure> {
+        guard let request = GitLabAPI.closingMergeRequestsRequest(credential, projectID: projectID, iid: iid) else {
+            return .failure(.badServer)
+        }
+        let exchange = await IntegrationHTTP.send(request, session: session)
+        guard case .ok = exchange.outcome else { return .failure(.http(exchange.outcome)) }
+        guard let data = exchange.data, let read = GitLabAPI.decodeItems(data) else { return .failure(.decode) }
+        let header = exchange.response?.value(forHTTPHeaderField: GitLabAPI.nextPageHeader)
+        let complete: Bool
+        switch GitLabAPI.nextStep(nextPageHeader: header, page: 1, itemCount: read.count, pagesFetched: GitLabAPI.maxPages) {
+        case .done(let done): complete = done
+        case .next, .capped: complete = false
+        }
+        let items = read.map { GitLabAPI.linkedMergeRequest(from: $0, base: credential.baseURL, issueProjectID: projectID) }
+        return .success((items, complete))
     }
 
     private func fetchList(_ credential: GitLabCredential, _ list: GitLabAPI.List) async -> Result<(items: [GitLabItem], complete: Bool), Failure> {

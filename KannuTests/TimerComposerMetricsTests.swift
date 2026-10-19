@@ -38,12 +38,19 @@ final class TimerComposerMetricsTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(M.fieldBoxHeight, 30)
     }
 
-    /// The list fills the column, the whole budget tall less its bottom inset (no labels on top,
-    /// no link under it), and at the smallest budget that is still at least two task rows.
-    func testTheListAreaAndItsInsetFitTheSmallestBudget() {
-        let page = M.sidePageHeight(budget: M.minimumTabBudget)
-        XCTAssertEqual(page + M.sideBottomInset, M.minimumTabBudget)
-        XCTAssertGreaterThanOrEqual(page, M.sideTaskRowsHeight(count: 2), "two task rows do not fit")
+    /// David: the list's bottom lines up with Start and Reset. The page is the composer's own
+    /// height (name field included) at every budget, never past the budget less its inset, and
+    /// holds three task rows beside the stacked composer.
+    func testThePageEndsWhereTheComposerDoes() {
+        for style in [M.Style.manualWithPresets, .ruler] {
+            for budget: CGFloat in [M.minimumTabBudget, 160, 200] {
+                let page = M.sidePageHeight(budget: budget, style: style)
+                XCTAssertEqual(page, M.totalHeight(style), "\(style) at \(budget)")
+                XCTAssertLessThanOrEqual(page + M.sideBottomInset, max(budget, M.minimumTabBudget))
+            }
+        }
+        XCTAssertGreaterThanOrEqual(M.sidePageHeight(budget: M.minimumTabBudget, style: .manualWithPresets),
+                                    M.sideTaskRowsHeight(count: 3), "three task rows beside the stacked composer")
         XCTAssertGreaterThan(M.sideBottomInset, 0, "the list would touch the labels' line")
     }
 
@@ -64,21 +71,93 @@ final class TimerComposerMetricsTests: XCTestCase {
         XCTAssertLessThanOrEqual(reach, M.visibleFooterHeight, "the swipe reaches below the notch")
     }
 
-    /// The 240 pt column beside the stacked composer fits the narrowest open notch (640 pt), with
-    /// the composer at its full width: the fields are never shrunk to make room.
-    func testTheWiderColumnAndTheComposerFitTheSmallestNotch() {
-        XCTAssertEqual(M.sideColumnWidth, 240)
-        let composer = M.composerWidthBesideSideColumn(notchWidth: M.smallestOpenNotchWidth)
-        XCTAssertGreaterThanOrEqual(composer, M.stackedComposerMinimumWidth)
+    /// David: "golden ratio is the goal". The composer and the side column split the tab's width
+    /// in the golden ratio around the 41 pt gap, at every notch width, in whole points, and the
+    /// stacked composer always keeps its full width: the fields are never shrunk.
+    func testTheColumnsSplitInTheGoldenRatio() {
+        XCTAssertEqual(M.columnGap, 41)
+        for notch: CGFloat in [M.smallestOpenNotchWidth, 675, 690, 770, 1000] {
+            let content = M.tabContentWidth(notchWidth: notch)
+            let column = M.sideColumnWidth(notchWidth: notch)
+            let composer = M.composerWidthBesideSideColumn(notchWidth: notch)
+            XCTAssertEqual(composer + column + M.columnGap, content, "\(notch)")
+            XCTAssertEqual(column, column.rounded(), "whole points at \(notch)")
+            XCTAssertEqual(composer / column, M.goldenRatio, accuracy: 0.01, "\(notch)")
+            XCTAssertGreaterThanOrEqual(composer, M.stackedComposerMinimumWidth, "\(notch)")
+        }
+        XCTAssertEqual(M.sideColumnWidth(notchWidth: M.smallestOpenNotchWidth), 202)
+        XCTAssertEqual(M.sideColumnWidth(notchWidth: 675), 215)
         // Three 64 pt fields, two 14 pt colons, four 8 pt gaps, and 6 pt padding each side.
         let expected: CGFloat = 192 + 28 + 32 + 12
         XCTAssertEqual(M.stackedComposerMinimumWidth, expected)
     }
 
+    /// Below the standard notch widths the column keeps two usable fact columns on a card.
+    func testTheColumnFloorHolds() {
+        XCTAssertEqual(M.sideColumnWidth(notchWidth: 420), M.minimumSideColumnWidth)
+        XCTAssertGreaterThanOrEqual(M.minimumSideColumnWidth, 200)
+    }
+
+    func testTheGoldenSplitAddsUp() {
+        let split = M.goldenSplit(327, spacing: 8)
+        XCTAssertEqual(split.minor + split.major + 8, 327)
+        XCTAssertEqual(split.major / split.minor, M.goldenRatio, accuracy: 0.02)
+        XCTAssertEqual(split.minor, split.minor.rounded(), "whole points")
+        XCTAssertEqual(M.goldenSplit(4, spacing: 8).minor, 0, "never negative")
+        XCTAssertEqual(M.goldenSplit(4, spacing: 8).major, 0)
+    }
+
     func testTheSideColumnHeightsNeverGoNegative() {
-        XCTAssertEqual(M.sidePageHeight(budget: 2), 0)
+        XCTAssertEqual(M.sidePageHeight(budget: 2, style: .manualWithPresets), 0)
         XCTAssertEqual(M.sideTaskRowsHeight(count: -1), 0)
         XCTAssertEqual(M.sideTaskRowsHeight(count: 2), 2 * (M.sideTaskRowHeight + M.sideRowSpacing))
+    }
+
+    /// The Tasks page's toolbar lines up with the session name field across the tab: the same
+    /// height, and the same gap to what comes under it.
+    func testTheSearchFieldIsLevelWithTheNameField() {
+        XCTAssertEqual(M.sideToolbarHeight, M.nameFieldHeight)
+        XCTAssertEqual(M.sideToolbarSpacing, M.nameFieldSpacing)
+    }
+
+    /// Under the search field, at the smallest budget, the list still holds two whole rows (the
+    /// first row's ▶ tooltip needs the second's room).
+    func testTheListUnderTheSearchFieldHoldsTwoRows() {
+        let page = M.sidePageHeight(budget: M.minimumTabBudget, style: .manualWithPresets)
+        let list = M.sideListHeight(pageHeight: page)
+        XCTAssertEqual(list, page - M.sideToolbarHeight - M.sideToolbarSpacing)
+        XCTAssertGreaterThanOrEqual(list, M.sideTaskRowsHeight(count: 2), "two task rows do not fit under the search field")
+        XCTAssertEqual(M.sideListHeight(pageHeight: 10), 0, "never negative")
+    }
+
+    /// David: the icons go vertically between the two sides of the tab, smaller. The rail sits in
+    /// the 41 pt gap centred on the divider's line, clear of both columns; its first icon is
+    /// centred on the session name field; all four slots fit the page beside the stacked composer.
+    func testTheRailFitsTheGap() {
+        XCTAssertEqual(M.railOffset - M.railButtonSize / 2, M.tabColumnSpacing + M.dividerWidth / 2, "centred on the divider's line")
+        XCTAssertGreaterThanOrEqual(M.railOffset - M.railButtonSize, 8, "clear of the task column")
+        XCTAssertGreaterThanOrEqual(M.columnGap - M.railOffset, 8, "clear of the composer")
+        XCTAssertLessThan(M.railButtonSize, M.nameFieldHeight, "smaller than the name field's own button")
+        XCTAssertEqual(M.railSlotHeight, M.nameFieldHeight, "the first icon is centred on the name field")
+        let page = M.sidePageHeight(budget: M.minimumTabBudget, style: .manualWithPresets)
+        XCTAssertLessThanOrEqual(4 * M.railSlotHeight + 4 * M.railSpacing, page, "search, filter, Refresh and the clock, then the hairline")
+    }
+
+    /// The task form takes the composer's place exactly: the same height, so nothing around it
+    /// moves when they swap, and inside the smallest budget.
+    func testTheTaskFormFitsTheComposersFrame() {
+        XCTAssertEqual(M.taskFormHeight, M.nameFieldHeight + 2 * M.taskFormRowHeight + M.buttonHeight + 3 * M.taskFormRowSpacing)
+        XCTAssertEqual(M.taskFormHeight, M.totalHeight(.manualWithPresets))
+        XCTAssertLessThanOrEqual(M.taskFormHeight, M.minimumTabBudget - M.bottomClearance)
+        XCTAssertGreaterThanOrEqual(M.taskFormRowHeight, 22, "a field row stays comfortably clickable")
+    }
+
+    /// Beside the New task button the session name field keeps room for its prompt at the
+    /// narrowest notch: the composer's width less the button and its gap.
+    func testTheNameFieldKeepsItsRoomBesideTheNewTaskButton() {
+        XCTAssertEqual(M.newTaskButtonSize, M.nameFieldHeight, "a square as tall as the field")
+        let field = M.composerWidthBesideSideColumn(notchWidth: M.smallestOpenNotchWidth) - M.nameFieldSpacing - M.newTaskButtonSize
+        XCTAssertGreaterThanOrEqual(field, 240, "\"Do you want to name this session?\" at 12 pt needs about 210 pt and its padding")
     }
 
     func testTheSideRowsStayReadable() {
@@ -90,7 +169,7 @@ final class TimerComposerMetricsTests: XCTestCase {
     /// 13 pt past the row, and the bottom fade is 16 pt. Checked at the smallest budget.
     func testOneTaskLeavesRoomForItsTooltip() {
         XCTAssertGreaterThanOrEqual(M.sideTaskMinimumRows, 2)
-        let page = M.sidePageHeight(budget: M.minimumTabBudget)
+        let page = M.sideListHeight(pageHeight: M.sidePageHeight(budget: M.minimumTabBudget, style: .manualWithPresets))
         let list = min(page, M.sideTaskRowsHeight(count: M.sideTaskMinimumRows))
         let bubbleOverflow: CGFloat = 13
         let bottomFade: CGFloat = 16

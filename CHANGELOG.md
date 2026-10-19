@@ -4,6 +4,232 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-18 - The notch's estimate is typed, in minutes, hours or days, with the presets one click away
+- **Developer label:** "in notch ability to add estimate is drop down, change it to allow hours days and minutes, or something with more flexibility without breaking our design"
+- **Agent label:** Claude Code (Opus 5.5) — typed estimate field in the timer tab's task form; a day unit for typed lengths
+- **Changes:**
+  - The timer tab's task form takes the estimate as typed text in the same golden-ratio slot the menu held: "45", "90m", "1.5h", "2d 3h". A chevron beside it still offers No estimate and the presets.
+  - While the field is focused it shows what it understood when that differs from what was typed ("= 19h"); leaving it writes the length the standard way ("90m" becomes "1h 30m").
+  - Text that is not a length, or is under a minute, turns orange and Add/Save waits until it is fixed, so a typo is never dropped silently. An emptied field or 0 means no estimate.
+  - A Jira or GitLab task with no Kannu estimate shows the source's own ("2h from Jira") as the field's prompt.
+  - `WorkDuration.parse` reads days (`d`, `day`, `days`). A day is a workday of 8 hours (`WorkDuration.hoursPerDay`), as GitLab and Jira count one by default, so "2d" is 16 hours. Lengths are still shown in hours. This also applies to Brain's Custom estimate sheet, Add Time and Time to log; the Custom sheet's hint now mentions "2d".
+  - Tests: `WorkDurationTests.testDaysAreWorkdays`; four `TaskFormDraftTests` for reading, echo, settling, presets and the remote prompt; `TimerSideColumnRulesTests` pins the field in the golden row and its settle-on-leave.
+
+### 2026-10-18 - A task card's linked merge requests open as a list
+- **Developer label:** "We need text about linked mr's inside the task to open a list of linked mr's and that page should have back on left and close on right and list of linked mr's with click through"
+- **Agent label:** Claude Code (Opus 5.5) — the "linked MRs" fact becomes a button that opens a page of the merge requests closing the issue (`closed_by`), each opening in the browser
+- **Changes:**
+  - On a GitLab issue's card, "2 linked MRs" is a button (a chevron after it, tooltip "Show
+    linked merge requests"), and ranks right after the due date, conflicts and health, so it is
+    always among the four facts the card has room for.
+  - It opens a page in the card's frame: Back on the left (to the card), "Linked merge requests",
+    Close on the right (to the list, which kept its place). Each merge request is a row with its
+    state as a dot (open green, merged purple, closed red), its title (sliding when clipped), and
+    "!12 · Merged · Kim Lee" (with Draft when it is one); a click opens it in the browser. While
+    loading, a spinner; then no merge requests, a failure with Try Again, the Keychain refused
+    with Try Again, or Reconnect GitLab. More than a page of them offers "More on GitLab".
+  - The list is GitLab's `closed_by` for the issue: the merge requests that close it when merged,
+    the same set its `merge_requests_count` counts, so the card's number and the list agree.
+    `GitLabAPI.closingMergeRequestsRequest` (read-only, the token in its header only),
+    `LinkedMergeRequest`, `GitLabReader.closingMergeRequests`, and
+    `TasksManager.linkedMergeRequests(for:)`: a click asks, so the Keychain may be read with its
+    dialog, as Refresh does; a loaded list is kept until the task's next sync or a new connection;
+    a refused token marks GitLab as needing reconnecting. Logs carry counts only.
+  - Tests: new `LinkedMergeRequestTests` (the request, the cases that send nothing, each answer as
+    a row: references, a page on another server dropped, an unknown state); `GitLabReaderTests`
+    (the list, more than a page, 401, rate limit, redirect, a server Kannu would not use);
+    `TaskDetailSummaryTests` (the fact is the only one with an action, within the first four);
+    `TimerTaskDetailRulesTests.testTheLinkedMergeRequestsPage`.
+
+### 2026-10-18 - Closing a task card finds the list where it was
+- **Developer label:** "the close button of a task should keep the list at previously scrolled position or at the position of closed task , see which is easy but the current way how they close back to top is not acceptable"
+- **Agent label:** Claude Code (Opus 5.5) — the task list stays in the view tree under a card or the Log page, hidden and inert, so its scroll position survives
+- **Changes:**
+  - Opening a card used to swap the task list out for it, so closing the card rebuilt the list at
+    the top. The list now stays under the card (and under the Time to log page), hidden, taking no
+    clicks or hovers and skipped by VoiceOver, and is never rebuilt: closing returns to exactly the
+    place it was scrolled to, with no jump. Keeping the list was both easier and exact, against
+    scrolling back to the closed task.
+  - Opening a card clears the hovered row, so no row goes on sliding its text under the card.
+  - Test: `TimerTaskDetailRulesTests.testClosingACardKeepsTheListsPlace`.
+
+### 2026-10-18 - Clipped text on the task card and rows slides into view on hover again
+- **Developer label:** "the animation to reveal the clipped text on hover is not working"
+- **Agent label:** Claude Code (Opus 5.5) — the reveal measures its sizes into state instead of through preference keys, and starts once they arrive; found and checked with a rendering harness
+- **Changes:**
+  - `HoverRevealText` never slid: it measured the truncated frame and the full text through two
+    preference keys, and in this view their `onPreferenceChange` reported zero sizes and never the
+    real ones (seen in a harness that renders the view and prints what it measured). With no
+    overflow, nothing counted as clipped.
+  - Each size is now written straight to state as it appears and whenever it changes
+    (`SizeReader`). The harness then measured every case (a fact, a two-line title, a row's title
+    and caption) and rendered each sliding.
+  - The slide also starts when the sizes arrive after the hover (`trigger`: the hover and whether
+    the text is clipped), so text that appears under the pointer slides too.
+  - Tests: new `HoverRevealTextTests` host the view in a window and compare its pixels: a clipped
+    line and a clipped title move while active; text that fits, or is not hovered, stays still;
+    and the sizes never go back through preferences. `HoverRevealText.swift` joins the logic
+    target (pbxproj ids 5B0/5B1).
+
+### 2026-10-18 - The notch's task form offers the tags already in use
+- **Developer label:** "also is adding tags in a task from notch does not provide existing tags ?"
+- **Agent label:** Claude Code (Opus 5.5) — while tags are typed in the timer tab's task form, the tags in use show as chips with their colours, from Brain's own suggestions
+- **Changes:**
+  - While the form's tags field has focus, the reminder's row shows the tags in use as chips, each
+    with its colour dot (none for plain glass): Brain's own suggestions
+    (`TaskTagEditing.suggestions`), so the first few with nothing typed, then those that start with
+    what is typed, then those that contain it, then the typed text as a new tag (a +). A tag
+    already typed is never offered; nothing is once ten are.
+  - A click completes the tag in place of what was being typed and adds a comma, ready for the
+    next; the field keeps its focus (chips are not focusable, and stay while the pointer is on them
+    so a click always lands). Chips that do not fit are left off the end, never wrapped, so the
+    row stays 24 pt. The reminder row comes back when the field lets go.
+  - `TaskFormDraft` gains `tagFragment`, `tagsBeforeFragment`, `tagSuggestions(existing:)` and
+    `completeTag(_:)`.
+  - Tests: `TaskFormDraftTests` (the fragment, completion, Brain's suggestions skipping typed
+    tags, nothing at ten); `TimerSideColumnRulesTests` (the form uses the suggestions, chips are
+    not focusable and never wrap).
+
+### 2026-10-18 - The task icons sit in a small rail between the timer tab's two columns
+- **Developer label:** "how would moving the 3 icons in the third picture to go vertically between the 2 sides of the tab work, also make them smaller and go in with genereal design"
+- **Agent label:** Claude Code (Opus 5.5) — search, filter, Refresh and the Time to log clock move from the Tasks page's top row into a vertical rail on the divider's line, with the hairline continuing below
+- **Changes:**
+  - The Tasks page's icons move out of its top row into a rail in the gap between the composer and
+    the list, centred on the divider's line: search, the filter, Refresh (while Jira or GitLab
+    syncs), and the Time to log clock (while an entry asks), top to bottom, the first level with
+    the session name field. Under them the divider's hairline runs to the page's bottom.
+  - Smaller and in the notch's own style (`TimerRailIcon`): 21 pt squares with a dim fill and a
+    10 pt glyph, brighter while what they open is open. The filter menu draws the same square
+    (`TaskSourceMenu` style `.rail`).
+  - The rail is an overlay hung into the gap (`TimerComposerMetrics.railOffset`), so it takes no
+    room: the gap stays 41 pt and nothing moves when the page changes. The divider steps aside
+    while the Tasks page shows; Presets keeps it.
+  - The list gets the whole page back: three rows, ending where Start and Reset do. Search opens
+    a field at the top of the page (the name field's look); opening it closes an open card or the
+    Log page. The clock toggles the Log page. The rail stays beside the card and the Log page.
+  - "Filtered · Show all" leaves with the row: the filter's square brightens while it hides a
+    source, its menu gains Show all (the popover's too), and "Nothing to show" offers Show all.
+  - Tests: `TimerSideColumnRulesTests` (the rail hangs in the gap, the divider steps aside, no
+    toolbar row, the icons' order, planted offenders); `TimerComposerMetricsTests` (the rail fits
+    the gap clear of both columns, centred on the divider, four slots fit; two rows under the
+    search field).
+
+### 2026-10-18 - The timer tab's columns split in the golden ratio and end on one line
+- **Developer label:** "fix allignements, keeo golden ratio wherever possible ... golden ratio is the goal"
+- **Agent label:** Claude Code (Opus 5.5) — the composer and the task column share the notch's width 1.618 : 1, the column ends where Start and Reset do, and the task form's rows split in the golden ratio
+- **Changes:**
+  - The composer and the side column split the tab's width in the golden ratio around the 41 pt
+    gap, at every notch width (`TimerComposerMetrics.sideColumnWidth(notchWidth:)`): 327 : 202 in
+    the narrowest notch, 349 : 215 in a 675 pt one, instead of a fixed 240 pt column. The notch
+    never grows for it; the columns share what it has. The width comes from the open notch's own
+    width, not the view model's, which shrinks to the closed size before the tab fades out.
+  - The width is passed down to the task list, the task card (its two fact columns follow) and the
+    Time to log page.
+  - The side page is the composer's height, name field included (`sidePageHeight(budget:style:)`),
+    so the list, the card and the divider end on the line Start and Reset end on, at every notch
+    height; three task rows fit beside the stacked composer.
+  - The task form is exactly the composer's height (rows 8 pt apart: 122), so the two swap without
+    anything moving. Its estimate and tags, and Add and Add & Start, split 1 : φ (`GoldenRow`, a
+    small `Layout`); Save alone fills its row. The reminder row is inset like the fields' text.
+  - Tests: `TimerComposerMetricsTests` (the golden split at five widths, the floor, the split
+    adding up, the page ending with the composer, the form equal to the composer);
+    `TimerSideColumnRulesTests` (the open notch's width, the divider and page ending together, the
+    form's golden rows); `TimerTaskDetailRulesTests` (the card takes the column's width).
+
+### 2026-10-18 - The timer's duration digits always show whole
+- **Developer label:** "also ui in timer broken randomly"
+- **Agent label:** Claude Code (Opus 5.5) — the composer's Hours, Minutes and Seconds boxes are an NSTextField of Kannu's own, sized to the box, under no clip
+- **Changes:**
+  - The duration boxes sometimes showed only the top half of their 22 pt digits. Each was a SwiftUI
+    `TextField`, which sizes itself from its text; rebuilt mid-animation (switching tabs, a timer
+    stopping, and since the task form, every time it closes) it could be measured for the default
+    13 pt font, about 16 pt tall, and it sat under two clip masks. The cause is likely, not
+    confirmed on screen, so both suspects go.
+  - New `DurationDigitField`: an `NSTextField` with the font set when it is made, the box's size
+    always (`sizeThatFits`), and a cell that centres the digits. While the user types, an update
+    never overwrites their text unless it no longer says the value.
+  - Typing works like a clock's display (`TimerDurationDigits`): digits only, a digit typed past two
+    pushes the first one out (typing 5 into "00" reads "05"), never past the range.
+  - The box and the composer draw a filled shape behind instead of a clip over the fields.
+  - Tests: `TimerDurationDigitsTests`; `TimerDurationFieldRulesTests` (the wrapper, no clip over
+    the boxes or the composer, the font and size fixed, the digits' line height fits the box,
+    planted offenders).
+
+### 2026-10-18 - New task and Edit task turn the timer tab's left panel into a task form
+- **Developer label:** "a seperate add taks doesnt make sense, the left part does that, for a detailed task edit, keep a small icon by reducing that pills width, keep a minimal size button with hover tool tip and that converts that one full notch patch to a editable task form with a close button and controls to add a task"
+- **Agent label:** Claude Code (Opus 5.5) — a New task button beside the session name field, a pencil on the task card, and one form in the composer's place for both
+- **Changes:**
+  - Beside the session name field, with tasks on, a small New task button (tooltip "New task").
+    The field is 30 pt narrower for it and keeps 259 pt at the smallest notch.
+  - The button turns the left panel into a task form in the composer's frame (116 pt, under the
+    composer's 122, so the notch never grows): the title with a × where the button was; the
+    estimate (Brain's choices) and tags, comma separated; a local task's reminder, a field date
+    picker (a compact one's calendar is a popover window the notch would close under), with an
+    orange bell while macOS blocks Kannu's notifications; then Add and Add & Start.
+  - The pencil on an expanded task card opens the same form on that task, with Save. Only what
+    changed is saved (`TaskFormDraft.edits`). A Jira or GitLab task's title shows but stays the
+    server's, and reminders are for local tasks.
+  - Add & Start starts the task the way its ▶ does; the typed session name gives way to it. Add
+    puts Local back in the notch if it was hidden, as the popover's Add does.
+  - The form's fields and its estimate menu hold the notch open while in use, under tokens of
+    their own, released when the focus goes, the form goes, or the notch's window stops being key.
+    Escape and the × leave without saving. A timer starting or stopping, the tab appearing, or
+    tasks going off brings the composer back.
+  - `TasksManager.addTask` returns the new task's id (its two callers check for nil), and
+    `renameTask` renames a local task; Brain's add row shares the estimate choices.
+  - Tests: `TaskFormDraftTests`; `TimerComposerMetricsTests` (the form fits, the name field keeps
+    its room); `TimerSideColumnRulesTests.testTheTaskFormOwnsTheManagerAndLetsTheNotchGo`;
+    `TimerLifecycleRulesTests` (the form is cleared when a timer starts or stops);
+    `TimerTaskDetailRulesTests` (the pencil's tooltip); `TasksPopoverRulesTests` (the form is a
+    notch task view: no `.help`, no Keychain, no tickers).
+
+### 2026-10-18 - The timer tab's task column has search, the filter, Refresh and Time to log
+- **Developer label:** "instead of tasks buttons,keep the refrsh button and on hover show the integrations last synced time, refrsh should trigger resync, search , filter will be icons, taking up a row similar to the name session ... in right the row will have search and filter option, possibly load the search dynamically ... also do we miss anything else from the task icon click feauture, check and make sure no feature is lost in this overhaul"
+- **Agent label:** Claude Code (Opus 5.5) — a toolbar on the Tasks page, the popover's Refresh rule and Time to log cards shared, the header button shown only where the column cannot be
+- **Changes:**
+  - The Tasks page has a toolbar level with the session name field (same height, same gap):
+    search, the Show in notch filter (the popover's `TaskSourceMenu`, with Connect and Manage
+    tasks…), Refresh while Jira or GitLab syncs, and Time to log, a clock with the yellow dot,
+    while an entry asks. "Filtered · Show all" leads the row while the filter hides a source.
+  - Search turns the row into a field that narrows the list as you type, in memory
+    (`TaskSearch`: title, key, short key, tags and labels, every word, case and accents
+    ignored). The × or Escape ends it.
+  - Refresh's tooltip says when each source last synced ("Jira: Synced 10:42 · GitLab: Offline");
+    a click resyncs both, with a spinner while syncing, off while rate limited. The rule is the
+    popover's, now one place (`TaskSyncSummary`), and the popover uses it too.
+  - The clock opens the Time to log cards in the column, with a × back; they are the popover's
+    cards (`LogTimeCards`, moved out of the popover with `StackedCardStyle`), so Log goes the one
+    way it does everywhere. The page closes when the last entry is answered.
+  - The list honours Show in notch, as the popover does, then the search; empty, it says "No
+    tasks", "No matching tasks" or "Nothing to show". An expanded card and the Log page take the
+    whole page; the list sits under the toolbar (`sideListHeight`, two rows at the smallest
+    notch).
+  - The search field, a Time to log card's fields (through `worklogFieldFocus`, nil in Brain) and
+    an open menu hold the notch open, each under its own token, released when the focus goes, the
+    page goes, or the notch's window stops being key.
+  - The header's Tasks button shows only where the column cannot: on the timer tab while a timer
+    runs, and on every tab with no timer tab (timer off, or a popover). Nothing the popover has is
+    lost: the running task's clock, pause and stop, Up next and Time to log stay there while
+    timing, and with no timer tab everything stays there.
+  - Tests: `TaskSearchTests`; `TasksHeaderVisibilityTests` (16-row table, the running-timer case);
+    `TasksPopoverLogicTests` (sync lines, tooltip, refresh rule); `TimerComposerMetricsTests`
+    (toolbar level with the name field, two rows under it); `TimerSideColumnRulesTests` (filter
+    and search, focus and menu holds, Refresh's rule, the toolbar over the list only);
+    `TasksPopoverRulesTests` (the header gate passes the running timer).
+
+### 2026-10-18 - A local task never timed says so on its card
+- **Developer label:** "for local taks without no logs, just maybe show a greyed out text that goes like no time logged , please start task to see or something more proffessiona"
+- **Agent label:** Claude Code (Opus 5.5) — a muted note on the timer tab's task card for a local task with no recorded time
+- **Changes:**
+  - `TaskDetailSummary` gains `note`: "No time recorded yet. Start the task to track it." for a
+    local task with no sessions and nothing running. A reminder is not time, so a reminded task
+    still says it; a Jira or GitLab task never does, since its facts and its server's time speak
+    for it.
+  - The card shows the note in grey where the facts go, after any facts, and gives way before
+    them when a two-line title leaves less room (`ViewThatFits`), so the card stays contained.
+  - Tests: `TaskDetailSummaryTests.testALocalTaskNeverTimedSaysSo`,
+    `TimerTaskDetailRulesTests.testANeverTimedLocalTaskShowsItsNote`.
+
 ### 2026-10-19 - The archive keeps its own time, and the usage Refresh tooltip is translatable
 - **Developer label:** CodeRabbit on #107 (covering this branch): "Archive processing never runs while the app stays open and no sync happens." and "Localize the Refresh tooltip."
 - **Agent label:** Claude Code (Opus 5.5) — `TasksManager.refreshArchive()` on a new day and when Brain's Task list appears; `String(localized:)` on the header's Refresh tooltip

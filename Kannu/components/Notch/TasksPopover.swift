@@ -160,20 +160,17 @@ struct TasksPopover: View {
         }
     }
 
+    /// Each source's sync state while its sync is on; nil when off (`TaskSyncSummary`).
+    private var jiraState: SourceSyncState? { manager.isJiraSyncOn ? manager.jiraSync : nil }
+    private var gitlabState: SourceSyncState? { manager.isGitLabSyncOn ? manager.gitlabSync : nil }
+
     private var rateLimitEnds: [Date] {
-        [manager.jiraSync.rateLimitEnd, manager.gitlabSync.rateLimitEnd].compactMap { $0 }.sorted()
+        TaskSyncSummary.rateLimitEnds(jira: manager.jiraSync, gitlab: manager.gitlabSync)
     }
 
     /// "Jira · Synced 10:42", "GitLab · Offline": one line per source that is synced.
     private func syncLines(at date: Date) -> [String] {
-        var lines: [String] = []
-        if manager.isJiraSyncOn {
-            lines.append(String(localized: "Jira · \(manager.jiraSync.shortCaption(now: date))"))
-        }
-        if manager.isGitLabSyncOn {
-            lines.append(String(localized: "GitLab · \(manager.gitlabSync.shortCaption(now: date))"))
-        }
-        return lines
+        TaskSyncSummary.lines(jira: jiraState, gitlab: gitlabState, now: date)
     }
 
     @ViewBuilder
@@ -200,14 +197,7 @@ struct TasksPopover: View {
     }
 
     private func canRefresh(at date: Date) -> Bool {
-        guard manager.isReady else { return false }
-        return canRefresh(manager.jiraSync, isOn: manager.isJiraSyncOn, at: date)
-            || canRefresh(manager.gitlabSync, isOn: manager.isGitLabSyncOn, at: date)
-    }
-
-    private func canRefresh(_ state: SourceSyncState, isOn: Bool, at date: Date) -> Bool {
-        guard isOn else { return false }
-        return state.rateLimitEnd.map { $0 <= date } ?? true
+        TaskSyncSummary.canRefresh(isReady: manager.isReady, jira: jiraState, gitlab: gitlabState, at: date)
     }
 
     // MARK: - Loading
@@ -235,16 +225,16 @@ struct TasksPopover: View {
     private var readyContent: some View {
         let timed = timedTask
         let asking = manager.openDrafts.filter(WorklogDrafts.isAskingNow)
-        let cards = Array(asking.prefix(Self.maxCards))
-        let rows = TaskOrdering.upNextRows(showingNow: timed != nil, cards: cards.count)
+        let cards = min(asking.count, Self.maxCards)
+        let rows = TaskOrdering.upNextRows(showingNow: timed != nil, cards: cards)
         let shown = TaskOrdering.active(manager.activeTasks, listed: notchFilter)
         let waitingNext = TaskOrdering.upNext(shown, excluding: manager.timing?.taskID, limit: .max)
 
         if let timed, let timing = manager.timing {
             nowSection(timed, isPaused: timing.isPaused)
         }
-        if !cards.isEmpty {
-            logTimeSection(cards, more: asking.count - cards.count)
+        if cards > 0 {
+            logTimeSection(asking)
         }
         // Always: Add a task stays whatever the filter shows.
         upNextSection(Array(waitingNext.prefix(rows)), total: waitingNext.count, showsEmptyState: waitingNext.isEmpty && timed == nil)
@@ -344,25 +334,10 @@ struct TasksPopover: View {
 
     // MARK: - Log time?
 
-    private func logTimeSection(_ cards: [WorklogDraft], more: Int) -> some View {
+    private func logTimeSection(_ asking: [WorklogDraft]) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             sectionTitle("Log time?")
-            ForEach(cards) { draft in
-                WorklogDraftCard(draft: draft)
-                    .labeledContentStyle(StackedCardStyle())
-                    .controlSize(.small)
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.white.opacity(0.06))
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            }
-            if more > 0 {
-                Button(more == 1 ? String(localized: "1 more in Brain") : String(localized: "\(more) more in Brain")) {
-                    openBrain(.timeToLog)
-                }
-                .buttonStyle(.link)
-                .font(.system(size: 12, weight: .medium))
-            }
+            LogTimeCards(asking: asking, maxCards: Self.maxCards, openBrain: openBrain)
         }
     }
 
@@ -431,7 +406,7 @@ struct TasksPopover: View {
     /// The new task is always local: with Local hidden it would vanish as it is added, so adding one
     /// puts Local back in the notch.
     private func addTask() {
-        if manager.addTask(title: newTitle, estimateSeconds: nil) {
+        if manager.addTask(title: newTitle, estimateSeconds: nil) != nil {
             newTitle = ""
             if !showLocal { showLocal = true }
         }
@@ -513,14 +488,3 @@ struct TasksPopover: View {
     }
 }
 
-/// The Time to log card, stacked to fit the popover: what would be logged on top, then the length,
-/// the comment and the answers, trailing. In Brain the same card is a Form row.
-private struct StackedCardStyle: LabeledContentStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            configuration.label
-            configuration.content
-                .frame(maxWidth: .infinity, alignment: .trailing)
-        }
-    }
-}

@@ -20,26 +20,37 @@
 
 import XCTest
 
-/// The header's Tasks button: with tasks on, on the timer tab, or on every tab when there is no
-/// timer tab; never with tasks off, since its view builds `TasksManager`.
+/// The header's Tasks button: with tasks on, wherever the timer tab's task column cannot show —
+/// on every tab when there is no timer tab, and on the timer tab only while a timer runs (the
+/// column hides then). Never on the other tabs of a notch with a timer tab, and never with tasks
+/// off, since its view builds `TasksManager`.
 final class TasksHeaderVisibilityTests: XCTestCase {
     func testTheWholeTruthTable() {
-        // (enableTasks, currentViewIsTimer, timerTabExists) -> shown
-        let table: [(Bool, Bool, Bool, Bool)] = [
-            (false, false, false, false),
-            (false, false, true, false),
-            (false, true, false, false),
-            (false, true, true, false),
-            (true, false, false, true),   // no timer tab: every tab
-            (true, false, true, false),   // a timer tab, another tab current
-            (true, true, false, true),
-            (true, true, true, true),     // the timer tab is current
+        // (enableTasks, currentViewIsTimer, timerTabExists, timerIsRunning) -> shown
+        let table: [(Bool, Bool, Bool, Bool, Bool)] = [
+            (false, false, false, false, false),
+            (false, false, false, true, false),
+            (false, false, true, false, false),
+            (false, false, true, true, false),
+            (false, true, false, false, false),
+            (false, true, false, true, false),
+            (false, true, true, false, false),
+            (false, true, true, true, false),
+            (true, false, false, false, true),   // no timer tab: every tab
+            (true, false, false, true, true),
+            (true, true, false, false, true),
+            (true, true, false, true, true),
+            (true, false, true, false, false),   // a timer tab, another tab current
+            (true, false, true, true, false),
+            (true, true, true, false, false),    // the timer tab, its task column showing
+            (true, true, true, true, true),      // the timer tab while a timer runs: no column
         ]
-        for (enableTasks, isTimer, tabExists, expected) in table {
+        for (enableTasks, isTimer, tabExists, running, expected) in table {
             XCTAssertEqual(
-                TasksHeaderVisibility.isShown(enableTasks: enableTasks, currentViewIsTimer: isTimer, timerTabExists: tabExists),
+                TasksHeaderVisibility.isShown(enableTasks: enableTasks, currentViewIsTimer: isTimer,
+                                              timerTabExists: tabExists, timerIsRunning: running),
                 expected,
-                "enableTasks: \(enableTasks), currentViewIsTimer: \(isTimer), timerTabExists: \(tabExists)"
+                "enableTasks: \(enableTasks), currentViewIsTimer: \(isTimer), timerTabExists: \(tabExists), timerIsRunning: \(running)"
             )
         }
     }
@@ -47,8 +58,19 @@ final class TasksHeaderVisibilityTests: XCTestCase {
     func testTasksOffNeverShowsTheButton() {
         for isTimer in [false, true] {
             for tabExists in [false, true] {
-                XCTAssertFalse(TasksHeaderVisibility.isShown(enableTasks: false, currentViewIsTimer: isTimer, timerTabExists: tabExists))
+                for running in [false, true] {
+                    XCTAssertFalse(TasksHeaderVisibility.isShown(enableTasks: false, currentViewIsTimer: isTimer,
+                                                                 timerTabExists: tabExists, timerIsRunning: running))
+                }
             }
         }
+    }
+
+    /// David: the timer tab's task column has the list, search, the filter, Refresh and Time to
+    /// log, so the button repeats nothing there; while a timer runs the column hides, and the
+    /// button is the way to the running task's clock, Up next and Time to log.
+    func testTheTimerTabShowsTheButtonOnlyWhileATimerRuns() {
+        XCTAssertFalse(TasksHeaderVisibility.isShown(enableTasks: true, currentViewIsTimer: true, timerTabExists: true, timerIsRunning: false))
+        XCTAssertTrue(TasksHeaderVisibility.isShown(enableTasks: true, currentViewIsTimer: true, timerTabExists: true, timerIsRunning: true))
     }
 }

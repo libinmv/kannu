@@ -46,6 +46,17 @@ struct GitLabClient {
         return result
     }
 
+    func closingMergeRequests(_ credential: GitLabCredential, projectID: Int, iid: Int) async -> Result<(items: [LinkedMergeRequest], complete: Bool), GitLabReader.Failure> {
+        let result = await reader.closingMergeRequests(credential, projectID: projectID, iid: iid)
+        switch result {
+        case .success(let read):
+            Self.log.info("GitLab linked MRs: \(read.items.count, privacy: .public), complete \(read.complete, privacy: .public)")
+        case .failure(let failure):
+            Self.log.notice("GitLab linked MRs failed: \(String(describing: failure), privacy: .public)")
+        }
+        return result
+    }
+
     func fetchItems(_ credential: GitLabCredential, username: String, includeMergeRequests: Bool) async -> GitLabReader.Fetch {
         let fetch = await reader.fetchItems(credential, username: username, includeMergeRequests: includeMergeRequests)
         if let failure = fetch.failure {

@@ -98,11 +98,12 @@ final class TimerTaskDetailRulesTests: XCTestCase {
     func testTheIconButtonsCarryTooltipsAndTheExpandRespectsReducedMotion() throws {
         let column = try Self.column()
         let card = try Self.declaration("private struct TimerTaskDetail", in: column)
-        for tooltip in ["\"Close\"", "\"Delete task\"", "\"Archive\""] {
+        for tooltip in ["\"Close\"", "\"Delete task\"", "\"Archive\"", "\"Edit task\""] {
             XCTAssertTrue(card.contains(tooltip), "missing tooltip text \(tooltip)")
         }
-        XCTAssertGreaterThanOrEqual(card.components(separatedBy: ".hoverTooltip(").count - 1, 5,
-                                    "the ×, the key pill, archive, trash and open-in each carry a hover tooltip")
+        XCTAssertGreaterThanOrEqual(card.components(separatedBy: ".hoverTooltip(").count - 1, 6,
+                                    "the pencil, the ×, the key pill, archive, trash and open-in each carry a hover tooltip")
+        XCTAssertTrue(card.contains("edit()"), "the pencil opens the left panel's task form")
         let page = try Self.declaration("private struct TimerTasksPage", in: column)
         XCTAssertTrue(page.contains("accessibilityReduceMotion"), "the expand must respect reduced motion")
         XCTAssertTrue(page.contains("expandedTaskID"))
@@ -140,16 +141,62 @@ final class TimerTaskDetailRulesTests: XCTestCase {
         XCTAssertEqual(page.components(separatedBy: "HoverRevealText(").count - 1, 2, "title and caption")
     }
 
+    func testANeverTimedLocalTaskShowsItsNote() throws {
+        // David: a local task with no time showed nothing between its title and Start; it says
+        // so in grey now, where the facts go, and gives way before them.
+        let card = try Self.declaration("private struct TimerTaskDetail", in: try Self.column())
+        XCTAssertTrue(card.contains("factGrid(summary.facts, note: summary.note)"), "the card shows the summary's note")
+        XCTAssertTrue(card.contains(".foregroundStyle(.tertiary)"), "the note is muted, not an alert")
+    }
+
     func testTheCardIsContainedWhateverItsWords() throws {
         // A long label once widened the card past the column and pushed the × and the open icon
         // off the notch; a two-line title must never push Start out of the page either.
         let card = try Self.declaration("private struct TimerTaskDetail", in: try Self.column())
-        XCTAssertTrue(card.contains(".frame(width: M.sideColumnWidth, height: height"),
+        XCTAssertTrue(card.contains(".frame(width: width, height: height"),
                       "the card is exactly the column's width and the page's height")
+        XCTAssertTrue(card.contains("let width: CGFloat"), "the column's width comes in: the golden split of the notch")
         XCTAssertTrue(card.contains("ViewThatFits(in: .horizontal)"), "the chip row gives way instead of overflowing")
         XCTAssertTrue(card.contains("ViewThatFits(in: .vertical)"), "the fact grid fits the height left over")
         XCTAssertFalse(card.contains("TaskColorDot("),
                        "no dot: it drew nothing for plain glass yet indented the title past the chips")
+    }
+
+    /// David: the "linked MRs" fact opens a list of them, with back on the left, close on the right,
+    /// and each one clickable through.
+    func testTheLinkedMergeRequestsPage() throws {
+        let column = try Self.column()
+        let card = try Self.declaration("private struct TimerTaskDetail", in: column)
+        XCTAssertTrue(card.contains("case .linkedMergeRequests:"), "the fact with the action is a button")
+        XCTAssertTrue(card.contains(#".hoverTooltip(String(localized: "Show linked merge requests")"#))
+        XCTAssertTrue(card.contains("TimerLinkedMRsPage("), "the page swaps in for the card, in its frame")
+        XCTAssertTrue(card.contains("back: { showLinkedMRs(false) }") && card.contains("close: close"),
+                      "Back returns to the card; Close returns to the list")
+
+        let page = try Self.declaration("private struct TimerLinkedMRsPage", in: column)
+        XCTAssertTrue(page.contains("@ObservedObject var manager: TasksManager") && !page.contains("TasksManager.shared"),
+                      "the page reads the manager it is handed")
+        XCTAssertTrue(page.contains("manager.linkedMergeRequests(for: task.id)"))
+        let back = try XCTUnwrap(page.range(of: "Button(action: back)"))
+        let close = try XCTUnwrap(page.range(of: "Button(action: close)"))
+        XCTAssertLessThan(back.lowerBound, close.lowerBound, "Back on the left, Close on the right")
+        XCTAssertTrue(page.contains(#".hoverTooltip(String(localized: "Back")"#) && page.contains(#".hoverTooltip(String(localized: "Close")"#))
+        XCTAssertTrue(page.contains("NSWorkspace.shared.open(url)"), "each merge request opens in the browser")
+        XCTAssertTrue(page.contains("ScrollView(.vertical)") && !page.contains("List {"), "a ScrollView, never a List")
+        XCTAssertTrue(page.contains("attempt += 1"), "a failed load can be tried again")
+    }
+
+    /// David: closing a card brought the list back at the top, "not acceptable". The list stays in
+    /// the tree under the card (and the Log page), hidden and inert, so its scroll offset survives.
+    func testClosingACardKeepsTheListsPlace() throws {
+        let page = try Self.declaration("private struct TimerTasksPage", in: try Self.column())
+        XCTAssertTrue(page.contains("ZStack(alignment: .topLeading) {"), "the card draws over the list, not instead of it")
+        XCTAssertTrue(page.contains(".opacity(isCovered ? 0 : 1)"), "the covered list is hidden, not removed")
+        XCTAssertTrue(page.contains(".allowsHitTesting(!isCovered)"), "the covered list takes no clicks or hovers")
+        XCTAssertTrue(page.contains(".accessibilityHidden(isCovered)"), "VoiceOver skips the covered list")
+        XCTAssertFalse(page.contains("} else {\n            VStack(alignment: .leading, spacing: M.sideToolbarSpacing)"),
+                       "the list is an else branch again: it would be rebuilt at the top")
+        XCTAssertTrue(page.contains("hoveredRowID = nil"), "no row slides its text under the card")
     }
 
     func testATaskLeavingTheListCollapsesTheCard() throws {

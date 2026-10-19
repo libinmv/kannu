@@ -172,8 +172,10 @@ final class TimerLifecycleRulesTests: XCTestCase {
         XCTAssertEqual(Self.notchProblems(in: planted), [
             "a click into another app leaves the name field focused, so the notch never auto-closes",
             "a stopped timer leaves the name field focused",
+            "a timer starting or stopping leaves the task form in the composer's place",
         ])
         let fixed = planted
+            .replacingOccurrences(of: "{ _, isActive in", with: "{ _, isActive in\n    taskForm = nil")
             .replacingOccurrences(of: "isRenamingSession = false", with: "isRenamingSession = false; focusedNameField = nil")
             .replacingOccurrences(of: "commitRename() }", with: "commitRename(); focusedNameField = nil }")
         XCTAssertEqual(Self.notchProblems(in: fixed), [])
@@ -283,6 +285,9 @@ final class TimerLifecycleRulesTests: XCTestCase {
         }
         for _ in stops.filter({ !$0.contains("focusedNameField = nil") }) {
             problems.append("a stopped timer leaves the name field focused")
+        }
+        for _ in stops.filter({ !$0.contains("taskForm = nil") }) {
+            problems.append("a timer starting or stopping leaves the task form in the composer's place")
         }
         return problems
     }

@@ -71,8 +71,37 @@ enum TimerComposerMetrics {
     /// The narrowest open notch: `recommendedMinimumNotchWidth`'s floor (matters.swift).
     static let smallestOpenNotchWidth: CGFloat = 640
 
-    // The side column beside the composer (`TimerSideColumn`): one page, the whole budget tall.
-    static let sideColumnWidth: CGFloat = 240
+    // The two columns split the tab's width in the golden ratio around the gap between them (the
+    // divider and its spacing): composer : side column = φ : 1, at every notch width, so the
+    // notch never grows for it — the columns share what the notch has.
+    static let goldenRatio: CGFloat = 1.6180339887
+    /// The room between the composer and the side column: the divider and its spacing either side.
+    static var columnGap: CGFloat { tabColumnSpacing * 2 + dividerWidth }
+    /// The narrowest the side column gets (only below the standard notch widths): two 85 pt fact
+    /// columns on a task's card.
+    static let minimumSideColumnWidth: CGFloat = 200
+
+    /// The tab's width inside its padding, in an open notch `notchWidth` wide.
+    static func tabContentWidth(notchWidth: CGFloat) -> CGFloat {
+        notchWidth - openNotchSideInset * 2 - tabHorizontalPadding * 2
+    }
+
+    /// The side column's width: what the two columns share, over φ² (so the composer has φ times
+    /// it), in whole points, rounded down so the composer takes the fraction. 202 pt in the
+    /// narrowest notch, 215 in a 675 pt one.
+    static func sideColumnWidth(notchWidth: CGFloat) -> CGFloat {
+        let columns = tabContentWidth(notchWidth: notchWidth) - columnGap
+        return max(minimumSideColumnWidth, (columns / (goldenRatio * goldenRatio)).rounded(.down))
+    }
+
+    /// Two parts of `total` with `spacing` between them in the golden ratio, minor : major = 1 : φ,
+    /// in whole points: the task form's estimate and tags, Add and Add & Start.
+    static func goldenSplit(_ total: CGFloat, spacing: CGFloat) -> (minor: CGFloat, major: CGFloat) {
+        let parts = max(0, total - spacing)
+        let minor = (parts / (1 + goldenRatio)).rounded(.down)
+        return (minor, parts - minor)
+    }
+
     /// Room the page leaves under itself, above the tab's bottom line.
     static let sideBottomInset: CGFloat = 4
     /// The "Tasks · Presets" labels, shown only when both pages exist. They are an overlay of the
@@ -105,11 +134,50 @@ enum TimerComposerMetrics {
     /// row (0–14 pt under it). Without it the row's lower 8 pt were outside the swipe.
     static var pageSwipeFooterReach: CGFloat { openNotchBottomPadding }
 
-    /// The height left for the shown page: the tab's budget less the bottom inset. The labels
-    /// live in the footer, so the page starts level with the session name field.
-    static func sidePageHeight(budget: CGFloat) -> CGFloat {
-        max(0, budget - sideBottomInset)
+    /// The shown page's height: the composer's, name field included (`totalHeight(style)`), so the
+    /// page — list, card, divider — ends on the line Start and Reset end on; never past the budget
+    /// less the bottom inset. The labels live in the footer, so the page starts level with the
+    /// session name field. 122 pt beside the stacked composer: three task rows.
+    static func sidePageHeight(budget: CGFloat, style: Style) -> CGFloat {
+        max(0, min(budget - sideBottomInset, totalHeight(style)))
     }
+
+    /// The Tasks page's search field, at the page's top while searching: as tall as the session
+    /// name field and as far above the list as the field is above the composer, so the two rows
+    /// line up across the tab.
+    static let sideToolbarHeight: CGFloat = nameFieldHeight
+    static let sideToolbarSpacing: CGFloat = nameFieldSpacing
+
+    // The Tasks page's rail (`TimerTasksPage.rail`): its icons in the gap between the columns,
+    // centred on the divider's line, which it replaces while the page shows.
+    static let railButtonSize: CGFloat = 21
+    static let railGlyphSize: CGFloat = 10
+    static let railCornerRadius: CGFloat = 6
+    /// One icon's slot: the session name field's height, so the first icon is centred on it.
+    static var railSlotHeight: CGFloat { nameFieldHeight }
+    /// Between slots, and above the hairline: the name field's gap to the composer.
+    static var railSpacing: CGFloat { nameFieldSpacing }
+    /// How far left of the page the rail's leading edge sits: its centre on the divider's line,
+    /// half the gap in, so it keeps the same room from both columns.
+    static var railOffset: CGFloat { tabColumnSpacing + dividerWidth / 2 + railButtonSize / 2 }
+
+    /// The task list's height under the search field: the page less the field and its spacing.
+    /// Without the search the list has the whole page.
+    static func sideListHeight(pageHeight: CGFloat) -> CGFloat {
+        max(0, pageHeight - sideToolbarHeight - sideToolbarSpacing)
+    }
+
+    // The task form (`TimerTaskForm`), in the composer's place: the title row where the name field
+    // is, the estimate and tags, the reminder, then the buttons.
+    // 8 pt between rows makes the form exactly the composer's height (122), so the two swap without
+    // anything around them moving.
+    static let taskFormRowHeight: CGFloat = 24
+    static let taskFormRowSpacing: CGFloat = 8
+    static var taskFormHeight: CGFloat {
+        nameFieldHeight + 2 * taskFormRowHeight + buttonHeight + 3 * taskFormRowSpacing
+    }
+    /// The New task button beside the session name field: a square as tall as the field.
+    static var newTaskButtonSize: CGFloat { nameFieldHeight }
 
     /// Every row's height plus the spacing around it, so a short list ends where its last row does.
     static func sideTaskRowsHeight(count: Int) -> CGFloat {
@@ -142,8 +210,7 @@ enum TimerComposerMetrics {
 
     /// The composer's width beside the side column, in an open notch `notchWidth` wide.
     static func composerWidthBesideSideColumn(notchWidth: CGFloat) -> CGFloat {
-        notchWidth - openNotchSideInset * 2 - tabHorizontalPadding * 2
-            - tabColumnSpacing * 2 - dividerWidth - sideColumnWidth
+        tabContentWidth(notchWidth: notchWidth) - columnGap - sideColumnWidth(notchWidth: notchWidth)
     }
 
     /// The composer's height, padding included.

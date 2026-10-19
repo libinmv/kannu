@@ -740,7 +740,7 @@ private struct TaskListPage: View {
     /// The row the pointer is over during a drag.
     @State private var dropTargetID: UUID?
 
-    private static let estimateChoices = [15, 30, 60, 120, 240, 480].map { $0 * 60 }
+    private static let estimateChoices = TaskFormDraft.estimateChoices
 
     init(sheet: Binding<TaskSheet?>, pendingDelete: Binding<TaskItem?>, newTitle: Binding<String>,
          newEstimate: Binding<Int?>, close: @escaping () -> Void) {
@@ -945,7 +945,7 @@ private struct TaskListPage: View {
     }
 
     private func addTask() {
-        if manager.addTask(title: newTitle, estimateSeconds: newEstimate) {
+        if manager.addTask(title: newTitle, estimateSeconds: newEstimate) != nil {
             newTitle = ""
             newEstimate = nil
         }
@@ -1478,7 +1478,7 @@ private struct TaskValueSheet: View {
     private var explanation: LocalizedStringKey {
         switch sheet {
         case .customEstimateForNewTask, .estimate:
-            return "Such as 1h 30m, 90m or 1.5h."
+            return "Such as 1h 30m, 90m, 1.5h or 2d."
         case .addTime:
             return "Time worked without the timer, ending now."
         case .endTime(_, _, _, _, .none):

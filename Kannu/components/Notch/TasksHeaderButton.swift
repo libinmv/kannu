@@ -24,8 +24,9 @@ import SwiftUI
 /// is Kannu's "needs your input".
 ///
 /// `KannuHeader` shows it only with the notch open and the minimalistic UI off, and then as
-/// `TasksHeaderVisibility` says: with tasks on, on the timer tab, or on every tab when there is no
-/// timer tab. It is a view of its own so `TasksManager` is created only then: with tasks off,
+/// `TasksHeaderVisibility` says: with tasks on, where the timer tab's task column cannot show — on
+/// that tab while a timer runs, or on every tab when there is no timer tab. It is a view of its own
+/// so `TasksManager` is created only then: with tasks off,
 /// nothing here runs and the task file is never read.
 ///
 /// While the popover is open it sets `vm.isTasksPopoverActive`, which

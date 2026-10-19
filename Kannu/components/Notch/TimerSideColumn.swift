@@ -23,8 +23,10 @@ import SwiftUI
 /// The timer tab's right-hand column, beside the composer, while no timer runs. It has up to two
 /// pages (`TimerSidePage`):
 ///
-/// - **Tasks**, with tasks and the timer on: the task order (`TasksManager.activeTasks`), each row
-///   with its key and title, "42m of 2h" and ▶;
+/// - **Tasks**, with tasks and the timer on: a toolbar (search, the Show in notch filter, Refresh,
+///   Time to log) level with the session name field, then the task order
+///   (`TasksManager.activeTasks`), each row with its title, key, "42m of 2h" and ▶. The header's
+///   Tasks button hides while this page can show (`TasksHeaderVisibility`);
 /// - **Presets**, with Show presets in the notch tab on: the preset cards, as before.
 ///
 /// The page fills the column from the session name field's line down to the tab's bottom line.
@@ -57,13 +59,20 @@ struct TimerSideColumn: View {
     let select: (TimerSidePage) -> Void
     let tasksAvailable: Bool
     let presetsAvailable: Bool
-    /// The tab's height budget (`NotchTimerView.maxTabContentHeight`).
+    /// The tab's height budget (`NotchTimerView.maxTabContentHeight`): the labels hang from its
+    /// bottom line.
     let budget: CGFloat
+    /// The shown page's height, ending where the composer does (`TimerComposerMetrics.sidePageHeight`).
+    let pageHeight: CGFloat
+    /// The column's width, the golden split of the notch (`TimerComposerMetrics.sideColumnWidth`).
+    let columnWidth: CGFloat
     let presets: [TimerPreset]
     let activePresetID: UUID?
     let startPreset: (TimerPreset) -> Void
     /// A task started from its ▶: its name wins over a typed session name.
     let taskStarted: () -> Void
+    /// The pencil on a task's card: the left panel becomes the task form for it.
+    let editTask: (UUID) -> Void
 
     /// `@State`, so the token survives a re-render and the release names the token that was set.
     @State private var scrollSuppressionToken = UUID()
@@ -104,15 +113,11 @@ struct TimerSideColumn: View {
 
     private var hasPager: Bool { pages.count > 1 }
 
-    private var pageHeight: CGFloat {
-        M.sidePageHeight(budget: budget)
-    }
-
     var body: some View {
         pageView
             .id(shownPage)
             .transition(.opacity)
-            .frame(width: M.sideColumnWidth, alignment: .leading)
+            .frame(width: columnWidth, alignment: .leading)
             .frame(maxHeight: budget, alignment: .top)
             // Hangs below the tab's bottom line, into the footer: an overlay takes no room.
             .overlay(alignment: .bottom) {
@@ -172,7 +177,7 @@ struct TimerSideColumn: View {
     private var pageView: some View {
         switch shownPage {
         case .tasks:
-            TimerTasksPage(height: pageHeight, started: taskStarted)
+            TimerTasksPage(height: pageHeight, width: columnWidth, started: taskStarted, edit: editTask)
         case .presets:
             presetsPage
         }
@@ -236,19 +241,44 @@ extension TimerSidePage {
     }
 }
 
-/// The Tasks page: the task order as it stands (`TasksManager.activeTasks`, the connected baseline,
-/// with no notch or Task list filter), so the first row is what the user ordered first. Appearing
-/// refreshes a stale Jira or GitLab sync, as the Tasks popover does.
+/// The Tasks page: the task list, with its icons in a rail in the gap beside it.
+///
+/// - **The rail** (`rail`), an overlay hung into the gap between the composer and the page, where
+///   the divider was: search, which opens a field at the top of the page that narrows the list as
+///   the user types (`TaskSearch`); the Show in notch filter (`TaskSourceMenu`, the popover's own,
+///   with Show all, Connect and Manage tasks…); Refresh, while Jira or GitLab syncs, whose tooltip
+///   says when each last synced; and Time to log, a clock with Kannu's yellow "needs your input"
+///   dot, while an entry asks. An overlay takes no room, so the gap stays the divider's 41 pt and
+///   nothing moves when the page changes.
+/// - **The list**: the task order as it stands (`TasksManager.activeTasks`), narrowed by Show in
+///   notch and the search, so the first row is what the user ordered first. The whole page tall,
+///   ending where Start and Reset do. A row expands into its card (`TimerTaskDetail`), and the
+///   clock opens the Time to log cards (`TimerLogTimePage`); the rail stays beside both.
+///
+/// Appearing refreshes a stale Jira or GitLab sync, as the Tasks popover does. Its text fields —
+/// search, and a Time to log card's — hold the notch open while focused, each under a token of its
+/// own, released when the focus goes, the page goes, or the notch's window stops being key.
 ///
 /// A view of its own, built only while the page is shown, so `TasksManager` exists only with tasks
 /// on. It reads no secret: keys and titles are the sources' own text and render verbatim.
 private struct TimerTasksPage: View {
     private typealias M = TimerComposerMetrics
 
+    @EnvironmentObject private var vm: KannuViewModel
     @ObservedObject private var manager = TasksManager.shared
-    /// The page's height (`TimerComposerMetrics.sidePageHeight`).
+    // Show in notch (`TaskSourceMenu`): what the list shows, read as the popover reads it.
+    @Default(.tasksPopoverShowLocal) private var showLocal
+    @Default(.tasksPopoverShowJira) private var showJira
+    @Default(.tasksPopoverShowGitLab) private var showGitLab
+    @Default(.jiraSiteHost) private var jiraSiteHost
+    @Default(.gitlabHost) private var gitlabHost
+    /// The page's height (`TimerComposerMetrics.sidePageHeight`): a card's and the Log page's.
     let height: CGFloat
+    /// The column's width (`TimerComposerMetrics.sideColumnWidth`): the card's and the Log page's.
+    let width: CGFloat
     let started: () -> Void
+    /// Opens the left panel's task form on a task (`TimerTaskForm`).
+    let edit: (UUID) -> Void
     /// Whether the list has scrolled past its first row (`SideListEdgeFades`).
     @State private var isScrolled = false
     /// The task whose card has replaced the list (`TimerTaskDetail`); nil shows the rows. Cleared
@@ -258,7 +288,23 @@ private struct TimerTasksPage: View {
     @State private var confirmsDelete = false
     /// The row under the pointer: its one hover slides its clipped title and caption together.
     @State private var hoveredRowID: UUID?
+    /// What the search has typed; kept while a card is open, so closing it returns to the results.
+    @State private var searchText = ""
+    /// Whether the search field shows at the top of the page.
+    @State private var isSearching = false
+    @FocusState private var searchFocused: Bool
+    /// `@State`, so the release names the token that was set.
+    @State private var searchEditingToken = UUID()
+    /// Whether the Time to log cards have replaced the list.
+    @State private var showsLogTime = false
+    /// The entries whose card has a focused field; each holds the notch open under its own id.
+    @State private var focusedDrafts: Set<UUID> = []
+    /// A menu opened here (the filter, a Time to log card's ⋯) is a window of its own: the pointer
+    /// leaves the notch to use it, so the notch stays open while a menu tracks.
+    @State private var menuTrackingToken = UUID()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private static let maxLogCards = 3
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -268,33 +314,41 @@ private struct TimerTasksPage: View {
             case .failed:
                 statusRow(String(localized: "Tasks could not be read"))
             case .ready:
-                let tasks = manager.activeTasks
-                if tasks.isEmpty {
-                    statusRow(String(localized: "No tasks"))
-                } else if let expanded = tasks.first(where: { $0.id == expandedTaskID }) {
-                    TimerTaskDetail(
-                        manager: manager,
-                        task: expanded,
-                        height: height,
-                        confirmsDelete: $confirmsDelete,
-                        close: collapse,
-                        start: { start(expanded) }
-                    )
-                    .id(expanded.id)
-                    .transition(.opacity)
-                } else {
-                    rows(tasks)
-                        .transition(.opacity)
-                }
+                readyContent
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: height, alignment: .top)
+        // Hung into the gap, centred on the divider's line; it takes no room.
+        .overlay(alignment: .topLeading) {
+            rail
+                .offset(x: -M.railOffset)
+        }
         .onChange(of: manager.activeTasks.map(\.id)) { _, ids in
             if let expandedTaskID, !ids.contains(expandedTaskID) {
                 self.expandedTaskID = nil
                 confirmsDelete = false
             }
+        }
+        // The last entry answered (or put off): back to the list.
+        .onChange(of: asking.isEmpty) { _, isEmpty in
+            if isEmpty { showsLogTime = false }
+        }
+        .onChange(of: searchFocused) { _, isFocused in
+            vm.setAutoCloseSuppression(isFocused, token: searchEditingToken)
+        }
+        // A click into another app leaves a field focused in a window that is no longer key: drop
+        // it, which lets the notch auto-close again.
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { note in
+            guard note.object is KannuWindow else { return }
+            searchFocused = false
+            releaseDraftFocus()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
+            vm.setAutoCloseSuppression(true, token: menuTrackingToken)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { _ in
+            vm.setAutoCloseSuppression(false, token: menuTrackingToken)
         }
         // The latest order, as the Tasks popover does it: a source syncs only when its last sync is
         // over 5 minutes old and no rate limit runs, and never with the Keychain dialog.
@@ -302,11 +356,327 @@ private struct TimerTasksPage: View {
             manager.syncJiraIfStale()
             manager.syncGitLabIfStale()
         }
+        // Closing the notch or switching tabs removes this view without a focus change.
+        .onDisappear {
+            vm.setAutoCloseSuppression(false, token: searchEditingToken)
+            vm.setAutoCloseSuppression(false, token: menuTrackingToken)
+            releaseDraftFocus()
+        }
+    }
+
+    @ViewBuilder
+    private var readyContent: some View {
+        let expanded = manager.activeTasks.first(where: { $0.id == expandedTaskID })
+        let showsLog = expanded == nil && showsLogTime && !asking.isEmpty
+        let isCovered = expanded != nil || showsLog
+        // The list stays in the tree under a card or the Log page, hidden and inert, never rebuilt:
+        // closing the card finds it scrolled exactly where it was. Swapped out, it came back at the
+        // top (David: "not acceptable").
+        ZStack(alignment: .topLeading) {
+            VStack(alignment: .leading, spacing: M.sideToolbarSpacing) {
+                if isSearching {
+                    // Drawn above the list, so its × tooltip opening downward is never painted over.
+                    searchField
+                        .frame(height: M.sideToolbarHeight)
+                        .zIndex(1)
+                }
+                list
+            }
+            .opacity(isCovered ? 0 : 1)
+            .allowsHitTesting(!isCovered)
+            .accessibilityHidden(isCovered)
+
+            if let expanded {
+                TimerTaskDetail(
+                    manager: manager,
+                    task: expanded,
+                    width: width,
+                    height: height,
+                    confirmsDelete: $confirmsDelete,
+                    close: collapse,
+                    start: { start(expanded) },
+                    edit: { edit(expanded.id) }
+                )
+                .id(expanded.id)
+                .transition(.opacity)
+            } else if showsLog {
+                TimerLogTimePage(asking: asking, maxCards: Self.maxLogCards, width: width, height: height, close: closeLogTime)
+                    .environment(\.worklogFieldFocus, draftFocusChanged)
+                    .transition(.opacity)
+            }
+        }
+    }
+
+    /// The whole page; under the search field while searching (`TimerComposerMetrics.sideListHeight`).
+    private var listHeight: CGFloat {
+        isSearching ? M.sideListHeight(pageHeight: height) : height
+    }
+
+    // MARK: - Show in notch and search
+
+    /// A source that is not connected has no check item in the menu, so its kept tasks always show.
+    private var showsJira: Bool { showJira || jiraSiteHost.isEmpty }
+    private var showsGitLab: Bool { showGitLab || gitlabHost.isEmpty }
+
+    private var isFiltered: Bool {
+        TaskOrdering.isNarrowingView(showLocal: showLocal, showJira: showsJira, showGitLab: showsGitLab)
+    }
+
+    /// Show in notch over the connected baseline, as the popover has it. The task being timed always
+    /// passes.
+    private var notchFilter: TaskOrdering.Listed {
+        TaskOrdering.viewFilter(showLocal: showLocal, showJira: showsJira, showGitLab: showsGitLab,
+                                alwaysListed: manager.timing?.taskID)
+    }
+
+    /// Show all: every source back in the notch.
+    private func showAllSources() {
+        showLocal = true
+        showJira = true
+        showGitLab = true
+    }
+
+    private var shownTasks: [TaskItem] {
+        TaskSearch.filter(TaskOrdering.active(manager.activeTasks, listed: notchFilter), query: searchText)
+    }
+
+    /// Search shows the list: an open card or the Log page closes first.
+    private func openSearch() {
+        confirmsDelete = false
+        animate {
+            expandedTaskID = nil
+            showsLogTime = false
+            isSearching = true
+        }
+        // After the field exists: focusing it in the same update finds nothing to focus.
+        DispatchQueue.main.async { searchFocused = true }
+    }
+
+    /// The × and Escape: the search ends and the whole list comes back.
+    private func closeSearch() {
+        searchFocused = false
+        searchText = ""
+        animate { isSearching = false }
+    }
+
+    // MARK: - Time to log
+
+    /// The entries asking now, as the popover's "Log time?" has them.
+    private var asking: [WorklogDraft] {
+        manager.openDrafts.filter(WorklogDrafts.isAskingNow)
+    }
+
+    /// The Log page shows ahead of the list but behind a card: an open card closes first.
+    private func openLogTime() {
+        searchFocused = false
+        confirmsDelete = false
+        animate {
+            expandedTaskID = nil
+            showsLogTime = true
+        }
+    }
+
+    private func closeLogTime() {
+        releaseDraftFocus()
+        animate { showsLogTime = false }
+    }
+
+    /// A Time to log card's field gained or lost focus (`worklogFieldFocus`).
+    private func draftFocusChanged(_ draftID: UUID, _ isFocused: Bool) {
+        if isFocused {
+            focusedDrafts.insert(draftID)
+        } else {
+            focusedDrafts.remove(draftID)
+        }
+        vm.setAutoCloseSuppression(isFocused, token: draftID)
+    }
+
+    private func releaseDraftFocus() {
+        for draftID in focusedDrafts {
+            vm.setAutoCloseSuppression(false, token: draftID)
+        }
+        focusedDrafts.removeAll()
+    }
+
+    // MARK: - Rail
+
+    /// The icons in the gap between the composer and this page, centred on the divider's line
+    /// (`NotchTimerView` hides its divider while this page shows): search, the filter, Refresh
+    /// while Jira or GitLab syncs, and the Time to log clock while an entry asks. The first sits
+    /// level with the session name field; items that come and go sit at the bottom, so search and
+    /// the filter never move. Under them the divider's hairline runs to the page's bottom.
+    ///
+    /// Each slot draws above the ones under it, so a tooltip opening downward is never painted over.
+    private var rail: some View {
+        VStack(spacing: M.railSpacing) {
+            railSlot {
+                Button(action: toggleSearch) {
+                    TimerRailIcon(systemName: "magnifyingglass", isActive: isSearching)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text(verbatim: isSearching ? String(localized: "Close search") : String(localized: "Search tasks")))
+                .hoverTooltip(isSearching ? String(localized: "Close search") : String(localized: "Search tasks"), edge: .below)
+            }
+            .zIndex(4)
+            railSlot {
+                TaskSourceMenu(openBrain: { $0.open() }, style: .rail)
+            }
+            .zIndex(3)
+            if manager.isJiraSyncOn || manager.isGitLabSyncOn {
+                railSlot { refreshControl }
+                    .zIndex(2)
+            }
+            if !asking.isEmpty {
+                railSlot { logTimeButton }
+                    .zIndex(1)
+            }
+            HStack(spacing: 0) {
+                Divider()
+            }
+            .opacity(0.2)
+            .frame(maxHeight: .infinity)
+        }
+        .frame(width: M.railButtonSize, height: height, alignment: .top)
+    }
+
+    /// One icon's slot: as tall as the session name field, the icon centred in it.
+    private func railSlot<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .frame(width: M.railButtonSize, height: M.railSlotHeight)
+    }
+
+    private func toggleSearch() {
+        if isSearching {
+            closeSearch()
+        } else {
+            openSearch()
+        }
+    }
+
+    private func toggleLogTime() {
+        if showsLogTime {
+            closeLogTime()
+        } else {
+            openLogTime()
+        }
+    }
+
+    /// The clock opens the cards; the dot says one waits for an answer (one being sent does not).
+    private var logTimeButton: some View {
+        let waiting = WorklogDrafts.waitingCount(manager.drafts)
+        return Button(action: toggleLogTime) {
+            TimerRailIcon(systemName: "clock", isActive: showsLogTime)
+                .overlay(alignment: .topTrailing) {
+                    if waiting > 0 {
+                        Circle()
+                            .fill(Color.yellow)
+                            .frame(width: 6, height: 6)
+                            .offset(x: 2, y: -2)
+                            .accessibilityHidden(true)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(verbatim: Self.logTimeLabel(waiting: waiting)))
+        .hoverTooltip(String(localized: "Time to log"), edge: .below)
+    }
+
+    static func logTimeLabel(waiting: Int) -> String {
+        switch waiting {
+        case ..<1: return String(localized: "Time to log")
+        case 1: return String(localized: "Time to log, 1 entry waiting")
+        default: return String(localized: "Time to log, \(waiting) entries waiting")
+        }
+    }
+
+    /// Each source's sync state while its sync is on; nil when off (`TaskSyncSummary`).
+    private var jiraState: SourceSyncState? { manager.isJiraSyncOn ? manager.jiraSync : nil }
+    private var gitlabState: SourceSyncState? { manager.isGitLabSyncOn ? manager.gitlabSync : nil }
+
+    /// Refresh, the popover's own rule: a spinner while either source syncs; otherwise the button,
+    /// off while every source that syncs is rate limited. Redraws once when a limit ends, so it
+    /// comes back on time; no polling. The click may ask macOS for a Keychain item, as the
+    /// popover's does; a source that is off, syncing or rate limited is skipped by the manager.
+    private var refreshControl: some View {
+        TimelineView(.explicit(TaskSyncSummary.rateLimitEnds(jira: manager.jiraSync, gitlab: manager.gitlabSync))) { context in
+            let summary = TaskSyncSummary.tooltip(jira: jiraState, gitlab: gitlabState, now: context.date)
+            if manager.isJiraSyncing || manager.isGitLabSyncing {
+                ProgressView()
+                    .controlSize(.mini)
+                    .frame(width: M.railButtonSize, height: M.railButtonSize)
+                    .background(RailIconBackground())
+                    .accessibilityLabel(Text(verbatim: String(localized: "Syncing tasks")))
+                    .hoverTooltip(summary, edge: .below)
+            } else {
+                Button {
+                    manager.refreshJira()
+                    manager.refreshGitLab()
+                } label: {
+                    TimerRailIcon(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.plain)
+                .disabled(!TaskSyncSummary.canRefresh(isReady: manager.isReady, jira: jiraState, gitlab: gitlabState, at: context.date))
+                .accessibilityLabel(Text(verbatim: String(localized: "Refresh tasks")))
+                .accessibilityValue(Text(verbatim: summary))
+                .hoverTooltip(summary, edge: .below)
+            }
+        }
+    }
+
+    /// At the top of the page while searching: the name field's look — the same height, fill and
+    /// corners — so it lines up with the field across the tab. Escape or the × ends the search;
+    /// Return only leaves the field.
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+            TextField(String(localized: "Search tasks"), text: $searchText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12, weight: .medium))
+                .focused($searchFocused)
+                .onSubmit { searchFocused = false }
+                .onExitCommand(perform: closeSearch)
+            Button(action: closeSearch) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(verbatim: String(localized: "Close search")))
+            .hoverTooltip(String(localized: "Close search"), edge: .below)
+        }
+        .padding(.leading, 8)
+        .padding(.trailing, 2)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.08)))
+    }
+
+    // MARK: - List
+
+    @ViewBuilder
+    private var list: some View {
+        let tasks = shownTasks
+        if tasks.isEmpty {
+            statusRow(emptyText, showsShowAll: isFiltered && !manager.activeTasks.isEmpty)
+        } else {
+            rows(tasks)
+                .transition(.opacity)
+        }
+    }
+
+    /// What an empty list means: nothing at all, nothing the search finds, or the filter hiding it all.
+    private var emptyText: String {
+        if manager.activeTasks.isEmpty { return String(localized: "No tasks") }
+        if !searchText.allSatisfy(\.isWhitespace) { return String(localized: "No matching tasks") }
+        return String(localized: "Nothing to show")
     }
 
     private func rows(_ tasks: [TaskItem]) -> some View {
         let shownRows = max(tasks.count, M.sideTaskMinimumRows)
-        let listHeight = min(height, M.sideTaskRowsHeight(count: shownRows))
+        let rowsHeight = min(listHeight, M.sideTaskRowsHeight(count: shownRows))
         return ZStack {
             ScrollView(.vertical) {
                 LazyVStack(spacing: M.sideRowSpacing) {
@@ -317,7 +687,7 @@ private struct TimerTasksPage: View {
                         row(task, tooltipEdge: index == 0 ? .below : .above)
                     }
                 }
-                // Below only: the first row's top sits level with the composer's name field.
+                // Below only: the first row's top sits level with the session name field.
                 .padding(.bottom, M.sideRowSpacing / 2)
                 .sideListOffsetProbe()
             }
@@ -326,7 +696,7 @@ private struct TimerTasksPage: View {
 
             SideListEdgeFades(showsTop: isScrolled)
         }
-        .frame(height: listHeight)
+        .frame(height: rowsHeight)
     }
 
     /// Key and title on one line, "42m of 2h" under it, then ▶. The text is a button of its own:
@@ -380,23 +750,26 @@ private struct TimerTasksPage: View {
         .background(TaskGlassBackground(color: manager.color(of: task)))
     }
 
-    /// Opens the task's card in place of the list; the page switch's animation and reduced-motion
-    /// rule (`NotchTimerView.selectSidePage`).
+    /// Opens the task's card in place of the list.
     private func expand(_ task: TaskItem) {
         confirmsDelete = false
-        if reduceMotion {
-            expandedTaskID = task.id
-        } else {
-            withAnimation(.smooth(duration: 0.2)) { expandedTaskID = task.id }
-        }
+        // The row under the pointer would go on sliding its text, out of sight under the card.
+        hoveredRowID = nil
+        animate { expandedTaskID = task.id }
     }
 
     private func collapse() {
         confirmsDelete = false
+        animate { expandedTaskID = nil }
+    }
+
+    /// Every swap on the page — card, Log page, search — with the page switch's animation and
+    /// reduced-motion rule (`NotchTimerView.selectSidePage`).
+    private func animate(_ change: () -> Void) {
         if reduceMotion {
-            expandedTaskID = nil
+            change()
         } else {
-            withAnimation(.smooth(duration: 0.2)) { expandedTaskID = nil }
+            withAnimation(.smooth(duration: 0.2), change)
         }
     }
 
@@ -413,18 +786,287 @@ private struct TimerTasksPage: View {
         started()
     }
 
-    private func statusRow(_ text: String) -> some View {
-        Text(verbatim: text)
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
+    /// One quiet row in place of the list; "Show all" puts every source back when the filter is
+    /// what empties it.
+    private func statusRow(_ text: String, showsShowAll: Bool = false) -> some View {
+        HStack(spacing: 6) {
+            Text(verbatim: text)
+                .foregroundStyle(.secondary)
+            if showsShowAll {
+                Button(String(localized: "Show all"), action: showAllSources)
+                    .buttonStyle(.link)
+            }
+        }
+        .font(.system(size: 12, weight: .medium))
+        .lineLimit(1)
+        .padding(.horizontal, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: M.sideTaskRowHeight)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+        )
+    }
+}
+
+/// The Time to log cards in place of the task list, opened from the rail's clock: a "Log time?"
+/// row level with the session name field, its × back to the list, then the cards (`LogTimeCards`, the popover's
+/// own, so Log goes the one way it does everywhere) in a scrolling column, and "N more in Brain"
+/// for the rest. The page closes itself when the last entry is answered (`TimerTasksPage`).
+private struct TimerLogTimePage: View {
+    private typealias M = TimerComposerMetrics
+
+    let asking: [WorklogDraft]
+    let maxCards: Int
+    let width: CGFloat
+    let height: CGFloat
+    let close: () -> Void
+    @State private var isScrolled = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: M.sideToolbarSpacing) {
+            HStack(spacing: 6) {
+                Text("Log time?")
+                    .font(.system(size: 12, weight: .semibold))
+                Spacer(minLength: 0)
+                Button(action: close) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(width: M.sideToolbarHeight, height: M.sideToolbarHeight)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text(verbatim: String(localized: "Back to tasks")))
+                .hoverTooltip(String(localized: "Back to tasks"), edge: .below)
+            }
+            .frame(height: M.sideToolbarHeight)
+            .zIndex(1)
+
+            ZStack {
+                ScrollView(.vertical) {
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        LogTimeCards(asking: asking, maxCards: maxCards, openBrain: { $0.open() })
+                    }
+                    // The last card's answers clear the bottom fade.
+                    .padding(.bottom, 16)
+                    .sideListOffsetProbe()
+                }
+                .scrollIndicators(.never)
+                .sideListScrollTracking(isScrolled: $isScrolled)
+
+                SideListEdgeFades(showsTop: isScrolled)
+            }
+        }
+        .frame(width: width, height: height, alignment: .topLeading)
+    }
+}
+
+/// The merge requests that close a GitLab issue, in place of its card, in the card's frame: a row
+/// level with the session name field with Back (to the card) on the left and Close (to the list,
+/// which kept its place) on the right; then the merge requests, each opening its page in the
+/// browser. Loaded when it appears (`TasksManager.linkedMergeRequests`, which may ask for the
+/// Keychain: the user clicked), kept by the manager until the task's next sync.
+///
+/// Takes the manager it is handed, like the card. Each row is one button whose label owns the
+/// row's one hover (its clipped title slides), so it carries no tooltip: an arrow says it opens.
+private struct TimerLinkedMRsPage: View {
+    private typealias M = TimerComposerMetrics
+
+    @ObservedObject var manager: TasksManager
+    let task: TaskItem
+    let width: CGFloat
+    let height: CGFloat
+    let back: () -> Void
+    let close: () -> Void
+
+    private enum Load: Equatable {
+        case loading
+        case done(TasksManager.LinkedMergeRequestsResult)
+    }
+
+    @State private var load: Load = .loading
+    /// Try again bumps it, which runs the load again.
+    @State private var attempt = 0
+    @State private var isScrolled = false
+    @State private var hoveredID: Int?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: M.sideToolbarSpacing) {
+            header
+                .frame(height: M.sideToolbarHeight)
+                .zIndex(1)
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .frame(width: width, height: height, alignment: .topLeading)
+        .task(id: attempt) {
+            load = .loading
+            load = .done(await manager.linkedMergeRequests(for: task.id))
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 2) {
+            Button(action: back) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: M.sideToolbarHeight, height: M.sideToolbarHeight)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(verbatim: String(localized: "Back to the task")))
+            .hoverTooltip(String(localized: "Back"), edge: .below)
+
+            Text("Linked merge requests")
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+
+            Button(action: close) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .semibold))
+                    .frame(width: M.sideToolbarHeight, height: M.sideToolbarHeight)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(verbatim: String(localized: "Close")))
+            .hoverTooltip(String(localized: "Close"), edge: .below)
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch load {
+        case .loading:
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Loading…")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
             .padding(.horizontal, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        case .done(.loaded(let items, let complete)):
+            if items.isEmpty {
+                note(String(localized: "No merge requests close this issue."))
+            } else {
+                mergeRequestRows(items, complete: complete)
+            }
+        case .done(.failed(let reason)):
+            note(reason, retry: true)
+        case .done(.needsKeychainApproval):
+            note(String(localized: "macOS did not let Kannu read the saved GitLab token."), retry: true)
+        case .done(.needsReconnect):
+            note(String(localized: "Reconnect GitLab in Brain › Tasks to see them."))
+        }
+    }
+
+    private func note(_ text: String, retry: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(verbatim: text)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if retry {
+                Button(String(localized: "Try Again")) { attempt += 1 }
+                    .buttonStyle(.link)
+                    .font(.system(size: 11, weight: .medium))
+            }
+        }
+        .padding(.horizontal, 10)
+    }
+
+    private func mergeRequestRows(_ items: [LinkedMergeRequest], complete: Bool) -> some View {
+        ZStack {
+            ScrollView(.vertical) {
+                LazyVStack(spacing: M.sideRowSpacing) {
+                    ForEach(items) { item in
+                        row(item)
+                    }
+                    if !complete, let url = manager.gitlabBrowseURL(for: task) {
+                        // GitLab has more than one page of them: the issue lists them all.
+                        Button(String(localized: "More on GitLab")) { NSWorkspace.shared.open(url) }
+                            .buttonStyle(.link)
+                            .font(.system(size: 11, weight: .medium))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 10)
+                    }
+                }
+                .padding(.bottom, M.sideRowSpacing / 2)
+                .sideListOffsetProbe()
+            }
+            .scrollIndicators(.never)
+            .sideListScrollTracking(isScrolled: $isScrolled)
+
+            SideListEdgeFades(showsTop: isScrolled)
+        }
+    }
+
+    /// The state as a dot, the title (sliding when clipped), "!12 · Merged · Kim Lee", and an arrow:
+    /// a click opens it in the browser.
+    private func row(_ item: LinkedMergeRequest) -> some View {
+        let caption = [item.reference, Self.stateName(item.state), item.isDraft ? String(localized: "Draft") : nil, item.author]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+        return Button {
+            if let url = item.webURL { NSWorkspace.shared.open(url) }
+        } label: {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(Self.stateColor(item.state))
+                    .frame(width: 7, height: 7)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 1) {
+                    HoverRevealText(item.title, font: .system(size: 12, weight: .semibold), isActive: hoveredID == item.id)
+                    Text(verbatim: caption)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if item.webURL != nil {
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.horizontal, 10)
             .frame(height: M.sideTaskRowHeight)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.white.opacity(0.05))
-            )
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.06)))
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                if hovering {
+                    hoveredID = item.id
+                } else if hoveredID == item.id {
+                    hoveredID = nil
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(item.webURL == nil)
+        .accessibilityLabel(Text(verbatim: "\(item.title), \(caption)"))
+        .accessibilityHint(Text(verbatim: String(localized: "Opens it in GitLab")))
+    }
+
+    static func stateName(_ state: LinkedMergeRequest.State?) -> String? {
+        switch state {
+        case .opened: return String(localized: "Open")
+        case .merged: return String(localized: "Merged")
+        case .closed: return String(localized: "Closed")
+        case .locked: return String(localized: "Locked")
+        case nil: return nil
+        }
+    }
+
+    /// Open green, merged purple, closed red, as GitLab colours them; locked or unknown grey.
+    static func stateColor(_ state: LinkedMergeRequest.State?) -> Color {
+        switch state {
+        case .opened: return .green
+        case .merged: return .purple
+        case .closed: return .red
+        case .locked, nil: return .gray
+        }
     }
 }
 
@@ -504,17 +1146,55 @@ private struct TimerTaskDetail: View {
 
     @ObservedObject var manager: TasksManager
     let task: TaskItem
+    /// The column's width (`TimerComposerMetrics.sideColumnWidth`).
+    let width: CGFloat
     let height: CGFloat
     @Binding var confirmsDelete: Bool
     let close: () -> Void
     let start: () -> Void
+    /// The pencil: the left panel's task form, on this task.
+    let edit: () -> Void
+    /// The linked merge requests page, in place of the card (`TimerLinkedMRsPage`).
+    @State private var showsLinkedMRs = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let horizontalPadding: CGFloat = 10
     private static let factColumnSpacing: CGFloat = 10
-    /// Two columns across what the padding leaves of the column: 105 pt each.
-    private static let factColumnWidth = (M.sideColumnWidth - 2 * horizontalPadding - factColumnSpacing) / 2
+    /// Two columns across what the padding leaves of the column: 86 pt each in the narrowest notch.
+    private var factColumnWidth: CGFloat {
+        max(0, (width - 2 * Self.horizontalPadding - Self.factColumnSpacing) / 2)
+    }
 
     var body: some View {
+        ZStack(alignment: .topLeading) {
+            if showsLinkedMRs {
+                TimerLinkedMRsPage(
+                    manager: manager,
+                    task: task,
+                    width: width,
+                    height: height,
+                    back: { showLinkedMRs(false) },
+                    close: close
+                )
+                .transition(.opacity)
+            } else {
+                card
+                    .transition(.opacity)
+            }
+        }
+    }
+
+    /// The linked page in, or the card back; the page switch's animation and reduced-motion rule.
+    private func showLinkedMRs(_ shows: Bool) {
+        if reduceMotion {
+            showsLinkedMRs = shows
+        } else {
+            withAnimation(.smooth(duration: 0.2)) { showsLinkedMRs = shows }
+        }
+    }
+
+    @ViewBuilder
+    private var card: some View {
         let summary = TaskDetailSummary(task: task, tracked: manager.trackedSeconds(of: task), now: Date(), selfNames: Self.selfNames)
         VStack(alignment: .leading, spacing: 0) {
             // Drawn above the rows below it, so the × tooltip (opening downward) is never
@@ -526,6 +1206,19 @@ private struct TimerTaskDetail: View {
                 HoverRevealText(summary.title, font: .system(size: 13, weight: .semibold), lines: 2)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                Button {
+                    edit()
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 10, weight: .semibold))
+                        .padding(5)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, -3)
+                .padding(.trailing, -6)
+                .accessibilityLabel(Text(verbatim: String(localized: "Edit task")))
+                .hoverTooltip(String(localized: "Edit task"), edge: .below)
                 Button {
                     close()
                 } label: {
@@ -546,7 +1239,7 @@ private struct TimerTaskDetail: View {
             chipRow(summary)
                 .padding(.top, 5)
                 .zIndex(1)
-            factGrid(summary.facts)
+            factGrid(summary.facts, note: summary.note)
                 .padding(.top, 6)
                 // The flexible child: the grid gets the height the rows above and below leave.
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -556,7 +1249,7 @@ private struct TimerTaskDetail: View {
         .padding(.top, 8)
         .padding(.bottom, 7)
         // Exactly the column's width and the page's height: no word on the card can widen it.
-        .frame(width: M.sideColumnWidth, height: height, alignment: .topLeading)
+        .frame(width: width, height: height, alignment: .topLeading)
         .background(TaskGlassBackground(color: manager.color(of: task), base: 0.08))
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
@@ -603,29 +1296,69 @@ private struct TimerTaskDetail: View {
     }
 
     /// Up to four facts, two per row, in the height left over: two rows when they fit, one when
-    /// a two-line title leaves room for only one, none when even that would crowd Start.
-    private func factGrid(_ facts: [TaskDetailSummary.Fact]) -> some View {
+    /// a two-line title leaves room for only one, none when even that would crowd Start. A
+    /// never-timed local task's note comes after its facts and gives way before them.
+    private func factGrid(_ facts: [TaskDetailSummary.Fact], note: String?) -> some View {
         ViewThatFits(in: .vertical) {
+            if let note {
+                VStack(alignment: .leading, spacing: 4) {
+                    if !facts.isEmpty {
+                        factRows(Array(facts.prefix(2)))
+                    }
+                    noteText(note)
+                }
+            }
             if facts.count > 2 {
                 factRows(Array(facts.prefix(4)))
             }
             if !facts.isEmpty {
                 factRows(Array(facts.prefix(2)))
             }
+            if let note {
+                noteText(note)
+            }
             Color.clear.frame(height: 0)
         }
+    }
+
+    /// Muted, not an alert: nothing is wrong with a task that has not been started.
+    private func noteText(_ note: String) -> some View {
+        Text(verbatim: note)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.tertiary)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private func factRows(_ facts: [TaskDetailSummary.Fact]) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             ForEach(Array(stride(from: 0, to: facts.count, by: 2)), id: \.self) { first in
                 HStack(spacing: Self.factColumnSpacing) {
-                    FactCell(fact: facts[first], width: Self.factColumnWidth)
+                    factCell(facts[first])
                     if first + 1 < facts.count {
-                        FactCell(fact: facts[first + 1], width: Self.factColumnWidth)
+                        factCell(facts[first + 1])
                     }
                 }
             }
+        }
+    }
+
+    /// A fact that opens something is a button: the linked merge requests open their page.
+    @ViewBuilder
+    private func factCell(_ fact: TaskDetailSummary.Fact) -> some View {
+        switch fact.action {
+        case .linkedMergeRequests:
+            Button {
+                showLinkedMRs(true)
+            } label: {
+                FactCell(fact: fact, width: factColumnWidth, opens: true)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(verbatim: String(localized: "\(fact.text), show them")))
+            .hoverTooltip(String(localized: "Show linked merge requests"), edge: .above)
+        case nil:
+            FactCell(fact: fact, width: factColumnWidth)
         }
     }
 
@@ -774,6 +1507,9 @@ private struct SideChip: View {
 private struct FactCell: View {
     let fact: TaskDetailSummary.Fact
     let width: CGFloat
+    /// It opens something: a chevron says so, and the button around it owns the one hover (its
+    /// tooltip), so the text does not slide.
+    var opens = false
 
     var body: some View {
         HStack(spacing: 4) {
@@ -781,8 +1517,15 @@ private struct FactCell: View {
                 .font(.system(size: 9, weight: .semibold))
                 .frame(width: 12)
                 .accessibilityHidden(true)
-            // Clipped at the column's width, it slides into view while hovered.
-            HoverRevealText(fact.text, font: .system(size: 11, weight: .medium))
+            if opens {
+                HoverRevealText(fact.text, font: .system(size: 11, weight: .medium), isActive: false)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 8, weight: .bold))
+                    .accessibilityHidden(true)
+            } else {
+                // Clipped at the column's width, it slides into view while hovered.
+                HoverRevealText(fact.text, font: .system(size: 11, weight: .medium))
+            }
         }
         .foregroundStyle(fact.isAlert ? Color.orange : Color.secondary)
         .frame(width: width, alignment: .leading)

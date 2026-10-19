@@ -62,6 +62,14 @@ final class TimerSideColumnRulesTests: XCTestCase {
         try String(contentsOf: repoRoot.appendingPathComponent(path), encoding: .utf8)
     }
 
+    /// A column-0 declaration through its closing brace at column 0.
+    private static func declaration(_ name: String, in text: String) throws -> String {
+        let start = try XCTUnwrap(text.range(of: "\n\(name)"), "\(name) not found at column 0")
+        let end = try XCTUnwrap(text.range(of: "\n}\n", range: start.upperBound..<text.endIndex),
+                                "\(name) has no closing brace at column 0")
+        return String(text[start.lowerBound..<end.upperBound])
+    }
+
     // MARK: - The rules, on the real sources
 
     func testNotchTimerViewNeverTouchesTasksManager() throws {
@@ -104,9 +112,139 @@ final class TimerSideColumnRulesTests: XCTestCase {
         }
     }
 
-    /// "All tasks ›" is gone: the header's Tasks button shows on the same tab.
+    /// "All tasks ›" is gone, and Brain is not linked from the column itself: the toolbar's filter
+    /// (`TaskSourceMenu`) has Manage tasks…, and the Time to log page its "more in Brain".
     func testTheColumnHasNoAllTasksLink() throws {
         XCTAssertEqual(Self.allTasksLinkProblems(in: Self.code(try Self.raw(Self.sideColumnPath))), [])
+    }
+
+    /// The toolbar's list honours Show in notch as the popover does (`TaskSourceMenu` is the same
+    /// menu), then the search, both over the connected baseline.
+    func testTheListHonoursShowInNotchAndTheSearch() throws {
+        let page = try Self.declaration("private struct TimerTasksPage", in: Self.code(try Self.raw(Self.sideColumnPath)))
+        XCTAssertTrue(page.contains("TaskSearch.filter(TaskOrdering.active(manager.activeTasks, listed: notchFilter), query: searchText)"))
+        XCTAssertTrue(page.contains("TaskSourceMenu(openBrain:"), "the filter is the popover's menu")
+        XCTAssertTrue(page.contains("TaskOrdering.viewFilter(showLocal: showLocal, showJira: showsJira, showGitLab: showsGitLab"))
+    }
+
+    /// The search field holds the notch open only while it has focus, under a `@State` token, and
+    /// lets go when the page goes or the notch's window stops being key; so do the Time to log
+    /// cards' fields, each under its entry's id.
+    func testTheTextFieldsHoldTheNotchOnlyWhileFocused() throws {
+        let page = try Self.declaration("private struct TimerTasksPage", in: Self.code(try Self.raw(Self.sideColumnPath)))
+        XCTAssertTrue(page.contains("@State private var searchEditingToken = UUID()"))
+        XCTAssertTrue(page.contains("vm.setAutoCloseSuppression(isFocused, token: searchEditingToken)"))
+        XCTAssertTrue(page.contains("vm.setAutoCloseSuppression(false, token: searchEditingToken)"), "the page going never releases it")
+        XCTAssertTrue(page.contains("NSWindow.didResignKeyNotification") && page.contains("note.object is KannuWindow"))
+        XCTAssertTrue(page.contains(".environment(\\.worklogFieldFocus, draftFocusChanged)"), "the Log page's fields hold the notch")
+        XCTAssertTrue(page.contains("releaseDraftFocus()"))
+        XCTAssertTrue(page.contains("NSMenu.didBeginTrackingNotification") && page.contains("NSMenu.didEndTrackingNotification"),
+                      "the filter menu is a window of its own: the notch must stay open while it tracks")
+        XCTAssertTrue(page.contains("vm.setAutoCloseSuppression(false, token: menuTrackingToken)"))
+    }
+
+    /// Refresh follows the popover's one rule (`TaskSyncSummary`) and tells when each source last
+    /// synced in its tooltip; the header button hides where this column shows.
+    func testRefreshFollowsThePopoversRule() throws {
+        let page = try Self.declaration("private struct TimerTasksPage", in: Self.code(try Self.raw(Self.sideColumnPath)))
+        XCTAssertTrue(page.contains("TaskSyncSummary.canRefresh(isReady: manager.isReady"))
+        XCTAssertTrue(page.contains("TaskSyncSummary.tooltip("))
+        XCTAssertTrue(page.contains("manager.refreshJira()") && page.contains("manager.refreshGitLab()"))
+        XCTAssertTrue(page.contains("TimelineView(.explicit("), "a rate limit ending redraws it, without polling")
+        let popover = Self.code(try Self.raw("Kannu/components/Notch/TasksPopover.swift"))
+        XCTAssertTrue(popover.contains("TaskSyncSummary.canRefresh("), "the popover's Refresh drifted from the column's")
+    }
+
+    /// David: the icons go vertically between the two sides of the tab. The Tasks page hangs them
+    /// in the gap as an overlay offset onto the divider's line (it takes no room, so nothing moves
+    /// when the page changes), the divider steps aside while the page shows, the toolbar row stays
+    /// gone, and the icons keep their order — the ones that come and go at the bottom.
+    func testTheRailHangsInTheGap() throws {
+        let page = try Self.declaration("private struct TimerTasksPage", in: Self.code(try Self.raw(Self.sideColumnPath)))
+        let notch = Self.code(try Self.raw(Self.notchTimerPath))
+        XCTAssertEqual(Self.railProblems(page: page, notch: notch), [])
+        XCTAssertTrue(page.contains("TimerLogTimePage(asking: asking"))
+        XCTAssertTrue(page.contains("height: height,"), "the card takes the page's whole height")
+        XCTAssertTrue(page.contains("isSearching ? M.sideListHeight(pageHeight: height) : height"),
+                      "the list has the whole page, less the search field while searching")
+    }
+
+    func testTheRailScannerCatchesPlantedOffenders() {
+        let page = """
+            .frame(height: height, alignment: .top)
+            .overlay(alignment: .topLeading) {
+                rail
+                    .offset(x: -M.railOffset)
+            }
+            private var rail: some View {
+                railSlot { Button(action: toggleSearch) { } }
+                railSlot { TaskSourceMenu(openBrain: { $0.open() }, style: .rail) }
+                if sync { railSlot { refreshControl } }
+                if asks { railSlot { logTimeButton } }
+            }
+            private func railSlot
+            """
+        let notch = "    Divider()\n        .opacity(shownSidePage == .tasks ? 0 : 0.2)"
+        XCTAssertEqual(Self.railProblems(page: page, notch: notch), [])
+        XCTAssertEqual(Self.railProblems(page: page.replacingOccurrences(of: ".offset(x: -M.railOffset)", with: ""), notch: notch),
+                       ["the rail is not hung into the gap"])
+        XCTAssertEqual(Self.railProblems(page: page.replacingOccurrences(of: ".overlay(alignment: .topLeading)", with: ".overlay(alignment: .top)"), notch: notch),
+                       ["the rail is not hung into the gap"])
+        XCTAssertEqual(Self.railProblems(page: page + "\nprivate var toolbar: some View {", notch: notch),
+                       ["the toolbar row is back"])
+        XCTAssertEqual(Self.railProblems(page: page, notch: "    if shownSidePage != .tasks { Divider() }"),
+                       ["the divider does not step aside for the rail"])
+        let swapped = page
+            .replacingOccurrences(of: "railSlot { Button(action: toggleSearch) { } }", with: "SEARCH")
+            .replacingOccurrences(of: "railSlot { TaskSourceMenu(openBrain: { $0.open() }, style: .rail) }", with: "railSlot { Button(action: toggleSearch) { } }")
+            .replacingOccurrences(of: "SEARCH", with: "railSlot { TaskSourceMenu(openBrain: { $0.open() }, style: .rail) }")
+        XCTAssertEqual(Self.railProblems(page: swapped, notch: notch), ["the rail's icons are out of order"])
+    }
+
+    /// The task form is a view of its own that reads `TasksManager.shared`, so `NotchTimerView`
+    /// never touches it; Add & Start starts through the manager and does nothing more when nothing
+    /// starts; its fields and menu hold the notch open only while in use; Escape and the × leave.
+    func testTheTaskFormOwnsTheManagerAndLetsTheNotchGo() throws {
+        let form = Self.code(try Self.raw("Kannu/components/Notch/TimerTaskForm.swift"))
+        XCTAssertTrue(form.contains("@ObservedObject private var manager = TasksManager.shared"))
+        XCTAssertTrue(form.contains("guard andStart, manager.start(id) else {"), "a failed start must not report one")
+        XCTAssertTrue(form.contains("vm.setAutoCloseSuppression(field != nil, token: editingToken)"))
+        XCTAssertTrue(form.contains("vm.setAutoCloseSuppression(false, token: editingToken)"), "the form going never releases it")
+        XCTAssertTrue(form.contains("NSWindow.didResignKeyNotification") && form.contains("note.object is KannuWindow"))
+        XCTAssertTrue(form.contains("NSMenu.didBeginTrackingNotification") && form.contains("NSMenu.didEndTrackingNotification"))
+        XCTAssertTrue(form.contains(".onExitCommand(perform: close)"))
+        XCTAssertTrue(form.contains(".datePickerStyle(.field)"), "a compact picker's calendar is a popover window the notch closes under")
+        XCTAssertFalse(form.contains(".alert(") || form.contains("confirmationDialog("), "no modal under the notch (REGRESSIONS entry 14)")
+        XCTAssertEqual(Self.helpCalls(in: try Self.raw("Kannu/components/Notch/TimerTaskForm.swift")), [])
+        let notch = Self.code(try Self.raw(Self.notchTimerPath))
+        XCTAssertTrue(notch.contains("TimerTaskForm(mode: taskForm, close: closeTaskForm, started: taskStarted)"))
+        XCTAssertTrue(notch.contains("if isTasksPageAvailable {\n                newTaskButton"), "the New task button shows only with tasks on")
+        XCTAssertTrue(form.contains("GoldenRow(spacing: M.taskFormRowSpacing) {\n                estimateField\n                tagsField"),
+                      "the estimate and the tags in the golden ratio")
+        XCTAssertTrue(form.contains("GoldenRow(spacing: 10) {"), "Add and Add & Start in the golden ratio")
+        // David: the notch did not offer existing tags. Brain's own suggestions, as chips that
+        // never take the field's focus and never wrap.
+        XCTAssertTrue(form.contains("draft.tagSuggestions(existing: TaskFacets.tags(in: manager.tasks))"))
+        XCTAssertTrue(form.contains(".focusable(false)"), "a chip must not take the tags field's focus")
+        XCTAssertTrue(form.contains("ViewThatFits(in: .horizontal)"), "chips that do not fit are left off, never wrapped")
+        XCTAssertTrue(form.contains("draft.completeTag(pick.tag)"))
+        // David: the estimate takes minutes, hours or days, typed, with the presets one click away.
+        XCTAssertTrue(form.contains("draft.typeEstimate($0)") && form.contains("draft.chooseEstimate(seconds)"))
+        XCTAssertTrue(form.contains("if previous == .estimate, field != .estimate { draft.settleEstimateText() }"))
+    }
+
+    /// The columns are the golden split of the open notch's own width (not `vm.notchSize`, which
+    /// shrinks to the closed size before the tab fades out), and the page, the divider and the
+    /// composer end on one line.
+    func testTheColumnsAreTheGoldenSplitAndEndTogether() throws {
+        let notch = Self.code(try Self.raw(Self.notchTimerPath))
+        XCTAssertTrue(notch.contains("TimerComposerMetrics.sideColumnWidth(notchWidth: openNotchSize.width)"))
+        XCTAssertFalse(notch.contains("sideColumnWidth(notchWidth: vm.notchSize"), "the closing notch's size would squash the columns")
+        XCTAssertTrue(notch.contains("TimerComposerMetrics.sidePageHeight(budget: maxTabContentHeight, style: composerStyle)"))
+        XCTAssertTrue(notch.contains(".frame(height: sidePageHeight)"), "the divider ends where the page does")
+        let column = Self.code(try Self.raw(Self.sideColumnPath))
+        XCTAssertTrue(column.contains(".frame(width: columnWidth, alignment: .leading)"))
+        XCTAssertFalse(column.contains("M.sideColumnWidth"), "a fixed column width is back")
     }
 
     func testTheSwipeCoversTheWholeTab() throws {
@@ -427,6 +565,38 @@ final class TimerSideColumnRulesTests: XCTestCase {
 
     /// `TasksManager.shared` is read, and only inside `TimerTasksPage`, the view built only while the
     /// Tasks page shows. Top-level declarations start at column 0.
+    /// The rail hangs into the gap from the page's top leading corner, the divider steps aside on
+    /// the Tasks page, no toolbar row, and search < filter < Refresh < clock inside the rail.
+    private static func railProblems(page: String, notch: String) -> [String] {
+        var problems: [String] = []
+        if let overlay = page.range(of: ".overlay(alignment: .topLeading) {"),
+           let offset = page.range(of: ".offset(x: -M.railOffset)", range: overlay.upperBound..<page.endIndex),
+           page[overlay.upperBound..<offset.lowerBound].contains("rail") {
+            // Hung into the gap.
+        } else {
+            problems.append("the rail is not hung into the gap")
+        }
+        if page.contains("private var toolbar") {
+            problems.append("the toolbar row is back")
+        }
+        if !notch.contains(".opacity(shownSidePage == .tasks ? 0 : 0.2)") {
+            problems.append("the divider does not step aside for the rail")
+        }
+        if let start = page.range(of: "private var rail: some View {"),
+           let end = page.range(of: "private func railSlot", range: start.upperBound..<page.endIndex) {
+            let rail = page[start.upperBound..<end.lowerBound]
+            let order = ["toggleSearch", "TaskSourceMenu(", "refreshControl", "logTimeButton"]
+                .map { rail.range(of: $0)?.lowerBound }
+            let found = order.compactMap { $0 }
+            if found.count != order.count || found != found.sorted() {
+                problems.append("the rail's icons are out of order")
+            }
+        } else {
+            problems.append("no rail")
+        }
+        return problems
+    }
+
     private static func managerOwnerProblems(in code: String) -> [String] {
         var owner = ""
         var readers: [String] = []
