@@ -17,12 +17,14 @@ import SwiftUIIntrospect
 import UniformTypeIdentifiers
 
 /// Groups for organizing settings tabs in the sidebar.
+/// The sidebar's sections, top to bottom in case order: AI Agents leads, Productivity (the timer,
+/// notes and tasks the agents' work is timed and tracked with) right under it, then General.
 private enum SettingsTabGroup: String, CaseIterable, Identifiable {
     case agents
+    case productivity
     case core
     case mediaAndDisplay
     case system
-    case productivity
     case utilities
     case developer
     case integrations
@@ -34,7 +36,8 @@ private enum SettingsTabGroup: String, CaseIterable, Identifiable {
     var title: String? {
         switch self {
         case .agents:           return String(localized: "AI Agents")
-        case .core:             return nil
+        // Under Productivity, an unlabelled General and Appearance would read as part of it.
+        case .core:             return String(localized: "General")
         case .mediaAndDisplay:  return String(localized: "Media & Display")
         case .system:           return String(localized: "System")
         case .productivity:     return String(localized: "Productivity")
@@ -508,14 +511,18 @@ struct SettingsView: View {
     }
 
     private var availableTabs: [SettingsTab] {
-        // Ordered to match group layout: agents → core → media & display → system →
-        // productivity → utilities → developer → integrations → info.
+        // Ordered to match group layout: agents → productivity → general → media & display →
+        // system → utilities → developer → integrations → info. Search jumps to the first match in
+        // this order, so it follows the sidebar's.
         let ordered: [SettingsTab] = [
             // AI Agents — the product's core, so it leads.
             .agentStatus,
             .agentSecurity,
             .llmUsage,
-            // Core
+            // Productivity
+            .timer,
+            .notes,
+            // General
             .general,
             .appearance,
             // Media & Display
@@ -526,9 +533,6 @@ struct SettingsView: View {
             // System
             .hudAndOSD,
             .battery,
-            // Productivity
-            .timer,
-            .notes,
             // Utilities
             .clipboard,
             .screenAssistant,

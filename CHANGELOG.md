@@ -61,6 +61,19 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
   - Guards: `FullscreenFallbackVerdictTests`; the settings inventory counts moved by the two new
     entries and registrations.
 
+### 2026-10-18 - Brain's Productivity section sits right under AI Agents
+- **Developer label:** "bring productivity settings to just below the ai section in brain"
+- **Agent label:** Claude Code (Opus 5.5) — the sidebar's section order changes, and General and Appearance get a "General" header
+- **Changes:**
+  - Brain's sidebar now reads AI Agents, Productivity (Timer, Notes, and Tasks where present),
+    then General and Appearance, then Media & Display, System, Utilities, Developer,
+    Integrations and About.
+  - General and Appearance get a "General" header: unlabelled, right under Productivity, they
+    read as part of it.
+  - `availableTabs` follows the same order, since search jumps to the first match in it.
+  - Test: `SettingsSidebarOrderTests` (the section order, the General header, and search's order
+    following the sidebar's).
+
 ### 2026-10-10 - Every icon-only control in the notch names itself in a tooltip, starting with the lyrics button
 - **Developer label:** "on the lyrics icon in music tab, on persistent mouse hovered over it for few seconds show tool tip, keep that as general design principle for such icons"
 - **Agent label:** Claude Code (Opus 5.5) — notch tooltip principle: hover-driven bubble for shared icon buttons, every icon-only control covered, coverage scan and widened .help guard
