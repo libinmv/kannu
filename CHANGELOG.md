@@ -4,6 +4,34 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-15 - The new gate file's project ids stay unique next to the task branches
+- **Developer label:** "if some how green or any state is being serially refreshing that is preventing it from closing, that shouldnt happen"
+- **Agent label:** Claude Code (Fable 5) — project-file id renumbering only, no code change
+- **Changes:**
+  - `TrafficLightPersistenceGate.swift`'s two `project.pbxproj` ids moved from `…00E0`/`…00E1` to
+    `…05A0`/`…05A1`: the open task-stack branches already use the `E0`–`F1` range for their own
+    files, and merging both would have put duplicate ids in one project file.
+
+### 2026-10-15 - A green chat no longer pins the notch out, and a momentary blip never flickers the light
+- **Developer label:** "if some how green or any state is being serially refreshing that is preventing it from closing, that shouldnt happen … the minimum a transition state is shown in notch only if it is persisted for 1 second or more, else we have to retain the continous one"
+- **Agent label:** Claude Code (Fable 5) — a 1 s persistence gate at the traffic light's single publish point, and reveal windows re-armed only by a published change
+- **Changes:**
+  - New `TrafficLightPersistenceGate` (pure, in the logic test target): a calming change — leaving
+    executing/thinking/awaiting-input, or hiding the light — must persist 1 s before it is
+    published; anything that lights up (green or yellow appearing) still publishes at once. A
+    green → ended → green blip inside that second was never published, so the notch never reacts.
+  - `publishTrafficLight` consults the gate; a held change re-evaluates by rescanning at the
+    deadline, so what is published is always recomputed from disk, never a value captured when the
+    hold was armed. `stop()` cancels the hold and resets the gate.
+  - `noteAgentActivityPulse` re-arms the island's 7 s reveal only when the published light actually
+    changed. Every hook write of a working chat used to re-arm it, which kept the notch out for the
+    whole of a long green run (for example over fullscreen video). The heartbeat fast-path and the
+    pulse latch's single-consumer contract are unchanged.
+  - A visible consequence, intended: a finished chat's red appears about a second late, and a chat
+    that stays green reveals the island once for 7 s and then lets it retract.
+  - Guards: `TrafficLightPersistenceGateTests`, `TrafficLightGateRulesTests`, and a dated addendum
+    under `docs/REGRESSIONS.md` entry 10.
+
 ### 2026-10-10 - Every icon-only control in the notch names itself in a tooltip, starting with the lyrics button
 - **Developer label:** "on the lyrics icon in music tab, on persistent mouse hovered over it for few seconds show tool tip, keep that as general design principle for such icons"
 - **Agent label:** Claude Code (Opus 5.5) — notch tooltip principle: hover-driven bubble for shared icon buttons, every icon-only control covered, coverage scan and widened .help guard

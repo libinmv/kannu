@@ -95,6 +95,11 @@ final class CursorAgentStatusMonitor: ObservableObject {
     private var endedRetention: [String: AgentTrafficLightMapper.RetainedEndedSession] = [:]
     private var lastPublishedTrafficLightState: AgentTrafficLightState?
     private var lastPublishedShouldShowTrafficLight: Bool?
+    /// Holds a calming blip (green → ended → green) off the screen until it persists
+    /// (`TrafficLightPersistenceGate`). The hold task re-evaluates by rescanning — the freshest
+    /// disk state decides, never a pair captured when the hold was armed.
+    private var persistenceGate = TrafficLightPersistenceGate()
+    private var gateHoldTask: Task<Void, Never>?
     /// Warp's recent exchanges, read on a worker (see `refreshWarpExchangesIfNeeded`) and
     /// mapped here on every rescan. Empty until the first read returns.
     private var warpExchanges: [WarpAgentStore.Exchange] = []
@@ -127,6 +132,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
         isRunning = false
         rescanTask?.cancel()
         rescanTask = nil
+        gateHoldTask?.cancel()
+        gateHoldTask = nil
+        persistenceGate.reset()
         pendingRescanAt = nil
         pendingQuickRescanAt = nil
         pollTimer?.invalidate()
@@ -751,20 +759,40 @@ final class CursorAgentStatusMonitor: ObservableObject {
     }
 
     private func publishTrafficLight(state: AgentTrafficLightState, shouldShow: Bool) {
-        var changed = false
-        if lastPublishedTrafficLightState != state {
-            trafficLightState = state
-            lastPublishedTrafficLightState = state
-            changed = true
-        }
-        if lastPublishedShouldShowTrafficLight != shouldShow {
-            shouldShowTrafficLight = shouldShow
-            lastPublishedShouldShowTrafficLight = shouldShow
-            changed = true
-        }
-        if changed {
-            pulseLatch.noteTransition()
-            activityPulse &+= 1
+        switch persistenceGate.decide(state: state, shouldShow: shouldShow, now: Date()) {
+        case .unchanged:
+            // The computed pair matches what is on screen; a pending hold, if any, was a blip
+            // that reverted before it persisted, so nothing was ever published for it.
+            gateHoldTask?.cancel()
+            gateHoldTask = nil
+        case .hold(let until):
+            // A calming change that has not persisted yet. Re-evaluate at the deadline by
+            // rescanning: if the state still holds then, that rescan's decide() publishes it.
+            gateHoldTask?.cancel()
+            gateHoldTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(max(0, until.timeIntervalSinceNow) * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                self?.gateHoldTask = nil
+                self?.scheduleRescan(delay: 0)
+            }
+        case .publish:
+            gateHoldTask?.cancel()
+            gateHoldTask = nil
+            var changed = false
+            if lastPublishedTrafficLightState != state {
+                trafficLightState = state
+                lastPublishedTrafficLightState = state
+                changed = true
+            }
+            if lastPublishedShouldShowTrafficLight != shouldShow {
+                shouldShowTrafficLight = shouldShow
+                lastPublishedShouldShowTrafficLight = shouldShow
+                changed = true
+            }
+            if changed {
+                pulseLatch.noteTransition()
+                activityPulse &+= 1
+            }
         }
     }
 

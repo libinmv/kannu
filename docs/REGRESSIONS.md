@@ -553,6 +553,29 @@ Views that render the session list observe the monitor directly, as leaves. Guar
 `ClosedNotchObservationTests` pins the observer allowlist, the projection's single writer, and
 the single consume site.
 
+---
+
+**Addendum (2026-10-15) — the combined light is debounced, and activity alone no longer re-arms
+the reveal.** Two behaviours were tightened together, and both are deliberate:
+
+- `publishTrafficLight` now routes through `TrafficLightPersistenceGate`: a *calming* change
+  (leaving executing/thinking/awaitingInput, or `shouldShow` true → false) must persist 1 s
+  before it is published; everything that lights up still publishes at once (entry 12: yellow
+  follows evidence). A Stop immediately followed by a wake, or a short-lived helper session
+  whose red briefly outranks a working chat's green, therefore never reaches the projection. The
+  hold path re-evaluates by **rescanning at the deadline** — it must never publish a pair
+  captured when the hold was armed, because the state may have changed while it slept. `stop()`
+  cancels the hold and resets the gate.
+- `ContentView.noteAgentActivityPulse` re-arms the reveal windows only when the *published*
+  light pair changed. Re-arming on every non-heartbeat pulse meant every hook write of a green
+  chat (each moves `updatedAt`) held the island out for the whole run — the island never crawled
+  back during fullscreen video while a chat worked. The reveal is a glance at a change, not a
+  mirror of activity; the latch's heartbeat fast-path stays first and stays the single consumer.
+
+Guard: `TrafficLightPersistenceGateTests` (the pure rule), `TrafficLightGateRulesTests` (the
+wiring: gate consulted, hold rescans instead of publishing, stop resets, reveal re-arms only on
+a published change).
+
 ## 11. A passive source never does its I/O on the main actor
 
 **What happened (2026-09-09).** `WarpAgentStore.sessions` opened `warp.sqlite` synchronously
