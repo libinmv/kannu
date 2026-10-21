@@ -4,6 +4,28 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-21 - Ship 1.4.0 beta 1 "Horus"
+- **Developer label:** "wait before release we will go one round beta testing and do a release" / "get me beta dmg link, i will share with testers"
+- **Agent label:** Claude Code (Opus 5.5) — 1.4.0 beta 1 release mechanics on `release/1.4.0`
+- **Changes:**
+  - `MARKETING_VERSION` 1.3.4 -> **1.4.0** and `CURRENT_PROJECT_VERSION` 8 -> **9** in both
+    configurations. Last published is 1.3.4 (build 8), and the live feed's newest item is build 8.
+    The beta is build 9 and 1.4.0 itself will be build 10, so Sparkle moves every beta tester to the
+    release when it ships (`scripts/RELEASE.md`, "Beta (pre-release) tags").
+  - Codename **Horus** (`ReleaseInfo.codename`), the next watcher on `scripts/RELEASE.md`'s list:
+    the Eye of Horus watches, and its parts were the fractions Egypt measured with — a release about
+    tracking tasks and time.
+  - Carries everything merged into `development` for 1.4.0: Brain › Tasks and its six sources, the
+    timer tab as the task home, the running timer keeping the closed notch, the agent-light
+    debounce, fullscreen hiding, the usage memory fix, the Keychain recreate-items fix, Settings →
+    Brain, the agents batch (#96, #100, #101, #102, #105), Codex (#99, #104), release hardening
+    (#112) and pre-release tags (#114).
+  - Beta notes at `docs/release-notes/1.4.0-beta.1.md`: what testers should try, to stay on the
+    beta until 1.4.0 ships, and how to report; then the 1.4.0 notes.
+  - Released by pushing the tag `v1.4.0-beta.1` on this branch: a notarized GitHub pre-release that
+    is never marked Latest and never reaches the appcast. `CHANGELOG.md` is cut at 1.4.0 itself, not
+    at the beta.
+
 ### 2026-10-21 - A beta tag publishes a notarized pre-release and never reaches the appcast
 - **Developer label:** "wait before release we will go one round beta testing and do a release" / "cant we not push it to everyone but still get a notarized build"
 - **Agent label:** Claude Code (Opus 5.5) — `release.yml` treats a tag with a hyphen (`v1.4.0-beta.1`) as a pre-release: same build, signing and notarization, published as a GitHub pre-release, no Sparkle export and no appcast commit

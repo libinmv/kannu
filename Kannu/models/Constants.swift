@@ -1756,7 +1756,7 @@ extension Defaults.Keys {
 /// two halves of 1.3.0: the local security checks that detect, and the agent policy that can deny a
 /// tool call on Claude Code and Cursor. Detect and respond.
 enum ReleaseInfo {
-    static let codename = "Heimdall"
+    static let codename = "Horus"
 
     /// `owner/repo`, used to build the prefilled issue a user can send after a freeze or a crash.
     /// Kannu never posts anything itself — the link opens their browser with the fields filled in.
