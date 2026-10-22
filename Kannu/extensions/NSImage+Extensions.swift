@@ -355,8 +355,36 @@ extension NSImage {
                        colorSpace: CGColorSpaceCreateDeviceRGB())
         
         let brightness = (0.2126 * CGFloat(bitmap[0]) + 0.7152 * CGFloat(bitmap[1]) + 0.0722 * CGFloat(bitmap[2])) / 255.0
-        
+
         return brightness
+    }
+}
+
+/// One context for every skin average: creating a `CIContext` costs far more than the average
+/// itself, and contexts are thread-safe.
+private let averageSRGBContext = CIContext(options: [.cacheIntermediates: false])
+
+extension CGImage {
+    /// The image's mean colour in sRGB — what a notch skin looks like from a step back, for
+    /// `NotchContrast` to choose the text colour against. Averaged in Core Image's linear working
+    /// space (the physically correct mean of light), read back gamma-encoded; transparent pixels
+    /// count as black. Synchronous and GPU-backed: call it off the main thread.
+    func averageSRGB() -> NotchContrast.RGB? {
+        guard let sRGB = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        let input = CIImage(cgImage: self)
+        let filter = CIFilter.areaAverage()
+        filter.inputImage = input
+        filter.extent = input.extent
+        guard let output = filter.outputImage else { return nil }
+
+        var pixel = [Float](repeating: 0, count: 4)
+        averageSRGBContext.render(output,
+                                  toBitmap: &pixel,
+                                  rowBytes: 4 * MemoryLayout<Float>.size,
+                                  bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+                                  format: .RGBAf,
+                                  colorSpace: sRGB)
+        return NotchContrast.RGB(red: Double(pixel[0]), green: Double(pixel[1]), blue: Double(pixel[2]))
     }
 }
 

@@ -35,6 +35,7 @@ enum ColorCodingMode {
 }
 
 struct ColorCodedProgressBar: View {
+    @Environment(\.notchForeground) private var notchForeground
     let value: CGFloat  // 0.0 to 1.0
     let mode: ColorCodingMode
     let width: CGFloat
@@ -54,7 +55,7 @@ struct ColorCodedProgressBar: View {
             ZStack(alignment: .leading) {
                 // Background track
                 RoundedRectangle(cornerRadius: height / 2)
-                    .fill(Color.white.opacity(0.2))
+                    .fill(notchForeground.opacity(0.2))
                     .frame(width: width, height: height)
                 
                 // Filled track with color gradient or solid color

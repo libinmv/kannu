@@ -117,14 +117,9 @@ jobs:
           fi
           echo "SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
 
-          if ! plutil_out=$(plutil -remove com.apple.security.mach-services Kannu/Kannu.entitlements 2>&1); then
-            if printf '%s' "$plutil_out" | grep -q "No value to remove"; then
-              echo "mach-services entitlement already absent, continuing."
-            else
-              echo "::error::plutil failed to modify entitlements: $plutil_out"
-              exit 1
-            fi
-          fi
+          # No mach-services strip: a release signs Kannu/Kannu.entitlements as it is, as every
+          # release has. The plutil strip that stood here never removed the key (plutil reads its
+          # dots as a key path); ReleaseWorkflowRulesTests says why it is not coming back.
 
           xcodebuild archive \
             -project Kannu.xcodeproj \

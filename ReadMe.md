@@ -15,7 +15,7 @@ Kannu is a fork of [Atoll](https://github.com/Ebullioscopic/Atoll), which itself
 - **Agent usage and quota** — Claude rate limits in the notch, grouped as Session and Weekly with a per-model window, one reset countdown per group, and bar colour driven by the severity the server itself reports. Codex, Cursor, and Antigravity have their own cards.
 - **Keep the Mac awake** — smart caffeinate holds sleep off automatically while an agent runs and releases it when the agent stops, or drive it manually. One native power assertion; no `caffeinate` subprocess. Only system sleep is prevented — the display may still sleep, and closing the lid always sleeps the Mac.
 - **Jump to the session** — click a chat row to activate the app that owns it (terminal, IDE, or a resumable Claude session). Rows that cannot be located offer no affordance rather than a dead click.
-- **Custom notch skins** — upload a background image clipped to the notch shape, with optional dark scrim for readability.
+- **Custom notch skins** — upload a background image clipped to the notch shape, with optional dark scrim for readability, or pick the built-in Horns skin. **Copy AI prompt** gives ChatGPT or another image AI a prompt that asks what you want, then designs a skin sized for the notch ([docs/NOTCH-SKINS.md](docs/NOTCH-SKINS.md)).
 - **Mobile notifications (optional)** — push agent state changes to iPhone, Apple Watch, or Android via ntfy, Pushover, or a custom webhook.
 - **Tasks and time** — Brain › Tasks lists your own tasks beside those from Jira Cloud, GitLab, GitHub (including GitHub Enterprise Server), Linear, Todoist and Apple Reminders, with estimates, tags, reminders and an archive. The timer times a task, and the time it records can go back to Jira or GitLab, only when you say so; the other sources are read, never changed. Tokens stay in your Keychain.
 - Media controls, live activities, lock screen widgets, stats, timers, clipboard, and shelf.
@@ -93,7 +93,7 @@ Application support data is stored under `~/Library/Application Support/Kannu/`.
 1. Launch Kannu and complete onboarding.
 2. Open **Brain → Agents** and install editor hooks for Cursor (recommended).
 3. Run an AI agent in Cursor — the notch shows the traffic-light status when collapsed.
-4. Optionally upload a notch skin under **Brain → Appearance → Notch skin**.
+4. Optionally pick or upload a notch skin under **Brain → Appearance → Notch skin** (see [docs/NOTCH-SKINS.md](docs/NOTCH-SKINS.md)).
 
 
 

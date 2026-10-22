@@ -93,6 +93,39 @@ enum DebugSnapshots {
         if request.tabs == nil || request.tabs?.contains("notch") == true {
             await render(AnyView(notchBoard), name: "notch-dots", dark: true, width: 360, into: request.directory, scale: 4)
         }
+        if request.tabs == nil || request.tabs?.contains("notchFills") == true {
+            // Notch content on fills that flip its text, set up the way ContentView does: a light
+            // scheme inside the always-dark notch window. Black is the before/after control.
+            let fills: [(name: String, color: Color)] = [
+                ("black", .black), ("white", .white), ("yellow", Color(nsColor: .systemYellow)),
+                ("blue", Color(nsColor: .systemBlue)),
+            ]
+            let sessions = DebugSnapshotFixtures.recentChats(now: Date())
+            ClaudeTurnTokenFollower.shared.setSnapshotTokens(DebugSnapshotFixtures.turnTokens(for: sessions))
+            let usage = DebugSnapshotFixtures.usageResults(now: Date())
+            let usageWidth = 640 - UsageCardMetrics.openNotchHorizontalPadding * 2 - UsageCardMetrics.openNotchSideInset * 2
+            for fill in fills {
+                let scheme: ColorScheme = fill.color.isPerceivedLight ? .light : .dark
+                let dots = notchDotsRow.padding(12).background(fill.color).notchAppearance(scheme, fill: fill.color)
+                await render(AnyView(dots), name: "fill-\(fill.name)-dots", dark: true, width: 360,
+                             into: request.directory, scale: 3)
+                let chats = NotchAgentStatusView(snapshotSessions: sessions, snapshotMinimalistic: false)
+                    .environmentObject(viewModel)
+                    .frame(height: 560)
+                    .background(fill.color)
+                    .notchAppearance(scheme, fill: fill.color)
+                await render(AnyView(chats), name: "fill-\(fill.name)-chats", dark: true, width: 612, into: request.directory)
+                let cards = NotchLLMUsageView(snapshotResults: usage([.claude, .cursor], false), snapshotRefreshStatus: nil,
+                                              snapshotOutlooks: DebugSnapshotFixtures.usageOutlooks(now: Date()),
+                                              snapshotNotchWidth: 640)
+                    .environmentObject(viewModel)
+                    .frame(height: UsageCardMetrics.smallestTabContentHeight, alignment: .top)
+                    .background(fill.color)
+                    .notchAppearance(scheme, fill: fill.color)
+                await render(AnyView(cards), name: "fill-\(fill.name)-usage", dark: true, width: usageWidth,
+                             into: request.directory)
+            }
+        }
         if request.tabs == nil || request.tabs?.contains("recentChats") == true {
             // The agent tab's width inside a 640 pt panel, a 420 pt minimalistic one and the 340 pt island.
             let sessions = DebugSnapshotFixtures.recentChats(now: Date())
@@ -246,6 +279,13 @@ enum DebugSnapshots {
 
     /// The live and preview dots in every state, on black, for a pixel-level before/after.
     private static var notchBoard: some View {
+        notchDotsRow
+            .padding(12)
+            .background(Color.black)
+    }
+
+    /// The dots and the security shield in every state, on whatever the caller paints behind.
+    private static var notchDotsRow: some View {
         let states: [AgentTrafficLightState] = [.executing, .awaitingInput, .stopped, .inactive]
         return VStack(alignment: .leading, spacing: 10) {
             ForEach(Array(states.enumerated()), id: \.offset) { _, state in
@@ -258,8 +298,6 @@ enum DebugSnapshots {
                 }
             }
         }
-        .padding(12)
-        .background(Color.black)
     }
 
     private static func render(_ view: AnyView, name: String, dark: Bool, width: CGFloat, into directory: URL,

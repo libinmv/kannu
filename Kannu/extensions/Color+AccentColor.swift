@@ -35,22 +35,27 @@ extension Color {
         Defaults[.accentColor].opacity(0.25)
     }
 
-    var perceivedBrightness: CGFloat {
-        let nsColor = NSColor(self)
-        guard let rgbColor = nsColor.usingColorSpace(.sRGB) else {
-            return 0
+    /// This colour in gamma-encoded sRGB, or nil when it has no RGB form (a pattern colour).
+    var srgbComponents: NotchContrast.RGB? {
+        guard let rgbColor = NSColor(self).usingColorSpace(.sRGB) else {
+            return nil
         }
-
-        var red: CGFloat = 0
-        var green: CGFloat = 0
-        var blue: CGFloat = 0
-        var alpha: CGFloat = 0
-        rgbColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
-        return (0.2126 * red) + (0.7152 * green) + (0.0722 * blue)
+        return NotchContrast.RGB(red: Double(rgbColor.redComponent),
+                                 green: Double(rgbColor.greenComponent),
+                                 blue: Double(rgbColor.blueComponent))
     }
 
+    /// Too light for white text on top — the rule in `NotchContrast`.
     var isPerceivedLight: Bool {
-        perceivedBrightness >= 0.64
+        srgbComponents.map(NotchContrast.prefersDarkForeground(on:)) ?? false
+    }
+
+    /// This colour shaded just enough to read as text on any light notch
+    /// (`NotchContrast.shadedForLightBackgrounds`); unchanged when it has no RGB form.
+    var shadedForLightNotch: Color {
+        guard let components = srgbComponents else { return self }
+        let shaded = NotchContrast.shadedForLightBackgrounds(components)
+        return Color(.sRGB, red: shaded.red, green: shaded.green, blue: shaded.blue)
     }
 
     var contrastingForeground: Color {

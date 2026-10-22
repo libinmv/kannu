@@ -19,6 +19,7 @@
 import SwiftUI
 
 struct LiveStreamProgressIndicator: View {
+    @Environment(\.notchForeground) private var notchForeground
     let tint: Color
 
     private var baseGradient: LinearGradient {
@@ -47,7 +48,7 @@ struct LiveStreamProgressIndicator: View {
 
     var body: some View {
         Capsule()
-            .fill(Color.white.opacity(0.07))
+            .fill(notchForeground.opacity(0.07))
             .overlay(
                 Capsule()
                     .fill(baseGradient)
@@ -69,7 +70,7 @@ struct LiveStreamProgressIndicator: View {
                 Text("LIVE")
                     .font(.system(size: 12, weight: .black, design: .rounded))
                     .tracking(1.4)
-                    .foregroundStyle(Color.white)
+                    .foregroundStyle(notchForeground)
                     .shadow(color: .black.opacity(0.65), radius: 4, y: 1)
             }
             .allowsHitTesting(false)

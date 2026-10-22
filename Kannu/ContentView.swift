@@ -793,8 +793,29 @@ struct ContentView: View {
             .padding(.horizontal, isIslandMode ? dynamicIslandShadowInset : 0)
             .padding(.bottom, isIslandMode ? dynamicIslandShadowInset : 0)
             .padding(.top, pillTopOffset)
-            .environment(\.notchForeground, notchFillColor.contrastingForeground)
+            .notchAppearance(notchColorScheme, fill: notchSkinManager.selectedSkinImage == nil ? notchFillColor : nil)
             .accessibilityIdentifier("KannuNotch")
+    }
+
+    /// The notch's appearance follows what is actually painted behind it: the skin's average colour
+    /// under its scrim, or the fill colour. Setting it as the subtree's colour scheme flips every
+    /// `.primary`/`.secondary` and material in the notch; literal colours read `notchForeground`.
+    /// Dark until a skin's average is known — the notch's look before this existed.
+    private var notchColorScheme: ColorScheme {
+        let background: NotchContrast.RGB?
+        if notchSkinManager.selectedSkinImage != nil {
+            background = notchSkinManager.selectedSkinAverageRGB
+                .map { NotchContrast.underBlackScrim($0, opacity: notchSkinScrimOpacity) }
+        } else {
+            background = notchFillColor.srgbComponents
+        }
+        guard let background else { return .dark }
+        return NotchContrast.prefersDarkForeground(on: background) ? .light : .dark
+    }
+
+    /// `notchForeground` for ContentView itself, which sits above the environment it sets.
+    private var notchForegroundColor: Color {
+        notchColorScheme == .dark ? .white : .black
     }
 
     private var configuredMainLayout: some View {
@@ -1370,10 +1391,10 @@ struct ContentView: View {
                                   HStack(alignment: .center) {
                                       Image(systemName: "music.note")
                                       GeometryReader { geo in
-                                          MarqueeText(.constant(musicManager.songTitle + " - " + musicManager.artistName), textColor: .gray, minDuration: 1, frameWidth: geo.size.width)
+                                          MarqueeText(.constant(musicManager.songTitle + " - " + musicManager.artistName), textColor: .secondary, minDuration: 1, frameWidth: geo.size.width)
                                       }
                                   }
-                                  .foregroundStyle(.gray)
+                                  .foregroundStyle(.secondary)
                                   .padding(.bottom, 10)
                               }
                           }
@@ -1647,7 +1668,7 @@ struct ContentView: View {
                 MusicTitleMarqueeView(
                     text: musicManager.songTitle,
                     isExplicit: musicManager.isCurrentTrackExplicit,
-                    textColor: Defaults[.coloredSpectrogram] ? Color(nsColor: musicManager.avgColor) : Color.gray,
+                    textColor: Defaults[.coloredSpectrogram] ? Color(nsColor: musicManager.avgColor) : Color.secondary,
                     minDuration: 0.4,
                     frameWidth: max(0, (effectiveCenterWidth - vm.closedNotchSize.width) / 2 - 12),
                     badgeHeight: 13
@@ -1658,7 +1679,7 @@ struct ContentView: View {
                 Text(musicManager.artistName)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .foregroundStyle(Defaults[.coloredSpectrogram] ? Color(nsColor: musicManager.avgColor) : Color.gray)
+                    .foregroundStyle(Defaults[.coloredSpectrogram] ? Color(nsColor: musicManager.avgColor) : Color.secondary)
                     .padding(.trailing, 8)
                     .opacity(inlineSneakPeekActive ? 1 : 0)
             } else if coordinator.expandingView.show && coordinator.expandingView.type == .timer {
@@ -1680,7 +1701,7 @@ struct ContentView: View {
             } else if Defaults[.showSongMetadataInClosedNotch] && isNonNotchScreen && !musicManager.songTitle.isEmpty {
                 MarqueeText(
                     .constant("\(musicManager.songTitle) • \(musicManager.artistName)"),
-                    textColor: Defaults[.coloredSpectrogram] ? Color(nsColor: musicManager.avgColor) : Color.gray,
+                    textColor: Defaults[.coloredSpectrogram] ? Color(nsColor: musicManager.avgColor) : Color.secondary,
                     minDuration: 3,
                     frameWidth: max(0, effectiveCenterWidth - 16)
                 )
@@ -1819,7 +1840,7 @@ struct ContentView: View {
             case .shelf:
                 Image(systemName: "tray.and.arrow.down.fill")
                     .font(.system(size: badgeSize * 0.50, weight: .semibold))
-                    .foregroundStyle(notchFillColor.contrastingForeground)
+                    .foregroundStyle(.white) // on the badge's own black circle, not the notch
             }
         }
         .frame(width: badgeSize, height: badgeSize)
@@ -1855,7 +1876,7 @@ struct ContentView: View {
             // File count badge: bold white number, like a minimal pill
             Text("\(count)")
                 .font(.system(.callout, design: .rounded, weight: .bold))
-                .foregroundStyle(notchFillColor.contrastingForeground)
+                .foregroundStyle(notchForegroundColor)
                 .contentTransition(.numericText(countsDown: false))
                 .animation(.smooth(duration: 0.3), value: count)
                 .frame(alignment: .center)
@@ -1902,7 +1923,7 @@ struct ContentView: View {
 
                             Image(systemName: musicManager.isPlaying ? "pause.fill" : "play.fill")
                                 .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(notchFillColor.contrastingForeground.opacity(isHoveringClosedMusicWaveformControl ? 0.98 : 0.0))
+                                .foregroundStyle(notchForegroundColor.opacity(isHoveringClosedMusicWaveformControl ? 0.98 : 0.0))
                                 .contentTransition(.symbolEffect(.replace))
                         }
                         .padding(.horizontal, 14)
@@ -3332,7 +3353,7 @@ private struct MusicTimerSupplementView: View {
     private var ringView: some View {
         ZStack {
             Circle()
-                .stroke(Color.white.opacity(0.18), lineWidth: 3)
+                .stroke(notchForeground.opacity(0.18), lineWidth: 3)
             Circle()
                 .trim(from: 0, to: clampedProgress)
                 .stroke(accentColor, style: StrokeStyle(lineWidth: 3, lineCap: .round))
@@ -3358,7 +3379,7 @@ private struct MusicTimerSupplementView: View {
 
     private func barView(width: CGFloat) -> some View {
         Capsule()
-            .fill(Color.white.opacity(0.15))
+            .fill(notchForeground.opacity(0.15))
             .frame(width: width, height: 4)
             .overlay(alignment: .leading) {
                 Capsule()

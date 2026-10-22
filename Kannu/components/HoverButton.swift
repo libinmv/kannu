@@ -23,8 +23,10 @@
 import SwiftUI
 
 struct HoverButton: View {
+    @Environment(\.notchForeground) private var notchForeground
     var icon: String
-    var iconColor: Color = .white
+    /// Nil draws the icon in the notch's foreground, white on the default dark notch.
+    var iconColor: Color? = nil
     var scale: Image.Scale = .medium
     var pressEffect: PressEffect? = nil
     var contentTransition: ContentTransition = .symbolEffect
@@ -56,11 +58,11 @@ struct HoverButton: View {
                 .frame(width: size, height: size)
                 .overlay {
                     Capsule()
-                        .fill(isHovering ? Color.gray.opacity(0.2) : .clear)
+                        .fill(isHovering ? Color.secondary.opacity(0.2) : .clear)
                         .frame(width: size, height: size)
                         .overlay {
                             let baseImage = Image(systemName: icon)
-                                .foregroundColor(iconColor)
+                                .foregroundColor(iconColor ?? notchForeground)
                                 .contentTransition(contentTransition)
                                 .font(scale == .large ? .largeTitle : .body)
 

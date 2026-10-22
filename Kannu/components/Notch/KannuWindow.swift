@@ -61,6 +61,9 @@ class KannuWindow: NSPanel {
         // appearance happened to be. In Light Mode that resolves near-black, rendered onto the
         // hardcoded-black background: invisible text. Force dark appearance explicitly so the
         // notch always renders correctly regardless of the system's light/dark setting.
+        // This is only the baseline: ContentView sets the notch subtree's colorScheme from the
+        // fill or skin actually painted behind it (light fills get a light scheme), never from
+        // the system appearance.
         appearance = NSAppearance(named: .darkAqua)
 
         ScreenCaptureVisibilityManager.shared.register(self, scope: .entireInterface)

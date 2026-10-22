@@ -58,16 +58,6 @@ jobs:
         run: |
           sudo DevToolsSecurity -enable
 
-          # Strip mach-services entitlement (amfid kills ad-hoc app); ignore only "key absent".
-          if ! plutil_out=$(plutil -remove com.apple.security.mach-services Kannu/Kannu.entitlements 2>&1); then
-            if printf '%s' "$plutil_out" | grep -q "No value to remove"; then
-              echo "mach-services entitlement already absent, continuing."
-            else
-              echo "::error::plutil failed to modify entitlements: $plutil_out"
-              exit 1
-            fi
-          fi
-
           xcodebuild build \
             -project Kannu.xcodeproj \
             -scheme Kannu \

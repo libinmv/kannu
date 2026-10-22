@@ -27,6 +27,7 @@ import Defaults
 import QuickLook
 
 struct ShelfItemView: View {
+    @Environment(\.notchForeground) private var notchForeground
     let item: ShelfItem
     @EnvironmentObject var vm: KannuViewModel
     @ObservedObject var selection = ShelfSelectionModel.shared
@@ -121,7 +122,7 @@ struct ShelfItemView: View {
     private var textView: some View {
         Text(item.displayName)
             .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(Color.white)
+            .foregroundStyle(notchForeground)
             .lineLimit(2)
             .truncationMode(.middle)
             .multilineTextAlignment(.center)

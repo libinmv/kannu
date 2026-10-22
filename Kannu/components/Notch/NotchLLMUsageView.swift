@@ -24,6 +24,7 @@ import Defaults
 /// columns — the 5-hour window and the weekly stack — split in the golden ratio, in the timer
 /// tab's type and fills.
 struct NotchLLMUsageView: View {
+    @Environment(\.notchForeground) private var notchForeground
     private typealias M = UsageCardMetrics
 
     @ObservedObject private var agentMonitor = CursorAgentStatusMonitor.shared
@@ -128,7 +129,7 @@ struct NotchLLMUsageView: View {
             .padding(M.cardPadding)
             .background(
                 RoundedRectangle(cornerRadius: M.cardCornerRadius, style: .continuous)
-                    .fill(Color.white.opacity(M.cardFill))
+                    .fill(notchForeground.opacity(M.cardFill))
             )
         }
     }
@@ -359,7 +360,7 @@ struct NotchLLMUsageView: View {
             }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(M.barTrackOpacity))
+                    Capsule().fill(notchForeground.opacity(M.barTrackOpacity))
                     Capsule().fill(tint)
                         .frame(width: max(M.barMinimumFill, geo.size.width * bar.fraction))
                 }
@@ -759,6 +760,7 @@ struct NotchLLMUsageView: View {
 /// The house chip (the timer's `SideChip`, which stays private to its file): a small capsule,
 /// exactly as wide as its text unless `truncates`, which shortens in the middle instead.
 private struct UsageChip: View {
+    @Environment(\.notchForeground) private var notchForeground
     private typealias M = UsageCardMetrics
     let text: String
     var tint: Color? = nil
@@ -778,7 +780,7 @@ private struct UsageChip: View {
             .truncationMode(.middle)
             .padding(.horizontal, M.chipPaddingHorizontal)
             .padding(.vertical, M.chipPaddingVertical)
-            .background(Capsule().fill(tint == .orange ? Color.orange.opacity(M.chipFill) : Color.white.opacity(M.chipFill)))
+            .background(Capsule().fill(tint == .orange ? Color.orange.opacity(M.chipFill) : notchForeground.opacity(M.chipFill)))
         if truncates {
             chip.fixedSize(horizontal: false, vertical: true)
         } else {

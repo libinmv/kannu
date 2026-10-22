@@ -23,6 +23,7 @@ import SwiftUI
 /// very card Brain shows (`WorklogDraftCard`, so Log goes the same one way it does there), stacked
 /// to fit a narrow column; then "N more in Brain" for the rest.
 struct LogTimeCards: View {
+    @Environment(\.notchForeground) private var notchForeground
     /// The entries asking now (`WorklogDrafts.isAskingNow`), in the order they ask.
     let asking: [WorklogDraft]
     let maxCards: Int
@@ -38,7 +39,7 @@ struct LogTimeCards: View {
                 .controlSize(.small)
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.white.opacity(0.06))
+                .background(notchForeground.opacity(0.06))
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         if more > 0 {

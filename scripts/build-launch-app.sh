@@ -62,48 +62,13 @@ if ! command -v xcodebuild >/dev/null 2>&1; then
   exit 1
 fi
 
-TEMP_ENTITLEMENTS=""
-cleanup() {
-  if [[ -n "$TEMP_ENTITLEMENTS" && -f "$TEMP_ENTITLEMENTS" ]]; then
-    rm -f "$TEMP_ENTITLEMENTS"
-  fi
-}
-trap cleanup EXIT
-
-prepare_entitlements() {
-  if [[ ! -f "$ENTITLEMENTS_SRC" ]]; then
-    echo "error: entitlements not found at $ENTITLEMENTS_SRC" >&2
-    exit 1
-  fi
-
-  TEMP_ENTITLEMENTS="$(mktemp "${TMPDIR:-/tmp}/kannu-entitlements.XXXXXX")"
-  cp "$ENTITLEMENTS_SRC" "$TEMP_ENTITLEMENTS"
-
-  # Ad-hoc builds fail when mach-services is present (amfid kills the app).
-  if ! plutil_out=$(plutil -remove com.apple.security.mach-services "$TEMP_ENTITLEMENTS" 2>&1); then
-    if printf '%s' "$plutil_out" | grep -q "No value to remove"; then
-      : # already absent
-    else
-      echo "error: plutil failed to modify entitlements: $plutil_out" >&2
-      exit 1
-    fi
-  fi
-
-  # Ad-hoc local builds should not disable library validation.
-  if ! plutil_out=$(plutil -remove com.apple.security.cs.disable-library-validation "$TEMP_ENTITLEMENTS" 2>&1); then
-    if printf '%s' "$plutil_out" | grep -q "No value to remove"; then
-      : # already absent
-    else
-      echo "error: plutil failed to remove disable-library-validation: $plutil_out" >&2
-      exit 1
-    fi
-  fi
-}
-
 build_app() {
   echo "==> Building $SCHEME ($CONFIGURATION)..."
-  prepare_entitlements
 
+  # Signs Kannu/Kannu.entitlements as it is, disable-library-validation included. An ad-hoc
+  # signature has no Team ID, so with library validation on, dyld refuses the embedded Lottie and
+  # Sparkle frameworks ("mapping process and mapped file (non-platform) have different Team IDs")
+  # and the app never starts.
   xcodebuild build \
     -project "$PROJECT" \
     -scheme "$SCHEME" \
@@ -114,7 +79,7 @@ build_app() {
     CODE_SIGNING_REQUIRED=NO \
     CODE_SIGNING_ALLOWED=YES \
     CODE_SIGN_INJECT_BASE_ENTITLEMENTS=YES \
-    CODE_SIGN_ENTITLEMENTS="$TEMP_ENTITLEMENTS"
+    CODE_SIGN_ENTITLEMENTS="$ENTITLEMENTS_SRC"
 }
 
 if [[ "$SKIP_BUILD" == false ]]; then

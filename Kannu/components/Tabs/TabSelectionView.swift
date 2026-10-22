@@ -44,6 +44,7 @@ struct TabModel: Identifiable {
 }
 
 struct TabSelectionView: View {
+    @Environment(\.notchForeground) private var notchForeground
     @ObservedObject var coordinator = KannuViewCoordinator.shared
     @ObservedObject private var extensionNotchExperienceManager = ExtensionNotchExperienceManager.shared
     @StateObject private var quickShareService = QuickShareService.shared
@@ -126,7 +127,7 @@ struct TabSelectionView: View {
         HStack(spacing: 24) {
             ForEach(Array(tabs.enumerated()), id: \.element.id) { idx, tab in
                 let isSelected = isSelected(tab)
-                let activeAccent = tab.accentColor ?? .white
+                let activeAccent = tab.accentColor ?? notchForeground
 
                 // Render the tab button
                 // Hover-to-switch goes through TabButton's `onHover:` rather than a second
@@ -155,10 +156,10 @@ struct TabSelectionView: View {
                     }
                     coordinator.currentView = tab.view
                 }
-                .foregroundStyle(isSelected ? activeAccent : .gray)
+                .foregroundStyle(isSelected ? activeAccent : .secondary)
                 .background {
                     if isSelected {
-                        let accent = tab.accentColor ?? Color.white
+                        let accent = tab.accentColor ?? notchForeground
                         if hasSkin {
                             Circle()
                                 .fill(.ultraThinMaterial)

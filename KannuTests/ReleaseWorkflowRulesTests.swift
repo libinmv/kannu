@@ -47,6 +47,71 @@ final class ReleaseWorkflowRulesTests: XCTestCase {
         ])
     }
 
+    /// No build strips the `com.apple.security.mach-services` entitlement. The release workflow, CI
+    /// and both local build scripts each ran `plutil -remove com.apple.security.mach-services`, which
+    /// reads the dots in the key as a key path, answered "No value to remove at key path" and never
+    /// removed it: every build those four made, ad-hoc ones included, carried the key. The reason the
+    /// strip gave, that amfid kills an ad-hoc app carrying it, does not hold on macOS 26 (an ad-hoc
+    /// signed app with hardened runtime and this entitlement launches), and neither does
+    /// `ExtensionXPCServiceHost`'s note that its listener crashes the app without it (a Kannu Dev
+    /// build without the key started the listener and ran for hours). A strip that worked would
+    /// only change what gets signed, for no reason anyone has shown.
+    func testNoBuildStripsTheMachServicesEntitlement() throws {
+        for path in Self.buildFiles {
+            XCTAssertEqual(Self.machServicesProblems(in: try Self.read(path), path: path), [], path)
+        }
+        let plutilStrip = "if ! plutil_out=$(plutil -remove com.apple.security.mach-services Kannu/Kannu.entitlements 2>&1); then"
+        XCTAssertEqual(Self.machServicesProblems(in: plutilStrip, path: "ci.yml"),
+                       ["ci.yml strips the mach-services entitlement"])
+        let plistBuddyStrip = "/usr/libexec/PlistBuddy -c \"Delete :com.apple.security.mach-services\" \"$ENTITLEMENTS\""
+        XCTAssertEqual(Self.machServicesProblems(in: plistBuddyStrip, path: "release.yml"),
+                       ["release.yml strips the mach-services entitlement"])
+        let quotedStrip = "plutil -remove \"com.apple.security.mach-services\" \"$TEMP_ENTITLEMENTS\""
+        XCTAssertEqual(Self.machServicesProblems(in: quotedStrip, path: "build-dmg.sh"),
+                       ["build-dmg.sh strips the mach-services entitlement"])
+    }
+
+    private static let buildFiles = [
+        workflowPath, ".github/workflows/ci.yml", "scripts/build-dmg.sh", "scripts/build-launch-app.sh",
+    ]
+
+    static func machServicesProblems(in text: String, path: String) -> [String] {
+        strips("com.apple.security.mach-services", in: text) ? ["\(path) strips the mach-services entitlement"] : []
+    }
+
+    /// A `plutil -remove` or PlistBuddy `Delete` of `key`, however the shell quotes it.
+    private static func strips(_ key: String, in text: String) -> Bool {
+        let unquoted = text.replacingOccurrences(of: "\"", with: "").replacingOccurrences(of: "'", with: "")
+        return unquoted.contains("plutil -remove \(key)") || unquoted.contains("Delete :\(key)")
+    }
+
+    /// No build strips `com.apple.security.cs.disable-library-validation` either. `build-dmg.sh` and
+    /// `build-launch-app.sh` ran `plutil -remove` on it, which never removed it, for the same key-path
+    /// reason. A strip that worked would break both: their builds are ad-hoc signed, an ad-hoc
+    /// signature has no Team ID, and with library validation on, dyld refuses the embedded Lottie
+    /// and Sparkle frameworks ("mapping process and mapped file (non-platform) have different Team
+    /// IDs"), so the app never starts. An ad-hoc probe app with hardened runtime and an embedded
+    /// ad-hoc framework shows exactly that on macOS 26, and runs once the entitlement is back.
+    func testNoBuildStripsLibraryValidation() throws {
+        for path in Self.buildFiles {
+            XCTAssertEqual(Self.libraryValidationProblems(in: try Self.read(path), path: path), [], path)
+        }
+        let plutilStrip = "if ! plutil_out=$(plutil -remove com.apple.security.cs.disable-library-validation \"$TEMP_ENTITLEMENTS\" 2>&1); then"
+        XCTAssertEqual(Self.libraryValidationProblems(in: plutilStrip, path: "build-dmg.sh"),
+                       ["build-dmg.sh strips disable-library-validation"])
+        let plistBuddyStrip = "/usr/libexec/PlistBuddy -c \"Delete :com.apple.security.cs.disable-library-validation\" \"$TEMP_ENTITLEMENTS\""
+        XCTAssertEqual(Self.libraryValidationProblems(in: plistBuddyStrip, path: "build-launch-app.sh"),
+                       ["build-launch-app.sh strips disable-library-validation"])
+        let quotedStrip = "plutil -remove 'com.apple.security.cs.disable-library-validation' \"$TEMP_ENTITLEMENTS\""
+        XCTAssertEqual(Self.libraryValidationProblems(in: quotedStrip, path: "ci.yml"),
+                       ["ci.yml strips disable-library-validation"])
+    }
+
+    static func libraryValidationProblems(in text: String, path: String) -> [String] {
+        strips("com.apple.security.cs.disable-library-validation", in: text)
+            ? ["\(path) strips disable-library-validation"] : []
+    }
+
     // MARK: - Rules
 
     static func problems(in workflow: String) -> [String] {

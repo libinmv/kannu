@@ -35,7 +35,7 @@ struct TimerIconAnimation: View {
             
             Image(systemName: "timer")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white)
+                .foregroundStyle(resolvedColor.contrastingForeground) // on the circle's own fill
         }
     }
 

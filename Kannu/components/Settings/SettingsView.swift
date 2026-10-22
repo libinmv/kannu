@@ -3941,6 +3941,7 @@ struct Appearance: View {
     @State private var iconImportError: String?
     @State private var isSkinImporterPresented = false
     @State private var isSkinDropTarget = false
+    @State private var skinPromptCopied = false
 
     /// Whether the main screen has a physical notch.
     private var mainScreenHasPhysicalNotch: Bool {
@@ -4155,6 +4156,16 @@ struct Appearance: View {
                             notchSkinManager.selectSkin(nil)
                         }
 
+                        ForEach(BuiltInNotchSkin.all) { skin in
+                            notchSkinCard(
+                                title: skin.name,
+                                image: NSImage(named: skin.assetName),
+                                isSelected: selectedNotchSkinID == skin.id
+                            ) {
+                                notchSkinManager.selectBuiltInSkin(skin)
+                            }
+                        }
+
                         ForEach(customNotchSkins) { skin in
                             notchSkinCard(
                                 title: skin.name,
@@ -4192,7 +4203,15 @@ struct Appearance: View {
                             notchSkinManager.removeSkin(skin)
                         }
                     }
-                    .disabled(selectedNotchSkinID == nil)
+                    .disabled(selectedNotchSkinID == nil || BuiltInNotchSkin.with(id: selectedNotchSkinID) != nil)
+
+                    Button("Copy AI prompt") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(NotchSkinPrompt.text, forType: .string)
+                        notchSkinManager.importError = nil
+                        skinPromptCopied = true
+                    }
+                    .help("Copies a prompt for ChatGPT or another image AI: it asks you a few questions, then designs a skin that fits the notch")
 
                     Button("Upload skin") {
                         notchSkinManager.importError = nil
@@ -4210,6 +4229,8 @@ struct Appearance: View {
             } footer: {
                 if let importError = notchSkinManager.importError {
                     SettingsFooter(importError)
+                } else if skinPromptCopied {
+                    SettingsFooter("Prompt copied. Paste it into ChatGPT or another image AI, answer its questions, then upload the image here.")
                 } else {
                     SettingsFooter("Upload a PNG, JPG, or WebP image to fill the notch background. Add a scrim if the traffic-light indicators are hard to read.")
                 }

@@ -25,7 +25,7 @@ struct SpinningCircleDownloadView: View {
         ZStack {
             // Gray track
             Circle()
-                .stroke(Color.gray.opacity(0.3), lineWidth: 3.5)
+                .stroke(Color.secondary.opacity(0.3), lineWidth: 3.5)
             
             // Blue spinning segment
             Circle()

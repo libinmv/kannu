@@ -124,6 +124,7 @@ private extension AtollFontDesign {
 // MARK: - Icon Rendering
 
 struct ExtensionIconView: View {
+    @Environment(\.notchForeground) private var notchForeground
     let descriptor: AtollIconDescriptor
     let tint: Color
     let size: CGSize
@@ -162,7 +163,7 @@ struct ExtensionIconView: View {
                 .frame(width: size.width, height: size.height)
                 .background(
                     RoundedRectangle(cornerRadius: cornerRadius(for: descriptor), style: .continuous)
-                        .fill(Color.white.opacity(0.08))
+                        .fill(notchForeground.opacity(0.08))
                 )
         case .none:
             fallbackSymbol
@@ -281,6 +282,7 @@ struct ExtensionBadgeIconView: View {
 // MARK: - Lottie Rendering
 
 struct ExtensionLottieView: View {
+    @Environment(\.notchForeground) private var notchForeground
     let data: Data
     let size: CGSize
     var loopMode: LottieLoopMode = .loop
@@ -299,7 +301,7 @@ struct ExtensionLottieView: View {
             } else {
                 ProgressView()
                     .controlSize(.small)
-                    .tint(.white.opacity(0.7))
+                    .tint(notchForeground.opacity(0.7))
             }
         }
         .frame(width: size.width, height: size.height)
@@ -344,6 +346,7 @@ private final class ExtensionLottieCache {
 // MARK: - Progress Rendering
 
 struct ExtensionProgressIndicatorView: View {
+    @Environment(\.notchForeground) private var notchForeground
     let indicator: AtollProgressIndicator
     let progress: Double
     let accent: Color
@@ -371,7 +374,7 @@ struct ExtensionProgressIndicatorView: View {
             let resolvedDiameter = resolvedRingDiameter(requested: diameter)
             ZStack {
                 Circle()
-                    .stroke(Color.white.opacity(0.15), lineWidth: strokeWidth)
+                    .stroke(notchForeground.opacity(0.15), lineWidth: strokeWidth)
                 Circle()
                     .trim(from: 0, to: CGFloat(max(0, min(progress, 1))))
                     .stroke(ringColor, style: StrokeStyle(lineWidth: strokeWidth, lineCap: .round))
@@ -382,7 +385,7 @@ struct ExtensionProgressIndicatorView: View {
         case let .bar(width, height, _, color):
             let barColor = color?.resolvedColor(fallback: accent) ?? accent
             Capsule()
-                .fill(Color.white.opacity(0.18))
+                .fill(notchForeground.opacity(0.18))
                 .frame(width: width ?? 80, height: height)
                 .overlay(alignment: .leading) {
                     Capsule()

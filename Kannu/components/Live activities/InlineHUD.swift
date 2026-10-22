@@ -334,7 +334,7 @@ struct InlineHUD: View {
             HStack {
                 if (type == .mic) {
                     Text(value.isZero ? "muted" : "unmuted")
-                        .foregroundStyle(.gray)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .allowsTightening(true)
                         .multilineTextAlignment(.trailing)
@@ -432,7 +432,7 @@ struct InlineHUD: View {
                                     Text("muted")
                                         .font(.caption)
                                         .fontWeight(.medium)
-                                        .foregroundStyle(.gray)
+                                        .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                         .allowsTightening(true)
                                         .multilineTextAlignment(.trailing)

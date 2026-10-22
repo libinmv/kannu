@@ -110,6 +110,7 @@ struct TaskSourceMenu: View {
 
 /// The rail icon's 21 pt square around the filter menu, in the rail style only.
 private struct RailSquare: ViewModifier {
+    @Environment(\.notchForeground) private var notchForeground
     let isOn: Bool
     let isActive: Bool
 
@@ -117,7 +118,7 @@ private struct RailSquare: ViewModifier {
     func body(content: Content) -> some View {
         if isOn {
             content
-                .foregroundStyle(Color.white.opacity(0.85))
+                .foregroundStyle(notchForeground.opacity(0.85))
                 .frame(width: TimerComposerMetrics.railButtonSize, height: TimerComposerMetrics.railButtonSize)
                 .background(RailIconBackground(isActive: isActive))
                 .contentShape(Rectangle())

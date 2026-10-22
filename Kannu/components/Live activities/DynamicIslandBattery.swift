@@ -22,6 +22,8 @@ import Defaults
 /// A view that displays the battery status with an icon and charging indicator.
 struct BatteryView: View {
     @Environment(\.notchForeground) private var notchForeground
+    /// Text on the battery fill when that fill is the notch's own foreground colour.
+    private var neutralFillInk: Color { notchForeground == .white ? .black : .white }
     @Default(.showPowerStatusIcons) var showPowerStatusIcons
     var levelBattery: Float
     var isPluggedIn: Bool
@@ -57,7 +59,7 @@ struct BatteryView: View {
         } else if isCharging || isPluggedIn || levelBattery == 100 {
             return .green
         } else {
-            return .white
+            return notchForeground
         }
     }
 
@@ -84,7 +86,8 @@ struct BatteryView: View {
             if showPercentInside {
                 let showsStatusGlyph = iconStatus != "" && (isForNotification || showPowerStatusIcons)
                 let bodyHeight = (batteryWidth - 2.75) - 18
-                let glyphColor: Color = isCharging ? .white : .black
+                // Black on the coloured fills; on the neutral fill (notchForeground), its opposite.
+                let glyphColor: Color = isCharging ? .white : (batteryColor == notchForeground ? neutralFillInk : .black)
                 let statusSymbol: String? = {
                     guard showsStatusGlyph else { return nil }
                     if isCharging { return "bolt.fill" }
@@ -125,6 +128,8 @@ struct BatteryView: View {
 /// Pill battery for the minimalist notch, matching the charging HUD style.
 struct MinimalisticBatteryView: View {
     @Environment(\.notchForeground) private var notchForeground
+    /// Text on the battery fill when that fill is the notch's own foreground colour.
+    private var neutralFillInk: Color { notchForeground == .white ? .black : .white }
     @Default(.showPowerStatusIcons) var showPowerStatusIcons
     var levelBattery: Float
     var isPluggedIn: Bool
@@ -147,7 +152,7 @@ struct MinimalisticBatteryView: View {
         } else if isCharging || isPluggedIn || clamped == 100 {
             return .green
         } else {
-            return .white
+            return notchForeground
         }
     }
 
@@ -163,7 +168,7 @@ struct MinimalisticBatteryView: View {
     }
 
     private var glyphColor: Color {
-        isCharging ? .white : .black
+        isCharging ? .white : (batteryColor == notchForeground ? neutralFillInk : .black)
     }
 
     private var terminalHeight: CGFloat {
@@ -398,6 +403,7 @@ struct KannuBatteryView: View {
             .onHover { hovering in
                 isHoveringPopover = hovering
             }
+            .notchDarkAppearance()
         }
         .onChange(of: showPopupMenu) { _, _ in
             updateBatteryPopoverActiveState()
@@ -644,19 +650,19 @@ struct BatteryTemporaryActivityView: View {
                         .font(.system(size: 10, weight: .medium))
                     +
                     Text(verbatim: ", it is recommended to charge it.")
-                        .foregroundColor(.gray.opacity(0.6))
+                        .foregroundColor(Color.secondary.opacity(0.6))
                         .font(.system(size: 10, weight: .medium))
                 )
             } else {
                 Text(verbatim: "Turn on Low Power Mode or it\nis recommended to charge it.")
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.gray.opacity(0.6))
+                    .foregroundStyle(Color.secondary.opacity(0.6))
                     .lineLimit(2)
             }
         case .fullBattery:
             Text(verbatim: "Your Mac is fully charged.")
                 .font(.system(size: 10))
-                .foregroundStyle(.gray.opacity(0.6))
+                .foregroundStyle(Color.secondary.opacity(0.6))
                 .fontWeight(.medium)
                 .lineLimit(1)
         }
@@ -795,12 +801,12 @@ struct BatteryTemporaryActivityView: View {
     private var magSafeIndicator: some View {
         HStack(spacing: 0) {
             Rectangle()
-                .fill(.gray.opacity(0.15))
+                .fill(Color.secondary.opacity(0.15))
                 .frame(width: 30, height: 5)
 
             ZStack {
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(.gray.opacity(0.2).gradient)
+                    .fill(Color.secondary.opacity(0.2).gradient)
                     .frame(width: 30, height: 40)
 
                 Circle()
@@ -810,7 +816,7 @@ struct BatteryTemporaryActivityView: View {
             }
 
             Rectangle()
-                .fill(.white.opacity(0.4))
+                .fill(notchForeground.opacity(0.4))
                 .frame(width: 3, height: 32)
         }
     }

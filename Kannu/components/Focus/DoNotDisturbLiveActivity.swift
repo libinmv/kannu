@@ -21,6 +21,7 @@ import Defaults
 import SwiftUI
 
 struct DoNotDisturbLiveActivity: View {
+    @Environment(\.notchForeground) private var notchForeground
     @EnvironmentObject var vm: KannuViewModel
     @ObservedObject var manager = DoNotDisturbManager.shared
     @Default(.showDoNotDisturbLabel) private var showLabelSetting
@@ -259,7 +260,7 @@ struct DoNotDisturbLiveActivity: View {
         if manager.isDoNotDisturbActive {
             return activeAccentColor
         } else if showInactiveIcon {
-            return .white
+            return notchForeground
         } else {
             return activeAccentColor
         }
@@ -315,7 +316,7 @@ struct DoNotDisturbLiveActivity: View {
 
     private var labelColor: Color {
         if focusToastMode {
-            return manager.isDoNotDisturbActive ? activeAccentColor : .white
+            return manager.isDoNotDisturbActive ? activeAccentColor : notchForeground
         }
         return activeAccentColor
     }

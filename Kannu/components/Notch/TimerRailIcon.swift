@@ -22,6 +22,7 @@ import SwiftUI
 /// field's look, smaller — a 21 pt square with a dim fill and a 10 pt glyph, brighter while what
 /// it opens is open. Only the look: each caller wraps it in its own button or menu.
 struct TimerRailIcon: View {
+    @Environment(\.notchForeground) private var notchForeground
     private typealias M = TimerComposerMetrics
 
     let systemName: String
@@ -30,7 +31,7 @@ struct TimerRailIcon: View {
     var body: some View {
         Image(systemName: systemName)
             .font(.system(size: M.railGlyphSize, weight: .semibold))
-            .foregroundStyle(Color.white.opacity(0.85))
+            .foregroundStyle(notchForeground.opacity(0.85))
             .frame(width: M.railButtonSize, height: M.railButtonSize)
             .background(RailIconBackground(isActive: isActive))
             .contentShape(Rectangle())
@@ -39,10 +40,11 @@ struct TimerRailIcon: View {
 
 /// The rail icon's square, for a control that draws its own glyph (the filter menu).
 struct RailIconBackground: View {
+    @Environment(\.notchForeground) private var notchForeground
     var isActive = false
 
     var body: some View {
         RoundedRectangle(cornerRadius: TimerComposerMetrics.railCornerRadius, style: .continuous)
-            .fill(Color.white.opacity(isActive ? 0.16 : 0.08))
+            .fill(notchForeground.opacity(isActive ? 0.16 : 0.08))
     }
 }

@@ -90,7 +90,7 @@ struct SystemEventIndicatorModifier: View {
             switch eventType {
             case .mic:
                 Text(value > 0 ? "Mic unmuted" : "Mic muted")
-                    .foregroundStyle(.gray)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .allowsTightening(true)
                     .contentTransition(.numericText())
@@ -164,7 +164,7 @@ struct VolumeProgressSection: View {
                 Text("muted")
                     .font(.caption)
                     .fontWeight(.medium)
-                    .foregroundStyle(.gray)
+                    .foregroundStyle(.secondary)
                     .contentTransition(.numericText())
             } else {
                 ProgressSection(value: $value, showPercentages: showPercentages, colorMode: .volume)

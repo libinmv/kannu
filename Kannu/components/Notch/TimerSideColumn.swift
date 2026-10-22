@@ -50,6 +50,7 @@ import SwiftUI
 ///
 /// Tooltips are `.hoverTooltip`; `.help` never renders in the notch (docs/REGRESSIONS.md entry 9).
 struct TimerSideColumn: View {
+    @Environment(\.notchForeground) private var notchForeground
     private typealias M = TimerComposerMetrics
 
     @EnvironmentObject private var vm: KannuViewModel
@@ -142,13 +143,13 @@ struct TimerSideColumn: View {
             ForEach(Array(pages.enumerated()), id: \.element) { index, item in
                 if index > 0 {
                     Text(verbatim: "·")
-                        .foregroundStyle(Color.white.opacity(0.3))
+                        .foregroundStyle(notchForeground.opacity(0.3))
                 }
                 Button {
                     select(item)
                 } label: {
                     Text(item.title)
-                        .foregroundStyle(item == shownPage ? Color.white : Color.white.opacity(0.4))
+                        .foregroundStyle(item == shownPage ? notchForeground : notchForeground.opacity(0.4))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -196,7 +197,7 @@ struct TimerSideColumn: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(14)
-                .background(Color.white.opacity(0.05))
+                .background(notchForeground.opacity(0.05))
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         } else {
             let computedHeight = CGFloat(presets.count) * 60 + 4
@@ -261,6 +262,7 @@ extension TimerSidePage {
 /// A view of its own, built only while the page is shown, so `TasksManager` exists only with tasks
 /// on. It reads no secret: keys and titles are the sources' own text and render verbatim.
 private struct TimerTasksPage: View {
+    @Environment(\.notchForeground) private var notchForeground
     private typealias M = TimerComposerMetrics
 
     @EnvironmentObject private var vm: KannuViewModel
@@ -633,7 +635,7 @@ private struct TimerTasksPage: View {
         .padding(.leading, 8)
         .padding(.trailing, 2)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.08)))
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(notchForeground.opacity(0.08)))
     }
 
     // MARK: - List
@@ -786,7 +788,7 @@ private struct TimerTasksPage: View {
         .frame(height: M.sideTaskRowHeight)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.white.opacity(0.05))
+                .fill(notchForeground.opacity(0.05))
         )
     }
 }
@@ -852,6 +854,7 @@ private struct TimerLogTimePage: View {
 /// Takes the manager it is handed, like the card. Each row is one button whose label owns the
 /// row's one hover (its clipped title slides), so it carries no tooltip: an arrow says it opens.
 private struct TimerLinkedMRsPage: View {
+    @Environment(\.notchForeground) private var notchForeground
     private typealias M = TimerComposerMetrics
 
     @ObservedObject var manager: TasksManager
@@ -1015,7 +1018,7 @@ private struct TimerLinkedMRsPage: View {
             }
             .padding(.horizontal, 10)
             .frame(height: M.sideTaskRowHeight)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.06)))
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(notchForeground.opacity(0.06)))
             .contentShape(Rectangle())
             .onHover { hovering in
                 if hovering {
@@ -1047,7 +1050,7 @@ private struct TimerLinkedMRsPage: View {
         case .opened: return .green
         case .merged: return .purple
         case .closed: return .red
-        case .locked, nil: return .gray
+        case .locked, nil: return .secondary
         }
     }
 }
@@ -1056,19 +1059,20 @@ private struct TimerLinkedMRsPage: View {
 /// "more below"; the top one appears only once rows have scrolled under it — at rest it darkened
 /// the first row's top 16 pt, which read as a black gap above a misaligned list.
 private struct SideListEdgeFades: View {
+    @Environment(\.notchFill) private var notchFill
     let showsTop: Bool
 
     var body: some View {
         ZStack {
             if showsTop {
-                LinearGradient(colors: [Color.black.opacity(0.65), .clear], startPoint: .top, endPoint: .bottom)
+                LinearGradient(colors: [(notchFill ?? .black).opacity(0.65), .clear], startPoint: .top, endPoint: .bottom)
                     .frame(height: 16)
                     .alignmentGuide(.top) { d in d[.top] }
                     .frame(maxHeight: .infinity, alignment: .top)
                     .transition(.opacity)
             }
 
-            LinearGradient(colors: [.clear, Color.black.opacity(0.65)], startPoint: .top, endPoint: .bottom)
+            LinearGradient(colors: [.clear, (notchFill ?? .black).opacity(0.65)], startPoint: .top, endPoint: .bottom)
                 .frame(height: 16)
                 .alignmentGuide(.bottom) { d in d[.bottom] }
                 .frame(maxHeight: .infinity, alignment: .bottom)
@@ -1444,6 +1448,7 @@ private struct TimerTaskDetail: View {
 /// the chip allowed to give way (`truncates`), which shortens in the middle instead. Also the key
 /// chip under a running task's name (`NotchTimerView`).
 struct SideChip: View {
+    @Environment(\.notchForeground) private var notchForeground
     let text: String
     var tint: Color? = nil
     var monospaced = false
@@ -1464,7 +1469,7 @@ struct SideChip: View {
             .truncationMode(.middle)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(Capsule().fill(tint?.opacity(0.15) ?? Color.white.opacity(0.12)))
+            .background(Capsule().fill(tint?.opacity(0.15) ?? notchForeground.opacity(0.12)))
         if truncates {
             chip.fixedSize(horizontal: false, vertical: true)
         } else {
@@ -1506,6 +1511,7 @@ private struct FactCell: View {
 
 /// One preset on the Presets page. Moved here unchanged from `NotchTimerView`.
 private struct TimerPresetCard: View {
+    @Environment(\.notchForeground) private var notchForeground
     let preset: TimerPreset
     let isActive: Bool
     let action: () -> Void
@@ -1518,7 +1524,7 @@ private struct TimerPresetCard: View {
                     .frame(width: 30, height: 30)
                     .overlay(
                         Circle()
-                            .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                            .stroke(notchForeground.opacity(0.3), lineWidth: 1)
                     )
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -1537,14 +1543,14 @@ private struct TimerPresetCard: View {
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(isActive ? preset.color : Color.secondary)
                     .padding(6)
-                    .background(isActive ? preset.color.opacity(0.2) : Color.white.opacity(0.08))
+                    .background(isActive ? preset.color.opacity(0.2) : notchForeground.opacity(0.08))
                     .clipShape(Circle())
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(isActive ? preset.color.opacity(0.12) : Color.white.opacity(0.04))
+                    .fill(isActive ? preset.color.opacity(0.12) : notchForeground.opacity(0.04))
             )
         }
         .buttonStyle(.plain)

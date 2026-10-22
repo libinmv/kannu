@@ -9,9 +9,14 @@ final class NotchSkinManager: ObservableObject {
     static let shared = NotchSkinManager()
 
     @Published private(set) var selectedSkinImage: NSImage?
+    /// The selected skin's mean colour, which the notch's text colour is chosen against. Nil while
+    /// it is being computed (once per skin, off the main thread) and when no skin is selected.
+    @Published private(set) var selectedSkinAverageRGB: NotchContrast.RGB?
     @Published var importError: String?
 
     private var cancellables = Set<AnyCancellable>()
+    private var averagedSkinID: String?
+    private var averageTask: Task<Void, Never>?
 
     private init() {
         reloadSelectedSkin()
@@ -28,14 +33,42 @@ final class NotchSkinManager: ObservableObject {
     }
 
     func reloadSelectedSkin() {
+        if let builtIn = BuiltInNotchSkin.with(id: Defaults[.selectedNotchSkinID]) {
+            let image = NSImage(named: builtIn.assetName)
+            selectedSkinImage = image
+            averageSelectedSkin(image, id: builtIn.id)
+            return
+        }
         guard let selectedID = Defaults[.selectedNotchSkinID],
               let skin = Defaults[.customNotchSkins].first(where: { $0.id.uuidString == selectedID }),
               FileManager.default.fileExists(atPath: skin.fileURL.path)
         else {
             selectedSkinImage = nil
+            averageTask?.cancel()
+            averagedSkinID = nil
+            selectedSkinAverageRGB = nil
             return
         }
-        selectedSkinImage = NSImage(contentsOf: skin.fileURL)
+        let image = NSImage(contentsOf: skin.fileURL)
+        selectedSkinImage = image
+        averageSelectedSkin(image, id: skin.id.uuidString)
+    }
+
+    /// Skin images never change under an ID (a custom skin's UUID string, a built-in's
+    /// `builtin.` ID), so the average is computed once per selected skin —
+    /// `reloadSelectedSkin()` also runs whenever any skin is imported or removed.
+    private func averageSelectedSkin(_ image: NSImage?, id: String) {
+        guard id != averagedSkinID else { return }
+        averageTask?.cancel()
+        averagedSkinID = id
+        selectedSkinAverageRGB = nil
+        // The CGImage is taken here because NSImage is not safe to use across threads.
+        guard let cgImage = image?.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+        averageTask = Task { [weak self] in
+            let average = await Task.detached(priority: .utility) { cgImage.averageSRGB() }.value
+            guard !Task.isCancelled else { return }
+            self?.selectedSkinAverageRGB = average
+        }
     }
 
     func importSkin(from url: URL) {
@@ -105,6 +138,11 @@ final class NotchSkinManager: ObservableObject {
 
     func selectSkin(_ skin: CustomNotchSkin?) {
         Defaults[.selectedNotchSkinID] = skin?.id.uuidString
+        reloadSelectedSkin()
+    }
+
+    func selectBuiltInSkin(_ skin: BuiltInNotchSkin) {
+        Defaults[.selectedNotchSkinID] = skin.id
         reloadSelectedSkin()
     }
 }

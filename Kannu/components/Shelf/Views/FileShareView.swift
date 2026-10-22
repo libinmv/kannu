@@ -26,6 +26,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct FileShareView: View {
+    @Environment(\.notchForeground) private var notchForeground
     @EnvironmentObject private var vm: KannuViewModel
     @StateObject private var quickShare = QuickShareService.shared
     @StateObject private var localSend = LocalSendService.shared
@@ -86,7 +87,7 @@ struct FileShareView: View {
                         .stroke(
                             vm.dropZoneTargeting
                                 ? Color.accentColor.opacity(0.9)
-                                : Color.white.opacity(0.1),
+                                : notchForeground.opacity(0.1),
                             style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [10])
                         )
                 )
@@ -96,7 +97,7 @@ struct FileShareView: View {
             VStack(spacing: 5) {
                 ZStack {
                     Circle()
-                        .fill(Color.white.opacity(
+                        .fill(notchForeground.opacity(
                             vm.dropZoneTargeting ? 0.11 : 0.09
                         ))
                         .frame(width: 55, height: 55)
@@ -116,7 +117,7 @@ struct FileShareView: View {
                         }
                     }
                         .foregroundStyle(
-                            vm.dropZoneTargeting ? Color.accentColor : Color.gray
+                            vm.dropZoneTargeting ? Color.accentColor : Color.secondary
                         )
                         .scaleEffect(
                             vm.dropZoneTargeting ? 1.06 : 1.0
@@ -126,7 +127,7 @@ struct FileShareView: View {
 
                 Text(selectedProvider.id)
                     .font(.system(.headline, design: .rounded))
-                    .foregroundColor(.white.opacity(0.8))
+                    .foregroundColor(notchForeground.opacity(0.8))
                     .multilineTextAlignment(.center)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -151,7 +152,7 @@ struct FileShareView: View {
                             .frame(width: 14, height: 14)
                             .padding(8)
                             .background(RoundedRectangle(cornerRadius: 8).fill(isSwitchHover ? Color(.windowBackgroundColor).opacity(0.12) : Color.clear))
-                            .foregroundColor(isSwitchHover ? .accentColor : .gray)
+                            .foregroundColor(isSwitchHover ? .accentColor : .secondary)
                     }
                     .buttonStyle(PlainButtonStyle())
                     .onHover { hovering in
@@ -227,6 +228,7 @@ struct FileShareView: View {
                             }
                         }
                         .padding()
+                        .notchDarkAppearance()
                         .onAppear { vm.setAutoCloseSuppression(true, token: autoCloseToken) }
                         .onDisappear {
                             // Delay clearing suppression slightly so the close click doesn't immediately close the notch
@@ -248,7 +250,7 @@ struct FileShareView: View {
                     .fill(.black.opacity(0.3))
                     .overlay(
                         ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .progressViewStyle(CircularProgressViewStyle(tint: notchForeground))
                             .scaleEffect(0.8)
                     )
             }
@@ -259,12 +261,12 @@ struct FileShareView: View {
                         Spacer()
                         ZStack {
                             Circle()
-                                .stroke(Color.white.opacity(0.16), lineWidth: 3)
+                                .stroke(notchForeground.opacity(0.16), lineWidth: 3)
 
                             Circle()
                                 .trim(from: 0, to: min(max(localSend.sendProgress, 0), 1))
                                 .stroke(
-                                    Color.white,
+                                    notchForeground,
                                     style: StrokeStyle(lineWidth: 3, lineCap: .round)
                                 )
                                 .rotationEffect(.degrees(-90))
@@ -273,7 +275,7 @@ struct FileShareView: View {
                             if localSend.sendProgress > 0.99 {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 9, weight: .bold))
-                                    .foregroundColor(.white)
+                                    .foregroundColor(notchForeground)
                             }
                         }
                         .frame(width: 24, height: 24)

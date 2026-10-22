@@ -143,18 +143,19 @@ struct MarqueeText: View {
 }
 
 struct MusicExplicitBadge: View {
+    @Environment(\.notchForeground) private var notchForeground
     var label: String = "E"
     var fontSize: CGFloat = 9
     var height: CGFloat = 14
     var horizontalPadding: CGFloat = 4
     var minWidth: CGFloat? = nil
-    var foregroundColor: Color = .white.opacity(0.92)
-    var backgroundColor: Color = .white.opacity(0.18)
+    var foregroundColor: Color? = nil
+    var backgroundColor: Color? = nil
     var cornerRadius: CGFloat? = nil
     var body: some View {
         Text(label)
             .font(.system(size: fontSize, weight: .bold, design: .rounded))
-            .foregroundColor(foregroundColor)
+            .foregroundColor(foregroundColor ?? notchForeground.opacity(0.92))
             .padding(.horizontal, max(horizontalPadding, height * 0.2))
             .frame(minWidth: minWidth, minHeight: height)
             .background(
@@ -162,7 +163,7 @@ struct MusicExplicitBadge: View {
                     cornerRadius: cornerRadius ?? max(4, height * 0.28),
                     style: .continuous
                 )
-                .fill(backgroundColor)
+                .fill(backgroundColor ?? notchForeground.opacity(0.18))
             )
             .fixedSize()
     }
@@ -182,8 +183,8 @@ struct MusicTitleMarqueeView: View {
     let badgeLabel: String
     let badgeFontSize: CGFloat?
     let badgeHeight: CGFloat?
-    let badgeForegroundColor: Color
-    let badgeBackgroundColor: Color
+    let badgeForegroundColor: Color?
+    let badgeBackgroundColor: Color?
     let badgeHorizontalPadding: CGFloat
     let badgeMinWidth: CGFloat?
     let badgeCornerRadius: CGFloat?
@@ -202,8 +203,8 @@ struct MusicTitleMarqueeView: View {
         badgeLabel: String = "E",
         badgeFontSize: CGFloat? = nil,
         badgeHeight: CGFloat? = nil,
-        badgeForegroundColor: Color = .white.opacity(0.92),
-        badgeBackgroundColor: Color = .white.opacity(0.18),
+        badgeForegroundColor: Color? = nil,
+        badgeBackgroundColor: Color? = nil,
         badgeHorizontalPadding: CGFloat = 4,
         badgeMinWidth: CGFloat? = nil,
         badgeCornerRadius: CGFloat? = nil

@@ -26,6 +26,7 @@ import AppKit
 // Lyrics are shown/hidden only via Defaults[.enableLyrics] in settings. Inline display is used in the player views.
 
 struct MinimalisticMusicPlayerView: View {
+    @Environment(\.notchForeground) private var notchForeground
     @EnvironmentObject var vm: KannuViewModel
     let albumArtNamespace: Namespace.ID
     @Default(.showShuffleAndRepeat) private var showCustomControls
@@ -55,13 +56,13 @@ struct MinimalisticMusicPlayerView: View {
                     VStack(spacing: 8) {
                         Image(systemName: "music.note")
                             .font(.system(size: 24, weight: .light))
-                            .foregroundColor(.gray.opacity(0.65))
+                            .foregroundColor(Color.secondary.opacity(0.65))
                         Text("Now Playing")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.55))
+                            .foregroundColor(notchForeground.opacity(0.55))
                         Text("Nothing playing")
                             .font(.system(size: 11, weight: .regular))
-                            .foregroundColor(.gray.opacity(0.65))
+                            .foregroundColor(Color.secondary.opacity(0.65))
                     }
 
                     Spacer(minLength: 0)
@@ -106,7 +107,7 @@ struct MinimalisticMusicPlayerView: View {
                                             isExplicit: musicManager.isCurrentTrackExplicit,
                                             font: .system(size: 12, weight: .semibold),
                                             nsFont: .subheadline,
-                                            textColor: .white,
+                                            textColor: notchForeground,
                                             frameWidth: textWidth,
                                             badgeHeight: 13
                                         )
@@ -114,7 +115,7 @@ struct MinimalisticMusicPlayerView: View {
 
                                     Text(musicManager.artistName)
                                         .font(.system(size: 10, weight: .regular))
-                                        .foregroundColor(Defaults[.playerColorTinting] ? Color(nsColor: musicManager.avgColor).ensureMinimumBrightness(factor: 0.6) : .gray)
+                                        .foregroundColor(Defaults[.playerColorTinting] ? Color(nsColor: musicManager.avgColor).ensureMinimumBrightness(factor: 0.6) : .secondary)
                                         .lineLimit(1)
 
                                 }
@@ -175,7 +176,7 @@ struct MinimalisticMusicPlayerView: View {
     private var cornerLyricsButton: some View {
         HoverButton(
             icon: enableLyrics ? "quote.bubble.fill" : "quote.bubble",
-            iconColor: enableLyrics ? brandAccentColor : .white,
+            iconColor: enableLyrics ? brandAccentColor : notchForeground,
             scale: .medium,
             // Top-right corner of the notch: the bubble must open downwards.
             tooltip: MusicControlButton.lyrics.label,
@@ -378,7 +379,7 @@ struct MinimalisticMusicPlayerView: View {
                             isExplicit: musicManager.isCurrentTrackExplicit,
                             font: .system(size: 12, weight: .semibold),
                             nsFont: .subheadline,
-                            textColor: .white,
+                            textColor: notchForeground,
                             frameWidth: textAreaWidth,
                             badgeHeight: 13
                         )
@@ -386,7 +387,7 @@ struct MinimalisticMusicPlayerView: View {
 
                     Text(musicManager.artistName)
                         .font(.system(size: 10, weight: .regular))
-                        .foregroundColor(Defaults[.playerColorTinting] ? Color(nsColor: musicManager.avgColor).ensureMinimumBrightness(factor: 0.6) : .gray)
+                        .foregroundColor(Defaults[.playerColorTinting] ? Color(nsColor: musicManager.avgColor).ensureMinimumBrightness(factor: 0.6) : .secondary)
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -464,12 +465,12 @@ struct MinimalisticMusicPlayerView: View {
             if !line.isEmpty {
                 Image(systemName: "music.note")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundColor(notchForeground.opacity(0.7))
                     .symbolRenderingMode(.monochrome)
 
                 Text(line)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.88))
+                    .foregroundColor(notchForeground.opacity(0.88))
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -618,7 +619,7 @@ struct MinimalisticMusicPlayerView: View {
                     }
                 ),
                 range: 0...1,
-                color: .white,
+                color: notchForeground,
                 dragging: $hudDragging,
                 lastDragged: $hudLastDragged,
                 onValueChange: { newValue in
@@ -687,7 +688,7 @@ struct MinimalisticMusicPlayerView: View {
             fontWeight: .semibold,
             frameSize: CGSize(width: 54, height: 54),
             cornerRadius: 22,
-            foregroundColor: .white,
+            foregroundColor: notchForeground,
             pressEffect: .none,
             symbolEffectStyle: .replace,
             tooltip: MusicControlButton.playPause.label,
@@ -720,7 +721,7 @@ struct MinimalisticMusicPlayerView: View {
             fontWeight: .medium,
             frameSize: CGSize(width: 36, height: 36),
             cornerRadius: 14,
-            foregroundColor: isActive ? resolvedActiveColor : .white.opacity(0.85),
+            foregroundColor: isActive ? resolvedActiveColor : notchForeground.opacity(0.85),
             pressEffect: pressEffect,
             symbolEffectStyle: symbolEffect,
             externalTriggerToken: trigger?.token,
@@ -845,6 +846,7 @@ struct MinimalisticMusicPlayerView: View {
         }
     }
     private struct MinimalisticMediaOutputButton: View {
+        @Environment(\.notchForeground) private var notchForeground
         @ObservedObject private var routeManager = AudioRouteManager.shared
         @StateObject private var volumeModel = MediaOutputVolumeViewModel()
         @EnvironmentObject private var vm: KannuViewModel
@@ -858,7 +860,7 @@ struct MinimalisticMusicPlayerView: View {
                 fontWeight: .medium,
                 frameSize: CGSize(width: 36, height: 36),
                 cornerRadius: 14,
-                foregroundColor: .white.opacity(0.85),
+                foregroundColor: notchForeground.opacity(0.85),
                 symbolEffectStyle: .replace,
                 tooltip: MusicControlButton.mediaOutput.label
             ) {
@@ -880,6 +882,7 @@ struct MinimalisticMusicPlayerView: View {
                     isHoveringPopover = false
                     updateActivity()
                 }
+                .notchDarkAppearance()
             }
             .onChange(of: isPopoverPresented) { _, presented in
                 if !presented {
@@ -901,6 +904,7 @@ struct MinimalisticMusicPlayerView: View {
     }
 
     private struct MinimalisticAirPlayButton: View {
+        @Environment(\.notchForeground) private var notchForeground
         @ObservedObject private var musicManager = MusicManager.shared
         @ObservedObject private var airPlayManager = AppleMusicAirPlayManager.shared
         @EnvironmentObject private var vm: KannuViewModel
@@ -918,7 +922,7 @@ struct MinimalisticMusicPlayerView: View {
                 fontWeight: .medium,
                 frameSize: CGSize(width: 36, height: 36),
                 cornerRadius: 14,
-                foregroundColor: .white.opacity(0.85),
+                foregroundColor: notchForeground.opacity(0.85),
                 symbolEffectStyle: .replace,
                 tooltip: MusicControlButton.airPlay.label
             ) {
@@ -939,6 +943,7 @@ struct MinimalisticMusicPlayerView: View {
                     isHoveringPopover = false
                     updateActivity()
                 }
+                .notchDarkAppearance()
             }
             .onChange(of: isPopoverPresented) { _, presented in
                 if !presented { isHoveringPopover = false }
@@ -1051,6 +1056,7 @@ struct MinimalisticAlbumArtView: View {
 // MARK: - Hover-highlighted control button
 
 private struct MinimalisticSquircircleButton: View {
+    @Environment(\.notchForeground) private var notchForeground
     let icon: String
     let fontSize: CGFloat
     let fontWeight: Font.Weight
@@ -1111,7 +1117,7 @@ private struct MinimalisticSquircircleButton: View {
                 .frame(width: frameSize.width, height: frameSize.height)
                 .background(
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(isHovering ? Color.white.opacity(0.18) : .clear)
+                        .fill(isHovering ? notchForeground.opacity(0.18) : .clear)
                 )
                 .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         }

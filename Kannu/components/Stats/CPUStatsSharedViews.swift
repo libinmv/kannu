@@ -20,6 +20,7 @@ import Defaults
 import SwiftUI
 
 struct StatsCard<Content: View>: View {
+    @Environment(\.notchForeground) private var notchForeground
     let title: String
     let padding: CGFloat
     let background: Color
@@ -56,7 +57,7 @@ struct StatsCard<Content: View>: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .stroke(Color.white.opacity(0.05), lineWidth: 0.5)
+                .stroke(notchForeground.opacity(0.05), lineWidth: 0.5)
         )
     }
 }
@@ -458,7 +459,7 @@ struct CPUDetailsGrid: View {
                 DetailRow(color: nil, label: String(localized: "Total"), value: StatsFormatting.percentage(breakdown.activeUsage))
                 DetailRow(color: systemColor, label: String(localized: "System"), value: StatsFormatting.percentage(breakdown.system))
                 DetailRow(color: userColor, label: String(localized: "User"), value: StatsFormatting.percentage(breakdown.user))
-                DetailRow(color: Color.gray.opacity(0.4), label: String(localized: "Idle"), value: StatsFormatting.percentage(breakdown.idle))
+                DetailRow(color: Color.secondary.opacity(0.4), label: String(localized: "Idle"), value: StatsFormatting.percentage(breakdown.idle))
             }
 
             Divider().padding(.vertical, 4)
@@ -512,6 +513,7 @@ struct CPUProcessList: View {
 }
 
 struct CPUProcessRow: View {
+    @Environment(\.notchForeground) private var notchForeground
     let process: ProcessStats
     let accentColor: Color
     
@@ -522,7 +524,7 @@ struct CPUProcessRow: View {
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
+                        .stroke(notchForeground.opacity(0.08), lineWidth: 0.5)
                 )
             
             VStack(alignment: .leading, spacing: 2) {

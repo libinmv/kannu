@@ -42,7 +42,6 @@ struct DurationDigitField: NSViewRepresentable {
         let field = DigitTextField(frame: NSRect(x: 0, y: 0, width: width, height: TimerComposerMetrics.fieldBoxHeight))
         field.font = NSFont.monospacedSystemFont(ofSize: TimerComposerMetrics.fieldDigitSize, weight: .semibold)
         field.alignment = .center
-        field.textColor = .white
         field.isBezeled = false
         field.isBordered = false
         field.drawsBackground = false
@@ -53,10 +52,7 @@ struct DurationDigitField: NSViewRepresentable {
         field.lineBreakMode = .byClipping
         field.cell?.isScrollable = true
         field.cell?.wraps = false
-        field.placeholderAttributedString = NSAttributedString(
-            string: "00",
-            attributes: [.foregroundColor: NSColor.white.withAlphaComponent(0.35), .font: field.font as Any]
-        )
+        field.ink = NSColor(context.environment.notchForeground)
         field.stringValue = TimerDurationDigits.text(value)
         field.setAccessibilityLabel(accessibilityLabel)
         field.delegate = context.coordinator
@@ -67,6 +63,8 @@ struct DurationDigitField: NSViewRepresentable {
     /// the user types, their text stays unless it no longer says the value.
     func updateNSView(_ field: DigitTextField, context: Context) {
         context.coordinator.parent = self
+        let ink = NSColor(context.environment.notchForeground)
+        if field.ink != ink { field.ink = ink }
         let shown = TimerDurationDigits.text(value)
         if field.currentEditor() == nil {
             if field.stringValue != shown { field.stringValue = shown }
@@ -103,17 +101,31 @@ struct DurationDigitField: NSViewRepresentable {
     }
 }
 
-/// The box's field: its cell centres the digits, and the caret is white on the dark box.
+/// The box's field: its cell centres the digits, and the digits, placeholder and caret take the
+/// notch's foreground (`ink`) — white on the default dark notch.
 final class DigitTextField: NSTextField {
     override class var cellClass: AnyClass? {
         get { CenteredDigitCell.self }
         set {}
     }
 
+    var ink: NSColor = .white {
+        didSet { applyInk() }
+    }
+
+    private func applyInk() {
+        textColor = ink
+        placeholderAttributedString = NSAttributedString(
+            string: "00",
+            attributes: [.foregroundColor: ink.withAlphaComponent(0.35), .font: font as Any]
+        )
+        (currentEditor() as? NSTextView)?.insertionPointColor = ink
+    }
+
     override func becomeFirstResponder() -> Bool {
         let became = super.becomeFirstResponder()
         if became, let editor = currentEditor() as? NSTextView {
-            editor.insertionPointColor = .white
+            editor.insertionPointColor = ink
         }
         return became
     }

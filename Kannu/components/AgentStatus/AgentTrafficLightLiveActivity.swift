@@ -66,12 +66,13 @@ struct AgentTrafficLightDots: View {
 /// monochrome: white on the notch, never one of the three light colours, so it cannot be read
 /// as an agent state and cannot collide with a custom palette. The *shape* carries the meaning.
 struct SecurityShieldGlyph: View {
+    @Environment(\.notchForeground) private var notchForeground
     var size: CGFloat = 9
 
     var body: some View {
         Image(systemName: "exclamationmark.shield.fill")
             .font(.system(size: size, weight: .semibold))
-            .foregroundStyle(Color.white.opacity(0.9))
+            .foregroundStyle(notchForeground.opacity(0.9))
             .accessibilityLabel(String(localized: "Unacknowledged high-severity security finding"))
     }
 }
@@ -311,6 +312,7 @@ struct AgentTrafficLightLiveActivity: View {
 /// "⚠ Running MCP server nobody declared  +2" — the one high finding that owns the closed
 /// notch, and how many more are waiting. Monochrome on purpose (see `SecurityShieldGlyph`).
 struct SecurityAlertPill: View {
+    @Environment(\.notchForeground) private var notchForeground
     let finding: AgentSecurityFinding
     let extraCount: Int
     let maxWidth: CGFloat
@@ -320,18 +322,18 @@ struct SecurityAlertPill: View {
             SecurityShieldGlyph(size: 9)
             Text(finding.title)
                 .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.92))
+                .foregroundStyle(notchForeground.opacity(0.92))
                 .lineLimit(1)
                 .truncationMode(.tail)
             if extraCount > 0 {
                 Text("+\(extraCount)")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.7))
+                    .foregroundStyle(notchForeground.opacity(0.7))
             }
         }
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
-        .background(Capsule().fill(Color.white.opacity(0.14)))
+        .background(Capsule().fill(notchForeground.opacity(0.14)))
         .frame(maxWidth: maxWidth, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .combine)

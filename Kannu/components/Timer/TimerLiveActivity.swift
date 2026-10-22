@@ -398,7 +398,7 @@ struct TimerLiveActivity: View {
         return ZStack {
             if ringWrapsIcon {
                 Circle()
-                    .stroke(Color.white.opacity(0.15), lineWidth: ringStrokeWidth)
+                    .stroke(notchForeground.opacity(0.15), lineWidth: ringStrokeWidth)
                     .frame(width: ringDiameter, height: ringDiameter)
 
                 Circle()
@@ -454,7 +454,7 @@ struct TimerLiveActivity: View {
 
                     if showsBarHere {
                         Capsule()
-                            .fill(Color.white.opacity(0.12))
+                            .fill(notchForeground.opacity(0.12))
                             .frame(width: barWidth, height: 3)
                             .overlay(alignment: .leading) {
                                 Capsule()
@@ -474,7 +474,7 @@ struct TimerLiveActivity: View {
         let diameter = max(min(notchContentHeight - 4, 26), 20)
         return ZStack {
             Circle()
-                .stroke(Color.white.opacity(0.15), lineWidth: ringStrokeWidth)
+                .stroke(notchForeground.opacity(0.15), lineWidth: ringStrokeWidth)
             Circle()
                 .trim(from: 0, to: clampedProgress)
                 .stroke(glyphColor, style: StrokeStyle(lineWidth: ringStrokeWidth, lineCap: .round))
@@ -497,7 +497,7 @@ struct TimerLiveActivity: View {
             
             if showsBarProgress {
                 Capsule()
-                    .fill(Color.white.opacity(0.12))
+                    .fill(notchForeground.opacity(0.12))
                     .frame(width: barWidth, height: 3)
                     .overlay(alignment: .leading) {
                         Capsule()

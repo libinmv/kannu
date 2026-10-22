@@ -157,6 +157,7 @@ struct KannuHeader: View {
                         .accessibilityLabel(String(localized: "Clipboard"))
                         .popover(isPresented: $showClipboardPopover, arrowEdge: .bottom) {
                             ClipboardPopover()
+                                .notchDarkAppearance()
                         }
                         .onChange(of: showClipboardPopover) { _, isActive in
                             vm.isClipboardPopoverActive = isActive
@@ -196,6 +197,7 @@ struct KannuHeader: View {
                         .accessibilityLabel(String(localized: "Timer"))
                         .popover(isPresented: $showTimerPopover, arrowEdge: .bottom) {
                             TimerPopover()
+                                .notchDarkAppearance()
                         }
                         .onChange(of: showTimerPopover) { _, isActive in
                             vm.isTimerPopoverActive = isActive
@@ -271,7 +273,7 @@ struct KannuHeader: View {
             .animation(.easeInOut(duration: 0.15), value: coordinator.currentView == .llmUsage)
             .zIndex(2)
         }
-        .foregroundColor(.gray)
+        .foregroundColor(.secondary)
         .environmentObject(vm)
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ToggleClipboardPopover"))) { _ in
             // Handle keyboard shortcut for popover mode

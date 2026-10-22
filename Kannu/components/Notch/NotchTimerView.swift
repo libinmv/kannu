@@ -23,6 +23,7 @@ import AppKit
 #endif
 
 struct NotchTimerView: View {
+    @Environment(\.notchForeground) private var notchForeground
     @EnvironmentObject var vm: KannuViewModel
     @ObservedObject var timerManager = TimerManager.shared
     @ObservedObject var coordinator = KannuViewCoordinator.shared
@@ -280,7 +281,7 @@ struct NotchTimerView: View {
                 if !timerManager.isOvertime {
                     TimerControlButton(
                         icon: pauseIconName,
-                        foreground: .white.opacity(0.95),
+                        foreground: notchForeground.opacity(0.95),
                         background: timerAccentColor.opacity(0.32),
                         tooltip: pauseAccessibilityLabel,
                         action: togglePauseAction
@@ -288,16 +289,16 @@ struct NotchTimerView: View {
 
                     TimerControlButton(
                         icon: "xmark",
-                        foreground: .white.opacity(0.95),
-                        background: Color.white.opacity(0.16),
+                        foreground: notchForeground.opacity(0.95),
+                        background: notchForeground.opacity(0.16),
                         tooltip: String(localized: "Cancel"),
                         action: stopTimerAction
                     )
                 } else {
                     TimerControlButton(
                         icon: "stop.fill",
-                        foreground: .white.opacity(0.95),
-                        background: Color.white.opacity(0.16),
+                        foreground: notchForeground.opacity(0.95),
+                        background: notchForeground.opacity(0.16),
                         tooltip: String(localized: "Stop"),
                         action: stopTimerAction
                     )
@@ -332,8 +333,8 @@ struct NotchTimerView: View {
                     TextField(String(localized: "Session name"), text: $renameDraft)
                         .font(.system(size: 20, weight: .semibold))
                         .textFieldStyle(.plain)
-                        .foregroundColor(.white)
-                        .tint(.white)
+                        .foregroundColor(notchForeground)
+                        .tint(notchForeground)
                         .frame(width: marqueeWidth, height: 24, alignment: .leading)
                         .focused($focusedNameField, equals: .rename)
                         .onSubmit { commitRename() }
@@ -343,7 +344,7 @@ struct NotchTimerView: View {
                         .constant(timerDisplayName),
                         font: .system(size: 20, weight: .semibold),
                         nsFont: .title3,
-                        textColor: .white,
+                        textColor: notchForeground,
                         minDuration: 0.2,
                         frameWidth: marqueeWidth
                     )
@@ -358,7 +359,7 @@ struct NotchTimerView: View {
                         .constant(timerDisplayName),
                         font: .system(size: 20, weight: .semibold),
                         nsFont: .title3,
-                        textColor: .white,
+                        textColor: notchForeground,
                         minDuration: 0.2,
                         frameWidth: marqueeWidth
                     )
@@ -389,7 +390,7 @@ struct NotchTimerView: View {
             VStack(alignment: .trailing, spacing: 4) {
                 Text(timerManager.formattedRemainingTime())
                     .font(.system(size: 36, weight: .black, design: .monospaced))
-                    .foregroundStyle(timerManager.isOvertime ? Color.red : .white)
+                    .foregroundStyle(timerManager.isOvertime ? Color.red : notchForeground)
                     .contentTransition(.numericText())
                     .animation(.smooth(duration: 0.25), value: timerManager.remainingTime)
                     .lineLimit(1)
@@ -409,7 +410,7 @@ struct NotchTimerView: View {
     private var progressSection: some View {
         if showsProgress && progressStyle == .bar {
             Capsule()
-                .fill(Color.white.opacity(0.12))
+                .fill(notchForeground.opacity(0.12))
                 .frame(height: 4)
                 .overlay(alignment: .leading) {
                     Capsule()
@@ -484,7 +485,7 @@ struct NotchTimerView: View {
         .padding(TimerComposerMetrics.composerPadding)
         // A filled shape behind, never a clip over the fields: a clip is a mask on the AppKit
         // fields' layers, and one computed mid-animation can cut their digits.
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.04)))
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(notchForeground.opacity(0.04)))
     }
 
     private var inactiveTimerPlaceholder: some View {
@@ -677,7 +678,7 @@ struct NotchTimerView: View {
         Button(action: startCustomTimer) {
             Label(String(localized: "Start"), systemImage: "play.fill")
                 .font(.system(size: TimerComposerMetrics.buttonFontSize, weight: .semibold))
-                .foregroundStyle(Color.white)
+                .foregroundStyle(Color.white) // on the accent-filled button
                 .frame(maxWidth: .infinity)
                 .frame(height: TimerComposerMetrics.buttonHeight)
                 .background(
@@ -690,7 +691,7 @@ struct NotchTimerView: View {
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                .stroke(notchForeground.opacity(0.15), lineWidth: 1)
         )
         .opacity(isStartDisabled ? 0.7 : 1)
         .disabled(isStartDisabled)
@@ -700,12 +701,12 @@ struct NotchTimerView: View {
         Button(action: resetCustomTimerInputs) {
             Label(String(localized: "Reset"), systemImage: "arrow.counterclockwise")
                 .font(.system(size: TimerComposerMetrics.buttonFontSize, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.9))
+                .foregroundStyle(notchForeground.opacity(0.9))
                 .frame(maxWidth: .infinity)
                 .frame(height: TimerComposerMetrics.buttonHeight)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.white.opacity(0.16))
+                        .fill(notchForeground.opacity(0.16))
                 )
         }
         .buttonStyle(.plain)
@@ -713,7 +714,7 @@ struct NotchTimerView: View {
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                .stroke(notchForeground.opacity(0.08), lineWidth: 1)
         )
     }
 
@@ -749,9 +750,9 @@ struct NotchTimerView: View {
         } label: {
             Image(systemName: "square.and.pencil")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.85))
+                .foregroundStyle(notchForeground.opacity(0.85))
                 .frame(width: TimerComposerMetrics.newTaskButtonSize, height: TimerComposerMetrics.newTaskButtonSize)
-                .background(Color.white.opacity(0.08))
+                .background(notchForeground.opacity(0.08))
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .contentShape(Rectangle())
         }
@@ -765,11 +766,11 @@ struct NotchTimerView: View {
         TextField(String(localized: "Do you want to name this session?"), text: $pendingSessionName)
             .font(.system(size: 12, weight: .medium))
             .textFieldStyle(.plain)
-            .foregroundColor(.white)
-            .tint(.white)
+            .foregroundColor(notchForeground)
+            .tint(notchForeground)
             .padding(.horizontal, 10)
             .frame(height: TimerComposerMetrics.nameFieldHeight)
-            .background(Color.white.opacity(0.08))
+            .background(notchForeground.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .focused($focusedNameField, equals: .pending)
             .onSubmit { focusedNameField = nil }
@@ -865,6 +866,7 @@ private struct TimerControlButton: View {
 }
 
 private struct TimerProgressRing: View {
+    @Environment(\.notchForeground) private var notchForeground
     let progress: Double
     let tint: Color
     let timeText: String
@@ -876,7 +878,7 @@ private struct TimerProgressRing: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(Color.white.opacity(0.12), lineWidth: 8)
+                .stroke(notchForeground.opacity(0.12), lineWidth: 8)
 
             Circle()
                 .trim(from: 0, to: clampedProgress)
@@ -886,7 +888,7 @@ private struct TimerProgressRing: View {
 
             Text(timeText)
                 .font(.system(size: 28, weight: .black, design: .monospaced))
-                .foregroundStyle(isOvertime ? Color.red : .white)
+                .foregroundStyle(isOvertime ? Color.red : notchForeground)
                 .minimumScaleFactor(0.6)
                 .lineLimit(1)
                 .contentTransition(.numericText())
@@ -897,6 +899,7 @@ private struct TimerProgressRing: View {
 }
 
 private struct DurationInputRow: View {
+    @Environment(\.notchForeground) private var notchForeground
     @Binding var hours: Int
     @Binding var minutes: Int
     @Binding var seconds: Int
@@ -927,11 +930,12 @@ private struct DurationInputRow: View {
     private var colon: some View {
         Text(":")
             .font(.system(size: TimerComposerMetrics.fieldDigitSize, weight: .black, design: .monospaced))
-            .foregroundStyle(Color.white.opacity(0.65))
+            .foregroundStyle(notchForeground.opacity(0.65))
     }
 }
 
 private struct DurationField: View {
+    @Environment(\.notchForeground) private var notchForeground
     let label: String
     @Binding var value: Int
     let range: ClosedRange<Int>
@@ -955,11 +959,11 @@ private struct DurationField: View {
             // for the default font mid-animation and show only the digits' top half.
             DurationDigitField(value: $value, range: range, width: width, accessibilityLabel: label)
                 .frame(width: width, height: TimerComposerMetrics.fieldBoxHeight)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.08)))
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(notchForeground.opacity(0.08)))
 
             Text(label)
                 .font(.caption2)
-                .foregroundStyle(Color.white.opacity(0.65))
+                .foregroundStyle(notchForeground.opacity(0.65))
                 .frame(height: TimerComposerMetrics.captionHeight)
         }
     }

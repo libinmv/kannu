@@ -38,6 +38,7 @@ enum TimerTaskFormMode: Hashable {
 /// While a field has focus, or one of its menus tracks, it holds the notch open under tokens of its
 /// own, released when the focus goes, the form goes, or the notch's window stops being key.
 struct TimerTaskForm: View {
+    @Environment(\.notchForeground) private var notchForeground
     private typealias M = TimerComposerMetrics
 
     @EnvironmentObject private var vm: KannuViewModel
@@ -149,8 +150,8 @@ struct TimerTaskForm: View {
                 if draft.canEditTitle {
                     TextField(String(localized: "What needs doing?"), text: $draft.title)
                         .textFieldStyle(.plain)
-                        .foregroundColor(.white)
-                        .tint(.white)
+                        .foregroundColor(notchForeground)
+                        .tint(notchForeground)
                         .focused($focused, equals: .title)
                         .onSubmit(submit)
                         .onExitCommand(perform: close)
@@ -167,14 +168,14 @@ struct TimerTaskForm: View {
             .font(.system(size: 12, weight: .medium))
             .padding(.horizontal, 10)
             .frame(maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.08)))
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(notchForeground.opacity(0.08)))
 
             Button(action: close) {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.85))
+                    .foregroundStyle(notchForeground.opacity(0.85))
                     .frame(width: M.nameFieldHeight, height: M.nameFieldHeight)
-                    .background(Color.white.opacity(0.08))
+                    .background(notchForeground.opacity(0.08))
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .contentShape(Rectangle())
             }
@@ -192,8 +193,8 @@ struct TimerTaskForm: View {
             TextField(draft.estimatePrompt, text: Binding(get: { draft.estimateText }, set: { draft.typeEstimate($0) }))
                 .textFieldStyle(.plain)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundColor(draft.estimateReading == .unreadable ? .orange : .white)
-                .tint(.white)
+                .foregroundColor(draft.estimateReading == .unreadable ? .orange : notchForeground)
+                .tint(notchForeground)
                 .focused($focused, equals: .estimate)
                 .onSubmit(submit)
                 .onExitCommand(perform: close)
@@ -222,21 +223,21 @@ struct TimerTaskForm: View {
         }
         .padding(.horizontal, 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.08)))
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(notchForeground.opacity(0.08)))
     }
 
     private var tagsField: some View {
         TextField(String(localized: "Tags, comma separated"), text: $draft.tagsText)
             .textFieldStyle(.plain)
             .font(.system(size: 12, weight: .medium))
-            .foregroundColor(.white)
-            .tint(.white)
+            .foregroundColor(notchForeground)
+            .tint(notchForeground)
             .focused($focused, equals: .tags)
             .onSubmit(submit)
             .onExitCommand(perform: close)
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.08)))
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(notchForeground.opacity(0.08)))
             .accessibilityLabel(Text("Tags"))
     }
 
@@ -359,12 +360,12 @@ struct TimerTaskForm: View {
                 }
             }
             .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(Color.white.opacity(0.9))
+            .foregroundStyle(notchForeground.opacity(0.9))
             .lineLimit(1)
             .fixedSize()
             .padding(.horizontal, 8)
             .frame(height: 20)
-            .background(Capsule().fill(Color.white.opacity(0.12)))
+            .background(Capsule().fill(notchForeground.opacity(0.12)))
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -397,20 +398,20 @@ struct TimerTaskForm: View {
         return Button(action: action) {
             Label(title, systemImage: systemImage)
                 .font(.system(size: M.buttonFontSize, weight: .semibold))
-                .foregroundStyle(prominent ? Color.white : Color.white.opacity(0.9))
+                .foregroundStyle(prominent ? Color.white : notchForeground.opacity(0.9))
                 .lineLimit(1)
                 .frame(maxWidth: .infinity)
                 .frame(height: M.buttonHeight)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(prominent ? Self.startColor.opacity(disabled ? 0.5 : 1) : Color.white.opacity(0.16))
+                        .fill(prominent ? Self.startColor.opacity(disabled ? 0.5 : 1) : notchForeground.opacity(0.16))
                 )
         }
         .buttonStyle(.plain)
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.white.opacity(prominent ? 0.15 : 0), lineWidth: 1)
+                .stroke(notchForeground.opacity(prominent ? 0.15 : 0), lineWidth: 1)
         )
         .opacity(disabled ? 0.7 : 1)
         .disabled(disabled)

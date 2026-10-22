@@ -72,6 +72,7 @@ struct TasksHeaderButton: View {
         .hoverTooltip(String(localized: "Tasks"), edge: .below)
         .popover(isPresented: $showsPopover, arrowEdge: .bottom) {
             TasksPopover(close: { showsPopover = false })
+                .notchDarkAppearance()
         }
         .onChange(of: showsPopover) { _, isActive in
             vm.isTasksPopoverActive = isActive

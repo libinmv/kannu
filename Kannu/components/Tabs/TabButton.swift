@@ -23,6 +23,7 @@
 import SwiftUI
 
 struct TabButton: View {
+    @Environment(\.notchForeground) private var notchForeground
     /// Hover bubble text, doubling as the accessibility label (docs/TOOLTIPS.md).
     let tooltip: String
     let icon: String
@@ -41,7 +42,7 @@ struct TabButton: View {
                 .background {
                     if isHovered && !selected {
                         Circle()
-                            .fill(Color.white.opacity(0.1))
+                            .fill(notchForeground.opacity(0.1))
                     }
                 }
                 .contentShape(Circle())

@@ -58,10 +58,12 @@ private enum TaskColorMetrics {
     static let palettePadding: CGFloat = 12
 }
 
-/// A task row's background. `.glass` is exactly the fill the rows always had, `Color.white` at
-/// `base` in a continuous rounded rectangle; a colour adds a translucent tint and a thin tinted
-/// edge over that same base, so every preset keeps the glass finish over the dark notch.
+/// A task row's background. `.glass` is exactly the fill the rows always had, the notch's
+/// foreground (`notchForeground`, white on the default dark notch) at `base` in a continuous
+/// rounded rectangle; a colour adds a translucent tint and a thin tinted edge over that same base,
+/// so every preset keeps the glass finish whatever the notch's fill.
 struct TaskGlassBackground: View {
+    @Environment(\.notchForeground) private var notchForeground
     let color: TaskColor
     var cornerRadius: CGFloat = 10
     var base: Double = 0.05
@@ -69,7 +71,7 @@ struct TaskGlassBackground: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         ZStack {
-            shape.fill(Color.white.opacity(base))
+            shape.fill(notchForeground.opacity(base))
             if let tint = color.tint {
                 shape.fill(tint.opacity(TaskColorMetrics.tintFill))
                 shape.strokeBorder(tint.opacity(TaskColorMetrics.tintStroke), lineWidth: TaskColorMetrics.strokeWidth)
