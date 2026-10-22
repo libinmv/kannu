@@ -59,9 +59,10 @@ git tag v1.4.0-beta.1
 git push origin v1.4.0-beta.1
 ```
 
-Number the beta's build above the feed's newest and below the release's: with 1.3.4 at build 8,
-the 1.4.0 beta is build 9 and 1.4.0 itself build 10, so Sparkle moves every beta tester to the
-release when it ships. `ReleaseWorkflowRulesTests` pins the pre-release rules.
+Number each beta's build above the feed's newest and the beta before it, and the release above
+them all: with 1.3.4 at build 8, 1.4.0 beta 1 is build 9, beta 2 build 10, and 1.4.0 itself
+build 11, so a report names its beta by build and Sparkle moves every beta tester to the release
+when it ships. `ReleaseWorkflowRulesTests` pins the pre-release rules.
 
 ---
 

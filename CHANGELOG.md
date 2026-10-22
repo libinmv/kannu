@@ -4,6 +4,25 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-22 - Ship 1.4.0 beta 2 "Horus"
+- **Developer label:** "is debug dmg link ready" / "i meant beta link are all mr''s merged including color and  tokens"
+- **Agent label:** Claude Code (Opus 5.5) — 1.4.0 beta 2 release mechanics on `release/1.4.0`
+- **Changes:**
+  - `development` merged in, carrying #115 and #116 (the mach-services and library-validation
+    strips removed from the build scripts and workflows), #117 (the built-in Horns skin and Copy AI
+    prompt) and #118 (the notch's text, icons and washes follow its fill colour or skin). The token
+    usage work (#96, #99, #104, #74) was already in beta 1.
+  - `CURRENT_PROJECT_VERSION` 9 -> **10** in both configurations; `MARKETING_VERSION` stays 1.4.0
+    and the codename Horus. Each beta gets its own build, so a tester's report names the beta it
+    came from. 1.4.0 itself becomes build 11, still above every beta, so Sparkle moves beta testers
+    to it. The live feed's newest item is still build 8, and a beta never reaches it.
+    `scripts/RELEASE.md`'s "Beta (pre-release) tags" says so.
+  - Beta notes at `docs/release-notes/1.4.0-beta.2.md`: what is new since beta 1, what to try,
+    staying on the beta and reporting, then the 1.4.0 notes with a section for the notch's colours
+    and skins.
+  - Released by pushing the tag `v1.4.0-beta.2` on this branch: a notarized GitHub pre-release,
+    never marked Latest and never in the appcast.
+
 ### 2026-10-22 - Act on CodeRabbit's review of #118
 - **Developer label:** CodeRabbit's review of #118: the note editor's text colour was inverted, the timer glyph and the default hover-button icon ignored their background, and the new tests' headers were not the project block
 - **Agent label:** Claude Code (Opus 5.5) — four findings fixed; the transparent-skin one declined with a reason in its thread
