@@ -4,6 +4,30 @@ Each commit must add one new entry under `## [Unreleased]` before committing.
 
 ## [Unreleased]
 
+### 2026-10-24 - Ship 1.4.0 beta 3 "Horus"
+- **Developer label:** "merge all mrs except the home brew round and lets rollout a testing release and link like last time"
+- **Agent label:** Claude Code (Opus 5.5) — 1.4.0 beta 3 release mechanics on `release/1.4.0`
+- **Changes:**
+  - Every open PR but #82 (Homebrew) was already merged into `development`. It is merged in here.
+    Since beta 2 that carries:
+    - #119: Brain search ranking;
+    - #120: the first-launch Permissions step, with the music after Finish;
+    - #121–#125: the stapling retry, the loopback RPC server, launch Keychain reads off main, the
+      privacy usage descriptions;
+    - #126: the notch stays put across Spaces;
+    - #127 and #132: typed-name tasks and Brain's New Task;
+    - #128–#131: notes scrolling, clipboard drafts, Apple Notes folder sync, delete from inside;
+    - #133: hide the notch, closing like an eye;
+    - #72: the cloud relay protocol, not yet wired into the app.
+  - `CURRENT_PROJECT_VERSION` 10 -> **11** in both configurations; `MARKETING_VERSION` stays 1.4.0
+    and the codename Horus. Each beta has its own build: beta 1 is 9, beta 2 10, beta 3 11, and
+    1.4.0 itself becomes **12**, so Sparkle still moves beta testers to it.
+    `scripts/RELEASE.md` says so.
+  - Beta notes at `docs/release-notes/1.4.0-beta.3.md`: what is new since beta 2, what to try,
+    staying on the beta and reporting, then the 1.4.0 notes with a section on the first launch.
+  - Released by pushing the tag `v1.4.0-beta.3` on this branch: a notarized GitHub pre-release,
+    never marked Latest and never in the appcast.
+
 ### 2026-10-24 - Act on CodeRabbit's review of #72
 - **Developer label:** CodeRabbit's review of #72: the relay parser's validators let a final newline through, and the script's bash tests used `[`
 - **Agent label:** Claude Code (Opus 5.5) — the six validators in `ClaudeCloudRelay` anchor with `\z`; the relay script's bash-only tests use `[[ ]]` in both copies
