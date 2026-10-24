@@ -41,8 +41,12 @@ class BluetoothAudioManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var pollingTimer: Timer?
     private let bluetoothPreferencesSuite = "/Library/Preferences/com.apple.Bluetooth"
-    private let batteryReader = BluetoothLEBatteryReader()
+    /// Lazy: building it builds a `CBCentralManager`, which raises the Bluetooth dialog. It is
+    /// first used for a connected device's battery, so only after `startIfPermitted()`.
+    private lazy var batteryReader = BluetoothLEBatteryReader()
     private var isLiveBatteryRefreshInFlight = false
+    private var hasStarted = false
+    private var launchPermissionObserver: NSObjectProtocol?
 
     private let appleVendorID: UInt16 = 0x05AC
     private let devicePIDMap: [UInt16: BluetoothAudioDeviceType] = [
@@ -112,17 +116,34 @@ class BluetoothAudioManager: ObservableObject {
     // MARK: - Initialization
     private init() {
         print("🎧 [BluetoothAudioManager] Initializing...")
+        // Every path below touches Bluetooth, and the first touch raises its dialog. On a fresh
+        // install that dialog belongs to the onboarding's Permissions step, not to launch (where
+        // it used to land together with three others and the welcome music); after a Not now it
+        // waits for the user. So nothing starts until `LaunchPermissionManager` says it may.
+        startIfPermitted()
+        launchPermissionObserver = NotificationCenter.default.addObserver(
+            forName: .launchPermissionsChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.startIfPermitted()
+        }
+    }
+
+    private func startIfPermitted() {
+        guard !hasStarted, LaunchPermissionManager.mayTouch(.bluetooth) else { return }
+        hasStarted = true
         setupBluetoothObservers()
         setupAirPodsListeningModeObservers()
         setupAirPodsListeningModeLogObserver()
         // The first IOBluetooth call from a (re)signed binary blocks on a synchronous TCC
-        // round-trip until the user answers the Bluetooth permission dialog. This init runs
-        // inside AppDelegate.init — before applicationDidFinishLaunching — so taking that
-        // first touch here froze the entire app at launch until the dialog was answered
-        // (and every dev rebuild re-asks, because the ad-hoc code signature changes).
-        // Do the first touch on a background queue instead: launch never blocks, and the
-        // 3-second polling only starts once the permission round-trip has resolved, so the
-        // main-thread timer can't re-freeze the app while the dialog sits unanswered.
+        // round-trip until the user answers the Bluetooth permission dialog. This runs from
+        // `continueLaunch()` on the main thread, so taking that first touch here froze the entire
+        // app until the dialog was answered (and every dev rebuild re-asks, because the ad-hoc
+        // code signature changes). Do the first touch on a background queue instead: launch never
+        // blocks, and the 3-second polling only starts once the permission round-trip has
+        // resolved, so the main-thread timer can't re-freeze the app while the dialog sits
+        // unanswered.
         DispatchQueue.global(qos: .utility).async { [weak self] in
             self?.checkInitialDevices()
             DispatchQueue.main.async {
@@ -2072,6 +2093,10 @@ class BluetoothAudioManager: ObservableObject {
         
         let dnc = DistributedNotificationCenter.default()
         dnc.removeObserver(self)
+        if let launchPermissionObserver {
+            NotificationCenter.default.removeObserver(launchPermissionObserver)
+            self.launchPermissionObserver = nil
+        }
         observers.removeAll()
         cancellables.removeAll()
         hudBatteryWaitTasks.values.forEach { $0.cancel() }
@@ -2087,6 +2112,7 @@ class BluetoothAudioManager: ObservableObject {
 
     @MainActor
     func refreshConnectedDeviceBatteries() {
+        guard hasStarted else { return }
         refreshBatteryLevelsForConnectedDevices()
     }
 

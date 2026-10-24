@@ -36,7 +36,7 @@ All in `Kannu/components/Settings/SettingsComponents.swift`. Never rebuild these
 | A red error line under a control | `SettingsErrorText(message)` |
 | One or more buttons on a row | `SettingsActionRow` — trailing, never a lone left-hanging button (the one exception: a sub-page's "‹ Back" row, below) |
 | Overflow actions on a row | `SettingsMoreMenu { … }` (the "…" button) |
-| Removable tags, wrapping | `SettingsTagChip` inside a `SettingsFlowLayout` — a capsule; `tint:` washes it in a tag's colour |
+| Tags, removable or offered to add, wrapping | `SettingsTagChip` inside a `SettingsFlowLayout` — a capsule; `tint:` washes it in a tag's colour; `init(adding:kind:)` for an offer ("#planning", "+ pl") |
 | Free-standing explanatory text | `.settingsDescriptionStyle()` (selectable, secondary, wraps) |
 | A spacing, a width, a dot size | `SettingsMetrics.<token>` — never a number in place |
 | A copy-to-pasteboard action for agents | `CopyForAgentButton` |
@@ -54,7 +54,7 @@ section describes it, it does not define it.
 | Title to description | 2 | `labelStack` |
 | Inside a row's trailing content | 8 | `rowContent` |
 | Between footer lines | 6 | `footerStack` |
-| A slider or stepper's whole trailing column | 220 | `sliderWidth` |
+| A slider's or stepper's whole trailing column, or a typed value beside its button (a task's Time row) | 220 | `sliderWidth` |
 | Its readout, trailing, monospaced digits | minWidth 40 | `valueColumn` |
 | The ready dot in a status line | 7 | `statusDot` |
 | A control's title to its glyph ("Open ›", a tag chip's ×) | 4 | `iconGap` |
@@ -102,6 +102,12 @@ section describes it, it does not define it.
   `SettingsRowLabel` (the `analysisRow` shape) or a `SettingsActionRow`.
 
 - One concern per `Section`; separate concerns get separate Sections, never a `Divider` inside one.
+- A Section earns its gap: a one-row Section spends a whole section gap on one row, so a row that
+  serves a Section joins it. A row that only narrows a list (a Find field) is that list's first
+  row, not a Section of its own, and a page's folded extras (All tasks' Recently closed, Archive
+  and Tag colours) are rows of one Section at its end — the one exception to "one concern per
+  Section". A row that is a concern of its own still stands alone: a sub-page's back row (below),
+  or a page's one setting (Local tasks' colour).
 - A section that mixes everyday controls with rarely-needed ones may tuck the rare rows into one
   `DisclosureGroup` labelled **Advanced** (collapsed by default), keeping the section glanceable.
   Rows inside it carry no highlight ids; their search entries point at the disclosure's own id,
@@ -126,13 +132,27 @@ section describes it, it does not define it.
     a deep link of its own, registered on that page's back row (`SettingsDeepLink.tasksListOpenID`
     opens All tasks); the tab opens the page for that id alone. Search entries keep pointing at the
     opening row.
-  - All tasks' filters are view-only: they narrow that page and nothing else, and while they or its
-    Find field hide anything the list opens with a "Filtered" row ("3 of 12 tasks") whose Show All
-    clears them.
+  - All tasks' filters are view-only: they narrow that page and nothing else. While a filter or its
+    Find field is set, a "Filtered" row above the rows says so ("3 of 12 tasks"), with a Show All
+    that resets the filters and empties Find. The page shows no total otherwise: that row is its
+    one count.
 - A long list of similar rows (tasks) keeps each row to its title, one short caption and at most
   two trailing controls: the row's main action (▶) and a › to the item's own page, where everything
   about it lives. Its other actions go in a `.contextMenu` that opens with "Show Details" — never a
-  ⋯ menu on every row — and moves the menu offered are also accessibility actions.
+  ⋯ menu on every row. Rows are not dragged, numbered or stepped up and down (David, 2026-10-23:
+  "no drag and order tasks or numbering"): the menu's Move to Top is the one move, picking what the
+  notch's Up next shows first, and it is a named accessibility action too. A value typed on an item
+  is typed in place on its page (a task's estimate in its Time row, `TaskEstimateField`; a local
+  task's title in its title row, a plain field in the body font, so it still reads as the row's
+  title).
+- A list's Add is one row (Brain › Tasks' Add a task), whose prominent New Task button opens a
+  sheet holding every field the item takes — never fields inline in the list (David, 2026-10-24:
+  "a add task button maybe giving popup"). Its shortcut (⌘N) sits on the tab's Form, never on the
+  row's button: a long, lazy Form drops the row once it scrolls away, and the shortcut with it.
+- A sheet is a padded `VStack`, never a `Form`: a `.headline` heading (and a secondary line under
+  it), the fields, then trailing buttons — Cancel (`.cancelAction`), then the primary, named for
+  what it does ("Add", "Schedule", "Done"; `.defaultAction`). Return is the primary in every field,
+  except while a tag is being typed, where it completes the tag (Tags, New Task).
 - Every row with a `settingsSearchIndex` entry carries a `.settingsHighlight(id:)` whose id
   matches the entry exactly (`SettingsHighlightInventoryTests` pins the pairing and the counts;
   the counts move only as a deliberate edit).
@@ -143,7 +163,9 @@ section describes it, it does not define it.
   menu item that goes on to a connect flow or another window ("Connect Jira…", "Manage tasks…").
   The Sources rows' "Connect…" and "Disconnect…" are row buttons, not menu items, and keep theirs.
 - Footers carry privacy or trust facts only ("Tasks and their time stay on this Mac."), one short
-  line each.
+  line each. The one exception: a list whose rows keep their other actions in a `.contextMenu`, and
+  has no row left to say so, may name it once under the list (All tasks' "Right-click a task for
+  more, such as Move to Top.").
 - Error and recovery text is specific but short: what failed, and the one thing to do next.
 - Badges (`customBadge`, `comingSoonTag`, `alphaBadge`, `proFeatureBadge`) are decorative chips
   and stay unselectable — they are the pinned exceptions in `SettingsLayoutRulesTests`, along

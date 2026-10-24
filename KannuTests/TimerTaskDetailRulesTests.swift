@@ -114,7 +114,9 @@ final class TimerTaskDetailRulesTests: XCTestCase {
     func testTheIconButtonsCarryTooltipsAndTheExpandRespectsReducedMotion() throws {
         let column = try Self.column()
         let card = try Self.declaration("private struct TimerTaskDetail", in: column)
-        for tooltip in ["\"Close\"", "\"Delete task\"", "\"Archive\"", "\"Edit task\""] {
+        // "Edit Task", in title case (docs/TOOLTIPS.md), the same words as the pencils on the
+        // running card and beside a task picked in the session bar: one string for one action.
+        for tooltip in ["\"Close\"", "\"Delete task\"", "\"Archive\"", "\"Edit Task\""] {
             XCTAssertTrue(card.contains(tooltip), "missing tooltip text \(tooltip)")
         }
         XCTAssertGreaterThanOrEqual(card.components(separatedBy: ".hoverTooltip(").count - 1, 6,

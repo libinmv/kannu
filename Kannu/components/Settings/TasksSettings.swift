@@ -45,8 +45,11 @@ struct TasksSettings: View {
     // On the Form, not on a row: rows of a long, lazy Form may not exist when these change.
     @State private var sheet: TaskSheet?
     @State private var pendingDelete: TaskItem?
-    @State private var newTitle = ""
-    @State private var newEstimate: Int?
+    /// New Task's draft, kept between sheets so Cancel loses nothing. A box in `@State`, deliberately
+    /// not `@StateObject`: this tab must not observe it, so typing redraws the sheet alone
+    /// (`NewTaskSheet` observes it). A throwaway box made on a re-init is harmless; `@State` keeps
+    /// the first.
+    @State private var newTask = NewTaskDraft()
     /// The source whose Disconnect… was clicked, while its dialog asks what to keep.
     @State private var confirmsDisconnect: TaskSource?
     /// The pages opened below the overview; empty is the overview.
@@ -60,12 +63,29 @@ struct TasksSettings: View {
 
     private func highlightID(_ title: String) -> String { "tasks-\(title)" }
 
+    /// ⌘N, New Task, on the Form rather than on Add a task's button: that row scrolls out of a long,
+    /// lazy Form and would take a shortcut on its button with it. Only on the pages that have the
+    /// row. The filter is read when pressed, so this tab observes neither the filters nor the
+    /// manager (with Tasks off, nothing here touches `TasksManager`).
+    @ViewBuilder
+    private var newTaskShortcut: some View {
+        if enableTasks, let page = path.last, page == .allTasks || page == .source(.local) {
+            Button("New Task") {
+                guard sheet == nil, TasksManager.shared.isReady else { return }
+                sheet = .newTask(listFilter: page == .allTasks ? AllTasksPage.savedFilter(query: query) : .all)
+            }
+            .keyboardShortcut("n", modifiers: .command)
+            // Invisible but in the hierarchy, so the shortcut still resolves.
+            .opacity(0)
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+        }
+    }
+
     private var context: TasksPageContext {
         TasksPageContext(
             sheet: $sheet,
             pendingDelete: $pendingDelete,
-            newTitle: $newTitle,
-            newEstimate: $newEstimate,
             confirmsDisconnect: $confirmsDisconnect,
             open: { path.append($0) },
             connect: { sheet = .connect($0) }
@@ -91,6 +111,7 @@ struct TasksSettings: View {
                 returnTo = nil
                 DispatchQueue.main.async { proxy.scrollTo(target, anchor: .center) }
             }
+            .background { newTaskShortcut }
             // A page opens at its top.
             .id(path)
         }
@@ -120,6 +141,8 @@ struct TasksSettings: View {
                 SourceConnectSheet(source: source)
             case .tags(let taskID, let title, let current, let existing):
                 TaskTagsSheet(taskID: taskID, title: title, current: current, existing: existing)
+            case .newTask(let listFilter):
+                NewTaskSheet(newTask: newTask, listFilter: listFilter) { path.append(.task($0)) }
             default:
                 TaskValueSheet(sheet: sheet) { value in apply(value, from: sheet) }
             }
@@ -259,8 +282,6 @@ struct TasksSettings: View {
 
     private func apply(_ value: TaskValueSheet.Value, from sheet: TaskSheet) {
         switch (sheet, value) {
-        case (.customEstimateForNewTask, .duration(let seconds)):
-            newEstimate = seconds
         case (.estimate(let taskID, _, _), .duration(let seconds)):
             TasksManager.shared.setEstimate(seconds, for: taskID)
         case (.addTime(let taskID, _), .duration(let seconds)):
@@ -289,13 +310,12 @@ enum TasksPage: Hashable {
     case allTasks
 }
 
-/// What a page needs from the tab. The sheets, the alerts and Add a task's draft live on the outer
-/// Form, because rows of a long, lazy Form may not exist when they change; `open` goes one level in.
+/// What a page needs from the tab. The sheets (New Task's draft with them) and the alerts live on
+/// the outer Form, because rows of a long, lazy Form may not exist when they change; `open` goes
+/// one level in.
 struct TasksPageContext {
     let sheet: Binding<TaskSheet?>
     let pendingDelete: Binding<TaskItem?>
-    let newTitle: Binding<String>
-    let newEstimate: Binding<Int?>
     let confirmsDisconnect: Binding<TaskSource?>
     let open: (TasksPage) -> Void
     /// Connect…: the source's own sheet (a token, or Apple Reminders' permission).
@@ -532,9 +552,8 @@ private struct TaskOverviewSections: View {
 
 /// What a task sheet edits.
 enum TaskSheet: Identifiable {
-    /// "Custom" in the Add a task row's estimate menu.
-    case customEstimateForNewTask(current: Int?)
-    case estimate(taskID: UUID, title: String, current: Int?)
+    /// Right-click › Set Estimate: the task's estimate as `TaskFormDraft(editing:)` reads it.
+    case estimate(taskID: UUID, title: String, draft: TaskFormDraft)
     case addTime(taskID: UUID, title: String)
     /// `nextSessionStart` is when the next session on the task began, if one has: the end may not
     /// pass it. The sheet caps it at now on its own render, so the clock stays live.
@@ -545,11 +564,14 @@ enum TaskSheet: Identifiable {
     case schedule(taskID: UUID, title: String, current: Date?)
     /// Connect… for a source: `JiraConnectSheet`, `GitLabConnectSheet`, or `SourceConnectSheet`.
     case connect(TaskSource)
+    /// Add a task's New Task, served by `NewTaskSheet`. `listFilter` is what All tasks shows, so a
+    /// task it would hide opens on its own page; `.all` from Local tasks.
+    case newTask(listFilter: TaskFilter)
 
     var id: String {
         switch self {
+        case .newTask: return "new-task"
         case .connect(let source): return "connect-\(source.rawValue)"
-        case .customEstimateForNewTask: return "new-task-estimate"
         case .estimate(let taskID, _, _): return "estimate-\(taskID)"
         case .addTime(let taskID, _): return "add-time-\(taskID)"
         case .endTime(_, let segmentID, _, _, _): return "end-time-\(segmentID)"
@@ -559,9 +581,10 @@ enum TaskSheet: Identifiable {
     }
 }
 
-/// The small sheet behind Custom, Set Estimate, Add Time, Set End Time and Schedule. Its confirm
-/// button says what it does: Save, Add or Schedule. A sheet pads its own content; a Form row never
-/// does.
+/// The small sheet behind Set Estimate, Add Time, Set End Time and Schedule. Its confirm button says
+/// what it does: Save, Add or Schedule. Set Estimate takes the typed estimate New Task and a task's
+/// page take (`TaskEstimateField`), checked as it is typed. A sheet pads its own content; a Form row
+/// never does.
 private struct TaskValueSheet: View {
     enum Value {
         /// Nil removes an estimate.
@@ -574,18 +597,19 @@ private struct TaskValueSheet: View {
     let sheet: TaskSheet
     let onSave: (Value) -> Void
     @Environment(\.dismiss) private var dismiss
-    @State private var text: String
+    @State private var text = ""
+    /// Set Estimate's typed estimate (`TaskFormDraft`).
+    @State private var estimate: TaskFormDraft
     @State private var date: Date
     @State private var problem: String?
 
     init(sheet: TaskSheet, onSave: @escaping (Value) -> Void) {
         self.sheet = sheet
         self.onSave = onSave
-        switch sheet {
-        case .customEstimateForNewTask(let current), .estimate(_, _, let current):
-            _text = State(initialValue: current.map(WorkDuration.format) ?? "")
-        case .addTime, .endTime, .schedule, .tags, .connect:
-            _text = State(initialValue: "")
+        if case .estimate(_, _, let draft) = sheet {
+            _estimate = State(initialValue: draft)
+        } else {
+            _estimate = State(initialValue: TaskFormDraft())
         }
         switch sheet {
         case .endTime(_, _, _, let start, _):
@@ -616,7 +640,11 @@ private struct TaskValueSheet: View {
             Text(explanation)
                 .settingsDescriptionStyle()
             field
-            if case .schedule = sheet {
+            // Only for a reminder that would notify: a muted task's re-timed reminder stays muted
+            // (`setSchedule`), as on the task page and in New Task. The bell cannot change while the
+            // sheet is up, so a lookup at render is enough.
+            if case .schedule(let taskID, _, _) = sheet,
+               TasksManager.shared.tasks.first(where: { $0.id == taskID })?.notifiesForReminder ?? true {
                 ReminderPermissionNote()
             }
             if let problem {
@@ -624,7 +652,7 @@ private struct TaskValueSheet: View {
                     .settingsDescriptionStyle(tint: .red)
             }
             HStack(spacing: SettingsMetrics.rowContent) {
-                if case .estimate(_, _, .some) = sheet {
+                if case .estimate(_, _, let draft) = sheet, draft.estimateSeconds != nil {
                     Button("Remove Estimate") {
                         onSave(.duration(nil))
                         dismiss()
@@ -641,10 +669,21 @@ private struct TaskValueSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button(primaryTitle) { save() }
                     .keyboardShortcut(.defaultAction)
+                    .disabled(isEstimate && estimate.estimateReading == .unreadable)
             }
+        }
+        .onChange(of: estimate.estimateText) { _, _ in problem = nil }
+        // macOS's answer may have changed since the list last asked: the note follows it.
+        .onAppear {
+            if case .schedule = sheet { TasksManager.shared.checkReminderPermission() }
         }
         .padding(SettingsMetrics.cardPadding)
         .frame(width: 380)
+    }
+
+    private var isEstimate: Bool {
+        if case .estimate = sheet { return true }
+        return false
     }
 
     @ViewBuilder
@@ -657,6 +696,8 @@ private struct TaskValueSheet: View {
         case .schedule:
             DatePicker("Remind me at", selection: $date, in: Date()...,
                        displayedComponents: [.date, .hourAndMinute])
+        case .estimate:
+            TaskEstimateField(draft: $estimate, onSubmit: save)
         default:
             TextField("Length", text: $text, prompt: Text("1h 30m"))
                 .onSubmit(save)
@@ -666,20 +707,20 @@ private struct TaskValueSheet: View {
 
     private var heading: LocalizedStringKey {
         switch sheet {
-        case .customEstimateForNewTask: return "Custom Estimate"
         case .estimate: return "Set Estimate"
         case .addTime: return "Add Time"
         case .endTime: return "Set End Time"
         case .tags: return "Tags"
         case .schedule: return "Schedule"
         case .connect: return "Connect"
+        case .newTask: return "New Task"
         }
     }
 
     /// The task's own title, verbatim.
     private var subject: String? {
         switch sheet {
-        case .customEstimateForNewTask, .tags, .connect: return nil
+        case .tags, .connect, .newTask: return nil
         case .estimate(_, let title, _), .addTime(_, let title), .endTime(_, _, let title, _, _),
              .schedule(_, let title, _):
             return title
@@ -688,8 +729,8 @@ private struct TaskValueSheet: View {
 
     private var explanation: LocalizedStringKey {
         switch sheet {
-        case .customEstimateForNewTask, .estimate:
-            return "Such as 1h 30m, 90m, 1.5h or 2d."
+        case .estimate:
+            return "Such as 1h 30m, 90m, 1.5h or 2d. Nothing, or 0, removes it."
         case .addTime:
             return "Time worked without the timer, ending now."
         case .endTime(_, _, _, _, .none):
@@ -698,16 +739,16 @@ private struct TaskValueSheet: View {
             return "When did you stop? Not after a later session began."
         case .schedule:
             return "A reminder with a Start button."
-        case .tags, .connect:
+        case .tags, .connect, .newTask:
             return ""
         }
     }
 
     private var primaryTitle: LocalizedStringKey {
         switch sheet {
-        case .addTime: return "Add"
+        case .addTime, .newTask: return "Add"
         case .schedule: return "Schedule"
-        case .customEstimateForNewTask, .estimate, .endTime, .tags, .connect: return "Save"
+        case .estimate, .endTime, .tags, .connect: return "Save"
         }
     }
 
@@ -717,20 +758,21 @@ private struct TaskValueSheet: View {
             onSave(.date(date))
             dismiss()
             return
+        case .estimate:
+            // The typed estimate's own reading: nothing or 0 removes it, as on a task's page.
+            switch estimate.estimateReading {
+            case .none: onSave(.duration(nil))
+            case .length(let seconds): onSave(.duration(seconds))
+            case .unreadable:
+                problem = String(localized: "Type at least a minute, such as 1h 30m.")
+                return
+            }
+            dismiss()
+            return
         default:
             break
         }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let isEstimate: Bool
-        switch sheet {
-        case .customEstimateForNewTask, .estimate: isEstimate = true
-        default: isEstimate = false
-        }
-        if trimmed.isEmpty, isEstimate {
-            onSave(.duration(nil))
-            dismiss()
-            return
-        }
         guard let seconds = WorkDuration.parse(trimmed), seconds >= 60 else {
             problem = String(localized: "Type at least a minute, such as 1h 30m.")
             return
@@ -740,16 +782,19 @@ private struct TaskValueSheet: View {
     }
 }
 
-/// The button to macOS's Notifications pane. One literal, for All tasks' note and the Schedule
-/// sheet (`BrainNamingRulesTests` allows it once: it means the macOS pane, not Brain).
+/// The button to macOS's Notifications pane. One literal, for All tasks' note, a task page's
+/// Notify, and the Schedule and New Task sheets (`BrainNamingRulesTests` allows it once: it means
+/// the macOS pane, not Brain).
 let openNotificationSettingsTitle: LocalizedStringKey = "Open Notification Settings"
 
-/// "Notifications are off" with a way to turn them on, while macOS blocks Kannu's notifications.
-private struct ReminderPermissionNote: View {
+/// "Notifications are off" with a way to turn them on, while macOS blocks Kannu's notifications:
+/// in the Schedule and New Task sheets, so the user hears before setting a reminder that cannot
+/// notify (`notificationsDenied`, macOS's answer, not whether any reminder waits yet).
+struct ReminderPermissionNote: View {
     @ObservedObject private var manager = TasksManager.shared
 
     var body: some View {
-        if manager.remindersBlocked {
+        if manager.notificationsDenied {
             HStack(spacing: SettingsMetrics.rowContent) {
                 Text("Notifications are off for Kannu.")
                     .settingsDescriptionStyle(tint: .orange)

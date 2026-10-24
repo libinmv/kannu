@@ -25,7 +25,7 @@ import SwiftUI
 ///
 /// - its title, with the short key and where it stands, and ▶ or ■; its source's labels; its tags
 ///   as chips that remove themselves, with Add Tags; its time against the estimate, any overtime,
-///   with Set Estimate and Add Time;
+///   with its estimate typed in place (`TaskEstimateField`) and Add Time;
 /// - its facts, most important first; a local task's reminder; Open in Jira or GitLab, and whether
 ///   its time is offered in Time to log;
 /// - what ends it: Mark Done, Archive or Delete, or, once closed or archived, Reopen and Restore.
@@ -34,19 +34,25 @@ import SwiftUI
 /// leaves the page (`TasksSettings`); one gone some other way says so.
 struct TaskDetailPage: View {
     @ObservedObject private var manager = TasksManager.shared
+    @Default(.enableTimerFeature) private var enableTimerFeature
     let taskID: UUID
     let context: TasksPageContext
+    /// The estimate being typed in the Time row; nil follows the task, so a change from a sync or
+    /// the notch shows at once.
+    @State private var typedEstimate: TaskFormDraft?
+    /// A local task's title being typed in place; nil follows the task.
+    @State private var typedTitle: String?
+    @FocusState private var titleFocused: Bool
+    /// The page's clock, moved on at each whole minute by the Time row's ticker: "42m of 2h" for a
+    /// timed task, "Timed … ago", an overdue reminder. A value, not a wrapper, so the Sections reach
+    /// the Form as Sections and a timer starting or ending tears nothing down.
+    @State private var minute = Date()
 
     var body: some View {
         if let task = manager.tasks.first(where: { $0.id == taskID }) {
-            if manager.timing?.taskID == task.id {
-                // Only the task being timed changes on its own, once a minute.
-                TimelineView(.everyMinute) { timeline in
-                    content(task, now: timeline.date)
-                }
-            } else {
-                content(task, now: Date())
-            }
+            // Straight to the Form: inside a TimelineView the three Sections reached it as one row,
+            // one card with "Details" centred (David's picture, 2026-10-24).
+            content(task)
         } else {
             Section {
                 SettingsNoteRow("This task is gone", description: "It was deleted, or cleared from the archive.")
@@ -55,27 +61,60 @@ struct TaskDetailPage: View {
     }
 
     @ViewBuilder
-    private func content(_ task: TaskItem, now: Date) -> some View {
+    private func content(_ task: TaskItem) -> some View {
+        let now = max(minute, Date())
         let summary = TaskDetailSummary(task: task, tracked: manager.trackedSeconds(of: task, now: now), now: now,
                                         selfNames: TaskSource.selfNames)
-        overviewSection(task, summary: summary)
+        overviewSection(task, summary: summary, isTimed: manager.timing?.taskID == task.id)
         detailsSection(task, summary: summary)
         endSection(task)
     }
 
     // MARK: - Title, tags and time
 
-    private func overviewSection(_ task: TaskItem, summary: TaskDetailSummary) -> some View {
+    private func overviewSection(_ task: TaskItem, summary: TaskDetailSummary, isTimed: Bool) -> some View {
         let remoteLabels = (task.remote?.labels ?? []).map(TaskDetailSummary.labelDisplay)
         let line = [summary.shortKey, summary.status.name, summary.isDraft ? String(localized: "Draft") : nil]
             .compactMap { $0 }.joined(separator: " · ")
         return Section {
             LabeledContent {
                 if task.visibility == .active {
-                    TaskTimingButton(task: task)
+                    TaskTimingButton(isTimed: isTimed,
+                                     canStart: enableTimerFeature && manager.isReady,
+                                     start: { manager.start(task.id) }, stop: { manager.stopTiming() })
                 }
             } label: {
-                SettingsRowLabel(Text(verbatim: summary.title), description: Text(verbatim: line))
+                if task.source == .local {
+                    // A local task's title, typed in place as the notch's form edits it: the Form's own
+                    // body font, so it reads as the title, and wrapping as the title did. Return, another
+                    // field, leaving the page or closing Brain saves; Escape puts it back and stays, as
+                    // the Time row's does. Jira and GitLab titles are their servers'.
+                    VStack(alignment: .leading, spacing: SettingsMetrics.labelStack) {
+                        TextField("Title", text: Binding(get: { typedTitle ?? task.title }, set: { typedTitle = $0 }),
+                                  prompt: Text("What needs doing?"), axis: .vertical)
+                            .lineLimit(1...4)
+                            .labelsHidden()
+                            .textFieldStyle(.plain)
+                            .focused($titleFocused)
+                            .onSubmit { applyTitle(to: task) }
+                            .onExitCommand { typedTitle = nil }
+                            .help(Text("Click to rename"))
+                            .disabled(!manager.isReady)
+                        Text(verbatim: line)
+                            .settingsDescriptionStyle()
+                    }
+                } else {
+                    SettingsRowLabel(Text(verbatim: summary.title), description: Text(verbatim: line))
+                }
+            }
+            .onChange(of: titleFocused) { _, focused in
+                if !focused { applyTitle(to: task) }
+            }
+            .onDisappear { applyTitle(to: task) }
+            // Closing Brain only orders its window out: no focus change, no onDisappear.
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { note in
+                guard (note.object as? NSWindow)?.identifier == SettingsWindowController.windowIdentifier else { return }
+                applyTitle(to: task)
             }
 
             if !remoteLabels.isEmpty {
@@ -112,16 +151,66 @@ struct TaskDetailPage: View {
 
             LabeledContent {
                 HStack(spacing: SettingsMetrics.rowContent) {
-                    Button("Set Estimate") {
-                        context.sheet.wrappedValue = .estimate(taskID: task.id, title: task.title, current: task.localEstimateSeconds)
-                    }
+                    // Typed in place (David, 2026-10-23: "inside brain also estimate should be
+                    // typeable"): Return, leaving the field, a preset or leaving the page saves it;
+                    // Escape puts it back.
+                    TaskEstimateField(
+                        draft: Binding(get: { typedEstimate ?? TaskFormDraft(editing: task) }, set: { typedEstimate = $0 }),
+                        onSubmit: { applyEstimate(typedEstimate, to: task) },
+                        onSettle: { applyEstimate($0, to: task) },
+                        onCancel: { typedEstimate = nil }
+                    )
+                    .disabled(!manager.isReady)
                     Button("Add Time") {
                         context.sheet.wrappedValue = .addTime(taskID: task.id, title: task.title)
                     }
                 }
+                .frame(width: SettingsMetrics.sliderWidth, alignment: .trailing)
             } label: {
                 SettingsRowLabel("Time", description: timeText(summary))
             }
+            .onDisappear { applyEstimate(typedEstimate, to: task) }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { note in
+                guard (note.object as? NSWindow)?.identifier == SettingsWindowController.windowIdentifier else { return }
+                applyEstimate(typedEstimate, to: task)
+            }
+            // The page's clock, on one row only: on a group of Sections it may run once a row. A
+            // lazy Form drops the row once it scrolls away, and the clock pauses with it; it catches
+            // up the moment the row is back.
+            .task {
+                while !Task.isCancelled {
+                    let now = Date()
+                    minute = now
+                    let next = Calendar.current.nextDate(after: now, matching: DateComponents(second: 0), matchingPolicy: .nextTime)
+                        ?? now.addingTimeInterval(60)
+                    try? await Task.sleep(for: .seconds(max(1, next.timeIntervalSince(now))))
+                }
+            }
+        }
+    }
+
+    /// Saves a typed title through `renameTask` (which refuses an empty one, and renames a running
+    /// session too); then the field follows the task again.
+    private func applyTitle(to task: TaskItem) {
+        guard let typed = typedTitle else { return }
+        typedTitle = nil
+        if let cleaned = TaskItem.cleanedTitle(typed), cleaned != task.title {
+            manager.renameTask(task.id, to: cleaned)
+        }
+    }
+
+    /// Saves a typed estimate the moment it reads: nothing or 0 removes it, a length sets it, and
+    /// only when it differs. Text it cannot read stays, orange, and is not saved.
+    private func applyEstimate(_ typed: TaskFormDraft?, to task: TaskItem) {
+        guard var draft = typed else { return }
+        draft.settleEstimateText()
+        switch draft.estimateReading {
+        case .unreadable:
+            typedEstimate = draft
+        case .none, .length:
+            let seconds = draft.estimateSeconds
+            if seconds != task.localEstimateSeconds { manager.setEstimate(seconds, for: task.id) }
+            typedEstimate = nil
         }
     }
 
@@ -163,6 +252,20 @@ struct TaskDetailPage: View {
                     SettingsRowLabel("Reminder", description: task.scheduledAt == nil
                         ? Text("None. A reminder comes with a Start button.")
                         : Text(verbatim: task.scheduledAt.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? ""))
+                }
+
+                // The notch's bell: this reminder's notification on or off; its time stays.
+                if task.scheduledAt != nil {
+                    SettingsRow("Notify", description: "A notification when the reminder is due.") {
+                        Toggle("Notify", isOn: Binding(get: { task.notifiesForReminder },
+                                                       set: { manager.setReminderNotifies($0, for: task.id) }))
+                    }
+                    .disabled(!manager.isReady)
+                    if task.notifiesForReminder && manager.notificationsDenied {
+                        SettingsActionRow("Notifications are off", description: "Reminders need notifications for Kannu.") {
+                            Button(openNotificationSettingsTitle) { TaskReminders.openNotificationSettings() }
+                        }
+                    }
                 }
             }
 

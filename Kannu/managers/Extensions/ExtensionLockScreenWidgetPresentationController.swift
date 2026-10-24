@@ -201,7 +201,7 @@ private final class ExtensionLockScreenWidgetWindowPool {
         window.ignoresMouseEvents = true
         window.isMovable = false
 
-        ScreenCaptureVisibilityManager.shared.register(window, scope: .entireInterface)
+        ScreenCaptureVisibilityManager.shared.register(window, scope: .notch)
         SkyLightOperator.shared.delegateWindow(window)
 
         let record = WindowRecord(window: window)

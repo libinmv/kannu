@@ -237,4 +237,16 @@ final class TaskDetailSummaryTests: XCTestCase {
         let gitlab = summary(TaskItem(source: .gitlab, title: "G", remote: remote(key: "g/a#1", kind: .issue, iid: 1)))
         XCTAssertEqual(gitlab.browseLabel, "Open in GitLab")
     }
+
+    /// A task whose reminder notification is off shows a slashed bell on its due line (David,
+    /// 2026-10-23); the time still reads as before.
+    func testAMutedReminderShowsASlashedBell() {
+        let scheduled = now.addingTimeInterval(3600)
+        let muted = summary(TaskItem(title: "Quiet", scheduledAt: scheduled, reminderMuted: true)).facts.first
+        let loud = summary(TaskItem(title: "Loud", scheduledAt: scheduled)).facts.first
+        XCTAssertEqual(muted?.icon, "bell.slash")
+        XCTAssertEqual(loud?.icon, "calendar")
+        XCTAssertEqual(muted?.text, loud?.text)
+    }
 }
+

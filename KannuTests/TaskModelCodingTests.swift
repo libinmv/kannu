@@ -250,4 +250,35 @@ final class TaskModelCodingTests: XCTestCase {
         XCTAssertNil(TaskItem.cleanedTitle(" \n\t "))
         XCTAssertEqual(TaskItem.cleanedTitle(String(repeating: "a", count: 500))?.count, TaskItem.maxTitleLength)
     }
+
+    // MARK: - A task's reminder notification off
+
+    /// Off is written as `reminderMuted: true`; on is no key at all, so a task with the notification
+    /// on reads and writes exactly as before the flag existed, and an older build reads either.
+    func testAMutedReminderRoundTripsAndOnWritesNoKey() throws {
+        let muted = TaskItem(title: "Quiet", createdAt: start, scheduledAt: start, reminderMuted: true)
+        let loud = TaskItem(title: "Loud", createdAt: start, scheduledAt: start)
+        let file = TasksFile(tasks: [muted, loud], drafts: [])
+        let data = try TasksFile.makeEncoder().encode(file)
+        XCTAssertEqual(try TasksFile.makeDecoder().decode(TasksFile.self, from: data), file)
+
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let tasks = try XCTUnwrap(json["tasks"] as? [[String: Any]])
+        XCTAssertEqual(tasks[0]["reminderMuted"] as? Bool, true)
+        XCTAssertNil(tasks[1]["reminderMuted"], "a task with the notification on keeps the file as it was")
+        XCTAssertNil(TaskItem(title: "x", reminderMuted: false).reminderMuted, "false is stored as nil")
+    }
+
+    func testAnExplicitFalseReadsAsOn() throws {
+        let json = #"{"tasks":[{"id":"8C3F6A2E-1B4D-4E5F-9A7B-0C1D2E3F4A5B","title":"Loud","reminderMuted":false}],"drafts":[]}"#
+        let file = try TasksFile.makeDecoder().decode(TasksFile.self, from: Data(json.utf8))
+        XCTAssertNil(file.tasks.first?.reminderMuted, "false reads as on, stored as no key")
+        XCTAssertEqual(file.tasks.first?.notifiesForReminder, true)
+    }
+
+    func testAFileWithoutTheFlagReadsAsNotificationOn() throws {
+        let data = try TasksFile.makeEncoder().encode(sampleFile())
+        let file = try TasksFile.makeDecoder().decode(TasksFile.self, from: data)
+        XCTAssertTrue(file.tasks.allSatisfy(\.notifiesForReminder))
+    }
 }

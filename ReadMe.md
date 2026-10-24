@@ -35,20 +35,31 @@ Calendar, terminal, and color picker features from the Atoll/Boring.Notch lineag
 
 ## Runtime Permissions (by Feature)
 
-Kannu requests permissions only when you use the related feature. The app is not sandboxed, so most permissions are standard macOS privacy prompts (TCC) shown at runtime.
+The app is not sandboxed, so these are standard macOS privacy prompts (TCC). Kannu never raises one on its own at launch: on a fresh install, onboarding's **Permissions** step lists only what your choices use, says why, and asks for each one when you press **Allow**, one dialog at a time. The welcome music plays after you finish. Press **Not now** and that feature stays off until you allow it in **Brain › General › Permissions**; nothing asks for it later by surprise.
 
-- **Accessibility** — required for hardware key interception and custom HUD/OSD replacement.
-- **Screen Recording** — required for Screen Assistant screenshot capture. Screen-recording detection is separate and does not require this prompt.
-- **Music (MusicKit)** — required for Apple Music animated artwork features.
-- **Automation (Apple Events)** — required for Spotify/Apple Music controls and Apple Notes sync when those integrations are used.
-- **Full Disk Access** — required only for custom Focus metadata and optional global Shelf behavior.
-- **Files & Folders (Documents/Downloads)** — used by Shelf when Full Disk Access is not granted.
-- **Bluetooth** — used for Bluetooth audio battery indicators.
-- **Location (When In Use)** — used for lock screen weather.
-- **Audio Capture** — used for real-time waveform/audio-activity features.
-- **Developer Tools** — optional, used for advanced Focus detection mode.
-- **Reminders** — asked only when you connect Apple Reminders as a task source (Brain › Tasks › Add a source).
-- **Notifications** — asked the first time you schedule a task reminder.
+Asked on the Permissions step (when the feature is on):
+
+- **Accessibility** — media keys and the volume and brightness HUD.
+- **Bluetooth** — headphones and their battery when they connect.
+- **Files & Folders (Downloads)** — download progress in the notch.
+- **Location (When In Use)** — lock screen weather.
+- **Automation (Apple Events)** and **Music (MusicKit)** — when Spotify or Apple Music is your music source: playback controls, and Apple Music's animated artwork.
+- **Automation (Apple Events) for Notes** — when you choose to sync notes with Apple Notes on the Notes step.
+- **Data from other apps** — when Warp is installed: following agents running in Warp.
+- **Login item** — "Open Kannu at login", a switch on the same step.
+
+Asked only when you use the feature:
+
+- **Screen Recording** — Screen Assistant screenshot capture. Screen-recording detection is separate and does not need it.
+- **Microphone** — Screen Assistant's Record button, asked the first time you press it.
+- **Local Network** — sending files from the Shelf to nearby devices with LocalSend.
+- **Automation (Apple Events)** — Apple Notes sync when you turn it on later in Brain › Notes, and opening an agent's terminal tab or a browser tab.
+- **Full Disk Access** — custom Focus metadata and optional global Shelf behavior.
+- **Files & Folders (Documents/Downloads)** — Shelf, when Full Disk Access is not granted. Clipboard history keeps its files in Application Support, which needs no permission.
+- **Audio Capture** — real-time waveform and audio-activity features.
+- **Developer Tools** — optional, for the advanced Focus detection mode.
+- **Reminders** — when you connect Apple Reminders as a task source (Brain › Tasks › Add a source).
+- **Notifications** — the first time you schedule a task reminder.
 
 For detailed prompts and one-click setup actions, open **Brain** in Kannu. Contributor docs are in [CONTRIBUTING.md](CONTRIBUTING.md).
 

@@ -26,6 +26,13 @@ import Defaults
 class TimerManager: ObservableObject {
     // MARK: - Properties
     static let shared = TimerManager()
+
+    /// The timer tab's half-typed session name, kept while the notch is closed (the tab's own state
+    /// goes with it). In memory only; starting a session or clearing the field empties it.
+    var typedSessionName = ""
+    /// The task picked from the timer tab's typed search for the next session, kept with the typed
+    /// name while the notch is closed (`TimerSessionPick`). In memory only.
+    var sessionPick: TimerSessionPick?
     
     @Published var isTimerActive: Bool = false
     @Published var timerName: String = "Timer"
@@ -44,6 +51,9 @@ class TimerManager: ObservableObject {
     /// session's name, which is the task's title. Nil for a task with no key and for every
     /// session that is not a task's. Cleared with every session.
     @Published private(set) var sessionTaskKey: String?
+    /// The task this session times, so the timer tab can open its form (Edit Task). Nil for every
+    /// session that is not a task's. Set with the session and cleared with it, like `sessionTint`.
+    @Published private(set) var sessionTaskID: UUID?
     @Published private(set) var activeSource: TimerSource = .none
     /// What a renamed session goes back to when its name is cleared: the preset's name, or
     /// "Custom Timer" (`TimerSessionName`).
@@ -166,7 +176,8 @@ class TimerManager: ObservableObject {
     /// `name` is what the session shows; `fallbackName`, when given, is the default a cleared name
     /// returns to (the user may have typed `name` over it). `playsSoundOnFinish` false runs the
     /// session into overtime silently. `tint` is the timed task's colour, the session's accent ahead
-    /// of the preset's (`sessionAccent`); `taskKey` is its short key (`sessionTaskKey`).
+    /// of the preset's (`sessionAccent`); `taskKey` is its short key (`sessionTaskKey`) and `taskID`
+    /// the task itself (`sessionTaskID`).
     func startTimer(
         duration: TimeInterval,
         name: String = "Timer",
@@ -174,7 +185,8 @@ class TimerManager: ObservableObject {
         fallbackName: String? = nil,
         playsSoundOnFinish: Bool = true,
         tint: Color? = nil,
-        taskKey: String? = nil
+        taskKey: String? = nil,
+        taskID: UUID? = nil
     ) {
         if activeSource == .external {
             endExternalTimer(triggerSmoothClose: false)
@@ -213,6 +225,7 @@ class TimerManager: ObservableObject {
         activePresetId = preset?.id
         sessionTint = tint
         sessionTaskKey = taskKey
+        sessionTaskID = taskID
         emit(.started)
 
         scheduleTicks()
@@ -234,8 +247,9 @@ class TimerManager: ObservableObject {
                     self.remainingTime -= 1
                     self.elapsedTime = self.totalDuration - self.remainingTime
                     self.lastUpdated = Date()
-                } else if self.remainingTime == 0 {
-                    // Timer just finished - play sound and start overtime
+                } else if self.remainingTime == 0, !self.isFinished {
+                    // Timer just finished - play sound and start overtime. A countdown that
+                    // followed its estimate onto exactly 0 finished already, silently.
                     self.isFinished = true
                     self.isOvertime = true
                     self.playTimerSound()
@@ -339,6 +353,7 @@ class TimerManager: ObservableObject {
         activePresetId = nil
         sessionTint = nil
         sessionTaskKey = nil
+        sessionTaskID = nil
         lastUpdated = Date()
     }
 
@@ -409,6 +424,7 @@ class TimerManager: ObservableObject {
         activePresetId = nil
         sessionTint = nil
         sessionTaskKey = nil
+        sessionTaskID = nil
         activeSource = .none
     }
 
@@ -432,6 +448,40 @@ class TimerManager: ObservableObject {
     func updateSessionTint(_ tint: Color?, session: UUID) {
         guard session == sessionID, activeSource == .manual, isTimerActive, sessionTint != tint else { return }
         sessionTint = tint
+    }
+
+    /// Renames the running session after its task was renamed: the session shows the new title, and
+    /// a cleared rename goes back to it. `session` is the `sessionID` the task was started in.
+    func updateSessionName(_ name: String, session: UUID) {
+        guard session == sessionID, activeSource == .manual, isTimerActive else { return }
+        sessionDefaultName = name
+        if timerName != name { timerName = name }
+    }
+
+    /// Gives the running session a new length, keeping what has run (`TaskTimeMath.retargeted`):
+    /// the task's estimate was edited and this session follows it. At or under zero it is finished
+    /// and in overtime, silently; back above zero the alarm stops, and the next zero rings again as
+    /// the session's sound says. Never plays the sound itself and sends no session event.
+    func updateSessionLength(_ length: Int, session: UUID) {
+        guard session == sessionID, activeSource == .manual, isTimerActive, length > 0 else { return }
+        let next = TaskTimeMath.retargeted(
+            total: Int(totalDuration.rounded()),
+            remaining: Int(remainingTime.rounded()),
+            to: length
+        )
+        guard TimeInterval(next.total) != totalDuration else { return }
+        totalDuration = TimeInterval(next.total)
+        remainingTime = TimeInterval(next.remaining)
+        elapsedTime = TimeInterval(next.elapsed)
+        if next.isOver {
+            isFinished = true
+            isOvertime = true
+        } else if isFinished || isOvertime {
+            soundPlayer?.stop()
+            isFinished = false
+            isOvertime = false
+        }
+        lastUpdated = Date()
     }
 
     /// Sends `kind` for the current session. Only a timer started in Kannu has session events: a

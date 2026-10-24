@@ -157,9 +157,10 @@ class FullscreenMediaDetector: ObservableObject {
                 guard app.screen.localizedName == name,
                       app.bundleIdentifier != "com.apple.finder" else { return false }
 
-                // The notch stays on display by default (the window's collectionBehavior
-                // rides along with fullscreen spaces). It only hides when the user's
-                // "Hide DynamicIsland" option asks for it.
+                // The notch window stays on display in every fullscreen space (it sits in the
+                // max-level notch space on every hide option). Hiding is the views' job: this
+                // verdict drives `KannuViewModel.hideOnClosed`, never the window, and only when
+                // the user's "Hide DynamicIsland" option asks for it.
                 switch hideOption {
                 case .always:
                     // Hide for any app in genuine native fullscreen on this screen.

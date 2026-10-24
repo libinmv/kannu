@@ -192,7 +192,10 @@ final class CursorAgentStatusMonitor: ObservableObject {
         ]
         // Passive-only sources, watched only when present. Warp's WAL changes on every write
         // (agent or not); the store caches its query for 2 s so a busy terminal costs one read.
-        if let warpDB = WarpAgentStore.databaseURL {
+        // Finding it stats Warp's container, so it waits for `LaunchPermissionManager` too. Allowed
+        // later (onboarding's Permissions step or Brain), Warp is read by the 30 s safety-net
+        // rescan until the next launch adds its watcher; restarting the monitor would drop the light.
+        if LaunchPermissionManager.mayTouch(.warp), let warpDB = WarpAgentStore.databaseURL {
             watchedPaths.append(warpDB.deletingLastPathComponent().path)
         }
         let desktopRoot = ClaudeDesktopAgentSessionStore.defaultRoot
@@ -2208,6 +2211,9 @@ final class CursorAgentStatusMonitor: ObservableObject {
     /// changed, schedules the rescan that maps it. Rescans meanwhile map the last result.
     private func refreshWarpExchangesIfNeeded(staleMinutes: Int, now: Date) {
         guard !warpRefreshInFlight else { return }
+        // That prompt belongs to the onboarding's Permissions step on a fresh install, and waits
+        // for the user after a Not now: until `LaunchPermissionManager` allows it, Warp is unread.
+        guard LaunchPermissionManager.mayTouch(.warp) else { return }
         warpRefreshInFlight = true
         let since = WarpAgentStore.since(staleMinutes: staleMinutes, now: now)
         DispatchQueue.global(qos: .utility).async { [weak self] in

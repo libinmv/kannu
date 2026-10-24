@@ -49,6 +49,10 @@ struct RulerTimerPicker: View {
     /// minutes: `NotchTimerView` holds its tab-wide page swipe off meanwhile. A second guard: the
     /// swipe already yields over the strip by geometry (`ScrollWheelMonitor.ownsSidewaysScroll`).
     var onScrollAreaHover: (Bool) -> Void = { _ in }
+    /// The timer tab's typed search lies over the strip (`TimerTaskSuggestions`): the strip is hidden
+    /// and inert, and gives up its sideways scroll, so a swipe over the list never changes the
+    /// minutes out of sight. Start, below it, stays.
+    var isCovered = false
 
     // Raw continuous value for smooth dragging
     @State private var totalMinutes: Double = 10.0
@@ -67,9 +71,17 @@ struct RulerTimerPicker: View {
     var body: some View {
         VStack(spacing: 0) {
             rulerArea
+                .coveredBySuggestions(isCovered)
             controlRow
         }
         .onAppear { syncFromBindings() }
+        .onChange(of: isCovered) { _, covered in
+            // Covered under the pointer: the hover never reports leaving, so let go here.
+            if covered {
+                updateScrollGestureSuppression(false)
+                onScrollAreaHover(false)
+            }
+        }
         .onChange(of: hours)   { _, _ in syncFromBindings() }
         .onChange(of: minutes) { _, _ in syncFromBindings() }
         .onChange(of: seconds) { _, _ in syncFromBindings() }
@@ -189,10 +201,13 @@ struct RulerTimerPicker: View {
             .background {
                 // The sideways scroll over this strip is the ruler's: the tab's page swipe
                 // (`HorizontalSwipeMonitor`) yields by this view's live frame, not by hover.
-                ScrollWheelMonitor(ownsSidewaysScroll: true) { event in
-                    guard event.isHorizontalTrackpadScroll else { return false }
-                    applyTrackpadScroll(event.scrollingDeltaX)
-                    return true
+                // Covered, it has none: removing the monitor unregisters the strip as an owner.
+                if !isCovered {
+                    ScrollWheelMonitor(ownsSidewaysScroll: true) { event in
+                        guard event.isHorizontalTrackpadScroll else { return false }
+                        applyTrackpadScroll(event.scrollingDeltaX)
+                        return true
+                    }
                 }
             }
 #endif

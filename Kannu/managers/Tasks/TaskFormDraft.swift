@@ -28,13 +28,17 @@ import Foundation
 ///
 /// Pure, in the logic target.
 struct TaskFormDraft: Equatable {
-    /// The estimate menu's choices, Brain's add row's too: 15m, 30m, 1h, 2h, 4h, 8h.
+    /// The chevron's presets, in the notch's task form and Brain's typed estimate (New Task, a
+    /// task's Time row, Set Estimate): 15m, 30m, 1h, 2h, 4h, 8h.
     static let estimateChoices = [15, 30, 60, 120, 240, 480].map { $0 * 60 }
 
     enum Edit: Equatable {
         case title(String)
         case estimate(Int?)
         case tags([String])
+        /// The task's reminder notification on or off, before its schedule so a muted reminder is
+        /// never sent first and taken back.
+        case notifies(Bool)
         case schedule(Date?)
     }
 
@@ -51,6 +55,8 @@ struct TaskFormDraft: Equatable {
     /// Tags as typed, comma separated: "writing, #urgent".
     var tagsText: String
     var reminder: Date?
+    /// Whether the reminder raises a notification; the bell beside it. On for a new task.
+    var notifies: Bool
 
     /// A new local task.
     init() {
@@ -62,6 +68,7 @@ struct TaskFormDraft: Equatable {
         estimateText = ""
         tagsText = ""
         reminder = nil
+        notifies = true
     }
 
     init(editing task: TaskItem) {
@@ -73,9 +80,37 @@ struct TaskFormDraft: Equatable {
         estimateText = task.localEstimateSeconds.map(WorkDuration.format) ?? ""
         tagsText = task.tags.joined(separator: ", ")
         reminder = task.scheduledAt
+        notifies = task.notifiesForReminder
     }
 
     var isNew: Bool { editing == nil }
+
+    // MARK: - The timer tab's bar and a new task's title: one text
+
+    /// What the timer tab's session bar shows for `title` (`TimerSessionName`, at most 40
+    /// characters); "" when nothing is left.
+    static func barText(_ title: String) -> String {
+        TimerSessionName.cleaned(title) ?? ""
+    }
+
+    /// Whether `bar`, the session bar's text, is this draft's title: the same `TaskItem.nameKey`, so
+    /// case, accents and a title cut to the bar's 40 characters still match. Never for an empty bar.
+    func isTitled(_ bar: String) -> Bool {
+        guard let key = TaskItem.nameKey(bar) else { return false }
+        return TaskItem.nameKey(title) == key
+    }
+
+    /// The draft New Task opens on, `kept` being the kept new-task draft. An empty bar opens `kept`
+    /// (or an empty form). A bar that is `kept`'s title opens it whole. Any other bar text becomes
+    /// the title — of `kept`, whose estimate, tags and reminder stay (nothing typed is lost; the user
+    /// clears what they do not want), or of a fresh draft.
+    static func newTask(bar: String, kept: TaskFormDraft?) -> TaskFormDraft {
+        guard let title = TaskItem.cleanedTitle(bar) else { return kept ?? TaskFormDraft() }
+        var draft = kept ?? TaskFormDraft()
+        if !draft.isTitled(bar) { draft.title = title }
+        return draft
+    }
+
     var canEditTitle: Bool { source == .local }
     var canSchedule: Bool { source == .local }
 
@@ -96,6 +131,9 @@ struct TaskFormDraft: Equatable {
         let estimate = estimateSeconds.flatMap { $0 > 0 ? $0 : nil }
         if estimate != task.localEstimateSeconds { edits.append(.estimate(estimate)) }
         if tags != task.tags { edits.append(.tags(tags)) }
+        // The bell belongs to a reminder: without one there is nothing to mute, and clearing the
+        // schedule clears the mute (`TasksManager.setSchedule`).
+        if canSchedule, reminder != nil, notifies != task.notifiesForReminder { edits.append(.notifies(notifies)) }
         if canSchedule, reminder != task.scheduledAt { edits.append(.schedule(reminder)) }
         return edits
     }
@@ -172,7 +210,7 @@ struct TaskFormDraft: Equatable {
     }
 
     /// The menu's choices with the current estimate among them, in order, when it is none of them
-    /// (one set in Brain's Custom sheet), so the menu can show it as chosen.
+    /// (a typed one, such as 45m), so the menu can show it as chosen.
     var estimateMenuChoices: [Int] {
         guard let estimateSeconds, estimateSeconds > 0, !Self.estimateChoices.contains(estimateSeconds) else {
             return Self.estimateChoices
@@ -215,5 +253,93 @@ struct TaskFormDraft: Equatable {
     /// Where a new reminder starts: the next whole hour.
     static func defaultReminder(now: Date, calendar: Calendar) -> Date {
         calendar.dateInterval(of: .hour, for: now)?.end ?? now.addingTimeInterval(3600)
+    }
+
+    /// A reminder picked that has passed since moves to the next whole hour, as a fresh "Add a
+    /// reminder" would, so Add never saves one that can no longer notify. `keeping` is a reminder
+    /// left as it is, overdue or not: an edit's own, unchanged.
+    mutating func movePassedReminder(now: Date, calendar: Calendar, keeping kept: Date? = nil) {
+        guard let picked = reminder, picked <= now, picked != kept else { return }
+        reminder = Self.defaultReminder(now: now, calendar: calendar)
+    }
+}
+
+/// The task form's unsaved drafts, kept while the form is closed, so what was typed survives the
+/// notch closing, another task's form opening, or the × on a new task. In memory only: Add or Save
+/// forgets a draft, and so does the × on an edit (that one means "without saving").
+///
+/// An edit's draft is restored only while its task still reads the way it did when the draft was
+/// kept (`baseline`): a task changed elsewhere since, by a sync or in Brain, opens fresh, so an old
+/// draft can never undo that change on Save. A draft that changes nothing is not kept.
+///
+/// Pure, in the logic target.
+struct KeptTaskFormDrafts: Equatable {
+    private struct Entry: Equatable {
+        let draft: TaskFormDraft
+        /// `TaskFormDraft(editing:)` of the task when the draft was kept; nil for a new task.
+        let baseline: TaskFormDraft?
+    }
+
+    /// By the task edited; the nil key is the new task.
+    private var entries: [UUID?: Entry] = [:]
+
+    var isEmpty: Bool { entries.isEmpty }
+
+    /// Keeps `draft`, or forgets its slot when it changes nothing: a new task's empty form, or an
+    /// edit equal to its task. `baseline` is the edited task's current draft; nil for a new task.
+    mutating func keep(_ draft: TaskFormDraft, baseline: TaskFormDraft?) {
+        let untouched = draft.isNew ? draft == TaskFormDraft() : draft == baseline
+        if untouched || (!draft.isNew && baseline == nil) {
+            entries[draft.editing] = nil
+        } else {
+            entries[draft.editing] = Entry(draft: draft, baseline: draft.isNew ? nil : baseline)
+        }
+    }
+
+    /// The kept draft for a new task (nil) or the task with `id`, when one is kept and, for an edit,
+    /// its task still reads as `baseline` says. A reminder the user picked that has passed since
+    /// moves to the next whole hour, as a fresh "Add a reminder" would, so Add never saves one that
+    /// can no longer notify; an edit's unchanged reminder (the task's own, overdue or not) is left.
+    func draft(editing id: UUID?, baseline: TaskFormDraft?, now: Date, calendar: Calendar) -> TaskFormDraft? {
+        guard let entry = entries[id] else { return nil }
+        if id != nil {
+            guard let baseline, entry.baseline == baseline else { return nil }
+        }
+        var draft = entry.draft
+        draft.movePassedReminder(now: now, calendar: calendar, keeping: id == nil ? nil : baseline?.reminder)
+        return draft
+    }
+
+    mutating func forget(editing id: UUID?) {
+        entries[id] = nil
+    }
+}
+
+/// What a preset clicked while the timer tab's task form shows does (`TimerTaskForm.startFromForm`).
+///
+/// Pure, in the logic target.
+enum TimerFormStart: Equatable {
+    /// The form's task is timed (or added and timed): the form's work is done.
+    case started
+    /// A new task whose estimate cannot be read: nothing starts, and the form stays to be fixed,
+    /// as Add waits, with focus on the estimate.
+    case held
+    /// The edited task left the list: nothing starts, and the form closes. An edit never falls
+    /// through to the bar's text or its pick.
+    case gone
+    /// A new task with no title: the start goes on as if no form were open, and the form closes
+    /// keeping its draft.
+    case fallThrough
+
+    /// A new task's form, from its kept draft: added and timed when it can be saved; held while its
+    /// estimate cannot be read; falling through with no title.
+    static func forNewTask(_ kept: TaskFormDraft?) -> TimerFormStart {
+        guard let kept, TaskItem.cleanedTitle(kept.title) != nil else { return .fallThrough }
+        return kept.canSave ? .started : .held
+    }
+
+    /// An edit's form: its task is timed while it is in the list, saved or not.
+    static func forEdit(taskInList: Bool) -> TimerFormStart {
+        taskInList ? .started : .gone
     }
 }

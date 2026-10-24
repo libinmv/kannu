@@ -83,6 +83,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var screenChangeTask: Task<Void, Never>?
     /// The delayed reposition after an unlock, cancellable so a burst queues one.
     private var unlockRestoreTask: Task<Void, Never>?
+    /// Times Show / Hide Notch's eye (`NotchEyeTimeline`): a hide tears the windows down only when
+    /// it ends. `notchEyeRun` is the run on screen, where a toggle mid-run reverses from.
+    private var notchEyeTask: Task<Void, Never>?
+    private var notchEyeRun: NotchEyeTimeline.Run?
+    private static let notchEyeLog = os.Logger(subsystem: "com.kannu.app", category: "NotchEye")
 
     /// Keyed by `CGDirectDisplayID`, not `NSScreen`. AppKit does not promise `NSScreen` identity
     /// across a display reconfiguration, so an object key could strand a window on a replug and
@@ -119,6 +124,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowsHiddenForLock = false
     /// The pending post-space-switch check, so a burst of switches runs one.
     private var spaceCheckWorkItem: DispatchWorkItem?
+    /// Notch windows the notch space failed to show at an earlier check; their managed spaces are
+    /// kept until a wake, unlock or reposition retries the strip. See `notchSpaceRepair`.
+    private var notchSpaceUnseenWindows: Set<Int> = []
     private var optionalShortcutHandlersRegistered = false
     private weak var focusWithoutDevToolsMenuItem: NSMenuItem?
     private weak var focusUseDevToolsMenuItem: NSMenuItem?
@@ -150,8 +158,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// A Dock click before the terms are accepted brings them back rather than doing nothing.
+    /// Opening Kannu again also brings back a hidden notch: the eye is the usual way, but a crowded
+    /// menu bar can push it behind the physical notch.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !launchContinued { TermsGateWindowController.shared.bringToFront() }
+        if !launchContinued {
+            TermsGateWindowController.shared.bringToFront()
+        } else if !Defaults[.showNotch] {
+            Defaults[.showNotch] = true
+        }
         return true
     }
 
@@ -346,6 +360,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     @objc func onScreenLocked(_: Notification) {
         print("Screen locked")
+        // An eye mid-run would play on into windows the lock orders out: settle it now, finishing
+        // a hide's teardown.
+        if coordinator.notchEye.isAnimating {
+            applyNotchVisibility(Defaults[.showNotch], animated: false)
+        }
         hideWindowsForLock()
     }
 
@@ -397,42 +416,102 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static let spacesLog = os.Logger(subsystem: "com.kannu.app", category: "NotchSpaces")
 
-    /// Puts the notch back on every space if macOS has left it off the one the user is on.
+    /// Keeps every notch window in Kannu's notch space and in no other space.
     ///
-    /// Around a sleep or a lock macOS can reset every app's all-spaces windows to a couple of spaces,
-    /// which left the notch missing from every other fullscreen app until relaunch — alive, ordered
-    /// in, opaque, and invisible (2026-09-30). `ClosedNotchVisibility.shouldRejoinSpaces` is the
-    /// decision; re-adding to the managed spaces is the only repair that works (ordering front and
-    /// re-assigning `collectionBehavior` were both measured to leave the membership stuck). Runs on
-    /// each space change, wake and unlock, so it costs nothing while the notch is where it belongs.
+    /// Membership is not fixed. Around a sleep or a lock macOS can reset every app's all-spaces
+    /// windows (2026-09-30, when the notch went missing from other fullscreen apps until relaunch),
+    /// and macOS added the notch to a newly created fullscreen space on its own (2026-10-22). So on
+    /// each space change, wake and unlock the space is shown again and every window's real
+    /// membership is read back and repaired by `pinNotchWindows`.
     @MainActor
     private func rejoinNotchSpacesIfNeeded(after reason: String) {
         let notchWindows = Defaults[.displayPlacement].usesOneWindowPerDisplay
             ? Array(windows.values)
             : [window].compactMap { $0 }
-        let stranded = notchWindows.filter {
-            ClosedNotchVisibility.shouldRejoinSpaces(
-                isOnActiveSpace: $0.isOnActiveSpace,
-                isOrderedIn: $0.isVisible,
+        guard !notchWindows.isEmpty else { return }
+        // A plain space change keeps the marks, so a fallback is not undone at every switch; the
+        // other triggers are where a hidden notch space could have come back, so they retry.
+        if reason != "space change" { notchSpaceUnseenWindows.removeAll() }
+        NotchSpaceManager.shared.notchSpace.reassertShown()
+        pinNotchWindows(notchWindows, after: reason)
+    }
+
+    /// Puts each window in the notch space and takes it out of every other space, deciding with
+    /// `ClosedNotchVisibility.notchSpaceRepair` from what WindowServer reports. A window is never
+    /// taken off a space before the notch space is confirmed to hold it; and one the notch space is
+    /// not showing goes back on every managed space, because seen beats still.
+    @MainActor private func pinNotchWindows(_ notchWindows: [NSWindow], after reason: String) {
+        let notchSpace = NotchSpaceManager.shared.notchSpace
+        let onScreen = Self.onScreenWindowNumbers()
+        for window in notchWindows {
+            let before = CGSSpace.spaceIDs(of: window)
+            let repair = ClosedNotchVisibility.notchSpaceRepair(
+                memberships: before,
+                notchSpaceID: notchSpace.spaceID,
+                isOrderedIn: window.isVisible,
+                isOnScreen: onScreen.contains(window.windowNumber) || window.occlusionState.contains(.visible),
+                notchSpaceUnseen: notchSpaceUnseenWindows.contains(window.windowNumber),
                 hiddenForLock: windowsHiddenForLock,
                 screenLocked: LockScreenManager.shared.isLocked
             )
+            switch repair {
+            case .none:
+                continue
+            case .joinNotchSpace:
+                notchSpace.add([window])
+                let joined = CGSSpace.spaceIDs(of: window)
+                guard joined.contains(notchSpace.spaceID) else {
+                    // Never leave it in no space: seen beats still (2026-09-30).
+                    notchSpaceUnseenWindows.insert(window.windowNumber)
+                    let spaces = CGSSpace.rejoinAllManagedSpaces([window])
+                    Self.spacesLog.error(
+                        "Notch space refused window \(window.windowNumber, privacy: .public) after \(reason, privacy: .public); put it on \(spaces, privacy: .public) managed spaces"
+                    )
+                    continue
+                }
+                CGSSpace.remove([window], fromSpaces: joined.subtracting([notchSpace.spaceID]))
+                keepVisibleAfterStrip(window, after: reason)
+            case .leaveOtherSpaces(let others):
+                CGSSpace.remove([window], fromSpaces: others)
+                keepVisibleAfterStrip(window, after: reason)
+            case .fallBackToManagedSpaces:
+                notchSpaceUnseenWindows.insert(window.windowNumber)
+                let spaces = CGSSpace.rejoinAllManagedSpaces([window])
+                Self.spacesLog.error(
+                    "Notch window \(window.windowNumber, privacy: .public) is in the notch space but not on screen after \(reason, privacy: .public); put it back on \(spaces, privacy: .public) managed spaces"
+                )
+            }
+            Self.spacesLog.notice(
+                "Pinned notch window \(window.windowNumber, privacy: .public) after \(reason, privacy: .public): \(String(describing: repair), privacy: .public); spaces \(before.sorted().description, privacy: .public) -> \(CGSSpace.spaceIDs(of: window).sorted().description, privacy: .public), visible=\(window.occlusionState.contains(.visible), privacy: .public)"
+            )
         }
-        guard !stranded.isEmpty else { return }
-        let spaces = CGSSpace.rejoinAllManagedSpaces(stranded)
-        // "Never hide" also pins the notch into Kannu's own top-level space. Clearing first makes
-        // the membership diff actually re-add windows it believes are already there.
-        if Defaults[.hideNotchOption] == .never {
-            NotchSpaceManager.shared.notchSpace.windows = []
-            syncNotchSpaceMembership()
-        }
-        Self.spacesLog.notice(
-            "Put \(stranded.count, privacy: .public) notch window(s) back on \(spaces, privacy: .public) spaces after \(reason, privacy: .public)"
+    }
+
+    /// After a strip the window must still be on screen through the notch space alone. If it is
+    /// not, the managed spaces go back and the window is marked, so the next check keeps them.
+    ///
+    /// Only WindowServer's on-screen list is read here, not `occlusionState` as the decision in
+    /// `pinNotchWindows` also does. AppKit updates `occlusionState` when WindowServer later reports
+    /// the change, so in the turn of the strip it still describes the window before it, and adding
+    /// it here would make this check pass every time.
+    @MainActor private func keepVisibleAfterStrip(_ window: NSWindow, after reason: String) {
+        guard !Self.onScreenWindowNumbers().contains(window.windowNumber) else { return }
+        notchSpaceUnseenWindows.insert(window.windowNumber)
+        let spaces = CGSSpace.rejoinAllManagedSpaces([window])
+        Self.spacesLog.error(
+            "Notch window \(window.windowNumber, privacy: .public) left the screen with the notch space alone after \(reason, privacy: .public); put it back on \(spaces, privacy: .public) managed spaces"
         )
     }
 
-    /// A space switch is where a stranded notch shows. Deferred a beat: during the switch animation
-    /// `isOnActiveSpace` can still describe the space being left.
+    /// Window numbers WindowServer has on screen right now. Reads numbers only, which needs no
+    /// screen-recording permission.
+    private static func onScreenWindowNumbers() -> Set<Int> {
+        let info = (CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]]) ?? []
+        return Set(info.compactMap { $0[kCGWindowNumber as String] as? Int })
+    }
+
+    /// A space switch is where a stranded notch shows. Deferred a beat so the switch has settled
+    /// before membership is read back.
     @objc private func activeSpaceDidChange(_ notification: Notification) {
         spaceCheckWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
@@ -459,26 +538,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.close()
         windows.removeValue(forKey: id)
         viewModels.removeValue(forKey: id)
-    }
-
-    /// Rebuilds the notch's CGSSpace membership from the current hide option and the
-    /// live windows. The space pins the notch above every space (fullscreen included)
-    /// and is used **only** for "Never hide"; the hide options keep the set empty so
-    /// FullscreenMediaDetector can hide the notch. Assigning the whole set lets the
-    /// CGSSpace diff additions/removals, so this is safe to call on any change.
-    @MainActor
-    private func syncNotchSpaceMembership() {
-        guard Defaults[.hideNotchOption] == .never else {
-            NotchSpaceManager.shared.notchSpace.windows = []
-            return
-        }
-        if Defaults[.displayPlacement].usesOneWindowPerDisplay {
-            NotchSpaceManager.shared.notchSpace.windows = Set(windows.values)
-        } else if let window = window {
-            NotchSpaceManager.shared.notchSpace.windows = [window]
-        } else {
-            NotchSpaceManager.shared.notchSpace.windows = []
-        }
     }
 
     private func createKannuWindow(for screen: NSScreen, with viewModel: KannuViewModel)
@@ -517,11 +576,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.setHostedContent(hostingView)
 
         window.orderFrontRegardless()
-        // Pin above every space (fullscreen included) only for "Never hide"; the
-        // hide options leave the window on the collectionBehavior path so
-        // FullscreenMediaDetector can hide it. See NotchSpaceManager.
-        if Defaults[.hideNotchOption] == .never {
-            NotchSpaceManager.shared.notchSpace.windows.insert(window)
+        // The notch lives in Kannu's notch space, on every hide option, and in no other space.
+        // Fullscreen hiding is the views' job (`KannuViewModel.hideOnClosed`) and never depended on
+        // this membership. The pin drops the space `orderFrontRegardless` put it on. It runs a turn
+        // later: in the same turn WindowServer does not list the new window as on screen yet, and
+        // the repair read that as an unseen notch and fell back (measured 2026-10-22, 22:11:06).
+        // `tearDownWindow` and `tearDownAllWindows` take it out of the notch space.
+        NotchSpaceManager.shared.notchSpace.windows.insert(window)
+        DispatchQueue.main.async { [weak self, weak window] in
+            guard let self, let window else { return }
+            self.pinNotchWindows([window], after: "create")
         }
         //SkyLightOperator.shared.delegateWindow(window)
         return window
@@ -764,6 +828,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// behaviour, shared with the menu bar item's left click. Opening from outside arms a 3 s
     /// auto-close so a notch nobody hovers does not stay open forever.
     func toggleNotch() {
+        // A hidden notch has no window: opening its view model would only arm a close for nothing.
+        // Nor while the eye plays: `open()` refuses, and the close armed below would shut the
+        // notch under a hover a moment later.
+        guard Defaults[.showNotch], !coordinator.notchEye.isAnimating else { return }
         let mouseLocation = NSEvent.mouseLocation
 
         var viewModel = self.vm
@@ -796,7 +864,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Creates or removes the status item to match `Defaults[.menubarIcon]`. The eye is the
+    /// Kannu has no Dock icon, so while the notch is hidden the eye's menu is the only way to
+    /// bring it back: the eye stays whatever `menubarIcon` says, and that choice returns with
+    /// the notch.
+    private var isStatusItemNeeded: Bool {
+        Defaults[.menubarIcon] || !Defaults[.showNotch]
+    }
+
+    /// Creates or removes the status item to match `isStatusItemNeeded`. The eye is the
     /// brand (Kannu is Malayalam for "eye"; the app icon is the same pair of eyes) — the
     /// mountain the fork inherited from Atoll is gone. Left click toggles the notch;
     /// right-click or option-click shows the menu.
@@ -825,6 +900,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let wantsMenu = event?.type == .rightMouseUp
             || event?.modifierFlags.contains(.control) == true
             || event?.modifierFlags.contains(.option) == true
+            // Nothing to toggle while the notch is hidden; the menu holds Show Notch.
+            || !Defaults[.showNotch]
         if wantsMenu, let statusItem {
             // Assigning the menu and re-clicking pops it; clearing it afterwards keeps the
             // plain left click on the toggle action instead of the menu.
@@ -838,6 +915,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func statusItemMenu() -> NSMenu {
         let menu = NSMenu()
+        let showNotchItem = menu.addItem(withTitle: String(localized: "Show Notch"),
+                                         action: #selector(statusMenuToggleNotch), keyEquivalent: "")
+        showNotchItem.target = self
+        showNotchItem.state = Defaults[.showNotch] ? .on : .off
+        menu.addItem(.separator())
         menu.addItem(withTitle: String(localized: "Brain"),
                      action: #selector(statusMenuOpenSettings), keyEquivalent: "").target = self
         if SparkleUpdaterController.shared.isEnabled {
@@ -850,6 +932,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: String(localized: "Quit"),
                      action: #selector(statusMenuQuit), keyEquivalent: "q").target = self
         return menu
+    }
+
+    /// The `showNotch` sink does the work, so this and the Settings toggle cannot drift apart.
+    @objc private func statusMenuToggleNotch() {
+        Defaults[.showNotch].toggle()
     }
 
     @objc private func statusMenuOpenSettings() {
@@ -929,6 +1016,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard !launchContinued else { return }
         launchContinued = true
 
+        // Before any singleton reads it: an install from before onboarding was versioned has
+        // already been through it (its hello cleared `firstLaunch`) and answered its permissions,
+        // so it is marked done with the first version: nothing new asks now, and a later version
+        // bump still shows it the new onboarding. Its clipboard files leave ~/Documents.
+        let isUpgrade = !coordinator.firstLaunch
+        if isUpgrade && Defaults[.onboardingCompletedVersion] == 0 {
+            Defaults[.onboardingCompletedVersion] = OnboardingProgress.firstVersion
+        }
+        ClipboardManager.migrateLegacyDataIfNeeded(isUpgrade: isUpgrade)
+        NotesManager.migrateSyncScopeIfNeeded()
+
         // Held back until now; this used to run in `KannuApp.init`, before any window.
         LLMUsageManager.configureProviderDefaultsIfNeeded()
 
@@ -955,14 +1053,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             deliverImmediately: true
         )
 
-        autoEnableLaunchAtLoginIfNeeded()
+        // A fresh install registers on onboarding's Permissions step instead, so macOS's "Login
+        // Item Added" notice lands there rather than over the welcome music.
+        if LaunchPermissionManager.isOnboardingComplete {
+            autoEnableLaunchAtLoginIfNeeded()
+        }
         repairLoginItemIfStale()
 
-        syncStatusItem(visible: Defaults[.menubarIcon])
+        syncStatusItem(visible: isStatusItemNeeded)
         Defaults.publisher(.menubarIcon, options: [])
             .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.syncStatusItem(visible: self.isStatusItemNeeded)
+            }
+            .store(in: &cancellables)
+        // A hop, not an inline call: `Defaults` runs the sink inside the setter's own frame, and
+        // one setter is the eye menu's action, still inside menu tracking.
+        Defaults.publisher(.showNotch, options: [])
             .sink { [weak self] change in
-                self?.syncStatusItem(visible: change.newValue)
+                Task { @MainActor [weak self] in self?.applyNotchVisibility(change.newValue) }
             }
             .store(in: &cancellables)
 
@@ -988,6 +1098,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Defaults.Keys.migrateMediaControllerToNowPlaying()
         Defaults.Keys.migrateCapsLockTintMode()
         Defaults.Keys.migrateNonNotchAlwaysShow()
+        Defaults.Keys.migrateScreenCaptureVisibility()
         Defaults.Keys.migrateThirdPartyDDCIntegration()
         Defaults.Keys.enforceRemovedFeatureDefaults()
         SecureSecretsStore.migrateFromDefaultsIfNeeded()
@@ -1148,14 +1259,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }.store(in: &cancellables)
 
-        // Pin/unpin the notch above all spaces when the hide option changes:
-        // "Never hide" joins the max-level CGSSpace, the hide options leave it.
-        Defaults.publisher(.hideNotchOption, options: []).sink { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.syncNotchSpaceMembership()
-            }
-        }.store(in: &cancellables)
-        
         // Observe minimalistic UI setting changes - trigger window resize
         Defaults.publisher(.enableMinimalisticUI, options: []).sink { [weak self] _ in
             // Defaults.publisher is raw KVO with no scheduler: the sink runs inside the
@@ -1284,14 +1387,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSWorkspace.screensDidWakeNotification, object: nil)
 
         #if DEBUG
-        // `--kannu-strand-notch`: strand the notch off the current space the way a sleep or lock
-        // can, then deliver the space-change notification, so the repair runs on the real window.
+        // `--kannu-strand-notch`: take the notch out of the notch space and put it on the current
+        // space, the way macOS can, then deliver the space-change notification, so the repair runs
+        // on the real window. Launch with `open -n Kannu.app --args --kannu-strand-notch`.
         if CommandLine.arguments.contains("--kannu-strand-notch") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
                 guard let self else { return }
                 let notch = [self.window].compactMap { $0 } + Array(self.windows.values)
-                CGSSpace.debugStrandFromActiveSpace(notch)
-                Self.spacesLog.notice("DEBUG stranded \(notch.count, privacy: .public) notch window(s); onActive=\(notch.map(\.isOnActiveSpace).description, privacy: .public)")
+                NotchSpaceManager.shared.notchSpace.debugStrand(notch)
+                Self.spacesLog.notice("DEBUG stranded \(notch.count, privacy: .public) notch window(s); spaces=\(notch.map { CGSSpace.spaceIDs(of: $0).sorted() }.description, privacy: .public)")
                 NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: NSWorkspace.shared)
             }
         }
@@ -1348,8 +1452,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if let screen = DisplayPlacementRuntime.activeScreen() {
                 let viewModel = self.vm
                 viewModel.screen = screen.localizedName
-                let window = createKannuWindow(for: screen, with: viewModel)
-                self.window = window
+                // The seed above stays ungated: a hidden notch shown later must find its screen.
+                if Defaults[.showNotch] {
+                    let window = createKannuWindow(for: screen, with: viewModel)
+                    self.window = window
+                }
             } else if let fallback = NSScreen.main {
                 self.vm.screen = fallback.localizedName
             }
@@ -1360,12 +1467,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // never followed the pointer at all.
         syncPointerTracking()
         
-        // Skip onboarding window and welcome sound under UI testing.
-        if coordinator.firstLaunch && !AppRuntimeEnvironment.isUITesting {
+        // A fresh install meets onboarding first, and it is silent: every permission is asked on
+        // its Permissions step, one dialog at a time, and the welcome music and the notch's hello
+        // wait for its Finish (`startHello`). They used to start here, together with four
+        // permission dialogs. Skipped under UI testing.
+        if !LaunchPermissionManager.isOnboardingComplete && !AppRuntimeEnvironment.isUITesting {
             DispatchQueue.main.async {
                 self.showOnboardingWindow()
             }
-            playWelcomeSound()
         }
         
         previousScreens = NSScreen.screens
@@ -1587,17 +1696,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openDeveloperToolsSettingsFromMenu() {
-        let urls = [
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_DevTools",
-            "x-apple.systempreferences:com.apple.preference.security"
-        ]
-
-        for candidate in urls {
-            guard let url = URL(string: candidate) else { continue }
-            if NSWorkspace.shared.open(url) {
-                return
-            }
-        }
+        DeveloperToolsSettings.open()
     }
 
     @objc private func setLogLevel(_ sender: NSMenuItem) {
@@ -1722,6 +1821,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             case .panel:
                 ClipboardPanelManager.shared.toggleClipboardPanel(trigger: "shortcut")
             case .popover:
+                // The popover and the tab live in the notch; a hidden notch has no window to open.
+                // Nor while the eye plays: `open()` refuses, and the popover or tab would land on a
+                // notch still closed. The press is dropped, as `toggleNotch` drops it.
+                guard Defaults[.showNotch], !coordinator.notchEye.isAnimating else { return }
                 if vm.notchState == .closed {
                     vm.open()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -1731,6 +1834,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     NotificationCenter.default.post(name: NSNotification.Name("ToggleClipboardPopover"), object: nil)
                 }
             case .separateTab:
+                guard Defaults[.showNotch], !coordinator.notchEye.isAnimating else { return }
                 if vm.notchState == .closed {
                     vm.open()
                     coordinator.currentView = .notes
@@ -1752,6 +1856,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             case .panel:
                 ScreenAssistantPanelManager.shared.toggleScreenAssistantPanel()
             case .popover:
+                guard Defaults[.showNotch], !coordinator.notchEye.isAnimating else { return }
                 if vm.notchState == .closed {
                     vm.open()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -1783,6 +1888,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func playWelcomeSound() {
         let audioPlayer = AudioPlayer()
         audioPlayer.play(fileName: "dynamic", fileExtension: "m4a")
+    }
+
+    /// Onboarding's finale: the notch opens and says hello, with the welcome music. Only
+    /// onboarding's Finish calls it, once every permission has been asked or put off, so nothing
+    /// plays over a dialog.
+    func startHello() {
+        coordinator.helloPending = true
+        playWelcomeSound()
+    }
+
+    /// Marks onboarding done and lets the features it held back start: each one answered on the
+    /// Permissions step now touches its permission without a dialog, and a deferred one stays off.
+    private func completeOnboarding() {
+        Defaults[.onboardingCompletedVersion] = OnboardingProgress.currentVersion
+        NotificationCenter.default.post(name: .launchPermissionsChanged, object: nil)
+    }
+
+    /// Onboarding's "Open Kannu at login". Registering on the Permissions step puts macOS's "Login
+    /// Item Added" notice there; off is remembered as an opt-out, so launch never registers it on
+    /// the user's behalf.
+    private func applyLaunchAtLoginChoice(_ enabled: Bool) {
+        if enabled {
+            autoEnableLaunchAtLoginIfNeeded()
+        } else {
+            Defaults[.didAutoEnableLaunchAtLogin] = true
+            if LaunchAtLogin.isEnabled {
+                LaunchAtLogin.isEnabled = false
+            }
+        }
     }
     
     @objc func screenConfigurationDidChange() {
@@ -1839,6 +1973,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Pointer tracking follows the new mode whatever happens below, including the early return.
         defer { syncPointerTracking() }
 
+        guard Defaults[.showNotch] else { return }
+
         if !Defaults[.displayPlacement].usesOneWindowPerDisplay {
             // No screen at all (clamshell, every display asleep): wait for the next screen change
             // rather than force-unwrapping an empty list, which traps with no report.
@@ -1846,6 +1982,169 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             window = createKannuWindow(for: screen, with: vm)
         }
         adjustWindowPosition(changeAlpha: true)
+    }
+
+    /// Shows or hides the notch on every display (`Defaults[.showNotch]`), opening or closing an
+    /// eye on the way (`NotchEyeTimeline`). Hiding tears the windows down rather than ordering them
+    /// out, so the views' monitors and hover poll stop with them and a hidden notch costs nothing,
+    /// but only once the eye has closed. Showing rebuilds through `applyPlacementChange`, the same
+    /// path a placement change takes, and the eye opens in the new windows. A toggle mid-run
+    /// reverses on the windows already there.
+    ///
+    /// The phases move on this object's clock, never on a view's completion: a lock orders the
+    /// windows out, and what they were animating may never finish. `animated: false` settles now.
+    @MainActor
+    private func applyNotchVisibility(_ visible: Bool, animated: Bool = true) {
+        let eye = coordinator.notchEye
+        // A second write for the run already going.
+        if animated, eye.isAnimating, (eye.phase == .opening) == visible { return }
+        notchEyeTask?.cancel()
+        notchEyeTask = nil
+        closeNotchWorkItem?.cancel()
+        closeNotchWorkItem = nil
+        // A notch hidden while open, or opened by anything while hidden, comes back closed: every
+        // display's, since each has its own view model when there is one window per display.
+        var wasOpen = false
+        for model in [vm] + Array(viewModels.values) where model.notchState == .open {
+            model.close()
+            wasOpen = true
+        }
+        let moves = animated && !coordinator.helloPending
+            && !windowsHiddenForLock && !LockScreenManager.shared.isLocked
+        let fadesOnly = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+
+        if visible {
+            if moves, eye.phase == .closing, !notchWindows.isEmpty {
+                // Open again on the windows still closing, rather than building new ones.
+                coordinator.notchEye.phase = .opening
+                runNotchEye(to: 1, full: eye.fadesOnly ? NotchEyeTimeline.fadeDuration : NotchEyeTimeline.showDuration) { [weak self] in
+                    self?.settleNotchEye()
+                }
+            } else if moves {
+                // Set before the windows exist, so their first frame is the empty start of the run.
+                notchEyeRun = nil
+                coordinator.notchEye = NotchEyeState(phase: .opening, progress: 0, fadesOnly: fadesOnly)
+                applyPlacementChange()
+                if notchWindows.isEmpty || !paintsClosedNotch {
+                    coordinator.notchEye = .settled
+                } else {
+                    runNotchEye(to: 1, full: fadesOnly ? NotchEyeTimeline.fadeDuration : NotchEyeTimeline.showDuration) { [weak self] in
+                        self?.settleNotchEye()
+                    }
+                }
+            } else {
+                if eye.isAnimating {
+                    notchEyeRun = nil
+                    var settle = Transaction()
+                    settle.disablesAnimations = true
+                    withTransaction(settle) { coordinator.notchEye = .settled }
+                }
+                if notchWindows.isEmpty { applyPlacementChange() }
+            }
+        } else {
+            // Beside the notch and behind it: the timer's control panel is hidden only from its
+            // view's `.onDisappear`, which a closing panel does not reliably deliver, and Stats
+            // samples until a notch close reaches it through `.onChange`. With no window left,
+            // nothing else would stop either. Neither waits for the eye.
+            TimerControlWindowManager.shared.hide(animated: false)
+            StatsManager.shared.updateMonitoringState(notchIsOpen: false, currentView: "other")
+            StatsManager.shared.stopMonitoring()
+            let finishHide: @MainActor () -> Void = { [weak self] in
+                // Re-checked after the wait: a Show in between reverses instead.
+                guard let self, !Defaults[.showNotch] else { return }
+                self.notchEyeRun = nil
+                self.tearDownAllWindows()
+                self.coordinator.notchEye = .settled
+            }
+            if moves, paintsClosedNotch, !notchWindows.isEmpty {
+                let runFadesOnly = eye.isAnimating ? eye.fadesOnly : fadesOnly
+                // Live activities, HUDs and the music wings give way to the eye.
+                withAnimation(.smooth(duration: 0.25)) {
+                    coordinator.notchEye.phase = .closing
+                    coordinator.notchEye.fadesOnly = runFadesOnly
+                }
+                runNotchEye(to: 0,
+                            full: runFadesOnly ? NotchEyeTimeline.fadeDuration : NotchEyeTimeline.hideDuration,
+                            after: wasOpen ? NotchEyeTimeline.closeFirst : 0,
+                            then: finishHide)
+            } else if wasOpen, animated {
+                // No eye to play (fullscreen, the hello, a zero-height notch), but the notch was open:
+                // let the closed layout draw before the window goes, so the open tab's views leave
+                // through `.onDisappear` and remove what they installed (the typed search's key
+                // monitor), rather than going down with the window mid-open.
+                notchEyeTask = Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(50))
+                    guard !Task.isCancelled else { return }
+                    finishHide()
+                }
+            } else {
+                finishHide()
+            }
+        }
+        // Pointer following stops the moment a hide starts and comes back with every show, a
+        // reversal on the same windows included, which builds nothing that would resync it.
+        syncPointerTracking()
+        // Not deferred: the eye in the menu bar has to be there the moment a hide starts, since
+        // its menu can reverse it.
+        syncStatusItem(visible: isStatusItemNeeded)
+    }
+
+    private var notchWindows: [NSWindow] {
+        [window].compactMap { $0 } + Array(windows.values)
+    }
+
+    /// Whether any display paints a closed notch for the eye to play in. Fullscreen hiding and a
+    /// zero-height notch paint nothing, and the toggle there happens at once.
+    private var paintsClosedNotch: Bool {
+        let models = Defaults[.displayPlacement].usesOneWindowPerDisplay ? Array(viewModels.values) : [vm]
+        return models.contains { !$0.hideOnClosed && $0.effectiveClosedNotchHeight > 0 }
+    }
+
+    /// Runs the eye's progress to `target`, eased in and out, after `lead`, then calls `finish`.
+    /// It starts from where the run on screen has got to, snapped there first, so a reversal plays
+    /// on from the frame showing instead of stacking a second animation on the first. The pause
+    /// after the snap also lets a new window draw its first, empty frame before the run starts.
+    @MainActor
+    private func runNotchEye(to target: Double, full: TimeInterval, after lead: TimeInterval = 0,
+                             then finish: @escaping @MainActor () -> Void) {
+        notchEyeTask = Task { @MainActor [weak self] in
+            if lead > 0 {
+                try? await Task.sleep(for: .seconds(lead))
+                guard !Task.isCancelled else { return }
+            }
+            guard let self else { return }
+            let from = self.notchEyeRun?.progress(at: ProcessInfo.processInfo.systemUptime)
+                ?? self.coordinator.notchEye.progress
+            var snap = Transaction()
+            snap.disablesAnimations = true
+            withTransaction(snap) { self.coordinator.notchEye.progress = from }
+            try? await Task.sleep(for: .milliseconds(16))
+            guard !Task.isCancelled else { return }
+
+            let duration = NotchEyeTimeline.duration(toward: target, from: from, full: full)
+            self.notchEyeRun = NotchEyeTimeline.Run(from: from, to: target, duration: duration,
+                                                    startedAt: ProcessInfo.processInfo.systemUptime)
+            let framesBefore = NotchEyeFrames.count
+            Self.notchEyeLog.info("eye \(from, format: .fixed(precision: 2)) to \(target, format: .fixed(precision: 2)) over \(duration, format: .fixed(precision: 2)) s")
+            let ease = NotchEyeTimeline.easeControlPoints
+            withAnimation(.timingCurve(ease.c0x, ease.c0y, ease.c1x, ease.c1y, duration: duration)) {
+                self.coordinator.notchEye.progress = target
+            }
+            try? await Task.sleep(for: .seconds(duration))
+            guard !Task.isCancelled else { return }
+            Self.notchEyeLog.info("eye at \(target, format: .fixed(precision: 2)), \(NotchEyeFrames.count - framesBefore) frames drawn")
+            finish()
+        }
+    }
+
+    /// The eye is open: the closed notch's own content comes back.
+    @MainActor
+    private func settleNotchEye() {
+        guard Defaults[.showNotch] else { return }
+        notchEyeRun = nil
+        withAnimation(.smooth(duration: NotchEyeTimeline.settleDuration)) {
+            coordinator.notchEye = .settled
+        }
     }
 
     /// Closes every window Kannu owns, in either lifecycle.
@@ -1870,10 +2169,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Installs a mouse-moved monitor only while the placement actually depends on the pointer —
     /// `externalTakesOver` with two or more externals — and tears it down the moment it does not.
-    /// With one external, or any other mode, there are no wakeups at all.
+    /// With one external, or any other mode, there are no wakeups at all — nor while the notch is
+    /// hidden, when there is no window to move.
     @MainActor
     func syncPointerTracking() {
-        if DisplayPlacementRuntime.needsPointerTracking() {
+        if Defaults[.showNotch] && DisplayPlacementRuntime.needsPointerTracking() {
             guard pointerMonitor == nil else { return }
             pointerMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] _ in
                 Task { @MainActor in self?.schedulePointerReposition() }
@@ -1922,6 +2222,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         guard !windowsHiddenForLock, !LockScreenManager.shared.isLocked else { return }
+        // A hidden notch has no windows and gets none from a screen change or a setting. This is
+        // no bookkeeping skip of the kind entry 17's addendum forbids: showing it again re-enters
+        // here through `applyNotchVisibility`, and launch seeds `vm.screen` before this guard.
+        guard Defaults[.showNotch] else { return }
 
         if Defaults[.displayPlacement].usesOneWindowPerDisplay {
             let screensByID = Dictionary(
@@ -1974,6 +2278,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        // A window moved to another display without being rebuilt (pointer follow, a chosen
+        // display) must still live only in the notch space there. A turn later, for the same reason
+        // as the pin in `createKannuWindow`: a window ordered in this turn is not on screen yet.
+        DispatchQueue.main.async { [weak self] in
+            self?.rejoinNotchSpacesIfNeeded(after: "reposition")
+        }
     }
     
     
@@ -1994,21 +2304,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
             window.contentView = NSHostingView(rootView: OnboardingView(
-                onFinish: {
+                onLaunchAtLoginChoice: { [weak self] enabled in
+                    self?.applyLaunchAtLoginChoice(enabled)
+                },
+                onFinish: { [weak self] in
+                    self?.completeOnboarding()
                     window.orderOut(nil)
                     NSApp.setActivationPolicy(.accessory)
                     window.close()
                     NSApp.deactivate()
+                    self?.startHello()
                 },
-                onOpenSettings: {
+                onOpenSettings: { [weak self] in
+                    self?.completeOnboarding()
                     window.close()
+                    self?.startHello()
                     SettingsWindowController.shared.showWindow()
                 }
             ))
             window.isRestorable = false
             window.identifier = NSUserInterfaceItemIdentifier("OnboardingWindow")
 
-            ScreenCaptureVisibilityManager.shared.register(window, scope: .panelsOnly)
+            ScreenCaptureVisibilityManager.shared.register(window, scope: .panel)
 
             onboardingWindowController = NSWindowController(window: window)
         }

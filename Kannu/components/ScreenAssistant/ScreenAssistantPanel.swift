@@ -70,7 +70,7 @@ class ScreenAssistantPanel: NSPanel {
             .fullScreenAuxiliary
         ]
         
-        ScreenCaptureVisibilityManager.shared.register(self, scope: .panelsOnly)
+        ScreenCaptureVisibilityManager.shared.register(self, scope: .panel)
         
         // Set minimal size since this is just a wrapper
         setContentSize(CGSize(width: 1, height: 1))

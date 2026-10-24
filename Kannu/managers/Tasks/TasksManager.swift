@@ -25,10 +25,11 @@ import os
 /// The user's tasks, their order and estimates, and the actual time recorded when one is timed with
 /// Kannu's timer.
 ///
-/// **Lazy.** Nothing creates this at launch: the first touch is Brain › Tasks or the open notch's
-/// Tasks button, both only with tasks turned on, so `continueLaunch()` and the Terms gate are
-/// untouched (`LaunchGateRulesTests`). Creating it reads `tasks.json` on `TaskFileStore`, off the
-/// main actor.
+/// **Lazy.** Nothing creates this at launch: the first touch is Brain › Tasks, the open notch's
+/// Tasks button, the timer tab's Tasks page or task form, or a name typed in the timer tab's bar —
+/// all only with tasks turned on, and never because the tab appeared — so `continueLaunch()` and
+/// the Terms gate are untouched (`LaunchGateRulesTests`). Creating it reads `tasks.json` on
+/// `TaskFileStore`, off the main actor.
 ///
 /// **How time is recorded.** `start(_:)` starts an ordinary timer session and remembers which task
 /// it is for. From then on `TimerManager.sessionEvents` drives everything: started opens a segment,
@@ -92,18 +93,29 @@ final class TasksManager: ObservableObject, TaskSourceHost {
     /// macOS has Kannu's notifications turned off, so a schedule raises no reminder. Checked after
     /// a schedule, after the task file is read, and when the Task list opens.
     @Published private(set) var remindersBlocked = false
+    /// Whether macOS denies Kannu's notifications, whatever the list wants. The task form's bell
+    /// turns orange on it: `remindersBlocked` is false while every scheduled task is muted.
+    @Published private(set) var notificationsDenied = false
 
     private struct Link {
         let session: UUID
         let taskID: UUID
+        /// The tracked time `start(_:)` sized the session from, so an estimate edit can follow it
+        /// (`TaskTimeMath.followedLength`). Nil for the user's own block — a preset or a typed
+        /// length (`startBlock`) — which never follows the estimate.
+        let trackedAtStart: Int?
         var isPaused: Bool
     }
 
     private let store: TaskFileStore
     private let logger = os.Logger(subsystem: "com.kannu.app", category: "Tasks")
     private var cancellables = Set<AnyCancellable>()
-    /// The session `start(_:)` just began, until its `.started` event arrives.
-    private var pendingLink: (session: UUID, taskID: UUID)?
+    /// The session `start(_:)` or `startBlock` just began, until its `.started` event arrives.
+    private var pendingLink: (session: UUID, taskID: UUID, trackedAtStart: Int?)?
+    /// The session timing a task, or about to (still waiting for its `.started`).
+    private var timedSession: (session: UUID, taskID: UUID, trackedAtStart: Int?)? {
+        link.map { (session: $0.session, taskID: $0.taskID, trackedAtStart: $0.trackedAtStart) } ?? pendingLink
+    }
     private var link: Link? {
         didSet { timing = link.map { Timing(taskID: $0.taskID, isPaused: $0.isPaused) } }
     }
@@ -125,9 +137,30 @@ final class TasksManager: ObservableObject, TaskSourceHost {
     /// and the notification's completion: tried once the file is read, or the fallback runs when
     /// it cannot be, and the completion runs after either.
     private var pendingReminderStart: (taskID: UUID, otherwise: () -> Void, completion: () -> Void)?
+    /// A name typed in the timer tab started before the task file was read (`startTyped`): tried
+    /// once it is read, or `otherwise` (the plain named session) runs when it cannot be. One start
+    /// waits at a time, with `pendingReminderStart`: the later click wins.
+    private var pendingTypedStart: (typed: String, reuse: Bool, duration: TimeInterval, preset: TimerPreset?,
+                                    otherwise: () -> Void)?
+
+    #if DEBUG
+    /// DEBUG snapshot boards only (`DebugSnapshots`): the tasks the manager starts with, instead of
+    /// reading tasks.json. Set before the first touch. While set, nothing is saved, synced, observed
+    /// or asked of macOS, so a snapshot never writes the user's file.
+    static var snapshotFile: TasksFile?
+    #endif
 
     private init() {
         store = TaskFileStore(directory: { AppSupportPaths.child("Tasks") })
+        #if DEBUG
+        if let file = Self.snapshotFile {
+            tasks = file.tasks
+            drafts = file.drafts
+            tagColors = file.tagColors
+            loadState = .ready
+            return
+        }
+        #endif
         TimerManager.shared.sessionEvents
             .receive(on: DispatchQueue.main)
             .sink { [weak self] event in
@@ -236,7 +269,7 @@ final class TasksManager: ObservableObject, TaskSourceHost {
         TaskOrdering.active(tasks, listed: listed(filter))
     }
 
-    /// What a Task list move counts: the connected baseline, narrowed by the Task list's filters.
+    /// What the Task list shows: the connected baseline, narrowed by the Task list's filters.
     private func listed(_ filter: TaskFilter) -> TaskOrdering.Listed {
         filter.isNarrowing ? TaskFacets.listed(connected, filter: filter) : connected
     }
@@ -270,9 +303,10 @@ final class TasksManager: ObservableObject, TaskSourceHost {
         guard isReady, Defaults[.enableTimerFeature],
               let task = tasks.first(where: { $0.id == taskID }), task.visibility == .active else { return false }
         guard timing?.taskID != taskID else { return true }
+        let tracked = trackedSeconds(of: task)
         let length = TaskTimeMath.sessionLengthSeconds(
             estimate: task.effectiveEstimateSeconds,
-            tracked: trackedSeconds(of: task),
+            tracked: tracked,
             defaultMinutes: Defaults[.tasksDefaultSessionMinutes]
         )
         // The session is named by the title alone and the key rides beside it as a chip: a raw key
@@ -286,11 +320,77 @@ final class TasksManager: ObservableObject, TaskSourceHost {
             fallbackName: fallback,
             playsSoundOnFinish: Defaults[.tasksSoundAtEstimate],
             tint: color(of: task).tint,
-            taskKey: TaskDetailSummary.shortKey(for: task)
+            taskKey: TaskDetailSummary.shortKey(for: task),
+            taskID: task.id
         )
         // The id is minted inside startTimer; its .started event is already queued behind this.
-        pendingLink = (timer.sessionID, taskID)
+        // Sized from the estimate, so the session follows its edits (`refreshTimedLength`).
+        pendingLink = (timer.sessionID, taskID, tracked)
         return true
+    }
+
+    /// Times the task for `duration`, the user's own block (a preset, a typed length): it never
+    /// follows the estimate and rings at zero like any preset. Named by the task's title, coloured
+    /// and keyed like `start(_:)`, and replaces a running session the same way. False when nothing
+    /// could start: not loaded, the timer is off, or the task is gone, done or hidden.
+    @discardableResult
+    func startBlock(_ taskID: UUID, duration: TimeInterval, preset: TimerPreset?) -> Bool {
+        guard isReady, Defaults[.enableTimerFeature], duration > 0,
+              let task = tasks.first(where: { $0.id == taskID }), task.visibility == .active else { return false }
+        let fallback = TimerSessionName.resolved(typed: task.title, fallback: String(localized: "Task"))
+        let timer = TimerManager.shared
+        timer.startTimer(
+            duration: duration,
+            name: TimerSessionName.resolved(typed: task.title, fallback: fallback),
+            preset: preset,
+            fallbackName: fallback,
+            tint: color(of: task).tint,
+            taskKey: TaskDetailSummary.shortKey(for: task),
+            taskID: task.id
+        )
+        pendingLink = (timer.sessionID, taskID, nil)
+        return true
+    }
+
+    /// A name typed in the timer tab's bar, started with a preset or a typed length: the first
+    /// active local task with that title when `reuse` (`TaskItem.reusable`; the New row turns it
+    /// off), else the user's kept new-task draft when it is that title, else a new task with no
+    /// estimate, timed as a block (`startBlock`). Before the task file is read it waits, as a
+    /// reminder's Start does; `otherwise` (the plain named session) runs when no task can start.
+    func startTyped(_ typed: String, reuse: Bool, duration: TimeInterval, preset: TimerPreset?,
+                    otherwise: @escaping () -> Void) {
+        switch loadState {
+        case .loading:
+            // The later click wins; a reminder's Start waiting before this one is answered.
+            if let reminder = pendingReminderStart {
+                pendingReminderStart = nil
+                reminder.completion()
+            }
+            pendingTypedStart = (typed, reuse, duration, preset, otherwise)
+        case .failed:
+            otherwise()
+        case .ready:
+            if !startTypedNow(typed, reuse: reuse, duration: duration, preset: preset) { otherwise() }
+        }
+    }
+
+    private func startTypedNow(_ typed: String, reuse: Bool, duration: TimeInterval, preset: TimerPreset?) -> Bool {
+        guard isReady, Defaults[.enableTimerFeature], duration > 0, TaskItem.cleanedTitle(typed) != nil else { return false }
+        let taskID: UUID?
+        if reuse, let reused = TaskItem.reusable(titled: typed, in: tasks) {
+            taskID = reused.id
+        } else if let kept = keptFormDraft(editing: nil), kept.isTitled(typed), kept.canSave {
+            // The bar and the New Task title are one text: the form's estimate, tags and reminder
+            // come with it, and the draft is used up, so no second task is made from it later.
+            taskID = addTask(from: kept)
+        } else if let added = addTask(title: typed, estimateSeconds: nil) {
+            showLocalTasks()
+            taskID = added
+        } else {
+            taskID = nil
+        }
+        guard let taskID else { return false }
+        return startBlock(taskID, duration: duration, preset: preset)
     }
 
     /// Stops the timer when it is timing a task. The session's `.ended` closes the task's time.
@@ -319,9 +419,30 @@ final class TasksManager: ObservableObject, TaskSourceHost {
     /// `$tasks` or `$tagColors` (docs/REGRESSIONS.md entry 10). A session still waiting for its
     /// `.started` counts as well.
     private func refreshTimedTint() {
-        guard let target = link.map({ (session: $0.session, taskID: $0.taskID) }) ?? pendingLink,
+        guard let target = timedSession,
               let task = tasks.first(where: { $0.id == target.taskID }) else { return }
         TimerManager.shared.updateSessionTint(color(of: task).tint, session: target.session)
+    }
+
+    /// Renames the running session after its task was renamed (the task form's Save).
+    private func refreshTimedName(_ taskID: UUID) {
+        guard let target = timedSession, target.taskID == taskID,
+              let task = tasks.first(where: { $0.id == taskID }) else { return }
+        TimerManager.shared.updateSessionName(
+            TimerSessionName.resolved(typed: task.title, fallback: String(localized: "Task")),
+            session: target.session
+        )
+    }
+
+    /// The user edited the timed task's estimate (a sync never comes through here): a session
+    /// `start(_:)` sized from it follows (`TaskTimeMath.followedLength`); a block, or an estimate
+    /// removed or used up before the session, leaves the countdown alone.
+    private func refreshTimedLength(_ taskID: UUID) {
+        guard let target = timedSession, target.taskID == taskID,
+              let task = tasks.first(where: { $0.id == taskID }),
+              let length = TaskTimeMath.followedLength(estimate: task.effectiveEstimateSeconds,
+                                                       trackedAtStart: target.trackedAtStart) else { return }
+        TimerManager.shared.updateSessionLength(length, session: target.session)
     }
 
     private func handle(_ event: TimerSessionEvent) {
@@ -330,7 +451,8 @@ final class TasksManager: ObservableObject, TaskSourceHost {
             guard let pending = pendingLink, pending.session == event.session else { return }
             pendingLink = nil
             guard isReady, tasks.contains(where: { $0.id == pending.taskID }) else { return }
-            link = Link(session: event.session, taskID: pending.taskID, isPaused: false)
+            link = Link(session: event.session, taskID: pending.taskID, trackedAtStart: pending.trackedAtStart,
+                        isPaused: false)
             observeSleep()
             update(pending.taskID) { $0.segments = TaskTimeMath.opening($0.segments, at: event.at) }
         case .paused:
@@ -421,6 +543,59 @@ final class TasksManager: ObservableObject, TaskSourceHost {
         return task.id
     }
 
+    /// The notch's task form's new task (`insertTask`); then the draft is used up, and a list
+    /// hiding local tasks shows them again so the task does not vanish as it is added. One path for
+    /// Add, Add & Start, a preset clicked with the form open, and a typed name whose title the form
+    /// held. Nil when it cannot be saved.
+    @discardableResult
+    func addTask(from draft: TaskFormDraft) -> UUID? {
+        guard let id = insertTask(from: draft) else { return nil }
+        forgetFormDraft(editing: nil)
+        showLocalTasks()
+        return id
+    }
+
+    /// A new task as a form typed it: a local task at the top with its tags and reminder, the bell
+    /// before the schedule so a muted reminder is never sent first. Brain's New Task adds through
+    /// this alone, so a task half-typed in the notch stays kept and the notch's Show local stays as
+    /// the user left it. Nil when it cannot be saved.
+    @discardableResult
+    func insertTask(from draft: TaskFormDraft) -> UUID? {
+        guard draft.isNew, draft.canSave, let id = addTask(title: draft.title, estimateSeconds: draft.estimateSeconds) else {
+            return nil
+        }
+        let tags = draft.tags
+        if !tags.isEmpty { setTags(tags, for: id) }
+        if draft.reminder != nil, !draft.notifies { setReminderNotifies(false, for: id) }
+        if let reminder = draft.reminder { setSchedule(reminder, for: id) }
+        return id
+    }
+
+    /// The task form's edit, saved: only what changed (`TaskFormDraft.edits`), each through its
+    /// own edit, then the draft is forgotten. False, with nothing saved, when it cannot be saved or
+    /// the task is gone; an edit that changes nothing saves as nothing.
+    @discardableResult
+    func applyEdits(_ draft: TaskFormDraft, to id: UUID) -> Bool {
+        guard draft.editing == id, draft.canSave, let task = activeTasks.first(where: { $0.id == id }) else { return false }
+        for edit in draft.edits(to: task) {
+            switch edit {
+            case .title(let title): renameTask(id, to: title)
+            case .estimate(let seconds): setEstimate(seconds, for: id)
+            case .tags(let tags): setTags(tags, for: id)
+            case .notifies(let notifies): setReminderNotifies(notifies, for: id)
+            case .schedule(let date): setSchedule(date, for: id)
+            }
+        }
+        forgetFormDraft(editing: id)
+        return true
+    }
+
+    /// Local tasks hidden in the notch come back when one is added, so it does not vanish as it
+    /// is made. A reused or picked task is listed while it runs anyway.
+    private func showLocalTasks() {
+        if !Defaults[.tasksPopoverShowLocal] { Defaults[.tasksPopoverShowLocal] = true }
+    }
+
     /// A local task's new title (`TaskItem.cleanedTitle`). A Jira or GitLab title is the server's,
     /// and the next sync would put it back, so it is never renamed here. The save sends a scheduled
     /// reminder again under the new title (`syncReminders`).
@@ -430,13 +605,16 @@ final class TasksManager: ObservableObject, TaskSourceHost {
               let task = tasks.first(where: { $0.id == taskID }), task.source == .local else { return false }
         if title != task.title {
             update(taskID) { $0.title = title }
+            refreshTimedName(taskID)
         }
         return true
     }
 
-    /// Nil, or zero, removes the estimate.
+    /// Nil, or zero, removes the estimate. A running session `start(_:)` sized from the estimate
+    /// follows the edit (`refreshTimedLength`).
     func setEstimate(_ seconds: Int?, for taskID: UUID) {
         update(taskID) { $0.localEstimateSeconds = seconds.flatMap { $0 > 0 ? $0 : nil } }
+        refreshTimedLength(taskID)
     }
 
     /// Records `seconds` of work that ended now, for time worked away from the timer.
@@ -451,29 +629,6 @@ final class TasksManager: ObservableObject, TaskSourceHost {
     }
 
     func moveToTop(_ taskID: UUID) { reorder { TaskOrdering.movingToTop(taskID, in: $0) } }
-
-    /// Up one row of what the Task list shows with `filter`.
-    func moveUp(_ taskID: UUID, filter: TaskFilter = .all) {
-        let listed = listed(filter)
-        reorder { TaskOrdering.movingUp(taskID, in: $0, listed: listed) }
-    }
-
-    func moveDown(_ taskID: UUID, filter: TaskFilter = .all) {
-        let listed = listed(filter)
-        reorder { TaskOrdering.movingDown(taskID, in: $0, listed: listed) }
-    }
-
-    /// A row dragged onto another in the Task list: it takes that row's place among the rows shown.
-    func move(_ taskID: UUID, onto target: UUID, filter: TaskFilter = .all) {
-        let listed = listed(filter)
-        reorder { TaskOrdering.move(id: taskID, onto: target, in: $0, listed: listed) }
-    }
-
-    /// Which edge of `target` a drop of `taskID` lands on among the rows shown; nil when it would
-    /// change nothing.
-    func dropEdge(dragging taskID: UUID, onto target: UUID, filter: TaskFilter = .all) -> TaskOrdering.DropEdge? {
-        TaskOrdering.dropEdge(dragging: taskID, onto: target, in: tasks, listed: listed(filter))
-    }
 
     /// The task's own tags, cleaned (`TaskItem.cleanedTags`). Kannu's only: never sent anywhere.
     func setTags(_ tags: [String], for taskID: UUID) {
@@ -511,8 +666,13 @@ final class TasksManager: ObservableObject, TaskSourceHost {
     /// The colour a task shows: strictly its first tag's, or its integration's when it has no tags
     /// (`TaskColoring.color`).
     func color(of task: TaskItem) -> TaskColor {
-        let integration = TaskColoring.integration(for: task.source, colors: [task.source: Defaults[task.source.colorKey]])
-        return TaskColoring.color(tags: task.tags, tagColors: tagColors, integration: integration)
+        TaskColoring.color(of: task, tagColors: tagColors, integrations: [task.source: Defaults[task.source.colorKey]])
+    }
+
+    /// Every integration's colour, read from Defaults once: a list works its rows' colours out
+    /// with it (`TaskListRows`) instead of reading Defaults on every row.
+    var integrationColors: [TaskSource: TaskColor] {
+        Dictionary(uniqueKeysWithValues: TaskSource.allCases.map { ($0, Defaults[$0.colorKey]) })
     }
 
     // MARK: - Every source at once
@@ -531,6 +691,9 @@ final class TasksManager: ObservableObject, TaskSourceHost {
 
     /// Each source whose last sync is stale, never with the Keychain dialog (`SourceSync.syncIfStale`).
     func syncAllIfStale() {
+        #if DEBUG
+        if Self.snapshotFile != nil { return }
+        #endif
         for sync in syncs { sync.syncIfStale(now: Date()) }
     }
 
@@ -560,16 +723,69 @@ final class TasksManager: ObservableObject, TaskSourceHost {
         }
     }
 
+    /// Turns one local task's reminder notification on or off; its time stays. Off keeps the task out
+    /// of the reminders macOS is asked to show (`TaskReminderPlan.wanted`), and `persist` takes back
+    /// one already waiting. Asks macOS nothing: only `setSchedule` may.
+    func setReminderNotifies(_ notifies: Bool, for taskID: UUID) {
+        guard let task = tasks.first(where: { $0.id == taskID }), task.source == .local,
+              task.notifiesForReminder != notifies else { return }
+        update(taskID) { $0.reminderMuted = notifies ? nil : true }
+        // What the list wants changed: read macOS's answer again (it asks nothing), so the
+        // "notifications are off" notes follow the bell.
+        checkReminderPermission()
+    }
+
+    // MARK: - The task form's unsaved drafts
+
+    /// The task form's drafts while it is closed (`KeptTaskFormDrafts`). In memory only.
+    private var keptFormDrafts = KeptTaskFormDrafts()
+
+    /// Bumped when a preset clicked over a new task's form could not start it because its
+    /// estimate cannot be read (`TimerTaskForm.startFromForm`): the form moves focus to the estimate.
+    @Published private(set) var estimateFocusRequests = 0
+
+    func requestEstimateFocus() {
+        estimateFocusRequests &+= 1
+    }
+
+    /// The unsaved draft for a new task (nil) or the task with `id`, if one is kept and still fits.
+    func keptFormDraft(editing id: UUID?) -> TaskFormDraft? {
+        keptFormDrafts.draft(editing: id, baseline: id.flatMap(formBaseline(for:)), now: Date(), calendar: .current)
+    }
+
+    /// Keeps the form's draft as it is typed.
+    func keepFormDraft(_ draft: TaskFormDraft) {
+        keptFormDrafts.keep(draft, baseline: draft.editing.flatMap(formBaseline(for:)))
+    }
+
+    /// Forgets a draft: it was added or saved, or an edit was closed without saving.
+    func forgetFormDraft(editing id: UUID?) {
+        keptFormDrafts.forget(editing: id)
+    }
+
+    private func formBaseline(for id: UUID) -> TaskFormDraft? {
+        tasks.first { $0.id == id }.map(TaskFormDraft.init(editing:))
+    }
+
     /// A local task's reminder time; nil clears it. The first schedule is where Kannu asks macOS
     /// for notifications — never earlier.
     func setSchedule(_ date: Date?, for taskID: UUID) {
         guard let task = tasks.first(where: { $0.id == taskID }), task.source == .local else { return }
-        update(taskID) { $0.scheduledAt = date }
+        update(taskID) {
+            $0.scheduledAt = date
+            // A mute belongs to the reminder it was set on; with no reminder there is no bell to show
+            // it, and a later schedule must notify.
+            if date == nil { $0.reminderMuted = nil }
+        }
         guard date != nil else { return }
         Task { [weak self] in
             let permission = await TaskReminders.requestPermission()
             guard let self else { return }
-            remindersBlocked = permission == .denied
+            notificationsDenied = permission == .denied
+            // The check's own rule (`checkReminderPermission`): blocked only while something wants
+            // to notify. `persist` has already set the baseline to what the list wants, so a muted
+            // reminder re-timed while macOS denies notifications turns nothing orange.
+            remindersBlocked = permission == .denied && !reminderBaseline.isEmpty
             if permission == .allowed { resendReminders() }
         }
     }
@@ -583,11 +799,15 @@ final class TasksManager: ObservableObject, TaskSourceHost {
     /// from an earlier snapshot never takes back what this resend sends.
     func checkReminderPermission() {
         guard isReady else { return }
+        #if DEBUG
+        if Self.snapshotFile != nil { return }
+        #endif
         TaskReminders.serially { [weak self] in
             let permission = await TaskReminders.permission()
             let held = await TaskReminders.held()
             guard let self, isReady else { return }
             let wanted = Defaults[.enableTasks] ? TaskReminderPlan.wanted(tasks) : [:]
+            notificationsDenied = permission == .denied
             remindersBlocked = permission == .denied && !wanted.isEmpty
             TaskReminders.apply(TaskReminderPlan.reconcile(
                 pending: held.pending, delivered: held.delivered, wanted: wanted,
@@ -604,7 +824,9 @@ final class TasksManager: ObservableObject, TaskSourceHost {
     func startFromReminder(_ taskID: UUID, otherwise: @escaping () -> Void, completion: @escaping () -> Void) {
         switch loadState {
         case .loading:
-            // A second click before the file is read replaces the first, whose notification is done.
+            // A second click before the file is read replaces the first, whose notification is done;
+            // a typed start waiting before it gives way too (the later click wins).
+            pendingTypedStart = nil
             pendingReminderStart?.completion()
             pendingReminderStart = (taskID, otherwise, completion)
         case .failed:
@@ -1101,7 +1323,12 @@ final class TasksManager: ObservableObject, TaskSourceHost {
     func isSyncing(_ source: TaskSource) -> Bool { syncing(source)?.isSyncing ?? false }
 
     /// A page with the source's row appeared, or its Sync was switched on (`SourceSync.syncIfStale`).
-    func syncIfStale(_ source: TaskSource) { syncing(source)?.syncIfStale(now: Date()) }
+    func syncIfStale(_ source: TaskSource) {
+        #if DEBUG
+        if Self.snapshotFile != nil { return }
+        #endif
+        syncing(source)?.syncIfStale(now: Date())
+    }
 
     /// The user's Refresh, Allow Keychain Access or new filter (`SourceSync.refresh`).
     func refresh(_ source: TaskSource) { syncing(source)?.refresh(now: Date()) }
@@ -1474,6 +1701,10 @@ final class TasksManager: ObservableObject, TaskSourceHost {
                 pending.otherwise()
                 pending.completion()
             }
+            if let typed = pendingTypedStart {
+                pendingTypedStart = nil
+                typed.otherwise()
+            }
         }
     }
 
@@ -1515,6 +1746,12 @@ final class TasksManager: ObservableObject, TaskSourceHost {
             if !start(pending.taskID) { pending.otherwise() }
             pending.completion()
         }
+        if let typed = pendingTypedStart {
+            pendingTypedStart = nil
+            if !startTypedNow(typed.typed, reuse: typed.reuse, duration: typed.duration, preset: typed.preset) {
+                typed.otherwise()
+            }
+        }
         checkReminderPermission()
     }
 
@@ -1526,6 +1763,9 @@ final class TasksManager: ObservableObject, TaskSourceHost {
     /// store drop an older one.
     private func persist() {
         guard isReady else { return }
+        #if DEBUG
+        if Self.snapshotFile != nil { return }
+        #endif
         syncReminders()
         revision += 1
         let revision = revision

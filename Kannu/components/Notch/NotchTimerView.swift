@@ -65,9 +65,17 @@ struct NotchTimerView: View {
     /// state reaches the monitor only after a re-render, which a scroll can beat.
     @State private var isOverRuler = false
     /// The task form in place of the name field and the composer (`TimerTaskForm`): a new task, or
-    /// one task's edit. Nil shows them. Cleared when a timer starts or stops and each time the tab
-    /// appears, never persisted.
+    /// one task's edit; while a timer runs, only the running task's edit (`shownTaskForm`). Nil
+    /// shows them. Cleared when a timer starts or stops, when its session ends or is replaced, and
+    /// each time the tab appears, never persisted.
     @State private var taskForm: TimerTaskFormMode?
+    /// The task picked from the bar's typed search for the next session (`TimerSessionPick`),
+    /// kept on `TimerManager.sessionPick` while the notch is closed. It lasts while the bar still
+    /// says its name.
+    @State private var sessionPick: TimerSessionPick?
+    /// The bar's typed search (`TimerTaskSuggestions`): its rows, the highlighted row, and the text
+    /// it was closed on.
+    @State private var suggestions = TaskSuggestionState()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private enum NameField: Hashable {
@@ -125,9 +133,17 @@ struct NotchTimerView: View {
         }
         .onAppear {
             lockAccentColorIfNeeded()
-            // Each time the tab appears it opens on the initial page again, with the composer.
+            // Each time the tab appears it opens on the initial page again, with the composer, and
+            // the session name typed before the notch closed.
             pickedSidePage = nil
             taskForm = nil
+            pendingSessionName = timerManager.typedSessionName
+            // The pick comes back with its name, and only with tasks on; a stale one is dropped
+            // from the timer's copy too.
+            let restored = isTasksPageAvailable ? timerManager.sessionPick?.kept(typed: timerManager.typedSessionName) : nil
+            sessionPick = restored
+            timerManager.sessionPick = restored
+            warmTasks(ifNamed: timerManager.typedSessionName)
         }
         .onChange(of: timerManager.isTimerActive) { _, isActive in
             taskForm = nil
@@ -145,14 +161,40 @@ struct NotchTimerView: View {
                 commitRename()
             }
         }
-        // Tasks or the timer switched off under the form: the composer comes back.
+        // Tasks or the timer switched off under the form: the composer comes back, and a pick goes.
         .onChange(of: isTasksPageAvailable) { _, isAvailable in
-            if !isAvailable { taskForm = nil }
+            if !isAvailable {
+                taskForm = nil
+                sessionPick = nil
+            }
+        }
+        // The running session's task changed: a replace never fires the isTimerActive observer
+        // (docs/REGRESSIONS.md entry 10), so the old task's form closes here.
+        .onChange(of: timerManager.sessionTaskID) { _, _ in
+            taskForm = nil
+        }
+        // The session ran out: the form gives the card back, with Stop, while the alarm rings.
+        .onChange(of: timerManager.isFinished) { _, finished in
+            if finished { taskForm = nil }
+        }
+        // However the form goes away (its ×, a start, the notch closing, any observer), the bar
+        // gets back its text: a new task's title, as the form wrote it (one text with the bar).
+        .onChange(of: taskForm) { _, form in
+            if form == nil { pendingSessionName = timerManager.typedSessionName }
         }
         .onChange(of: pendingSessionName) { _, newValue in
             if newValue.count > TimerSessionName.maxLength {
                 pendingSessionName = String(newValue.prefix(TimerSessionName.maxLength))
             }
+            // The pick lasts while the bar still says its name: editing or clearing the text drops it.
+            sessionPick = sessionPick?.kept(typed: pendingSessionName)
+            suggestions.textChanged(to: pendingSessionName)
+            // Kept while the notch is closed, so a half-typed name survives it (David, 2026-10-23).
+            timerManager.typedSessionName = pendingSessionName
+            warmTasks(ifNamed: pendingSessionName)
+        }
+        .onChange(of: sessionPick) { _, pick in
+            timerManager.sessionPick = pick
         }
         // Closing the notch or switching tabs removes this view without a focus change.
         .onDisappear {
@@ -161,7 +203,7 @@ struct NotchTimerView: View {
         }
         // A click into another app leaves the field focused in a window that is no longer key: save
         // the rename and drop the focus, which lets the notch auto-close again. A half-typed
-        // next-session name goes with this view when the notch closes.
+        // next-session name is kept on `TimerManager.typedSessionName` while the notch is closed.
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { note in
             guard note.object is KannuWindow else { return }
             commitRename()
@@ -181,22 +223,21 @@ struct NotchTimerView: View {
 
     private var leftColumn: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if timerManager.isTimerActive {
+            if let taskForm = shownTaskForm {
+                TimerTaskForm(mode: taskForm, open: openTaskForm, close: closeTaskForm, started: taskStarted)
+                    .id(taskForm)
+                    .transition(.opacity)
+                Spacer(minLength: 0)
+            } else if timerManager.isTimerActive {
                 Spacer(minLength: 0)
                 activeTimerCard
                 Spacer(minLength: 0)
             } else {
-                if let taskForm, isTasksPageAvailable {
-                    TimerTaskForm(mode: taskForm, close: closeTaskForm, started: taskStarted)
-                        .id(taskForm)
-                        .transition(.opacity)
-                } else {
-                    VStack(alignment: .leading, spacing: TimerComposerMetrics.nameFieldSpacing) {
-                        nameRow
-                        customTimerComposer
-                    }
-                    .transition(.opacity)
+                VStack(alignment: .leading, spacing: TimerComposerMetrics.nameFieldSpacing) {
+                    nameRow
+                    customTimerComposer
                 }
+                .transition(.opacity)
                 Spacer(minLength: 0)
             }
         }
@@ -229,10 +270,14 @@ struct NotchTimerView: View {
         )
     }
 
-    /// A task started from its ▶ or the form's Add & Start: its name wins over a typed one, so the
-    /// typed name is dropped, and the composer comes back for when the timer stops.
+    /// A task started from its ▶, the form's Add & Start, or a preset with the form open: its name
+    /// wins over a typed one, so the typed name and any pick are dropped, and the composer comes
+    /// back for when the timer stops. The stored name is cleared directly: a "" → title → "" change
+    /// in one turn never reaches the `pendingSessionName` observer (docs/REGRESSIONS.md entry 10).
     private func taskStarted() {
         pendingSessionName = ""
+        timerManager.typedSessionName = ""
+        sessionPick = nil
         focusedNameField = nil
         taskForm = nil
         if !enableMinimalisticUI {
@@ -258,6 +303,21 @@ struct NotchTimerView: View {
         }
     }
 
+    /// The task the running session times, when its form may open (Edit Task on the running card).
+    private var runningTaskID: UUID? {
+        guard isTasksPageAvailable, timerManager.hasManualTimerRunning else { return nil }
+        return timerManager.sessionTaskID
+    }
+
+    /// The form in the left column: any while no timer runs; while one runs, only the running
+    /// task's edit. A replaced session never fires the isTimerActive observer (docs/REGRESSIONS.md
+    /// entry 10), so the form is matched against the session here as well.
+    private var shownTaskForm: TimerTaskFormMode? {
+        guard let taskForm, isTasksPageAvailable else { return nil }
+        guard timerManager.isTimerActive else { return taskForm }
+        return runningTaskID.map(TimerTaskFormMode.edit) == taskForm ? taskForm : nil
+    }
+
     private var activeTimerCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 14) {
@@ -278,7 +338,9 @@ struct NotchTimerView: View {
     private var leadingControlSection: some View {
         if timerManager.allowsManualInteraction {
             HStack(spacing: 10) {
-                if !timerManager.isOvertime {
+                // Paused in overtime (a pause from the Tasks popover, or an estimate edit that ran
+                // past zero) still needs Resume.
+                if !timerManager.isOvertime || timerManager.isPaused {
                     TimerControlButton(
                         icon: pauseIconName,
                         foreground: notchForeground.opacity(0.95),
@@ -288,10 +350,10 @@ struct NotchTimerView: View {
                     )
 
                     TimerControlButton(
-                        icon: "xmark",
+                        icon: timerManager.isOvertime ? "stop.fill" : "xmark",
                         foreground: notchForeground.opacity(0.95),
                         background: notchForeground.opacity(0.16),
-                        tooltip: String(localized: "Cancel"),
+                        tooltip: timerManager.isOvertime ? String(localized: "Stop") : String(localized: "Cancel"),
                         action: stopTimerAction
                     )
                 } else {
@@ -326,44 +388,52 @@ struct NotchTimerView: View {
             let status = timerStatusText
             let spacing: CGFloat = status == nil ? 0 : 8
             let badgeWidth: CGFloat = status.map(statusBadgeWidth) ?? 0
-            let marqueeWidth = max(48, geometry.size.width - badgeWidth - spacing)
+            let editsTask = runningTaskID != nil && !isRenamingSession
+            let pencilWidth: CGFloat = editsTask ? Self.editTaskButtonSize + Self.editTaskButtonSpacing : 0
+            let marqueeWidth = max(48, geometry.size.width - badgeWidth - spacing - pencilWidth)
 
             HStack(alignment: .center, spacing: spacing) {
-                if isRenamingSession {
-                    TextField(String(localized: "Session name"), text: $renameDraft)
-                        .font(.system(size: 20, weight: .semibold))
-                        .textFieldStyle(.plain)
-                        .foregroundColor(notchForeground)
-                        .tint(notchForeground)
+                HStack(alignment: .center, spacing: Self.editTaskButtonSpacing) {
+                    if isRenamingSession {
+                        TextField(String(localized: "Session name"), text: $renameDraft)
+                            .font(.system(size: 20, weight: .semibold))
+                            .textFieldStyle(.plain)
+                            .foregroundColor(notchForeground)
+                            .tint(notchForeground)
+                            .frame(width: marqueeWidth, height: 24, alignment: .leading)
+                            .focused($focusedNameField, equals: .rename)
+                            .onSubmit { commitRename() }
+                            .onExitCommand { cancelRename() }
+                    } else if timerManager.hasManualTimerRunning {
+                        MarqueeText(
+                            .constant(timerDisplayName),
+                            font: .system(size: 20, weight: .semibold),
+                            nsFont: .title3,
+                            textColor: notchForeground,
+                            minDuration: 0.2,
+                            frameWidth: marqueeWidth
+                        )
                         .frame(width: marqueeWidth, height: 24, alignment: .leading)
-                        .focused($focusedNameField, equals: .rename)
-                        .onSubmit { commitRename() }
-                        .onExitCommand { cancelRename() }
-                } else if timerManager.hasManualTimerRunning {
-                    MarqueeText(
-                        .constant(timerDisplayName),
-                        font: .system(size: 20, weight: .semibold),
-                        nsFont: .title3,
-                        textColor: notchForeground,
-                        minDuration: 0.2,
-                        frameWidth: marqueeWidth
-                    )
-                    .frame(width: marqueeWidth, height: 24, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .onTapGesture { beginRename() }
-                    .hoverTooltip(String(localized: "Click to rename"), pointingHandCursor: true)
-                    .accessibilityAddTraits(.isButton)
-                    .accessibilityHint(Text("Renames this timer session"))
-                } else {
-                    MarqueeText(
-                        .constant(timerDisplayName),
-                        font: .system(size: 20, weight: .semibold),
-                        nsFont: .title3,
-                        textColor: notchForeground,
-                        minDuration: 0.2,
-                        frameWidth: marqueeWidth
-                    )
-                    .frame(width: marqueeWidth, height: 24, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .onTapGesture { beginRename() }
+                        .hoverTooltip(String(localized: "Click to rename"), pointingHandCursor: true)
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityHint(Text("Renames this timer session"))
+                    } else {
+                        MarqueeText(
+                            .constant(timerDisplayName),
+                            font: .system(size: 20, weight: .semibold),
+                            nsFont: .title3,
+                            textColor: notchForeground,
+                            minDuration: 0.2,
+                            frameWidth: marqueeWidth
+                        )
+                        .frame(width: marqueeWidth, height: 24, alignment: .leading)
+                    }
+
+                    if editsTask, let taskID = runningTaskID {
+                        editTaskButton(taskID)
+                    }
                 }
 
                 if let status {
@@ -374,6 +444,28 @@ struct NotchTimerView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(height: 32)
+    }
+
+    private static let editTaskButtonSize: CGFloat = 20
+    private static let editTaskButtonSpacing: CGFloat = 6
+
+    /// The running task's form, in the card's place (David, 2026-10-23: "a task running also needs
+    /// edit"). Clicking the name still renames only the session.
+    private func editTaskButton(_ taskID: UUID) -> some View {
+        Button {
+            openTaskForm(.edit(taskID))
+        } label: {
+            Image(systemName: "pencil")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(notchForeground.opacity(0.85))
+                .frame(width: Self.editTaskButtonSize, height: Self.editTaskButtonSize)
+                .background(notchForeground.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(verbatim: String(localized: "Edit Task")))
+        .hoverTooltip(String(localized: "Edit Task"), edge: .below)
     }
 
     @ViewBuilder
@@ -447,7 +539,8 @@ struct NotchTimerView: View {
                     seconds: $customSeconds,
                     tintColor: timerAccentColor,
                     startAction: startCustomTimer,
-                    onScrollAreaHover: { isOverRuler = $0 }
+                    onScrollAreaHover: { isOverRuler = $0 },
+                    isCovered: showsSuggestions
                 )
             } else if hasSideColumn {
                 VStack(alignment: .leading, spacing: TimerComposerMetrics.rowSpacing) {
@@ -457,6 +550,7 @@ struct NotchTimerView: View {
                         seconds: $customSeconds,
                         fieldWidth: durationFieldWidth
                     )
+                    .coveredBySuggestions(showsSuggestions)
 
                     HStack(spacing: 10) {
                         startButton
@@ -486,6 +580,89 @@ struct NotchTimerView: View {
         // A filled shape behind, never a clip over the fields: a clip is a mask on the AppKit
         // fields' layers, and one computed mid-animation can cut their digits.
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(notchForeground.opacity(0.04)))
+        // The bar's typed search hangs from the bar's bottom edge over the duration (covered), and
+        // ends above Start and Reset (`TimerComposerMetrics.suggestionListHeight`). Under the name
+        // row's zIndex, so its tooltips stay on top.
+        .overlay(alignment: .top) {
+            if wantsSuggestions {
+                TimerTaskSuggestions(typed: pendingSessionName, state: $suggestions, pick: pickSuggestion)
+                    .offset(y: -TimerComposerMetrics.nameFieldSpacing)
+            }
+        }
+    }
+
+    // MARK: - The bar's typed search
+
+    /// The bar's typed search shows: tasks on, nothing picked, a name being typed, while the bar has
+    /// focus or the pointer is on the list, until Esc, Return, Tab or a pick closes it.
+    private var wantsSuggestions: Bool {
+        suggestions.wantsToShow(enabled: isTasksPageAvailable && sessionPick == nil, typed: pendingSessionName,
+                                fieldFocused: focusedNameField == .pending)
+    }
+
+    /// The list has rows, so it covers the duration (never Start and Reset).
+    private var showsSuggestions: Bool {
+        suggestions.shows(enabled: isTasksPageAvailable && sessionPick == nil, typed: pendingSessionName,
+                          fieldFocused: focusedNameField == .pending)
+    }
+
+    /// A row picked: a task is timed by the next preset or Start; the New row keeps the typed text
+    /// as a new task. The pick and the bar's text change in one update, so the text check keeps it.
+    private func pickSuggestion(_ row: TaskSuggestionState.Row) {
+        let typed = pendingSessionName
+        let pick: TimerSessionPick
+        switch row {
+        case .task(let id, let title):
+            pick = TimerSessionPick(taskID: id, name: TimerSessionName.cleaned(title) ?? typed, typed: typed)
+        case .newTask:
+            pick = TimerSessionPick(taskID: nil, name: TimerSessionName.cleaned(typed) ?? typed, typed: typed)
+        }
+        suggestions.close(on: pick.name)
+        sessionPick = pick
+        pendingSessionName = pick.name
+        // Next comes a length.
+        focusedNameField = nil
+    }
+
+    /// The picked task left the list (done, archived, resynced away): the pick goes, and the bar
+    /// gets back what the user had typed, in one update.
+    private func pickLost() {
+        guard let pick = sessionPick else { return }
+        sessionPick = nil
+        pendingSessionName = pick.typed
+    }
+
+    /// Return in the bar: the row the arrows highlighted, else the list closes and typing ends
+    /// (`answerReturn`).
+    private func submitName() {
+        switch suggestions.answerReturn(showing: showsSuggestions) {
+        case .pick(let row):
+            pickSuggestion(row)
+        case .closeList, .passOn:
+            suggestions.close(on: pendingSessionName)
+            focusedNameField = nil
+        }
+    }
+
+    /// Escape in the bar closes the typed search on this text, rows or not: the bar has no Escape of
+    /// its own, and rows that arrive later (the task file read, a sync) must not reopen it.
+    private func exitName() {
+        suggestions.close(on: pendingSessionName)
+    }
+
+    /// Builds the task list ahead of a typed start, so the first one after launch need not wait
+    /// for the file: only for a name typed with tasks on, never because the tab appeared.
+    private func warmTasks(ifNamed text: String) {
+        guard isTasksPageAvailable, TimerSessionName.cleaned(text) != nil else { return }
+        TimerTaskForm.prepareForTypedStart()
+    }
+
+    /// What VoiceOver adds to the bar while a pick holds it.
+    private var pickHint: String {
+        guard isTasksPageAvailable, let sessionPick else { return "" }
+        return sessionPick.isNew
+            ? String(localized: "New task: the next session makes it")
+            : String(localized: "Picked task: the next session times it")
     }
 
     private var inactiveTimerPlaceholder: some View {
@@ -743,12 +920,16 @@ struct NotchTimerView: View {
         .zIndex(1)
     }
 
-    /// Turns the left panel into the task form (`TimerTaskForm`). The name field's look, square.
+    /// Turns the left panel into the task form (`TimerTaskForm`): a new task, or, while a task is
+    /// picked in the bar, that task's edit (its estimate, say, before timing it). The name field's
+    /// look, square.
     private var newTaskButton: some View {
-        Button {
-            openTaskForm(.add)
+        let picked = isTasksPageAvailable ? sessionPick?.taskID : nil
+        let label = picked == nil ? String(localized: "New Task") : String(localized: "Edit Task")
+        return Button {
+            openTaskForm(picked.map(TimerTaskFormMode.edit) ?? .add)
         } label: {
-            Image(systemName: "square.and.pencil")
+            Image(systemName: picked == nil ? "square.and.pencil" : "pencil")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(notchForeground.opacity(0.85))
                 .frame(width: TimerComposerMetrics.newTaskButtonSize, height: TimerComposerMetrics.newTaskButtonSize)
@@ -757,35 +938,110 @@ struct NotchTimerView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(Text("New task"))
-        .hoverTooltip(String(localized: "New task"), edge: .below)
+        .accessibilityLabel(Text(verbatim: label))
+        .hoverTooltip(label, edge: .below)
     }
 
     /// One line above the composer: the name the next session starts with, from a preset or Start.
+    /// With tasks on, a typed name is timed as a task, and the typed search offers the tasks already
+    /// in the list; a picked one shows its colour before the name and its key and time after.
     private var sessionNameField: some View {
-        TextField(String(localized: "Do you want to name this session?"), text: $pendingSessionName)
-            .font(.system(size: 12, weight: .medium))
-            .textFieldStyle(.plain)
-            .foregroundColor(notchForeground)
-            .tint(notchForeground)
+        HStack(spacing: 4) {
+            if isTasksPageAvailable, let sessionPick {
+                if let taskID = sessionPick.taskID {
+                    TimerTaskPickDot(taskID: taskID)
+                } else {
+                    Image(systemName: "plus")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                }
+            }
+            TextField(String(localized: "Do you want to name this session?"), text: $pendingSessionName)
+                .font(.system(size: 12, weight: .medium))
+                .textFieldStyle(.plain)
+                .foregroundColor(notchForeground)
+                .tint(notchForeground)
+                .focused($focusedNameField, equals: .pending)
+                .onSubmit(submitName)
+                .onExitCommand(perform: exitName)
+                .accessibilityLabel(Text("Session name"))
+                .accessibilityHint(Text(verbatim: pickHint))
+            if isTasksPageAvailable, let taskID = sessionPick?.taskID {
+                TimerTaskPickInfo(taskID: taskID, lost: pickLost)
+            }
+            // A clear button at the end of the box, like the task form's; it never takes focus.
+            if !pendingSessionName.isEmpty {
+                Button {
+                    pendingSessionName = ""
+                    focusedNameField = .pending
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16, height: 16)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusable(false)
+                .accessibilityLabel(Text(verbatim: String(localized: "Clear Name")))
+                .hoverTooltip(String(localized: "Clear Name"), edge: .below)
+            }
+        }
             .padding(.horizontal, 10)
             .frame(height: TimerComposerMetrics.nameFieldHeight)
             .background(notchForeground.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .focused($focusedNameField, equals: .pending)
-            .onSubmit { focusedNameField = nil }
-            .accessibilityLabel(Text("Session name"))
+            .suggestionListKeys(isActive: showsSuggestions, move: { suggestions.move($0) }, tab: {
+                suggestions.close(on: pendingSessionName)
+                return true
+            })
     }
 
-    /// Every session started from this tab: the typed name, or the preset's or "Custom Timer".
+    /// Every session started from this tab. A form showing starts what it shows
+    /// (`TimerTaskForm.startFromForm`). Otherwise, with tasks on, a typed name or a picked task is
+    /// timed as a task, the user's own block (`TimerTaskForm.startNamed`); with no name, or tasks
+    /// off, or when no task can start, the session is plain: the typed name, or the preset's or
+    /// "Custom Timer".
     private func startSession(duration: TimeInterval, preset: TimerPreset? = nil, fallback: String) {
-        timerManager.startTimer(
-            duration: duration,
-            name: TimerSessionName.resolved(typed: pendingSessionName, fallback: fallback),
-            preset: preset,
-            fallbackName: fallback
-        )
+        let form = shownTaskForm
+        if let form {
+            switch TimerTaskForm.startFromForm(form, duration: duration, preset: preset) {
+            case .started:
+                taskStarted()
+                return
+            case .held:
+                // A new task's estimate that cannot be read: the form stays to be fixed.
+                return
+            case .gone:
+                // The edited task left the list: an edit never falls through to the bar.
+                closeTaskForm()
+                return
+            case .fallThrough:
+                closeTaskForm()
+            }
+        }
+        // With a form open, a new task's title is the bar's text: read what the form left, not
+        // this view's copy, which the form's closing has not refreshed yet.
+        let typed = form == nil ? pendingSessionName : timerManager.typedSessionName
+        let plain = {
+            TimerManager.shared.startTimer(
+                duration: duration,
+                name: TimerSessionName.resolved(typed: typed, fallback: fallback),
+                preset: preset,
+                fallbackName: fallback
+            )
+        }
+        let route = TimerTypedStart.route(tasksAvailable: isTasksPageAvailable, typed: typed, pick: sessionPick)
+        if route == .plain {
+            plain()
+        } else {
+            TimerTaskForm.startNamed(route, typed: typed, duration: duration, preset: preset, otherwise: plain)
+        }
+        // Written directly as well: "" again would never reach the observer (REGRESSIONS entry 10).
         pendingSessionName = ""
+        timerManager.typedSessionName = ""
+        sessionPick = nil
         focusedNameField = nil
     }
 

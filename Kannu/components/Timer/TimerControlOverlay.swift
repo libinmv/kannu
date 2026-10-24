@@ -56,7 +56,8 @@ struct TimerControlOverlay: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            if !timerManager.isOvertime {
+            // Paused in overtime (from the Tasks popover, or an estimate edit past zero) still needs Resume.
+            if !timerManager.isOvertime || timerManager.isPaused {
                 ControlButton(
                     icon: pauseIcon,
                     foreground: pauseForeground,

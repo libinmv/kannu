@@ -1,5 +1,5 @@
 "CFBundleDisplayName" = "Kannu";
-"NSAppleEventsUsageDescription" = "Kannu, Spotify ve Apple Music'i kontrol etmek için AppleScript kullanır.";
+"NSAppleEventsUsageDescription" = "Kannu, Spotify ve Apple Music'i kontrol etmek ve açtığınızda notlarınızı Apple Notlar ile eşzamanlı tutmak için AppleScript kullanır.";
 "NSBluetoothAlwaysUsageDescription" = "Kannu, ses aygıtları bağlandığında bunları algılamak ve HUD'da pil durumlarını göstermek için Bluetooth erişimine ihtiyaç duyar.";
 "NSDesktopFolderUsageDescription" = "Kannu, ekran görüntülerini masaüstünüze kaydetmek için erişime ihtiyaç duyar.";
 "NSDocumentsFolderUsageDescription" = "Kannu, rafa sürüklenen dosyaları kaydetmek ve okumak için erişime ihtiyaç duyar.";

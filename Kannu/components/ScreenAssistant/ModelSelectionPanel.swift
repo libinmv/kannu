@@ -81,7 +81,7 @@ class ModelSelectionPanel: NSPanel {
             .fullScreenAuxiliary
         ]
         
-        ScreenCaptureVisibilityManager.shared.register(self, scope: .panelsOnly)
+        ScreenCaptureVisibilityManager.shared.register(self, scope: .panel)
         
         acceptsMouseMovedEvents = true
     }

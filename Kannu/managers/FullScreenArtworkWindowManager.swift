@@ -1237,7 +1237,7 @@ final class FullScreenArtworkWindowManager: ObservableObject {
             newWindow.isMovable = false
             newWindow.hasShadow = false
 
-            ScreenCaptureVisibilityManager.shared.register(newWindow, scope: .entireInterface)
+            ScreenCaptureVisibilityManager.shared.register(newWindow, scope: .notch)
             clickWindow = newWindow
             window = newWindow
             clickWindowDelegated = false
@@ -1287,7 +1287,7 @@ final class FullScreenArtworkWindowManager: ObservableObject {
             newWindow.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
             newWindow.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
 
-            ScreenCaptureVisibilityManager.shared.register(newWindow, scope: .entireInterface)
+            ScreenCaptureVisibilityManager.shared.register(newWindow, scope: .notch)
             artworkOverlayWindow = newWindow
             window = newWindow
             artworkOverlayWindowDelegated = false
@@ -1397,7 +1397,7 @@ final class FullScreenArtworkWindowManager: ObservableObject {
             newHostingView.layer?.backgroundColor = NSColor.clear.cgColor
             newWindow.setHostedContent(newHostingView)
 
-            ScreenCaptureVisibilityManager.shared.register(newWindow, scope: .entireInterface)
+            ScreenCaptureVisibilityManager.shared.register(newWindow, scope: .notch)
             lyricsOverlayWindow = newWindow
             window = newWindow
             hostingView = newHostingView
@@ -1491,6 +1491,8 @@ final class FullScreenArtworkWindowManager: ObservableObject {
             let newView = WallpaperTransitionImageView(frame: screenFrame)
             newWindow.contentView = newView
 
+            ScreenCaptureVisibilityManager.shared.register(newWindow, scope: .notch)
+
             wallpaperTransitionWindow = newWindow
             wallpaperTransitionView = newView
             window = newWindow
@@ -1546,6 +1548,8 @@ final class FullScreenArtworkWindowManager: ObservableObject {
 
             let newView = LoopingVideoView(frame: screenFrame)
             newWindow.contentView = newView
+
+            ScreenCaptureVisibilityManager.shared.register(newWindow, scope: .notch)
 
             videoWindow = newWindow
             videoView = newView

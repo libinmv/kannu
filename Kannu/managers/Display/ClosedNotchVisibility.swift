@@ -72,7 +72,9 @@ enum ClosedNotchVisibility {
         return noNotchAndFullscreen ? 0 : closedHeight
     }
 
-    /// Whether a notch window has fallen off the space the user is on and must be put back.
+    /// Whether a window has fallen off the space the user is on and must be put back. Since
+    /// 2026-10-22 this serves the clipboard panel, which belongs on the managed spaces; the notch
+    /// lives in its own space and uses `notchSpaceRepair`.
     ///
     /// The notch is a `.canJoinAllSpaces` panel, so it belongs on every space, fullscreen ones
     /// included. Around a sleep or a lock, macOS can reset **every** app's all-spaces windows to just
@@ -92,5 +94,50 @@ enum ClosedNotchVisibility {
         screenLocked: Bool
     ) -> Bool {
         !isOnActiveSpace && isOrderedIn && !hiddenForLock && !screenLocked
+    }
+
+    /// What to do so a notch window lives in Kannu's notch space and in no other space.
+    enum NotchSpaceRepair: Equatable {
+        case none
+        /// Not in the notch space: add it there, and only once that is confirmed leave the rest.
+        case joinNotchSpace
+        /// In the notch space and on these other spaces too: leave them.
+        case leaveOtherSpaces(Set<UInt64>)
+        /// In the notch space, ordered in, yet not on screen: the notch space is not showing it.
+        /// Being seen beats staying still, so it goes back on every managed space (2026-09-30).
+        case fallBackToManagedSpaces
+    }
+
+    /// The notch's space repair, decided from what WindowServer reports, never from
+    /// `NSWindow.isOnActiveSpace`, which is false by design for a window that lives only in the
+    /// notch space. Asking it put the notch back on every desktop and fullscreen space at the first
+    /// switch after each launch (2026-10-22).
+    ///
+    /// The notch space is shown above every space, so a window there shows everywhere. Another
+    /// membership adds a copy of the notch to that space, which is what this repair removes. Any
+    /// space other than the notch space counts, tile sub-spaces of a fullscreen space included, so
+    /// no list of managed spaces is needed.
+    ///
+    /// `notchSpaceUnseen` marks a window the notch space failed to show at an earlier check (a
+    /// fallback, or a strip that left it off screen). Its other spaces are then what keep it visible,
+    /// so they stay until a wake, unlock or reposition clears the mark and the strip is tried again;
+    /// otherwise the fallback and the strip would undo each other at every check.
+    ///
+    /// A window hidden for the lock screen, or not ordered in, is left alone.
+    static func notchSpaceRepair(
+        memberships: Set<UInt64>,
+        notchSpaceID: UInt64,
+        isOrderedIn: Bool,
+        isOnScreen: Bool,
+        notchSpaceUnseen: Bool,
+        hiddenForLock: Bool,
+        screenLocked: Bool
+    ) -> NotchSpaceRepair {
+        guard isOrderedIn, !hiddenForLock, !screenLocked else { return .none }
+        guard memberships.contains(notchSpaceID) else { return .joinNotchSpace }
+        guard isOnScreen else { return .fallBackToManagedSpaces }
+        let others = memberships.subtracting([notchSpaceID])
+        guard !others.isEmpty, !notchSpaceUnseen else { return .none }
+        return .leaveOtherSpaces(others)
     }
 }

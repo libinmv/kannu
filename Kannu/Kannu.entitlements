@@ -15,6 +15,10 @@
          so no signing path can leave it out. -->
     <key>com.apple.security.personal-information.calendars</key>
     <true/>
+    <!-- Screen Assistant's Record button. ENABLE_RESOURCE_ACCESS_AUDIO_INPUT injects it at signing;
+         it is spelled out here, like calendars, so no signing path can leave it out. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
     <key>com.apple.security.temporary-exception.apple-events</key>
     <array>
         <string>com.spotify.client</string>

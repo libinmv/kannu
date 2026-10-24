@@ -53,7 +53,40 @@ struct DebugSnapshotRequest {
 enum DebugSnapshots {
     static func run(_ request: DebugSnapshotRequest, viewModel: KannuViewModel) async {
         try? FileManager.default.createDirectory(at: request.directory, withIntermediateDirectories: true)
+        // Fixture tasks before anything touches the task list: a snapshot never reads or writes
+        // the user's tasks.json.
+        TasksManager.snapshotFile = DebugSnapshotFixtures.tasksFile(now: Date())
         var boards = SettingsView.snapshotTabs(filter: request.tabs)
+        if request.tabs == nil || request.tabs?.contains("allTasks") == true {
+            boards.append(("allTasks", AnyView(Form {
+                Section { TasksBackRow(parent: String(localized: "Tasks")) {} }
+                AllTasksPage(query: .constant(""), context: tasksBoardContext())
+            })))
+        }
+        if request.tabs == nil || request.tabs?.contains("newTaskSheet") == true {
+            // New Task half typed: "pl" offers #planning in its colour and "+ pl"; a reminder
+            // tomorrow at 10:00 with Notify on.
+            let typed = NewTaskDraft()
+            typed.draft.title = "Write the onboarding guide"
+            typed.draft.typeEstimate("1.5h")
+            typed.draft.tagsText = "docs, pl"
+            let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+            typed.draft.reminder = Calendar.current.date(bySettingHour: 10, minute: 0, second: 0, of: tomorrow)
+            boards.append(("newTaskSheet", AnyView(NewTaskSheet(newTask: typed, listFilter: .all) { _ in })))
+        }
+        if request.tabs == nil || request.tabs?.contains("taskPage") == true {
+            boards.append(("taskPage", AnyView(Form {
+                Section { TasksBackRow(parent: String(localized: "All tasks")) {} }
+                TaskDetailPage(taskID: DebugSnapshotFixtures.jiraTaskID, context: tasksBoardContext())
+            })))
+        }
+        if request.tabs == nil || request.tabs?.contains("localTaskPage") == true {
+            // A local task: its title typed in place, a reminder with Notify off.
+            boards.append(("localTaskPage", AnyView(Form {
+                Section { TasksBackRow(parent: String(localized: "All tasks")) {} }
+                TaskDetailPage(taskID: DebugSnapshotFixtures.localTaskID, context: tasksBoardContext())
+            })))
+        }
         if request.tabs == nil || request.tabs?.contains("findings") == true {
             boards.append(("findings", AgentSecuritySettings.snapshotFindingRows(DebugSnapshotFixtures.findings)))
         }
@@ -80,6 +113,20 @@ enum DebugSnapshots {
         }
         if request.tabs == nil || request.tabs?.contains("extensionRows") == true {
             boards.append(("extensionRows", ExtensionsSettingsView.snapshotEntryRows()))
+        }
+        if request.tabs == nil || request.tabs?.contains("onboardingPermissions") == true {
+            // Every row, in the states this Mac's answers give them; nothing is requested.
+            boards.append(("onboardingPermissions", AnyView(
+                PermissionsStepView(rows: LaunchPermission.allCases, musicSource: .spotify,
+                                    onLaunchAtLoginChoice: { _ in }, onContinue: {})
+                    .frame(height: 1080)
+            )))
+        }
+        if request.tabs == nil || request.tabs?.contains("onboardingNotes") == true {
+            boards.append(("onboardingNotes", AnyView(
+                NotesSelectionView(onContinue: { _ in })
+                    .frame(width: 400, height: 600)
+            )))
         }
         for (name, view) in boards {
             for dark in [false, true] {
@@ -300,6 +347,12 @@ enum DebugSnapshots {
         }
     }
 
+    /// What the Tasks boards' pages need from the tab: sheets and navigation go nowhere.
+    private static func tasksBoardContext() -> TasksPageContext {
+        TasksPageContext(sheet: .constant(nil), pendingDelete: .constant(nil), confirmsDisconnect: .constant(nil),
+                         open: { _ in }, connect: { _ in })
+    }
+
     private static func render(_ view: AnyView, name: String, dark: Bool, width: CGFloat, into directory: URL,
                                scale: CGFloat = 2) async {
         let hosting = NSHostingView(rootView: AnyView(view.frame(width: width)
@@ -384,6 +437,54 @@ enum DebugSnapshots {
 /// Findings for the snapshot board only — never ingested into the store, whose ingest prunes the
 /// shared acknowledgements.
 enum DebugSnapshotFixtures {
+    /// The Jira task the `taskPage` board opens: a remote 2h estimate and no estimate of Kannu's.
+    static let jiraTaskID = UUID(uuidString: "6E1D5A40-2C7B-4F1E-9B1A-3D2C1B0A9F01")!
+    /// The local task the `localTaskPage` board opens: a reminder in 20 hours, its notification off.
+    static let localTaskID = UUID(uuidString: "6E1D5A40-2C7B-4F1E-9B1A-3D2C1B0A9F02")!
+
+    /// About a dozen tasks for the Tasks boards (`TasksManager.snapshotFile`): estimates, tags with
+    /// colours, an overdue reminder, one past its estimate, a Jira task with its own estimate, a
+    /// GitLab issue and merge request, one done and one archived. Never written anywhere.
+    static func tasksFile(now: Date) -> TasksFile {
+        func segment(_ minutes: Int, endingHoursAgo hours: Double = 2) -> WorkSegment {
+            let end = now.addingTimeInterval(-hours * 3600)
+            return WorkSegment(start: end.addingTimeInterval(-Double(minutes) * 60), end: end, origin: .timer)
+        }
+        func remote(_ key: String, estimate: Int? = nil, status: String, kind: GitLabKind? = nil, iid: Int? = nil,
+                    labels: [String]? = nil) -> RemoteTaskInfo {
+            RemoteTaskInfo(remoteID: key, key: key, hostScope: "https://example.test", status: status,
+                           isDoneRemotely: false, remoteEstimateSeconds: estimate, remoteSpentSeconds: nil,
+                           gitlabProjectID: iid == nil ? nil : 42, gitlabIID: iid, lastSeenAt: now, gitlabKind: kind,
+                           gitlabWebURL: nil, statusCategory: nil, labels: labels)
+        }
+        let tasks: [TaskItem] = [
+            TaskItem(id: localTaskID, title: "Write the release notes", localEstimateSeconds: 4 * 3600, segments: [segment(70)],
+                     tags: ["docs"], scheduledAt: now.addingTimeInterval(20 * 3600), reminderMuted: true),
+            TaskItem(title: "Prepare the sprint review", localEstimateSeconds: 3600,
+                     scheduledAt: now.addingTimeInterval(-26 * 3600)),
+            TaskItem(title: "Fix the flaky timer test", localEstimateSeconds: 30 * 60, segments: [segment(45)],
+                     tags: ["urgent"]),
+            TaskItem(title: "Reply to the design feedback"),
+            TaskItem(id: jiraTaskID, source: .jira, title: "Customer API: org-scoped file upload keys",
+                     remote: remote("ABC-412", estimate: 2 * 3600, status: "In Progress")),
+            TaskItem(source: .gitlab, title: "hc: convert EC2 checks to the new runner",
+                     remote: remote("discern/applications/ds-vendors#4264", status: "opened", kind: .issue, iid: 4264,
+                                    labels: ["backend"])),
+            TaskItem(title: "Plan the Q4 roadmap", localEstimateSeconds: 8 * 3600, segments: [segment(25, endingHoursAgo: 30)],
+                     tags: ["planning"]),
+            TaskItem(source: .gitlab, title: "Bump the notch window level",
+                     remote: remote("discern/applications/kannu!412", status: "opened", kind: .mergeRequest, iid: 412)),
+            TaskItem(title: "Review the onboarding copy", localEstimateSeconds: 15 * 60),
+            TaskItem(title: "Book flights for the offsite"),
+            TaskItem(title: "Ship 1.4.0", localEstimateSeconds: 2 * 3600, segments: [segment(130, endingHoursAgo: 28)],
+                     visibility: .done, closedAt: now.addingTimeInterval(-24 * 3600)),
+            TaskItem(title: "Old spike: notch physics", visibility: .archived,
+                     archivedAt: now.addingTimeInterval(-3 * 24 * 3600), archivedByUser: true),
+        ]
+        return TasksFile(tasks: tasks, drafts: [],
+                         tagColors: ["docs": .blue, "urgent": .red, "planning": .purple])
+    }
+
     /// The Usage tab's cards as this Mac shows them: a Max plan at 13 % of its 5-hour window with a
     /// pace that fills it, 83 % of the week, Fable at 41 %, two more per-model windows (so one
     /// folds when a status row is up); Cursor Pro at 62 % of its billing cycle with token totals;

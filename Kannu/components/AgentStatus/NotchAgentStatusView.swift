@@ -94,7 +94,9 @@ struct NotchAgentStatusView: View {
             ),
             ProviderInstallStatus(
                 source: .warp, name: "Warp",
-                detected: WarpAgentStore.databaseURL != nil
+                // Launch Services, not Warp's container: statting that raises "access data from
+                // other apps", which belongs to onboarding's Permissions step.
+                detected: LaunchPermissionManager.isWarpInstalled
             ),
             ProviderInstallStatus(
                 source: .claudeDesktop, name: "Desktop",
@@ -132,6 +134,7 @@ struct NotchAgentStatusView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
         }
+        .ownsVerticalScroll()
         .onHover { hovering in
             updateScrollGestureSuppression(for: hovering)
         }

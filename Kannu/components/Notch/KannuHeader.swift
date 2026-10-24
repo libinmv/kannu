@@ -209,6 +209,26 @@ struct KannuHeader: View {
                         }
                     }
 
+                    // Hides the notch on every display; the menu bar eye's Show Notch brings it
+                    // back. The write is all it does: the `showNotch` sink tears this window down a
+                    // turn later, outside this action.
+                    Button(action: {
+                        Defaults[.showNotch] = false
+                    }) {
+                        Capsule()
+                            .fill(.black)
+                            .frame(width: 30, height: 30)
+                            .overlay {
+                                Image(systemName: "eye.slash")
+                                    .foregroundColor(.white)
+                                    .padding()
+                                    .imageScale(.medium)
+                            }
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .hoverTooltip(String(localized: "Hide Notch"), edge: .below)
+                    .accessibilityLabel(String(localized: "Hide Notch"))
+
                     if Defaults[.settingsIconInNotch] {
                         Button(action: {
                             SettingsWindowController.shared.showWindow()

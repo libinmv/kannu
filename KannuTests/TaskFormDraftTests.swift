@@ -37,7 +37,7 @@ final class TaskFormDraftTests: XCTestCase {
                        gitlabWebURL: nil, statusCategory: nil, labels: nil)
     }
 
-    func testTheEstimateChoicesAreBrainsAddRowsOwn() {
+    func testTheEstimatePresetsAreTheChevronsOwn() {
         XCTAssertEqual(TaskFormDraft.estimateChoices, [900, 1800, 3600, 7200, 14_400, 28_800])
     }
 
@@ -102,10 +102,10 @@ final class TaskFormDraftTests: XCTestCase {
         XCTAssertEqual(draft.tags.count, 10, "at most ten")
     }
 
-    func testAnEstimateFromBrainsCustomSheetShowsInTheMenu() {
+    func testATypedEstimateShowsAmongThePresets() {
         var draft = TaskFormDraft()
         XCTAssertEqual(draft.estimateMenuChoices, TaskFormDraft.estimateChoices)
-        draft.estimateSeconds = 45 * 60
+        draft.typeEstimate("45m")
         XCTAssertEqual(draft.estimateMenuChoices, [900, 1800, 2700, 3600, 7200, 14_400, 28_800])
         XCTAssertEqual(draft.estimateLabel, "45m")
     }
@@ -215,5 +215,172 @@ final class TaskFormDraftTests: XCTestCase {
         var draft = TaskFormDraft()
         draft.tagsText = (1...10).map { "t\($0)" }.joined(separator: ", ") + ", "
         XCTAssertEqual(draft.tagSuggestions(existing: ["other"]), [])
+    }
+
+    // MARK: - The bell: this task's notification (David, 2026-10-23)
+
+    func testTheBellStartsOnAndFollowsTheTask() {
+        XCTAssertTrue(TaskFormDraft().notifies, "a new task's reminder notifies")
+        let muted = TaskItem(title: "Quiet", scheduledAt: now, reminderMuted: true)
+        XCTAssertFalse(TaskFormDraft(editing: muted).notifies)
+    }
+
+    func testTurningTheBellOffIsAnEditBeforeTheSchedule() {
+        let task = TaskItem(title: "Call", scheduledAt: now)
+        var draft = TaskFormDraft(editing: task)
+        draft.notifies = false
+        draft.reminder = now.addingTimeInterval(3600)
+        XCTAssertEqual(draft.edits(to: task), [.notifies(false), .schedule(now.addingTimeInterval(3600))],
+                       "off goes first, so a muted reminder is never sent and taken back")
+        draft.notifies = true
+        XCTAssertEqual(draft.edits(to: task), [.schedule(now.addingTimeInterval(3600))])
+    }
+
+    func testARemoteTaskHasNoBell() {
+        var draft = TaskFormDraft(editing: TaskItem(source: .jira, title: "PROJ-1", remote: remote(key: "PROJ-1")))
+        draft.notifies = false
+        XCTAssertEqual(draft.edits(to: TaskItem(source: .jira, title: "PROJ-1", remote: remote(key: "PROJ-1"))), [])
+    }
+
+    // MARK: - What was typed survives the form closing (David, 2026-10-23)
+
+    func testANewTasksTypedTextIsKeptAndAnEmptyFormIsNot() {
+        var kept = KeptTaskFormDrafts()
+        var draft = TaskFormDraft()
+        kept.keep(draft, baseline: nil)
+        XCTAssertTrue(kept.isEmpty, "an untouched form keeps nothing")
+
+        draft.title = "preply"
+        draft.tagsText = "work"
+        kept.keep(draft, baseline: nil)
+        XCTAssertEqual(kept.draft(editing: nil, baseline: nil, now: now, calendar: calendar), draft,
+                       "opening a task's form or the notch closing does not lose a new task's text")
+
+        draft.title = ""
+        draft.tagsText = ""
+        kept.keep(draft, baseline: nil)
+        XCTAssertNil(kept.draft(editing: nil, baseline: nil, now: now, calendar: calendar), "clearing everything forgets it")
+    }
+
+    func testAnEditsDraftComesBackOnlyWhileItsTaskIsUnchanged() {
+        let task = TaskItem(title: "preply", localEstimateSeconds: 3600)
+        let baseline = TaskFormDraft(editing: task)
+        var kept = KeptTaskFormDrafts()
+        var draft = baseline
+        draft.title = "preply lesson"
+        kept.keep(draft, baseline: baseline)
+        XCTAssertEqual(kept.draft(editing: task.id, baseline: baseline, now: now, calendar: calendar), draft)
+
+        var renamedElsewhere = task
+        renamedElsewhere.title = "preply (Brain)"
+        XCTAssertNil(kept.draft(editing: task.id, baseline: TaskFormDraft(editing: renamedElsewhere), now: now, calendar: calendar),
+                     "a task changed since opens fresh, so Save never undoes that change")
+        XCTAssertNil(kept.draft(editing: task.id, baseline: nil, now: now, calendar: calendar), "a task that is gone has no draft")
+
+        kept.keep(baseline, baseline: baseline)
+        XCTAssertNil(kept.draft(editing: task.id, baseline: baseline, now: now, calendar: calendar), "an edit back to the task keeps nothing")
+    }
+
+    func testForgettingOneDraftKeepsTheOthers() {
+        let task = TaskItem(title: "Edit me")
+        var edit = TaskFormDraft(editing: task)
+        edit.title = "Edited"
+        var new = TaskFormDraft()
+        new.title = "New one"
+        var kept = KeptTaskFormDrafts()
+        kept.keep(edit, baseline: TaskFormDraft(editing: task))
+        kept.keep(new, baseline: nil)
+        kept.forget(editing: task.id)
+        XCTAssertNil(kept.draft(editing: task.id, baseline: TaskFormDraft(editing: task), now: now, calendar: calendar))
+        XCTAssertEqual(kept.draft(editing: nil, baseline: nil, now: now, calendar: calendar), new)
+    }
+
+    func testTheBellIsNoEditWithoutAReminder() {
+        let task = TaskItem(title: "Call", scheduledAt: now)
+        var draft = TaskFormDraft(editing: task)
+        draft.notifies = false
+        draft.reminder = nil
+        XCTAssertEqual(draft.edits(to: task), [.schedule(nil)],
+                       "removing the reminder clears the mute with it; a mute with no reminder has no bell to show it")
+    }
+
+    /// A reminder picked before the notch closed that has passed since comes back as the next whole
+    /// hour, so Add never saves one that can no longer notify. An edit's own reminder is left.
+    func testAKeptReminderThatHasPassedMovesToTheNextHour() {
+        var kept = KeptTaskFormDrafts()
+        var new = TaskFormDraft()
+        new.title = "Call"
+        new.reminder = now.addingTimeInterval(-3600)
+        kept.keep(new, baseline: nil)
+        XCTAssertEqual(kept.draft(editing: nil, baseline: nil, now: now, calendar: calendar)?.reminder,
+                       TaskFormDraft.defaultReminder(now: now, calendar: calendar))
+
+        let overdue = TaskItem(title: "Overdue", scheduledAt: now.addingTimeInterval(-7200))
+        let baseline = TaskFormDraft(editing: overdue)
+        var edit = baseline
+        edit.title = "Overdue, renamed"
+        kept.keep(edit, baseline: baseline)
+        XCTAssertEqual(kept.draft(editing: overdue.id, baseline: baseline, now: now, calendar: calendar)?.reminder,
+                       overdue.scheduledAt, "the task's own overdue time is not moved")
+    }
+
+    /// Brain's New Task, opened again on what was typed or added: a reminder that has passed moves to
+    /// the next whole hour; one still to come, none, or the one kept stays as it is.
+    func testAPassedReminderMovesToTheNextHour() {
+        var draft = TaskFormDraft()
+        draft.reminder = now.addingTimeInterval(-60)
+        draft.movePassedReminder(now: now, calendar: calendar)
+        XCTAssertEqual(draft.reminder, TaskFormDraft.defaultReminder(now: now, calendar: calendar))
+
+        let tomorrow = now.addingTimeInterval(86_400)
+        draft.reminder = tomorrow
+        draft.movePassedReminder(now: now, calendar: calendar)
+        XCTAssertEqual(draft.reminder, tomorrow, "a reminder still to come is the user's")
+
+        draft.reminder = nil
+        draft.movePassedReminder(now: now, calendar: calendar)
+        XCTAssertNil(draft.reminder, "no reminder is not given one")
+
+        let own = now.addingTimeInterval(-7200)
+        draft.reminder = own
+        draft.movePassedReminder(now: now, calendar: calendar, keeping: own)
+        XCTAssertEqual(draft.reminder, own, "the reminder kept is left, overdue or not")
+
+        draft.reminder = now.addingTimeInterval(-60)
+        draft.movePassedReminder(now: now, calendar: calendar, keeping: own)
+        XCTAssertEqual(draft.reminder, TaskFormDraft.defaultReminder(now: now, calendar: calendar),
+                       "a passed reminder other than the one kept still moves")
+
+        draft.reminder = now
+        draft.movePassedReminder(now: now, calendar: calendar)
+        XCTAssertEqual(draft.reminder, TaskFormDraft.defaultReminder(now: now, calendar: calendar),
+                       "a reminder due this very moment has passed: it moves")
+    }
+
+    /// Brain's typed estimate (New Task, a task's Time row, Set Estimate) reads what it saves: a
+    /// Jira task with none of Kannu's shows its source's as the prompt; a length settles the
+    /// standard way; nothing or 0 is no estimate; text it cannot read keeps the last readable value
+    /// and Save waits.
+    func testBrainsTypedEstimateReadsWhatItSaves() {
+        let jira = TaskItem(source: .jira, title: "Fix login", remote: remote(key: "ABC-1", estimate: 7200))
+        let page = TaskFormDraft(editing: jira)
+        XCTAssertEqual(page.estimateText, "")
+        XCTAssertEqual(page.estimatePrompt, "2h from Jira")
+        var draft = TaskFormDraft()
+        draft.title = "Write notes"
+        draft.typeEstimate("1.5h")
+        XCTAssertEqual(draft.estimateReading, .length(5400))
+        draft.settleEstimateText()
+        XCTAssertEqual(draft.estimateText, "1h 30m")
+        draft.typeEstimate("")
+        XCTAssertEqual(draft.estimateReading, .none)
+        XCTAssertNil(draft.estimateSeconds)
+        draft.typeEstimate("0")
+        XCTAssertEqual(draft.estimateReading, .none, "0 removes the estimate everywhere now")
+        draft.typeEstimate("2h")
+        draft.typeEstimate("2hx")
+        XCTAssertEqual(draft.estimateReading, .unreadable)
+        XCTAssertEqual(draft.estimateSeconds, 7200, "the last readable length stays")
+        XCTAssertFalse(draft.canSave, "Add and Save wait for it to be fixed")
     }
 }

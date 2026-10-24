@@ -206,6 +206,8 @@ struct TaskTagsSheet: View {
                 .buttonStyle(.plain)
                 // The line Return would pick, and the one under the pointer, in the accent colour.
                 .foregroundStyle(isHighlighted(suggestion, in: shown) ? Color.accentColor : Color.primary)
+                // For VoiceOver, the line Return picks: the pointer's line is never what Return adds.
+                .accessibilityAddTraits(TaskTagEditing.returnPick(for: text, in: shown) == suggestion ? .isSelected : [])
                 .onHover { isOver in
                     if isOver {
                         hovered = suggestion

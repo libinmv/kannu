@@ -106,7 +106,8 @@ final class TimerSideColumnRulesTests: XCTestCase {
     }
 
     func testTheTouchedNotchFilesNeverUseHelp() throws {
-        for path in [Self.sideColumnPath, Self.swipeMonitorPath, Self.notchTimerPath, Self.headerPath, Self.rulerPath] {
+        for path in [Self.sideColumnPath, Self.swipeMonitorPath, Self.notchTimerPath, Self.headerPath, Self.rulerPath,
+                     "Kannu/components/Notch/TimerTaskSuggestions.swift"] {
             XCTAssertEqual(Self.helpCalls(in: try Self.raw(path)), [], "\(path): .help never renders in the notch")
         }
     }
@@ -211,12 +212,17 @@ final class TimerSideColumnRulesTests: XCTestCase {
         XCTAssertTrue(form.contains("vm.setAutoCloseSuppression(false, token: editingToken)"), "the form going never releases it")
         XCTAssertTrue(form.contains("NSWindow.didResignKeyNotification") && form.contains("note.object is KannuWindow"))
         XCTAssertTrue(form.contains("NSMenu.didBeginTrackingNotification") && form.contains("NSMenu.didEndTrackingNotification"))
-        XCTAssertTrue(form.contains(".onExitCommand(perform: close)"))
+        // Escape and the × leave through `dismiss()`: an edit's unsaved draft is dropped, a new task's
+        // typed text is kept for when the form opens again (David, 2026-10-23).
+        XCTAssertTrue(form.contains(".onExitCommand(perform: dismiss)"))
+        XCTAssertTrue(form.contains("Button(action: dismiss)"))
         XCTAssertTrue(form.contains(".datePickerStyle(.field)"), "a compact picker's calendar is a popover window the notch closes under")
         XCTAssertFalse(form.contains(".alert(") || form.contains("confirmationDialog("), "no modal under the notch (REGRESSIONS entry 14)")
         XCTAssertEqual(Self.helpCalls(in: try Self.raw("Kannu/components/Notch/TimerTaskForm.swift")), [])
         let notch = Self.code(try Self.raw(Self.notchTimerPath))
-        XCTAssertTrue(notch.contains("TimerTaskForm(mode: taskForm, close: closeTaskForm, started: taskStarted)"))
+        // `open:` lets the form switch to a task picked from its title's typed search, so no second
+        // task is made (David, 2026-10-23).
+        XCTAssertTrue(notch.contains("TimerTaskForm(mode: taskForm, open: openTaskForm, close: closeTaskForm, started: taskStarted)"))
         XCTAssertTrue(notch.contains("if isTasksPageAvailable {\n                newTaskButton"), "the New task button shows only with tasks on")
         XCTAssertTrue(form.contains("GoldenRow(spacing: M.taskFormRowSpacing) {\n                estimateField\n                tagsField"),
                       "the estimate and the tags in the golden ratio")

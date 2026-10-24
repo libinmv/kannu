@@ -301,6 +301,8 @@ struct TimerLiveActivity: View {
                     isHovering = false
                 }
                 requestControlWindowSync()
+            } else {
+                hideFinishLabel()
             }
         }
         .onChange(of: timerManager.isOvertime) { _, overtime in
@@ -311,6 +313,8 @@ struct TimerLiveActivity: View {
                     isHovering = false
                 }
                 requestControlWindowSync()
+            } else {
+                hideFinishLabel()
             }
         }
         .onChange(of: timerManager.isPaused) { _, _ in
@@ -659,9 +663,23 @@ struct TimerLiveActivity: View {
                 showTransientLabel = false
             }
             requestControlWindowSync(forceRefresh: true)
+            labelHideTask = nil
         }
         labelHideTask = task
         DispatchQueue.main.asyncAfter(deadline: .now() + transientLabelDuration, execute: task)
+    }
+
+    /// Back above zero in the same session (its estimate raised past the time run), or a session
+    /// that replaced a finished one: the label the finish pinned goes. Hidden directly, since
+    /// `triggerTransientLabel` returns early in some modes and would leave it pinned. A stop is the
+    /// isTimerActive observer's; a name flash already running hides itself.
+    private func hideFinishLabel() {
+        guard timerManager.isTimerActive, !timerManager.isFinished, !timerManager.isOvertime,
+              labelHideTask == nil else { return }
+        withAnimation(.smooth) {
+            showTransientLabel = false
+        }
+        requestControlWindowSync(forceRefresh: true)
     }
 
     private func cancelTransientLabel() {

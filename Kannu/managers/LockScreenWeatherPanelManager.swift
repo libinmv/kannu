@@ -107,7 +107,7 @@ final class LockScreenWeatherPanelManager {
         newWindow.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
         newWindow.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
 
-        ScreenCaptureVisibilityManager.shared.register(newWindow, scope: .entireInterface)
+        ScreenCaptureVisibilityManager.shared.register(newWindow, scope: .notch)
 
         window = newWindow
         if !hasDelegated {

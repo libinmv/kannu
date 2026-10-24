@@ -123,32 +123,56 @@ class DownloadManager {
     /// while the TCC prompt is still up — re-freezing the launch this gate exists to fix.
     private var downloadsAccessWarmedUp = false
 
+    private var launchPermissionObserver: NSObjectProtocol?
+    private var isWarmingUp = false
+
     init() {
-        // The first touch of ~/Downloads triggers the Files-and-Folders TCC prompt and
-        // blocks until the user answers. Doing it synchronously here froze the whole app
-        // at launch — this init runs inside AppDelegate.init, before
-        // applicationDidFinishLaunching — and every dev rebuild re-asks because the
-        // ad-hoc code signature changes. Touch the folder on a background queue instead,
-        // and only start monitoring (which open()s and scans the same folder) once the
-        // permission round-trip has resolved.
-        let downloadsDirectory = downloadsDirectory
-        DispatchQueue.global(qos: .utility).async {
-            if let downloadsDirectory {
-                _ = try? FileManager.default.contentsOfDirectory(at: downloadsDirectory, includingPropertiesForKeys: nil)
-            }
-            Task { @MainActor [weak self] in
-                self?.downloadsAccessWarmedUp = true
-                self?.startMonitoringIfNeeded()
-            }
+        warmUpIfPermitted()
+        // On a fresh install the Downloads dialog belongs to the onboarding's Permissions step,
+        // and after a Not now it waits for the user: re-check when either answers.
+        launchPermissionObserver = NotificationCenter.default.addObserver(
+            forName: .launchPermissionsChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.warmUpIfPermitted() }
         }
 
         defaultsCancellable = Defaults.publisher(.enableDownloadListener)
             .sink { [weak self] _ in
                 guard let self else { return }
                 Task { @MainActor in
+                    self.warmUpIfPermitted()
                     self.startMonitoringIfNeeded()
                 }
             }
+    }
+
+    /// The first touch of ~/Downloads triggers the Files-and-Folders TCC prompt and blocks until
+    /// the user answers. Doing it synchronously froze the whole app at launch (this runs from
+    /// `continueLaunch()`), and every dev rebuild re-asks because the ad-hoc code signature
+    /// changes. So the folder is touched on a background queue, and monitoring (which open()s and
+    /// scans the same folder) starts only once the permission round-trip has resolved. And only
+    /// with the listener on — it used to touch the folder with it off — and when
+    /// `LaunchPermissionManager` allows it: never before the Permissions step, never after a Not now.
+    private func warmUpIfPermitted() {
+        guard !downloadsAccessWarmedUp, !isWarmingUp, Defaults[.enableDownloadListener],
+              LaunchPermissionManager.mayTouch(.downloads) else { return }
+        isWarmingUp = true
+        let downloadsDirectory = downloadsDirectory
+        DispatchQueue.global(qos: .utility).async {
+            let readable = downloadsDirectory.map {
+                (try? FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)) != nil
+            } ?? false
+            Task { @MainActor [weak self] in
+                self?.isWarmingUp = false
+                // Only a read that worked counts: after a denial, the next permission change (the
+                // user allowing it in System Settings, then Brain) tries again.
+                guard readable else { return }
+                self?.downloadsAccessWarmedUp = true
+                self?.startMonitoringIfNeeded()
+            }
+        }
     }
 
     private func startMonitoringIfNeeded() {

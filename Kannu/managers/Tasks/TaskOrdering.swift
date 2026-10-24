@@ -19,15 +19,16 @@
 import Foundation
 
 /// The order the user gives their tasks. The array's order is the order: there is no sort key, and
-/// nothing re-sorts it.
+/// nothing re-sorts it. A new local task goes on top; Move to Top is the one move (David,
+/// 2026-10-23: "no drag and order tasks or numbering"), so the user still picks what the notch's
+/// Up next shows first.
 ///
 /// Done, hidden and gone tasks keep their place in the array, so reopening one puts it back where
-/// it was. The moves below therefore step over them: Move Up swaps with the previous *active* task,
-/// so one click always changes what the user sees.
+/// it was.
 ///
 /// Which active tasks are on screen is `listed`: the connected baseline (`connectedFilter`),
 /// narrowed by a view's own filter — the Task list's filters in Brain, Show in notch in the notch.
-/// Every move and drop counts only the listed tasks. Its default lists every active task.
+/// Its default lists every active task.
 enum TaskOrdering {
     typealias Listed = (TaskItem) -> Bool
 
@@ -84,59 +85,6 @@ enum TaskOrdering {
         var result = tasks
         let task = result.remove(at: index)
         result.insert(task, at: 0)
-        return result
-    }
-
-    /// Places the task just before the previous listed active task. No change at the top.
-    static func movingUp(_ id: UUID, in tasks: [TaskItem], listed: Listed = { _ in true }) -> [TaskItem] {
-        guard let index = tasks.firstIndex(where: { $0.id == id }),
-              let previous = tasks[..<index].lastIndex(where: { $0.visibility == .active && listed($0) }) else { return tasks }
-        var result = tasks
-        let task = result.remove(at: index)
-        result.insert(task, at: previous)
-        return result
-    }
-
-    /// Places the task just after the next listed active task. No change at the bottom.
-    static func movingDown(_ id: UUID, in tasks: [TaskItem], listed: Listed = { _ in true }) -> [TaskItem] {
-        guard let index = tasks.firstIndex(where: { $0.id == id }),
-              let next = tasks[(index + 1)...].firstIndex(where: { $0.visibility == .active && listed($0) }) else { return tasks }
-        var result = tasks
-        let task = result.remove(at: index)
-        // `next` shifted down by one with the removal; inserting at it places the task after it.
-        result.insert(task, at: next)
-        return result
-    }
-
-    /// Where a dragged row lands relative to the row it is dropped on.
-    enum DropEdge: Equatable {
-        /// Dragged up: it lands just above the target.
-        case above
-        /// Dragged down: it lands just below the target.
-        case below
-    }
-
-    /// Which side of `target` the dragged task lands on, counting listed active tasks only; nil
-    /// when the drop would change nothing (onto itself, or either task not on screen).
-    static func dropEdge(dragging id: UUID, onto target: UUID, in tasks: [TaskItem], listed: Listed = { _ in true }) -> DropEdge? {
-        guard id != target else { return nil }
-        let visible = active(tasks, listed: listed)
-        guard let from = visible.firstIndex(where: { $0.id == id }),
-              let to = visible.firstIndex(where: { $0.id == target }) else { return nil }
-        return from < to ? .below : .above
-    }
-
-    /// A drop of the task `id` on the row of `target`: the dragged task takes the target's place.
-    /// Dragged down, it lands just after the target; dragged up, just before it. Only listed active
-    /// tasks count (`listed` carries the Task list's filters), so a drop never moves a task the user
-    /// cannot see, and done, hidden and filtered-out tasks keep their places in the file.
-    static func move(id: UUID, onto target: UUID, in tasks: [TaskItem], listed: Listed = { _ in true }) -> [TaskItem] {
-        guard let edge = dropEdge(dragging: id, onto: target, in: tasks, listed: listed),
-              let from = tasks.firstIndex(where: { $0.id == id }) else { return tasks }
-        var result = tasks
-        let task = result.remove(at: from)
-        guard let anchor = result.firstIndex(where: { $0.id == target }) else { return tasks }
-        result.insert(task, at: edge == .above ? anchor : anchor + 1)
         return result
     }
 }

@@ -1,5 +1,6 @@
 import Defaults
 import Foundation
+import Security
 
 enum SecureSecretKey: String, CaseIterable {
     case spotifySPDCCookie = "spotify-sp-dc-cookie"
@@ -56,26 +57,47 @@ enum SecureSecretsStore {
         KeychainReader.deleteGenericPassword(service: service, account: key.rawValue)
     }
 
-    /// Move legacy plaintext values from Defaults to Keychain.
-    static func migrateFromDefaultsIfNeeded() {
-        migrate(defaultsKey: .spotifySPDCCookie, secureKey: .spotifySPDCCookie)
-        migrate(defaultsKey: .geminiApiKey, secureKey: .geminiAPIKey)
-        migrate(defaultsKey: .openaiApiKey, secureKey: .openaiAPIKey)
-        migrate(defaultsKey: .claudeApiKey, secureKey: .claudeAPIKey)
-        migrate(defaultsKey: .groqApiKey, secureKey: .groqAPIKey)
-        migrate(defaultsKey: .agentStatusPushoverUserKey, secureKey: .pushoverUserKey)
-        migrate(defaultsKey: .agentStatusPushoverAppToken, secureKey: .pushoverAppToken)
-        migrate(defaultsKey: .agentStatusWebhookURL, secureKey: .webhookURL)
-    }
+    /// Settings that kept a secret in plain Defaults before the Keychain store existed.
+    private static let legacyDefaultsKeys: [(defaults: Defaults.Key<String>, secure: SecureSecretKey)] = [
+        (.spotifySPDCCookie, .spotifySPDCCookie),
+        (.geminiApiKey, .geminiAPIKey),
+        (.openaiApiKey, .openaiAPIKey),
+        (.claudeApiKey, .claudeAPIKey),
+        (.groqApiKey, .groqAPIKey),
+        (.agentStatusPushoverUserKey, .pushoverUserKey),
+        (.agentStatusPushoverAppToken, .pushoverAppToken),
+        (.agentStatusWebhookURL, .webhookURL),
+    ]
 
-    private static func migrate(defaultsKey: Defaults.Key<String>, secureKey: SecureSecretKey) {
-        let legacy = Defaults[defaultsKey].trimmingCharacters(in: .whitespacesAndNewlines)
-        let existing = value(for: secureKey)
-        if existing.isEmpty, !legacy.isEmpty {
-            set(legacy, for: secureKey)
+    /// Moves legacy plaintext values from Defaults into the Keychain. It runs at every launch, but
+    /// touches the Keychain only for a value still in Defaults (almost never), and then off the
+    /// main thread with the dialog off. It used to read all eight items on main, dialogs allowed,
+    /// at every launch: an item saved by a differently signed Kannu (Debug and Release share the
+    /// service name) could raise a SecurityAgent dialog that held the launch until answered.
+    static func migrateFromDefaultsIfNeeded() {
+        let pending = legacyDefaultsKeys.compactMap { key -> (Defaults.Key<String>, SecureSecretKey, String)? in
+            let legacy = Defaults[key.defaults].trimmingCharacters(in: .whitespacesAndNewlines)
+            return legacy.isEmpty ? nil : (key.defaults, key.secure, legacy)
         }
-        if !legacy.isEmpty {
-            Defaults[defaultsKey] = ""
+        guard !pending.isEmpty else { return }
+        DispatchQueue.global(qos: .utility).async {
+            for (defaultsKey, secureKey, legacy) in pending {
+                let existing = read(secureKey, allowInteraction: false)
+                let step = LegacySecretMigration.step(
+                    existingValue: existing.value,
+                    needsApproval: KeychainReader.needsUserApproval(existing.status),
+                    itemNotFound: existing.status == errSecItemNotFound
+                )
+                let clear: Bool
+                switch step {
+                case .store: clear = set(legacy, for: secureKey)
+                case .clearLegacy: clear = true
+                case .retryNextLaunch: clear = false
+                }
+                if clear {
+                    DispatchQueue.main.async { Defaults[defaultsKey] = "" }
+                }
+            }
         }
     }
 }

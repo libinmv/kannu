@@ -58,6 +58,7 @@ final class HeaderOrderRulesTests: XCTestCase {
     static let fixedItems: [(name: String, marker: String)] = [
         ("the clipboard button", #"Image(systemName: "doc.on.clipboard")"#),
         ("the timer popover button", #"Image(systemName: "timer")"#),
+        ("the Hide Notch button", #"Image(systemName: "eye.slash")"#),
         ("the Brain button", #"Image(systemName: "brain")"#),
     ]
 
@@ -83,20 +84,20 @@ final class HeaderOrderRulesTests: XCTestCase {
         // The order this test was written against: Tasks first, Refresh after the clipboard, the
         // indicators after Brain.
         let before = Self.orderProblems(in: Plant.header([Plant.tasks, Plant.clipboard, Plant.refresh, Plant.timer,
-                                                          Plant.brain, Plant.recording, Plant.dnd]))
+                                                          Plant.hide, Plant.brain, Plant.recording, Plant.dnd]))
         for name in ["the screen-recording indicator", "the Do Not Disturb indicator", "the Usage tab's Refresh button"] {
             XCTAssertTrue(before.contains("\(name) comes and goes but sits right of the clipboard button, which is always there"),
                           "\(name): \(before)")
         }
 
         XCTAssertEqual(Self.orderProblems(in: Plant.header([Plant.recording, Plant.dnd, Plant.refresh, Plant.clipboard,
-                                                            Plant.timer, Plant.brain, Plant.tasks])),
+                                                            Plant.timer, Plant.hide, Plant.brain, Plant.tasks])),
                        ["the Tasks button comes and goes but sits right of the clipboard button, which is always there"])
         XCTAssertEqual(Self.orderProblems(in: Plant.header([Plant.dnd, Plant.recording, Plant.refresh, Plant.tasks,
-                                                            Plant.clipboard, Plant.timer, Plant.brain])),
+                                                            Plant.clipboard, Plant.timer, Plant.hide, Plant.brain])),
                        ["the screen-recording indicator is not left of the Do Not Disturb indicator"])
         XCTAssertEqual(Self.orderProblems(in: Plant.header([Plant.recording, Plant.dnd, Plant.refresh, Plant.tasks,
-                                                            Plant.timer, Plant.clipboard, Plant.brain])),
+                                                            Plant.timer, Plant.clipboard, Plant.hide, Plant.brain])),
                        ["the clipboard button is not left of the timer popover button"])
 
         let withoutRecording = Plant.order.filter { $0 != Plant.recording }
@@ -258,13 +259,14 @@ private enum Plant {
     static let tasks = "if showsTasksButton { TasksHeaderButton().transition(.opacity) }"
     static let clipboard = #"if showClipboardIcon { Button { Image(systemName: "doc.on.clipboard") } }"#
     static let timer = #"if timerDisplayMode == .popover { Button { Image(systemName: "timer") } }"#
+    static let hide = #"Button { Image(systemName: "eye.slash") }"#
     static let brain = #"if Defaults[.settingsIconInNotch] { Button { Image(systemName: "brain") } }"#
     static let battery = """
         if vm.notchState == .open && showBatteryIndicator {
             if enableMinimalisticUI { MinimalisticBatteryView(level: 1) } else { KannuBatteryView(level: 1) }
         }
         """
-    static let order = [recording, dnd, refresh, tasks, clipboard, timer, brain]
+    static let order = [recording, dnd, refresh, tasks, clipboard, timer, hide, brain]
 
     static func header(_ items: [String] = Plant.order,
                        beforeOpen: String = "",

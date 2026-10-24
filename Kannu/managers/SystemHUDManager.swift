@@ -43,7 +43,7 @@ class SystemHUDManager {
                 if change.newValue {
                     // Always restart to ensure correct flags are applied
                     await self.startSystemObserver()
-                } else if Defaults[.enableSystemHUD] || Defaults[.enableCustomOSD] || Defaults[.enableCircularHUD] {
+                } else if self.notchHUDEnabled || Defaults[.enableCustomOSD] || Defaults[.enableCircularHUD] {
                     // Restart to apply flags for the remaining active HUD
                     await self.startSystemObserver()
                 } else {
@@ -51,24 +51,13 @@ class SystemHUDManager {
                 }
             }
         }.store(in: &cancellables)
-        
-        // Observe master HUD toggle
-        Defaults.publisher(.enableSystemHUD, options: []).sink { [weak self] change in
-            guard let self = self, self.isSetupComplete else {
-                return
-            }
-            Task { @MainActor in
-                if change.newValue && !Defaults[.enableCustomOSD] && !Defaults[.enableVerticalHUD] && !Defaults[.enableCircularHUD] {
-                     // Always restart to ensure correct flags are applied
-                    await self.startSystemObserver()
-                } else if !Defaults[.enableCustomOSD] && !Defaults[.enableVerticalHUD] && !Defaults[.enableCircularHUD] {
-                    // Only stop if others are also disabled
-                    await self.stopSystemObserver()
-                } else if change.newValue == false && (Defaults[.enableCustomOSD] || Defaults[.enableVerticalHUD] || Defaults[.enableCircularHUD]) {
-                     // If disabling system HUD but others are active, restart to update flags
-                     await self.startSystemObserver()
-                }
-            }
+
+        // Observe master HUD toggle, and the notch it draws in
+        Defaults.publisher(.enableSystemHUD, options: []).sink { [weak self] _ in
+            self?.notchHUDAvailabilityChanged()
+        }.store(in: &cancellables)
+        Defaults.publisher(.showNotch, options: []).sink { [weak self] _ in
+            self?.notchHUDAvailabilityChanged()
         }.store(in: &cancellables)
         
         // Observe OSD toggle
@@ -80,7 +69,7 @@ class SystemHUDManager {
                 if change.newValue {
                      // Always restart to ensure correct flags are applied
                     await self.startSystemObserver()
-                } else if Defaults[.enableSystemHUD] || Defaults[.enableVerticalHUD] || Defaults[.enableCircularHUD] {
+                } else if self.notchHUDEnabled || Defaults[.enableVerticalHUD] || Defaults[.enableCircularHUD] {
                     // Restart to apply flags for the remaining active HUD
                     await self.startSystemObserver()
                 } else {
@@ -98,7 +87,7 @@ class SystemHUDManager {
                 if change.newValue {
                      // Always restart to ensure correct flags are applied
                     await self.startSystemObserver()
-                } else if Defaults[.enableSystemHUD] || Defaults[.enableCustomOSD] || Defaults[.enableVerticalHUD] {
+                } else if self.notchHUDEnabled || Defaults[.enableCustomOSD] || Defaults[.enableVerticalHUD] {
                     // Restart to apply flags for the remaining active HUD
                     await self.startSystemObserver()
                 } else {
@@ -183,21 +172,21 @@ class SystemHUDManager {
 
         // Restart observer when third-party DDC integration state changes.
         Defaults.publisher(.enableThirdPartyDDCIntegration, options: []).sink { [weak self] _ in
-            guard let self = self, self.isSetupComplete else { return }
+            guard let self = self, self.isSetupComplete, self.anyHUDActive else { return }
             Task { @MainActor in
                 await self.startSystemObserver()
             }
         }.store(in: &cancellables)
 
         Defaults.publisher(.thirdPartyDDCProvider, options: []).sink { [weak self] _ in
-            guard let self = self, self.isSetupComplete else { return }
+            guard let self = self, self.isSetupComplete, self.anyHUDActive else { return }
             Task { @MainActor in
                 await self.startSystemObserver()
             }
         }.store(in: &cancellables)
 
         Defaults.publisher(.enableExternalVolumeControlListener, options: []).sink { [weak self] _ in
-            guard let self = self, self.isSetupComplete else { return }
+            guard let self = self, self.isSetupComplete, self.anyHUDActive else { return }
             Task { @MainActor in
                 await self.startSystemObserver()
             }
@@ -207,7 +196,36 @@ class SystemHUDManager {
     private var cancellables = Set<AnyCancellable>()
 
     private var requiresSystemToggleHandling: Bool {
-        Defaults[.enableSystemHUD] || Defaults[.enableVerticalHUD] || Defaults[.enableCircularHUD]
+        notchHUDEnabled || Defaults[.enableVerticalHUD] || Defaults[.enableCircularHUD]
+    }
+
+    /// The system HUD draws inside the notch, so a hidden notch turns it off too. Without this the
+    /// native OSD stayed paused for a HUD nobody could see, and the volume keys showed nothing.
+    private var notchHUDEnabled: Bool {
+        Defaults[.enableSystemHUD] && Defaults[.showNotch]
+    }
+
+    /// The DDC restarts start the observer, and starting it pauses the native OSD. With no HUD to
+    /// show instead (all off, or only the notch's while it is hidden) that left the keys silent.
+    private var anyHUDActive: Bool {
+        notchHUDEnabled || Defaults[.enableCustomOSD] || Defaults[.enableVerticalHUD] || Defaults[.enableCircularHUD]
+    }
+
+    private func notchHUDAvailabilityChanged() {
+        guard isSetupComplete else { return }
+        Task { @MainActor in
+            let othersActive = Defaults[.enableCustomOSD] || Defaults[.enableVerticalHUD] || Defaults[.enableCircularHUD]
+            if self.notchHUDEnabled && !othersActive {
+                // Always restart to ensure correct flags are applied
+                await self.startSystemObserver()
+            } else if !othersActive {
+                // Only stop if others are also disabled
+                await self.stopSystemObserver()
+            } else if !self.notchHUDEnabled {
+                // If the notch HUD went off but others are active, restart to update flags
+                await self.startSystemObserver()
+            }
+        }
     }
     
     /// Public property to check if system operations are in progress
@@ -231,7 +249,7 @@ class SystemHUDManager {
                 LunarManager.shared.$isRunning.removeDuplicates().map { _ in () }
             )
             .sink { [weak self] in
-                guard let self, self.isSetupComplete,
+                guard let self, self.isSetupComplete, self.anyHUDActive,
                       Defaults[.enableThirdPartyDDCIntegration] else { return }
                 Task { @MainActor in
                     await self.startSystemObserver()
@@ -241,7 +259,7 @@ class SystemHUDManager {
         }
         
         // Start observer if any HUD/OSD is enabled
-        if Defaults[.enableSystemHUD] || Defaults[.enableCustomOSD] || Defaults[.enableVerticalHUD] || Defaults[.enableCircularHUD] {
+        if notchHUDEnabled || Defaults[.enableCustomOSD] || Defaults[.enableVerticalHUD] || Defaults[.enableCircularHUD] {
             Task { @MainActor in
                 await startSystemObserver()
                 self.isSetupComplete = true

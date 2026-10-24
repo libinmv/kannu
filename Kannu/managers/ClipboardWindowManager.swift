@@ -83,7 +83,7 @@ class ClipboardWindowManager: ObservableObject {
         window.delegate = delegate
         clipboardWindowDelegate = delegate
 
-        ScreenCaptureVisibilityManager.shared.register(window, scope: .panelsOnly)
+        ScreenCaptureVisibilityManager.shared.register(window, scope: .panel)
         
         self.clipboardWindow = window
         window.makeKeyAndOrderFront(nil)

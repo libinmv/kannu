@@ -66,7 +66,7 @@ class KannuWindow: NSPanel {
         // the system appearance.
         appearance = NSAppearance(named: .darkAqua)
 
-        ScreenCaptureVisibilityManager.shared.register(self, scope: .entireInterface)
+        ScreenCaptureVisibilityManager.shared.register(self, scope: .notch)
     }
     
     override var canBecomeKey: Bool {

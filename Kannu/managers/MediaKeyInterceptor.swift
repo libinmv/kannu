@@ -398,9 +398,16 @@ final class MediaKeyInterceptor {
 
 #if canImport(ApplicationServices)
 extension MediaKeyInterceptor {
+    /// Raises the Accessibility dialog only for a permission nobody has asked about yet, once
+    /// onboarding is done (`LaunchPermissionManager.mayTouch`). On a fresh install the dialog
+    /// belongs to the Permissions step: asked there, it is not asked again over the welcome music
+    /// while the user is still on their way to System Settings; after a Not now it waits for them.
+    /// The 10 s health check rebuilds the tap once access is granted.
     private func requestAccessibilityPermissionIfNeeded() {
         guard !AXIsProcessTrusted(), !didRequestAccessibilityPrompt else { return }
         if AppRuntimeEnvironment.isUITesting { return }
+        guard LaunchPermissionManager.answer(for: .accessibility) == .notAsked,
+              LaunchPermissionManager.mayTouch(.accessibility) else { return }
         let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         let options: CFDictionary = [promptKey: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)

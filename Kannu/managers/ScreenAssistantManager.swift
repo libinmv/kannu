@@ -183,7 +183,12 @@ class ScreenAssistantManager: NSObject, ObservableObject {
         }
     }
     
+    /// The microphone request a press of Record is waiting on. Closing the panels drops it, so an
+    /// answer that arrives after the user has moved on never starts a recording.
+    private var pendingRecordingAuthorization: UUID?
+
     func closePanels() {
+        pendingRecordingAuthorization = nil
         chatMessagesPanel?.close()
         chatInputPanel?.close()
         chatMessagesPanel = nil
@@ -278,7 +283,34 @@ class ScreenAssistantManager: NSObject, ObservableObject {
     
     private func startRecording() {
         guard !isRecording else { return }
-        
+        // The microphone dialog belongs to this press of Record, so it is asked for here and the
+        // recording starts once it is allowed. Kannu had no microphone usage description and no
+        // audio-input entitlement, which the hardened runtime needs before it lets audio in.
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            break
+        case .notDetermined:
+            let request = UUID()
+            pendingRecordingAuthorization = request
+            AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+                DispatchQueue.main.async {
+                    // Only the request this press made, and only if the panels are still open:
+                    // closing them drops it, so a late answer never starts a recording.
+                    guard let self, self.pendingRecordingAuthorization == request else { return }
+                    self.pendingRecordingAuthorization = nil
+                    guard granted else { return }
+                    self.startRecording()
+                }
+            }
+            return
+        default:
+            // Denied or restricted: show the switch rather than recording silence.
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
+                NSWorkspace.shared.open(url)
+            }
+            return
+        }
+
         let fileName = "recording_\(Date().timeIntervalSince1970).m4a"
         let audioURL = ScreenAssistantManager.audioDataDirectory.appendingPathComponent(fileName)
         

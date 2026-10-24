@@ -85,9 +85,16 @@ final class SettingsHighlightInventoryTests: XCTestCase {
         // (one out, one in). GitHub, Linear, Todoist and Apple Reminders rows and the new "Add a
         // source" row register five more ids; "Add a source" is one more entry. Each new source's
         // own entry lands on its row: Apple Reminders, GitHub, Linear, Todoist.
-        XCTAssertEqual(inventory.entries.count, 242, "search entries")
-        XCTAssertEqual(inventory.registrations.values.reduce(0, +), 273, "row registrations")
-        XCTAssertEqual(inventory.registrations.count, 267, "distinct registered ids")
+        // 2026-10-22: General gains Permissions (one entry, one row): what onboarding's
+        // Permissions step put off is allowed there.
+        // 2026-10-23: Notes gains its first two entries ("Sync with Apple Notes", and "Notes to sync",
+        // which lands on the sync switch because its own row shows only while sync is on) and the
+        // "Notes to sync" row. The same day All tasks lost its Task order row (David: "no drag and
+        // order tasks or numbering"): the "Task order" entry is gone and its other words moved onto
+        // "All tasks", one entry fewer with registrations and ids unchanged.
+        XCTAssertEqual(inventory.entries.count, 244, "search entries")
+        XCTAssertEqual(inventory.registrations.values.reduce(0, +), 275, "row registrations")
+        XCTAssertEqual(inventory.registrations.count, 269, "distinct registered ids")
     }
 
     func testOnlyTheKnownRowsTakeTheirIdBuilderFromAParent() throws {
@@ -169,7 +176,7 @@ final class SettingsHighlightInventoryTests: XCTestCase {
     /// own deep link is on its back row, which the overview's file builds.
     func testTheRowsBelowTheTasksOverviewRegisterNothing() throws {
         let sources = try Self.sources()
-        for name in ["TaskSourcePages.swift", "TaskRowList.swift", "AllTasksPage.swift", "TaskDetailPage.swift"] {
+        for name in ["TaskSourcePages.swift", "TaskRowList.swift", "AllTasksPage.swift", "TaskDetailPage.swift", "NewTaskSheet.swift"] {
             let page = try XCTUnwrap(sources[name], name)
             XCTAssertFalse(page.contains("settingsHighlight("), "\(name) registers a highlight id on a row search cannot reach")
             XCTAssertFalse(page.contains("highlightID("), "\(name) names a highlight id")
@@ -187,7 +194,7 @@ final class SettingsHighlightInventoryTests: XCTestCase {
             "tasksJiraSourceHighlightID": ["Jira Cloud", "Sync Jira", "Jira colour", "Refresh Jira issues", "Issue filter (JQL)"],
             "tasksAddSourceHighlightID": ["Add a source"],
             "tasksGitLabSourceHighlightID": ["GitLab", "Sync GitLab", "GitLab colour", "Include merge requests", "Refresh GitLab items"],
-            "tasksListHighlightID": ["All tasks", "Find a task", "Add a task", "Task order", "Tag colours", "Archived tasks"],
+            "tasksListHighlightID": ["All tasks", "Find a task", "Add a task", "Tag colours", "Archived tasks"],
         ]
         for (link, titles) in rows {
             let id = try XCTUnwrap(inventory.deepLinks[link], link)

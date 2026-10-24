@@ -137,7 +137,9 @@ struct TaskDetailSummary: Equatable {
 
         if task.source == .local, let scheduled = task.scheduledAt {
             let when = TaskReminderPlan.when(scheduled, now: now, calendar: calendar)
-            facts.append(Fact(icon: "calendar", text: dueText(scheduled, when: when), isAlert: when == .overdue))
+            // A slashed bell when the user turned this task's reminder notification off.
+            let icon = task.notifiesForReminder ? "calendar" : "bell.slash"
+            facts.append(Fact(icon: icon, text: dueText(scheduled, when: when), isAlert: when == .overdue))
         } else if let due = remote?.dueDate {
             let day = dueDayText(due, now: now, calendar: calendar)
             facts.append(Fact(icon: "calendar", text: day.text, isAlert: day.isOverdue))
@@ -367,4 +369,37 @@ struct TaskRowCaption: Equatable {
 
     /// The caption as one string, for VoiceOver and tests.
     var text: String { segments.map(\.text).joined(separator: " · ") }
+}
+
+/// A Brain task list's rows, worked out once per render (`TaskRowList`): each task with its colour,
+/// whether it is first in the whole task order (Move to Top has nothing to do then), and whether it
+/// is being timed. A row reads only this, so each does O(1) work and holds no observer.
+///
+/// Pure, in the logic target.
+struct TaskListRows: Equatable {
+    struct Row: Identifiable, Equatable {
+        let task: TaskItem
+        let color: TaskColor
+        /// First in the whole task order (`TasksManager.activeTasks`), which the notch's Up next
+        /// reads — not merely the first row of a filtered list.
+        let isFirst: Bool
+        let timing: TaskRowCaption.Timing?
+        var id: UUID { task.id }
+    }
+
+    let rows: [Row]
+    /// The colour-dot column shows once any listed task has a colour: an all-glass list looks as it
+    /// did before colours existed.
+    let showsColorDots: Bool
+
+    init(_ tasks: [TaskItem], tagColors: [String: TaskColor], integrationColors: [TaskSource: TaskColor],
+         topTaskID: UUID?, timedTaskID: UUID?, timingIsPaused: Bool) {
+        rows = tasks.map { task in
+            Row(task: task,
+                color: TaskColoring.color(of: task, tagColors: tagColors, integrations: integrationColors),
+                isFirst: task.id == topTaskID,
+                timing: task.id == timedTaskID ? (timingIsPaused ? .paused : .running) : nil)
+        }
+        showsColorDots = rows.contains { $0.color != .glass }
+    }
 }

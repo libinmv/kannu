@@ -455,6 +455,9 @@ class MusicManager: ObservableObject {
 
     // Active controller
     private var activeController: (any MediaControllerProtocol)?
+    /// The preferred source is Spotify or Apple Music, held back until its Automation permission is
+    /// allowed (`mayStartController`); a permission change then starts it.
+    private var awaitsMusicAutomation = false
 
     // Pear Desktop auto-detection
     private static let pearDesktopBundleID = YouTubeMusicConfiguration.default.bundleIdentifier
@@ -568,6 +571,13 @@ class MusicManager: ObservableObject {
             .sink { [weak self] _ in
                 self?.isPearDesktopAutoSwitched = false
                 self?.setActiveControllerBasedOnPreference()
+            }
+            .store(in: &cancellables)
+        // A music app held back for want of its Automation permission starts once it is allowed.
+        NotificationCenter.default.publisher(for: .launchPermissionsChanged)
+            .sink { [weak self] _ in
+                guard let self, self.awaitsMusicAutomation else { return }
+                self.setActiveControllerBasedOnPreference()
             }
             .store(in: &cancellables)
 
@@ -733,13 +743,23 @@ class MusicManager: ObservableObject {
         let controllerType = (self.isNowPlayingDeprecated && preferredType == .nowPlaying)
             ? .appleMusic
             : preferredType
+        awaitsMusicAutomation = !Self.mayStartController(controllerType)
+        guard !awaitsMusicAutomation else { return }
 
         if let controller = createController(for: controllerType) {
             setActiveController(controller)
-        } else if controllerType != .appleMusic, let fallbackController = createController(for: .appleMusic) {
+        } else if controllerType != .appleMusic, Self.mayStartController(.appleMusic),
+                  let fallbackController = createController(for: .appleMusic) {
             // Fallback to Apple Music if preferred controller couldn't be created
             setActiveController(fallbackController)
         }
+    }
+
+    /// Spotify and Apple Music are driven with AppleScript, whose first event raises the Automation
+    /// dialog. They start only when `LaunchPermissionManager` allows it: never over onboarding, and
+    /// not after a Not now on onboarding's "Control …" row. Until then no controller runs.
+    private static func mayStartController(_ type: MediaControllerType) -> Bool {
+        (type != .appleMusic && type != .spotify) || LaunchPermissionManager.mayTouch(.musicAutomation)
     }
 
     private func setActiveController(_ controller: any MediaControllerProtocol) {
@@ -1315,7 +1335,16 @@ class MusicManager: ObservableObject {
         }
 
         let workspace = NSWorkspace.shared
-        if let appURL = workspace.urlForApplication(withBundleIdentifier: bundleID) {
+        // A running Spotify is brought forward the way Cmd-Tab does it and never reopened.
+        // `openApplication` on a running app sends it a reopen event, and 0.2 s after one
+        // (2026-10-22, 20:49:00) Spotify started a second, hidden audio session in its helper
+        // process that every later Play woke too: two tracks at once. With its window closed it
+        // comes forward without one; its Dock icon reopens it. Every other app keeps the reopen,
+        // which brings back a closed or minimized window.
+        if bundleID == Self.spotifyBundleID,
+           let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
+            running.activate()
+        } else if let appURL = workspace.urlForApplication(withBundleIdentifier: bundleID) {
             let configuration = NSWorkspace.OpenConfiguration()
             workspace.openApplication(at: appURL, configuration: configuration) { (app, error) in
                 if let error = error {
@@ -1337,6 +1366,9 @@ class MusicManager: ObservableObject {
             }
         }
     }
+
+    /// Spotify answers a reopen event with a stray second audio session; see `openMusicApp()`.
+    private static let spotifyBundleID = "com.spotify.client"
 
     func forceUpdate() {
         // Request immediate update from the active controller

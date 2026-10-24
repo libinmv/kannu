@@ -258,8 +258,7 @@ enum TaskFacets {
         return TaskSearch.matches(task, query: filter.query)
     }
 
-    /// The tasks a Task list move counts: those `listed` already shows that also pass `filter`, so a
-    /// move or a drag never shifts a task the user cannot see.
+    /// The tasks a Task list shows: those `listed` already shows that also pass `filter`.
     static func listed(_ listed: @escaping TaskOrdering.Listed, filter: TaskFilter) -> TaskOrdering.Listed {
         { listed($0) && matches($0, filter: filter) }
     }

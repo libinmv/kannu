@@ -613,8 +613,10 @@ struct SettingsView: View {
         }
     }
 
+    /// Every match, best first. It used to stop at eight in index order, so "color" never reached
+    /// Notch fill color behind seven Devices and HUD rows; the list scrolls past eight instead.
     private var searchSuggestions: [SettingsSearchEntry] {
-        Array(searchEntries(matching: searchText).filter { $0.tab != .downloads }.prefix(8))
+        searchEntries(matching: searchText).filter { $0.tab != .downloads }
     }
 
     private func handleSearchSuggestionSelection(_ suggestion: SettingsSearchEntry) {
@@ -681,7 +683,35 @@ struct SettingsView: View {
             )
         }
 
+        /// Past this many matches the list scrolls rather than growing down the sidebar.
+        private static let visibleSuggestionRows = 8
+        /// One suggestion with its divider: 28 pt icon, 7 pt padding above and below, 1 pt divider.
+        private static let suggestionRowHeight: CGFloat = 43
+
         private var suggestionList: some View {
+            Group {
+                if suggestions.count > Self.visibleSuggestionRows {
+                    // Half a row more than fits shows there is more to scroll to.
+                    ScrollView { suggestionRows }
+                        .frame(height: (CGFloat(Self.visibleSuggestionRows) + 0.5) * Self.suggestionRowHeight)
+                } else {
+                    suggestionRows
+                }
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.white.opacity(0.08))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .shadow(color: Color.black.opacity(0.2), radius: 8, y: 4)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+
+        private var suggestionRows: some View {
             VStack(spacing: 0) {
                 ForEach(suggestions) { suggestion in
                     Button {
@@ -724,16 +754,6 @@ struct SettingsView: View {
                     }
                 }
             }
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(.ultraThinMaterial)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color.white.opacity(0.08))
-            )
-            .shadow(color: Color.black.opacity(0.2), radius: 8, y: 4)
-            .transition(.opacity.combined(with: .move(edge: .top)))
         }
 
         private func rowBackground(for suggestion: SettingsSearchEntry) -> some View {
@@ -756,12 +776,8 @@ struct SettingsView: View {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
 
-        return settingsSearchIndex
-            .filter { availableTabs.contains($0.tab) }
-            .filter { entry in
-                entry.title.localizedCaseInsensitiveContains(trimmed) ||
-                entry.keywords.contains { $0.localizedCaseInsensitiveContains(trimmed) }
-            }
+        let candidates = settingsSearchIndex.filter { availableTabs.contains($0.tab) }
+        return SettingsSearchRanking.ranked(candidates, query: trimmed, title: \.title, keywords: \.keywords)
             .map(landingOnABuiltRow)
     }
 
@@ -785,7 +801,7 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .general, title: "Quit Kannu", keywords: ["quit", "exit", "close", "stop", "shut down", "terminate"], highlightID: SettingsTab.general.highlightID(for: "Quit Kannu")),
             SettingsSearchEntry(tab: .general, title: "Where Kannu appears", keywords: ["display", "displays", "monitor", "external", "built-in", "all displays", "multi-display", "screen", "placement", "switch", "move", "second screen"], highlightID: SettingsTab.general.highlightID(for: "Where Kannu appears")),
             SettingsSearchEntry(tab: .general, title: "Display", keywords: ["preferred screen", "display picker", "specific display", "choose display"], highlightID: SettingsTab.general.highlightID(for: "Display")),
-            SettingsSearchEntry(tab: .general, title: "Hide Kannu during screenshots & recordings", keywords: ["privacy", "screenshot", "recording"], highlightID: SettingsTab.general.highlightID(for: "Hide Kannu during screenshots & recordings")),
+            SettingsSearchEntry(tab: .general, title: "Screenshots & recordings", keywords: ["privacy", "screenshot", "recording", "capture", "hide", "notch", "screen sharing"], highlightID: SettingsTab.general.highlightID(for: "Screenshots & recordings")),
             SettingsSearchEntry(tab: .general, title: "Enable gestures", keywords: ["gestures", "trackpad"], highlightID: SettingsTab.general.highlightID(for: "Enable gestures")),
             SettingsSearchEntry(tab: .general, title: "Close gesture", keywords: ["pinch", "swipe"], highlightID: SettingsTab.general.highlightID(for: "Close gesture")),
             SettingsSearchEntry(tab: .general, title: "Reverse swipe gestures", keywords: ["reverse", "swipe", "media"], highlightID: SettingsTab.general.highlightID(for: "Reverse swipe gestures")),
@@ -797,6 +813,7 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .general, title: "External display style", keywords: ["dynamic island", "pill", "external display", "non-notch", "floating", "capsule"], highlightID: SettingsTab.general.highlightID(for: "External display style")),
             SettingsSearchEntry(tab: .general, title: "Always show on non-notch displays", keywords: ["always show", "hide", "hover", "external", "non-notch", "auto hide", "slide"], highlightID: SettingsTab.general.highlightID(for: "Always show on non-notch displays")),
             SettingsSearchEntry(tab: .general, title: "Notch display height", keywords: ["display height", "menu bar size"], highlightID: SettingsTab.general.highlightID(for: "Notch display height")),
+            SettingsSearchEntry(tab: .general, title: "Permissions", keywords: ["permission", "privacy", "allow", "accessibility", "bluetooth", "location", "downloads", "warp", "notes", "automation"], highlightID: SettingsTab.general.highlightID(for: "Permissions")),
 
             // Live Activities
             SettingsSearchEntry(tab: .liveActivities, title: "Enable Screen Recording Detection", keywords: ["screen recording", "indicator"], highlightID: SettingsTab.liveActivities.highlightID(for: "Enable Screen Recording Detection")),
@@ -936,6 +953,10 @@ struct SettingsView: View {
             // Shortcuts
             SettingsSearchEntry(tab: .shortcuts, title: "Enable global keyboard shortcuts", keywords: ["keyboard", "shortcut"], highlightID: SettingsTab.shortcuts.highlightID(for: "Enable global keyboard shortcuts")),
 
+            // Notes
+            SettingsSearchEntry(tab: .notes, title: "Sync with Apple Notes", keywords: ["apple notes", "notes app", "icloud", "two-way", "sync"], highlightID: SettingsTab.notes.highlightID(for: "Sync with Apple Notes")),
+            SettingsSearchEntry(tab: .notes, title: "Notes to sync", keywords: ["kannu folder", "whole account", "all notes", "import", "scope"], highlightID: SettingsTab.notes.highlightID(for: "Sync with Apple Notes")),
+
             // Timer
             SettingsSearchEntry(tab: .timer, title: "Enable timer feature", keywords: ["timer", "enable"], highlightID: SettingsTab.timer.highlightID(for: "Enable timer feature")),
             SettingsSearchEntry(tab: .timer, title: "Mirror macOS Clock timers", keywords: ["system timer", "clock app"], highlightID: SettingsTab.timer.highlightID(for: "Mirror macOS Clock timers")),
@@ -975,11 +996,10 @@ struct SettingsView: View {
             SettingsSearchEntry(tab: .tasks, title: "Time to log", keywords: ["tasks", "log time", "log work", "worklog", "time tracking", "spent", "timesheet", "jira", "gitlab"], highlightID: SettingsTab.tasks.highlightID(for: "Time to log")),
             // All tasks' rows, and a task's own page, exist only while open, so their entries land on
             // the overview's All tasks row, which opens it.
-            SettingsSearchEntry(tab: .tasks, title: "All tasks", keywords: ["tasks", "task list", "list", "to do", "in progress", "open tasks", "my tasks"], highlightID: SettingsDeepLink.tasksListHighlightID),
+            SettingsSearchEntry(tab: .tasks, title: "All tasks", keywords: ["tasks", "task list", "list", "to do", "in progress", "open tasks", "my tasks", "order", "priority", "move to top", "up next", "tracked", "actual time", "start", "time a task"], highlightID: SettingsDeepLink.tasksListHighlightID),
             SettingsSearchEntry(tab: .tasks, title: "Find a task", keywords: ["tasks", "find", "search", "look up", "key", "title"], highlightID: SettingsDeepLink.tasksListHighlightID),
             SettingsSearchEntry(tab: .tasks, title: "Task filters", keywords: ["tasks", "filter", "source", "project", "status", "to do", "in progress", "local", "jira", "gitlab"], highlightID: SettingsDeepLink.tasksListHighlightID),
-            SettingsSearchEntry(tab: .tasks, title: "Add a task", keywords: ["tasks", "add", "new task", "todo", "estimate"], highlightID: SettingsDeepLink.tasksListHighlightID),
-            SettingsSearchEntry(tab: .tasks, title: "Task order", keywords: ["tasks", "order", "reorder", "move", "drag", "priority", "list", "tracked", "actual time", "start", "time a task"], highlightID: SettingsDeepLink.tasksListHighlightID),
+            SettingsSearchEntry(tab: .tasks, title: "Add a task", keywords: ["tasks", "add", "new task", "todo", "estimate", "tags", "reminder"], highlightID: SettingsDeepLink.tasksListHighlightID),
             SettingsSearchEntry(tab: .tasks, title: "Task tags", keywords: ["tasks", "tags", "labels", "hashtag"], highlightID: SettingsDeepLink.tasksListHighlightID),
             SettingsSearchEntry(tab: .tasks, title: "Tag colours", keywords: ["tasks", "tags", "colour", "color", "tint", "glass", "labels", "hashtag"], highlightID: SettingsDeepLink.tasksListHighlightID),
             SettingsSearchEntry(tab: .tasks, title: "Schedule a task", keywords: ["tasks", "schedule", "reminder", "notification", "remind me", "due"], highlightID: SettingsDeepLink.tasksListHighlightID),
@@ -1180,6 +1200,7 @@ struct GeneralSettings: View {
     @Default(.customizePhysicalNotchWidth) var customizePhysicalNotchWidth
     @Default(.notchHeightMode) var notchHeightMode
     @Default(.displayPlacement) var displayPlacement
+    @Default(.screenCaptureVisibility) var screenCaptureVisibility
     @Default(.enableGestures) var enableGestures
     @Default(.openNotchOnHover) var openNotchOnHover
     @Default(.alwaysShowOnNonNotchDisplays) var alwaysShowOnNonNotchDisplays
@@ -1236,7 +1257,7 @@ struct GeneralSettings: View {
             }
 
             Section {
-                SettingsRow("Menubar icon", description: "The eye in the menu bar. Click it to open the notch on the display you are on; right-click for Brain, updates, restart and quit.") {
+                SettingsRow("Menubar icon", description: "The eye in the menu bar. Click it to open the notch on the display you are on; right-click for Show Notch, Brain, updates, restart and quit. It stays while the notch is hidden.") {
                     Defaults.Toggle(key: .menubarIcon) {
                         Text("Menubar icon")
                     }
@@ -1304,12 +1325,32 @@ struct GeneralSettings: View {
                 }
                 .disabled(displayPlacement != .chooseDisplay)
                 .settingsHighlight(id: highlightID("Display"))
-                Defaults.Toggle(key: .hideDynamicIslandFromScreenCapture) {
-                    Text("Hide Kannu during screenshots & recordings")
+                SettingsRow("Screenshots & recordings", description: screenCaptureVisibility.description) {
+                    Picker("", selection: $screenCaptureVisibility) {
+                        ForEach(ScreenCaptureVisibility.allCases) { option in
+                            Text(option.localizedName).tag(option)
+                        }
+                    }
                 }
-                .settingsHighlight(id: highlightID("Hide Kannu during screenshots & recordings"))
+                .settingsHighlight(id: highlightID("Screenshots & recordings"))
             } header: {
                 SettingsSectionHeader("System features")
+            }
+
+            Section {
+                // Onboarding's Permissions rows: what a Not now there held back is allowed here,
+                // one macOS dialog at a time.
+                VStack(spacing: 10) {
+                    // The current music source decides whether a "Control …" row shows.
+                    ForEach(LaunchPermissionManager.rows(musicSource: Defaults[.mediaController])) { permission in
+                        LaunchPermissionRow(permission: permission, musicSource: Defaults[.mediaController])
+                    }
+                }
+                .settingsHighlight(id: highlightID("Permissions"))
+            } header: {
+                SettingsSectionHeader("Permissions")
+            } footer: {
+                SettingsFooter("Kannu asks macOS for a permission only when you press Allow. What you skip stays off until you allow it here.")
             }
 
             Section {
@@ -7085,9 +7126,28 @@ struct NotesSettingsView: View {
     @Default(.enableNotes) private var enableNotes
     @Default(.enableAppleNotesSync) private var enableAppleNotesSync
     @Default(.appleNotesLastSyncDate) private var appleNotesLastSyncDate
+    @Default(.appleNotesSyncScope) private var appleNotesSyncScope
+    @State private var confirmNarrowingScope = false
 
     private func highlightID(_ title: String) -> String {
         SettingsTab.notes.highlightID(for: title)
+    }
+
+    /// Narrowing to the Kannu folder drops the local copies of every other note on the next sync
+    /// (nothing in Notes is deleted), so it asks first; widening is the explicit choice it describes.
+    private var scopeSelection: Binding<AppleNotesSyncScope> {
+        Binding(
+            get: { appleNotesSyncScope },
+            set: { scope in
+                guard scope != appleNotesSyncScope else { return }
+                if scope == .kannuFolder, Defaults[.savedNotes].contains(where: { $0.madeInAppleNotes == true }) {
+                    confirmNarrowingScope = true
+                } else {
+                    appleNotesSyncScope = scope
+                    NotesManager.shared.syncWithAppleNotes()
+                }
+            }
+        )
     }
 
     var body: some View {
@@ -7125,8 +7185,33 @@ struct NotesSettingsView: View {
                         Text("Sync with Apple Notes")
                     }
                     .settingsHighlight(id: highlightID("Sync with Apple Notes"))
+                    .onChange(of: enableAppleNotesSync) { _, isOn in
+                        // Turning it on is a click on the feature's own switch: after a Not now on
+                        // "Control Notes", this is where macOS is asked again.
+                        if isOn, LaunchPermissionManager.answer(for: .notesAutomation) == .deferred {
+                            LaunchPermissionManager.shared.request(.notesAutomation, musicSource: Defaults[.mediaController])
+                        }
+                    }
 
                     if enableAppleNotesSync {
+                        Picker(selection: scopeSelection) {
+                            ForEach(AppleNotesSyncScope.allCases) { scope in
+                                Text(scope.localizedName).tag(scope)
+                            }
+                        } label: {
+                            SettingsRowLabel("Notes to sync", description: appleNotesSyncScope.description, tint: nil)
+                        }
+                        .settingsHighlight(id: highlightID("Notes to sync"))
+                        .alert("Sync Only the Kannu Folder?", isPresented: $confirmNarrowingScope) {
+                            Button("Sync Kannu Folder") {
+                                appleNotesSyncScope = .kannuFolder
+                                NotesManager.shared.syncWithAppleNotes()
+                            }
+                            Button("Cancel", role: .cancel) {}
+                        } message: {
+                            Text("Notes made in Apple Notes outside the Kannu folder leave the notch. They stay in Apple Notes.")
+                        }
+
                         LabeledContent {
                             HStack(spacing: 8) {
                                 if appleNotesSync.isSyncing {
@@ -7134,12 +7219,7 @@ struct NotesSettingsView: View {
                                         .controlSize(.small)
                                 }
                                 Button("Sync Now") {
-                                    Task {
-                                        let notes = Defaults[.savedNotes]
-                                        if let merged = await appleNotesSync.sync(localNotes: notes) {
-                                            Defaults[.savedNotes] = merged
-                                        }
-                                    }
+                                    NotesManager.shared.syncWithAppleNotes()
                                 }
                                 .disabled(appleNotesSync.isSyncing)
                             }
@@ -7163,7 +7243,7 @@ struct NotesSettingsView: View {
                 } header: {
                     SettingsSectionHeader("Apple Notes")
                 } footer: {
-                    SettingsFooter("Two-way sync with the macOS Notes app. Notes created in Kannu appear in the Kannu folder in Notes, and your existing Apple Notes are imported into the notch. Grant Automation permission for Notes when prompted.")
+                    SettingsFooter("Two-way sync with the macOS Notes app. Notes made in Kannu go to the Kannu folder in Notes. Kannu asks macOS to let it control Notes the first time it syncs, or on the Permissions row in Brain › General.")
                 }
             }
         }
@@ -7764,7 +7844,8 @@ struct AgentStatusSettings: View {
             DetectedEditor(source: .cursor, name: "Cursor", detected: fm.fileExists(atPath: home.appendingPathComponent("Library/Application Support/Cursor/User/globalStorage/state.vscdb").path)),
             DetectedEditor(source: .claude, name: "Claude Code", detected: fm.fileExists(atPath: home.appendingPathComponent(".claude/projects").path)),
             DetectedEditor(source: .codex, name: "Codex", detected: fm.fileExists(atPath: home.appendingPathComponent(".codex/sessions").path)),
-            DetectedEditor(source: .warp, name: "Warp", detected: WarpAgentStore.databaseURL != nil),
+            // Launch Services, not Warp's container (whose stat raises a permission dialog).
+            DetectedEditor(source: .warp, name: "Warp", detected: LaunchPermissionManager.isWarpInstalled),
             DetectedEditor(source: .claudeDesktop, name: "Claude Desktop", detected: fm.fileExists(atPath: ClaudeDesktopAgentSessionStore.defaultRoot.path)),
         ]
     }

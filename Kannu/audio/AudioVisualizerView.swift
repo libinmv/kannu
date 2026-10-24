@@ -20,13 +20,15 @@ import Defaults
 /// Unified audio visualizer view that switches between real-time and animated based on user preference
 struct AudioVisualizerView: View {
     @Binding var isPlaying: Bool
+    /// Height of the bars, animated or real-time.
+    var barHeight: CGFloat = AudioSpectrum.defaultBarHeight
     @Default(.enableRealTimeWaveform) private var enableRealTimeWaveform
     
     var body: some View {
         if enableRealTimeWaveform {
-            RealTimeAudioSpectrumView(isPlaying: $isPlaying)
+            RealTimeAudioSpectrumView(isPlaying: $isPlaying, barHeight: barHeight)
         } else {
-            AudioSpectrumView(isPlaying: $isPlaying)
+            AudioSpectrumView(isPlaying: $isPlaying, barHeight: barHeight)
         }
     }
 }

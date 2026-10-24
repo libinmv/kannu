@@ -76,8 +76,6 @@ final class TaskSourceFilterTests: XCTestCase {
         let issuesOnly = Order.connectedFilter(showGitLabMergeRequests: false, alwaysListed: nil)
         XCTAssertEqual(titles(Order.active(list, listed: everything)), "a J I M O")
         XCTAssertEqual(titles(Order.active(list, listed: issuesOnly)), "a J I O")
-        XCTAssertEqual(titles(Order.movingUp(id("O", in: list), in: list, listed: issuesOnly)), "a J O I M",
-                       "a move steps over the hidden merge request")
         let timedM = Order.connectedFilter(showGitLabMergeRequests: false, alwaysListed: id("M", in: list))
         XCTAssertEqual(titles(Order.active(list, listed: timedM)), "a J I M O", "the timed merge request keeps its Stop button")
     }
@@ -124,31 +122,5 @@ final class TaskSourceFilterTests: XCTestCase {
         XCTAssertEqual(Order.active(list, listed: Order.viewFilter(hidden: [], alwaysListed: nil)).count, TaskSource.allCases.count)
         let noReminders = Order.viewFilter(hidden: [.appleReminders, .todoist], alwaysListed: nil)
         XCTAssertEqual(titles(Order.active(list, listed: noReminders)), "local jira gitlab github linear")
-    }
-
-    // MARK: - Moves count what is shown
-
-    func testMovesStepOverTasksOfAHiddenSource() {
-        let list = tasks("J a b K")
-        XCTAssertEqual(titles(Order.movingUp(id("K", in: list), in: list, listed: jiraOnly)), "K J a b")
-        XCTAssertEqual(titles(Order.active(Order.movingUp(id("K", in: list), in: list, listed: jiraOnly), listed: jiraOnly)), "K J")
-        XCTAssertEqual(titles(Order.movingDown(id("J", in: list), in: list, listed: jiraOnly)), "a b K J")
-        XCTAssertEqual(Order.movingUp(id("J", in: list), in: list, listed: jiraOnly), list, "already at the top of what is shown")
-        XCTAssertEqual(Order.movingDown(id("K", in: list), in: list, listed: jiraOnly), list, "already at the bottom of what is shown")
-    }
-
-    func testADropCountsListedTasksOnly() {
-        // On screen: "J K L". Drop L on J: it goes to the top.
-        let list = tasks("J a K b L")
-        let moved = Order.move(id: id("L", in: list), onto: id("J", in: list), in: list, listed: jiraOnly)
-        XCTAssertEqual(titles(Order.active(moved, listed: jiraOnly)), "L J K")
-        XCTAssertEqual(titles(moved), "L J a K b")
-        // Drop J on L: it goes to the end.
-        let toEnd = Order.move(id: id("J", in: list), onto: id("L", in: list), in: list, listed: jiraOnly)
-        XCTAssertEqual(titles(Order.active(toEnd, listed: jiraOnly)), "K L J")
-        XCTAssertEqual(titles(toEnd), "a K b L J")
-        // A task that is not on screen is neither dragged nor dropped on.
-        XCTAssertEqual(Order.move(id: id("a", in: list), onto: id("J", in: list), in: list, listed: jiraOnly), list)
-        XCTAssertEqual(Order.move(id: id("J", in: list), onto: id("b", in: list), in: list, listed: jiraOnly), list)
     }
 }

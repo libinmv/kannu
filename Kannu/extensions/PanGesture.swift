@@ -120,16 +120,32 @@ private struct ScrollMonitor: NSViewRepresentable {
         private func handleScroll(_ event: NSEvent) {
             guard lastEventTimestamp != event.timestamp else { return }
             lastEventTimestamp = event.timestamp
-            guard isCursorNearObservedView(using: event) else { return }
 
-            if event.phase == .ended || event.momentumPhase == .ended {
-                if active {
-                    action(accumulated.magnitude, .ended)
-                } else {
-                    action(0, .ended)
-                }
-                active = false
-                accumulated = 0
+            let ends = event.phase.contains(.ended) || event.phase.contains(.cancelled)
+                || event.momentumPhase.contains(.ended)
+            // A gesture under way ends wherever the pointer is when it does: an end that landed
+            // outside the bounds used to leave `accumulated` and `active` set for the next one.
+            if ends && isUnderWay {
+                endGesture()
+                return
+            }
+            guard isCursorNearObservedView(using: event) else { return }
+            if ends {
+                endGesture()
+                return
+            }
+
+            // A new gesture counts from nothing, whatever the last one left behind.
+            if event.phase.contains(.began) || event.phase.contains(.mayBegin), isUnderWay {
+                endGesture()
+            }
+
+            // Over a list or a note's text, a vertical scroll is that view's, never the notch's:
+            // nothing is counted, so leaving the view mid-gesture cannot close in one event
+            // (docs/REGRESSIONS.md entry 21).
+            if !direction.isHorizontal, let window = observedView?.window,
+               VerticalScrollOwnership.ownsScroll(at: screenPoint(of: event), in: window) {
+                if isUnderWay { endGesture() }
                 return
             }
 
@@ -145,18 +161,25 @@ private struct ScrollMonitor: NSViewRepresentable {
             }
         }
 
+        private var isUnderWay: Bool { active || accumulated > 0 }
+
+        /// Reports the end of the gesture so far (its distance if it had begun) and starts over.
+        private func endGesture() {
+            action(active ? accumulated.magnitude : 0, .ended)
+            active = false
+            accumulated = 0
+        }
+
+        private func screenPoint(of event: NSEvent) -> NSPoint {
+            guard let eventWindow = event.window else { return NSEvent.mouseLocation }
+            let rect = NSRect(origin: event.locationInWindow, size: .zero)
+            return eventWindow.convertToScreen(rect).origin
+        }
+
         private func isCursorNearObservedView(using event: NSEvent) -> Bool {
             guard let view = observedView, let window = view.window else { return false }
 
-            let screenPoint: NSPoint
-            if let eventWindow = event.window {
-                let rect = NSRect(origin: event.locationInWindow, size: .zero)
-                screenPoint = eventWindow.convertToScreen(rect).origin
-            } else {
-                screenPoint = NSEvent.mouseLocation
-            }
-
-            let windowPoint = window.convertPoint(fromScreen: screenPoint)
+            let windowPoint = window.convertPoint(fromScreen: screenPoint(of: event))
             let localPoint = view.convert(windowPoint, from: nil)
 
             // Extend the hit area vertically by a few points so the cursor

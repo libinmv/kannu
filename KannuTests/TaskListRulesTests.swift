@@ -20,14 +20,16 @@ import XCTest
 
 /// Brain › Tasks' lists, pinned in the source the way `LaunchGateRulesTests` pins the launch:
 ///
-/// - Rows reorder by real drag and drop. `ForEach.onMove` never drags inside a grouped `Form` on
-///   macOS (the user's "there should be drag and drop"), so each row is `draggable` and a
-///   `dropDestination`, and the drop goes through `TasksManager.move(_:onto:filter:)`, which honours
-///   the filters. Right-click › Move to Top / Up / Down stay.
+/// - Rows are not dragged or stepped (David, 2026-10-23: "no drag and order tasks or numbering"):
+///   no `draggable`, `dropDestination` or `onMove`, and no Move Up or Move Down, in the menu or as
+///   accessibility actions. Right-click › Move to Top stays, a named accessibility action too, so
+///   the user still picks what the notch's Up next shows first. This replaces 2026-10-06's "there
+///   should be drag and drop".
 /// - Task reminders ask macOS for notifications only from the user's first schedule, never at
 ///   launch, and Kannu never starts a timer on its own.
-/// - All tasks' filters are its own and say so: while they or Find narrow, the list opens with a
-///   "Filtered" row whose Show All resets all of them; the overview counts every task.
+/// - All tasks' filters are its own and say so: while they or Find narrow, a "Filtered" row sits
+///   above the rows (after Find and Add a task) whose Show All resets the four filters; the
+///   overview counts every task.
 /// - The task menu's items act in place or open a small sheet, so none ends in "…".
 /// - Brain › Tasks is a tree (David: "inward pages and tree"): a path of pages, one level per
 ///   back row, and search or a deep link returning to the overview.
@@ -43,40 +45,39 @@ final class TaskListRulesTests: XCTestCase {
     private static let managerPath = "Kannu/managers/Tasks/TasksManager.swift"
     private static let remindersPath = "Kannu/managers/Tasks/TaskReminders.swift"
 
-    // MARK: - Drag and drop
+    // MARK: - No drag, no stepping; Move to Top stays
 
-    func testRowsDragAndDropInsteadOfOnMove() throws {
-        XCTAssertEqual(Self.dragProblems(in: try Self.read(Self.rowsPath)), [])
+    func testTheRowsAreNeitherDraggedNorSteppedAndMoveToTopStays() throws {
+        XCTAssertEqual(Self.orderProblems(in: try Self.read(Self.rowsPath)), [])
     }
 
-    func testTheDragScannerCatchesPlantedOffenders() {
+    func testTheOrderScannerCatchesPlantedOffenders() {
         let good = Self.code("""
-            ForEach(rows) { task in
-                draggableRow(task, filter: filter)
+            .accessibilityActions {
+                if !row.isFirst {
+                    Button("Move to Top") { manager.moveToTop(task.id) }
+                }
             }
-            taskRow(task, filter: filter)
-                .draggable(dragPayload(for: task.id))
-                .dropDestination(for: String.self) { items, _ in
-                    manager.move(id, onto: task.id, filter: filter)
-                    return true
-                } isTargeted: { _ in }
-            Button("Move to Top") { manager.moveToTop(task.id) }
-            Button("Move Up") { manager.moveUp(task.id, filter: filter) }
-            Button("Move Down") { manager.moveDown(task.id, filter: filter) }
+            private func moreItems(for task: TaskItem, isFirst: Bool, isTimed: Bool) -> some View {
+                Button("Move to Top") { manager.moveToTop(task.id) }
+                    .disabled(isFirst)
+            }
             """)
-        XCTAssertEqual(Self.dragProblems(in: good), [])
-        XCTAssertEqual(Self.dragProblems(in: good + ".onMove { offsets, destination in }\n"),
-                       ["the task rows still use onMove, which never drags inside a Form"])
-        XCTAssertEqual(Self.dragProblems(in: good.replacingOccurrences(of: ".draggable(", with: ".onTapGesture(")),
-                       ["the task rows are not draggable"])
-        XCTAssertEqual(Self.dragProblems(in: good.replacingOccurrences(of: ".dropDestination(for: String.self)", with: ".onDrop(of: [])")),
-                       ["the task rows take no drop"])
-        XCTAssertEqual(Self.dragProblems(in: good.replacingOccurrences(of: "manager.move(id, onto: task.id, filter: filter)", with: "manager.move(id, onto: task.id)")),
-                       ["a drop does not pass the filters"])
-        XCTAssertEqual(Self.dragProblems(in: good.replacingOccurrences(of: "Button(\"Move Up\") { manager.moveUp(task.id, filter: filter) }", with: "")),
-                       ["⋯ › Move Up is gone or ignores the filters"])
-        // Prose about onMove is not a use of it.
-        XCTAssertEqual(Self.dragProblems(in: good + Self.code("// .onMove never drags here\n")), [])
+        XCTAssertEqual(Self.orderProblems(in: good), [])
+        XCTAssertEqual(Self.orderProblems(in: good + "row.draggable(dragPayload(for: task.id))\n"),
+                       ["the task rows are draggable again"])
+        XCTAssertEqual(Self.orderProblems(in: good + ".dropDestination(for: String.self) { _, _ in true }\n"),
+                       ["the task rows take drops again"])
+        XCTAssertEqual(Self.orderProblems(in: good + ".onMove { offsets, destination in }\n"),
+                       ["the task rows use onMove"])
+        XCTAssertEqual(Self.orderProblems(in: good + "Button(\"Move Up\") { manager.moveUp(task.id) }\n"),
+                       ["Move Up or Move Down is back"])
+        XCTAssertEqual(Self.orderProblems(in: good.replacingOccurrences(of: "    Button(\"Move to Top\") { manager.moveToTop(task.id) }\n        .disabled(isFirst)", with: "")),
+                       ["the menu lost Move to Top"])
+        XCTAssertEqual(Self.orderProblems(in: good.replacingOccurrences(of: ".accessibilityActions {", with: ".contextMenu {")),
+                       ["Move to Top is not an accessibility action"])
+        // Prose about dragging is not a drag.
+        XCTAssertEqual(Self.orderProblems(in: good + Self.code("// rows are never .draggable( or .onMove here\n")), [])
     }
 
     // MARK: - The view filter says so
@@ -127,8 +128,7 @@ final class TaskListRulesTests: XCTestCase {
     }
 
     /// David: the rows were "a mess" of ⋯ menus. A row's overflow is its right-click menu, opening
-    /// with Show Details; the › opens the task's page; Move Up and Move Down stay reachable from
-    /// the keyboard and VoiceOver as accessibility actions.
+    /// with Show Details; the › opens the task's page.
     func testARowsMoreIsItsRightClickMenu() throws {
         let rows = try Self.read(Self.rowsPath)
         XCTAssertFalse(rows.contains("SettingsMoreMenu"), "a task row grew a ⋯ menu again")
@@ -136,8 +136,6 @@ final class TaskListRulesTests: XCTestCase {
         XCTAssertTrue(menu.hasPrefix("{\n            Button(\"Show Details\") { context.open(.task(task.id)) }"),
                       "Show Details is not first: \(menu.prefix(120))")
         XCTAssertTrue(menu.contains("moreItems(for: task"), "the right-click menu lost the task's items")
-        XCTAssertTrue(rows.contains(".accessibilityAction(named: Text(\"Move Up\")) { manager.moveUp(task.id, filter: filter) }"))
-        XCTAssertTrue(rows.contains(".accessibilityAction(named: Text(\"Move Down\")) { manager.moveDown(task.id, filter: filter) }"))
         XCTAssertTrue(rows.contains("TaskRowCaption(task: task"), "the rows no longer use the one short caption")
     }
 
@@ -332,24 +330,27 @@ final class TaskListRulesTests: XCTestCase {
 
     // MARK: - Rules
 
-    static func dragProblems(in source: String) -> [String] {
+    /// No drag, drop or stepping on the task rows (comments are stripped by `code()`), and Move to
+    /// Top both in the right-click menu and as an accessibility action.
+    static func orderProblems(in source: String) -> [String] {
         var problems: [String] = []
+        if source.contains(".draggable(") || source.contains(".onDrag(") {
+            problems.append("the task rows are draggable again")
+        }
+        if source.contains(".dropDestination(") || source.contains(".onDrop(") {
+            problems.append("the task rows take drops again")
+        }
         if source.contains(".onMove") {
-            problems.append("the task rows still use onMove, which never drags inside a Form")
+            problems.append("the task rows use onMove")
         }
-        if !source.contains(".draggable(") {
-            problems.append("the task rows are not draggable")
+        if source.contains("\"Move Up\"") || source.contains("\"Move Down\"") {
+            problems.append("Move Up or Move Down is back")
         }
-        if !source.contains(".dropDestination(for: String.self)") {
-            problems.append("the task rows take no drop")
+        if !(block(after: "func moreItems(for task: TaskItem", in: source)?.contains("Button(\"Move to Top\") { manager.moveToTop(task.id) }") ?? false) {
+            problems.append("the menu lost Move to Top")
         }
-        if !source.contains("manager.move(id, onto: task.id, filter: filter)") {
-            problems.append("a drop does not pass the filters")
-        }
-        if !source.contains("Button(\"Move Up\") { manager.moveUp(task.id, filter: filter) }")
-            || !source.contains("Button(\"Move Down\") { manager.moveDown(task.id, filter: filter) }")
-            || !source.contains("Button(\"Move to Top\")") {
-            problems.append("⋯ › Move Up is gone or ignores the filters")
+        if !(block(after: ".accessibilityActions", in: source)?.contains("Button(\"Move to Top\") { manager.moveToTop(task.id) }") ?? false) {
+            problems.append("Move to Top is not an accessibility action")
         }
         return problems
     }

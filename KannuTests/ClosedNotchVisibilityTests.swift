@@ -158,7 +158,8 @@ final class ClosedNotchVisibilityTests: XCTestCase {
 
     /// The state measured on 2026-09-30: ordered in, opaque, but no longer on the space the user is
     /// in, because macOS reset every all-spaces window across a sleep or lock. That — and only
-    /// that — is repaired.
+    /// that — is repaired. Since 2026-10-22 this decision serves the clipboard panel, which belongs
+    /// on the managed spaces; the notch uses `notchSpaceRepair` below.
     func testOnlyAStrandedNotchIsPutBack() {
         XCTAssertTrue(ClosedNotchVisibility.shouldRejoinSpaces(
             isOnActiveSpace: false, isOrderedIn: true, hiddenForLock: false, screenLocked: false),
@@ -175,5 +176,64 @@ final class ClosedNotchVisibilityTests: XCTestCase {
         XCTAssertFalse(ClosedNotchVisibility.shouldRejoinSpaces(
             isOnActiveSpace: false, isOrderedIn: true, hiddenForLock: false, screenLocked: true),
             "never put the notch back over the lock screen")
+    }
+
+    // MARK: - The notch lives only in the notch space
+
+    private static let notch: UInt64 = 745
+
+    private func repair(_ memberships: Set<UInt64>, ordered: Bool = true, onScreen: Bool = true,
+                        unseen: Bool = false, hidden: Bool = false,
+                        locked: Bool = false) -> ClosedNotchVisibility.NotchSpaceRepair {
+        ClosedNotchVisibility.notchSpaceRepair(memberships: memberships, notchSpaceID: Self.notch,
+                                               isOrderedIn: ordered, isOnScreen: onScreen,
+                                               notchSpaceUnseen: unseen,
+                                               hiddenForLock: hidden, screenLocked: locked)
+    }
+
+    /// The live state on 2026-10-22: the notch in all nine desktop and fullscreen spaces next to
+    /// the notch space, one of them (754) a fullscreen space macOS created and added it to on its
+    /// own. Every space but the notch space is left.
+    func testTheMeasuredStateLeavesEveryOtherSpace() {
+        let live: Set<UInt64> = [3, 39, 42, 46, 67, 218, 402, 519, 754, Self.notch]
+        XCTAssertEqual(repair(live), .leaveOtherSpaces(live.subtracting([Self.notch])))
+    }
+
+    func testATileSubSpaceIsLeftToo() {
+        XCTAssertEqual(repair([Self.notch, 520]), .leaveOtherSpaces([520]),
+                       "520 is a tile sub-space of a fullscreen space, missing from the managed list but still a copy of the notch")
+    }
+
+    func testOnlyInTheNotchSpaceIsHealthy() {
+        XCTAssertEqual(repair([Self.notch]), .none,
+                       "AppKit calls this window off the active space; the old repair moved it back onto every space at the first switch")
+    }
+
+    func testOutsideTheNotchSpaceJoinsItFirst() {
+        XCTAssertEqual(repair([3, 519]), .joinNotchSpace, "reset onto desktop spaces: join first, strip only once joined")
+        XCTAssertEqual(repair([]), .joinNotchSpace, "in no space at all")
+        XCTAssertEqual(repair([3], onScreen: false), .joinNotchSpace, "joining comes before any fallback")
+    }
+
+    func testANotchTheNotchSpaceDoesNotShowGoesBackOnTheManagedSpaces() {
+        XCTAssertEqual(repair([Self.notch], onScreen: false), .fallBackToManagedSpaces,
+                       "seen beats still: a hidden notch space must not leave the notch invisible everywhere")
+    }
+
+    /// Right after a fallback the window is in the notch space and every managed space, and on
+    /// screen only through the managed copies. Stripping them again would hide it, then fall back,
+    /// at every check. While the window is marked, the copies stay.
+    func testAFallbackIsNotUndoneByTheNextCheck() {
+        let afterFallback: Set<UInt64> = [Self.notch, 3, 39, 42, 46, 67, 218, 402, 519, 754]
+        XCTAssertEqual(repair(afterFallback, unseen: true), .none)
+        XCTAssertEqual(repair(afterFallback, unseen: false), .leaveOtherSpaces(afterFallback.subtracting([Self.notch])),
+                       "once a wake, unlock or reposition clears the mark, the strip is tried again")
+        XCTAssertEqual(repair([3, 519], unseen: true), .joinNotchSpace, "the mark never stops a join")
+    }
+
+    func testAWindowThatShouldNotBeOnScreenIsLeftAlone() {
+        XCTAssertEqual(repair([3, 519], ordered: false), .none)
+        XCTAssertEqual(repair([3, 519], hidden: true), .none, "hidden for the lock screen on purpose")
+        XCTAssertEqual(repair([Self.notch], onScreen: false, locked: true), .none, "never over the lock screen")
     }
 }

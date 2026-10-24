@@ -26,12 +26,22 @@ import SwiftUI
 import Defaults
 
 class AudioSpectrum: NSView {
+    static let defaultBarHeight: CGFloat = 14
+    /// Fixed when the bars are built (`init(barHeight:)`).
+    private(set) var barHeight: CGFloat = AudioSpectrum.defaultBarHeight
     private var barLayers: [CAShapeLayer] = []
     private var isPlaying: Bool = true
     private var animationTimer: Timer?
     
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        wantsLayer = true
+        setupBars()
+    }
+
+    init(barHeight: CGFloat) {
+        self.barHeight = barHeight
+        super.init(frame: .zero)
         wantsLayer = true
         setupBars()
     }
@@ -51,7 +61,7 @@ class AudioSpectrum: NSView {
         let barCount = Defaults[.visualizerBarCount]
         let spacing: CGFloat = barWidth
         let totalWidth = CGFloat(barCount) * (barWidth + spacing)
-        let totalHeight: CGFloat = 14
+        let totalHeight: CGFloat = barHeight
         frame.size = CGSize(width: totalWidth, height: totalHeight)
 
         for i in 0 ..< barCount {
@@ -128,9 +138,10 @@ class AudioSpectrum: NSView {
 
 struct AudioSpectrumView: NSViewRepresentable {
     @Binding var isPlaying: Bool
+    var barHeight: CGFloat = AudioSpectrum.defaultBarHeight
     
     func makeNSView(context: Context) -> AudioSpectrum {
-        let spectrum = AudioSpectrum()
+        let spectrum = AudioSpectrum(barHeight: barHeight)
         spectrum.setPlaying(isPlaying)
         return spectrum
     }

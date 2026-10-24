@@ -187,6 +187,26 @@ final class TaskFacetsTests: XCTestCase {
         XCTAssertTrue(TaskFilter(tag: "x").isNarrowing)
     }
 
+    /// Brain's New Task opens a new task's page when All tasks' filters would hide it: a new local
+    /// task shows under no filter and Local, never under Jira, a tag it lacks, or a Find it misses.
+    func testANewLocalTaskShowsOnlyUnderFiltersThatAdmitIt() {
+        let added = TaskItem(title: "Write the onboarding guide", tags: ["docs"])
+        XCTAssertTrue(Facets.matches(added, filter: .all))
+        XCTAssertTrue(Facets.matches(added, filter: TaskFilter(source: .local)))
+        XCTAssertTrue(Facets.matches(added, filter: TaskFilter(tag: "Docs")))
+        XCTAssertFalse(Facets.matches(added, filter: TaskFilter(source: .jira)))
+        XCTAssertFalse(Facets.matches(added, filter: TaskFilter(tag: "urgent")))
+        XCTAssertFalse(Facets.matches(added, filter: TaskFilter(status: .inProgress)), "a new task is to do")
+        XCTAssertFalse(Facets.matches(added, filter: TaskFilter(query: "roadmap")))
+
+        // Add & Start judges the task with the session its start is about to open: live time is
+        // In Progress, not only time already recorded.
+        var started = added
+        started.segments = TaskTimeMath.opening([], at: Date())
+        XCTAssertTrue(Facets.matches(started, filter: TaskFilter(status: .inProgress)))
+        XCTAssertFalse(Facets.matches(started, filter: TaskFilter(status: .toDo)))
+    }
+
     func testAProjectFilterSavedAsALabelStillWorks() {
         let tasks = [gitlab("#3", projectID: 9), gitlab("#4", projectID: 10), jira("PROJ-1")]
         let stored = Facets.normalizedProjectFilter("Project 9")
@@ -209,16 +229,10 @@ final class TaskFacetsTests: XCTestCase {
         XCTAssertEqual(counts.inProgress, 2)
     }
 
-    func testAFilteredMoveCountsTheRowsShown() {
+    func testTheFiltersListOnlyTheRowsTheyMatch() {
         // On screen with Source Jira and Status To Do: A-1, C-3. B-2 is in progress, w is local.
         let list = [jira("A-1", category: "new"), local("w"), jira("B-2", category: "indeterminate"), jira("C-3", category: "new")]
         let listed = Facets.listed({ _ in true }, filter: TaskFilter(source: .jira, status: .toDo))
-        let id = { (title: String) in list.first { $0.title == title }!.id }
-        XCTAssertEqual(TaskOrdering.movingUp(id("C-3"), in: list, listed: listed).map(\.title), ["C-3", "A-1", "w", "B-2"])
-        XCTAssertEqual(TaskOrdering.move(id: id("A-1"), onto: id("C-3"), in: list, listed: listed).map(\.title),
-                       ["w", "B-2", "C-3", "A-1"], "dropped down: after the target, the hidden rows keep their order")
-        XCTAssertEqual(TaskOrdering.move(id: id("A-1"), onto: id("B-2"), in: list, listed: listed).map(\.title),
-                       list.map(\.title), "a row the filter hides is no drop target")
         XCTAssertEqual(TaskOrdering.active(list, listed: listed).map(\.title), ["A-1", "C-3"])
     }
 

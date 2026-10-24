@@ -139,7 +139,7 @@ class LockScreenPanelManager {
             newWindow.isMovable = false
             newWindow.hasShadow = false
 
-            ScreenCaptureVisibilityManager.shared.register(newWindow, scope: .entireInterface)
+            ScreenCaptureVisibilityManager.shared.register(newWindow, scope: .notch)
 
             panelWindow = newWindow
             window = newWindow

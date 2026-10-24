@@ -232,7 +232,7 @@ final class LockScreenTimerWidgetPanelManager {
         newWindow.isMovable = false
         newWindow.setHostedContent(hostingView())
 
-        ScreenCaptureVisibilityManager.shared.register(newWindow, scope: .entireInterface)
+        ScreenCaptureVisibilityManager.shared.register(newWindow, scope: .notch)
 
         window = newWindow
 

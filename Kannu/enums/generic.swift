@@ -59,6 +59,35 @@ enum ExternalDisplayStyle: String, CaseIterable, Defaults.Serializable, Identifi
     }
 }
 
+/// Which Apple Notes the notch's notes sync with.
+/// - `kannuFolder`: two-way, the "Kannu" folder of the default account only. The default.
+/// - `wholeAccount`: also every other note in the default account, shown read-only in the notch, so
+///   Kannu never rewrites (and flattens) a note it did not make, and Clear Notes cannot empty Notes.
+enum AppleNotesSyncScope: String, CaseIterable, Defaults.Serializable, Identifiable {
+    case kannuFolder = "Kannu folder"
+    case wholeAccount = "Whole account"
+
+    var id: String { rawValue }
+
+    var localizedName: String {
+        switch self {
+        case .kannuFolder:
+            return String(localized: "Kannu folder only")
+        case .wholeAccount:
+            return String(localized: "All my notes")
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .kannuFolder:
+            return String(localized: "Two-way sync with the Kannu folder in Notes. Your other notes are never read or changed.")
+        case .wholeAccount:
+            return String(localized: "Also shows every other note in your default Notes account, read-only: edit those in Notes.")
+        }
+    }
+}
+
 /// How the agent traffic light renders in the closed notch.
 /// - `classic`: all three dots, the current state lit and the other two dimmed.
 /// - `minimal`: only the dot that is currently lit.

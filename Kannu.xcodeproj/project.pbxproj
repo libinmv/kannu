@@ -104,6 +104,7 @@
 		AA10000000000000000005A5 /* TaskDetailSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000005A4 /* TaskDetailSummary.swift */; };
 		AA10000000000000000005A7 /* TaskArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000005A6 /* TaskArchive.swift */; };
 		AA10000000000000000005A9 /* HoverRevealMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000005A8 /* HoverRevealMotion.swift */; };
+		AA10000000000000000009E1 /* NotchEyeTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000009E0 /* NotchEyeTimeline.swift */; };
 		AA10000000000000000005BF /* TodoistAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000005BE /* TodoistAPI.swift */; };
 		AA10000000000000000005BD /* LinearAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000005BC /* LinearAPI.swift */; };
 		AA10000000000000000005BB /* GitHubAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000005BA /* GitHubAPI.swift */; };
@@ -121,6 +122,8 @@
 		AA10000000000000000004A5 /* TasksHeaderVisibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000004A4 /* TasksHeaderVisibility.swift */; };
 		AA10000000000000000004A7 /* TaskColor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000004A6 /* TaskColor.swift */; };
 		AA10000000000000000000BB /* ClipboardCapturePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000BA /* ClipboardCapturePolicy.swift */; };
+		AA10000000000000000000BF /* ClaudeCloudRelaySetup.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000BE /* ClaudeCloudRelaySetup.swift */; };
+		AA10000000000000000000BD /* ClaudeCloudRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000BC /* ClaudeCloudRelay.swift */; };
 		AA10000000000000000000B7 /* ClipboardPanelPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B6 /* ClipboardPanelPlacement.swift */; };
 		AA10000000000000000000B9 /* HostedContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000000B8 /* HostedContent.swift */; };
 		AA10000000000000000002B1 /* KeychainWritePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10000000000000000002B0 /* KeychainWritePlan.swift */; };
@@ -150,6 +153,10 @@
 		AA1000000000000000000961 /* AntigravityUsageReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000960 /* AntigravityUsageReport.swift */; };
 		AA1000000000000000000971 /* BuiltInNotchSkin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000970 /* BuiltInNotchSkin.swift */; };
 		AA1000000000000000000973 /* NotchSkinPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000972 /* NotchSkinPrompt.swift */; };
+		AA1000000000000000000975 /* SettingsSearchRanking.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000974 /* SettingsSearchRanking.swift */; };
+		AA1000000000000000000977 /* LaunchPermissions.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000976 /* LaunchPermissions.swift */; };
+		AA1000000000000000000981 /* AppleNotesMergePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000980 /* AppleNotesMergePolicy.swift */; };
+		AA1000000000000000000979 /* ScreenCapturePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000978 /* ScreenCapturePolicy.swift */; };
 		F910B9C812C7AEFE2293F7D2 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4A9C58195E197C19F691DA62 /* Cocoa.framework */; };
 /* End PBXBuildFile section */
 
@@ -257,6 +264,7 @@
 		AA10000000000000000005A4 /* TaskDetailSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TaskDetailSummary.swift; path = Kannu/managers/Tasks/TaskDetailSummary.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000005A6 /* TaskArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TaskArchive.swift; path = Kannu/managers/Tasks/TaskArchive.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000005A8 /* HoverRevealMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HoverRevealMotion.swift; path = Kannu/components/Notch/HoverRevealMotion.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000009E0 /* NotchEyeTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NotchEyeTimeline.swift; path = Kannu/components/Notch/NotchEyeTimeline.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000005BE /* TodoistAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TodoistAPI.swift; path = Kannu/managers/Tasks/TodoistAPI.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000005BC /* LinearAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LinearAPI.swift; path = Kannu/managers/Tasks/LinearAPI.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000005BA /* GitHubAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GitHubAPI.swift; path = Kannu/managers/Tasks/GitHubAPI.swift; sourceTree = SOURCE_ROOT; };
@@ -274,6 +282,8 @@
 		AA10000000000000000004A4 /* TasksHeaderVisibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TasksHeaderVisibility.swift; path = Kannu/managers/Tasks/TasksHeaderVisibility.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000004A6 /* TaskColor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TaskColor.swift; path = Kannu/managers/Tasks/TaskColor.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000BA /* ClipboardCapturePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClipboardCapturePolicy.swift; path = Kannu/managers/ClipboardCapturePolicy.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000BE /* ClaudeCloudRelaySetup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeCloudRelaySetup.swift; path = Kannu/managers/AgentStatus/ClaudeCloudRelaySetup.swift; sourceTree = SOURCE_ROOT; };
+		AA10000000000000000000BC /* ClaudeCloudRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClaudeCloudRelay.swift; path = Kannu/managers/AgentStatus/ClaudeCloudRelay.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000B6 /* ClipboardPanelPlacement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ClipboardPanelPlacement.swift; path = Kannu/managers/Display/ClipboardPanelPlacement.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000000B8 /* HostedContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HostedContent.swift; path = Kannu/helpers/HostedContent.swift; sourceTree = SOURCE_ROOT; };
 		AA10000000000000000002B0 /* KeychainWritePlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = KeychainWritePlan.swift; path = Kannu/managers/LLMUsage/Quota/KeychainWritePlan.swift; sourceTree = SOURCE_ROOT; };
@@ -303,6 +313,10 @@
 		AA1000000000000000000960 /* AntigravityUsageReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AntigravityUsageReport.swift; path = Kannu/managers/LLMUsage/AntigravityUsageReport.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000970 /* BuiltInNotchSkin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BuiltInNotchSkin.swift; path = Kannu/models/BuiltInNotchSkin.swift; sourceTree = SOURCE_ROOT; };
 		AA1000000000000000000972 /* NotchSkinPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NotchSkinPrompt.swift; path = Kannu/models/NotchSkinPrompt.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000974 /* SettingsSearchRanking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SettingsSearchRanking.swift; path = Kannu/helpers/SettingsSearchRanking.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000976 /* LaunchPermissions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LaunchPermissions.swift; path = Kannu/models/LaunchPermissions.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000980 /* AppleNotesMergePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppleNotesMergePolicy.swift; path = Kannu/managers/AppleNotesMergePolicy.swift; sourceTree = SOURCE_ROOT; };
+		AA1000000000000000000978 /* ScreenCapturePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ScreenCapturePolicy.swift; path = Kannu/helpers/ScreenCapturePolicy.swift; sourceTree = SOURCE_ROOT; };
 		DAA671E7B1B26733F02166C5 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F4C1DD09EC134302938E84F6 /* MediaRemoteAdapter.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MediaRemoteAdapter.framework; path = Frameworks/MediaRemoteAdapter.framework; sourceTree = SOURCE_ROOT; };
 		F54406E72CD4987A00C7AFD9 /* Kannu.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Kannu.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -760,6 +774,7 @@
 				AA10000000000000000005A5 /* TaskDetailSummary.swift in Sources */,
 				AA10000000000000000005A7 /* TaskArchive.swift in Sources */,
 				AA10000000000000000005A9 /* HoverRevealMotion.swift in Sources */,
+				AA10000000000000000009E1 /* NotchEyeTimeline.swift in Sources */,
 				AA10000000000000000005BF /* TodoistAPI.swift in Sources */,
 				AA10000000000000000005BD /* LinearAPI.swift in Sources */,
 				AA10000000000000000005BB /* GitHubAPI.swift in Sources */,
@@ -777,6 +792,8 @@
 				AA10000000000000000004A5 /* TasksHeaderVisibility.swift in Sources */,
 				AA10000000000000000004A7 /* TaskColor.swift in Sources */,
 				AA10000000000000000000BB /* ClipboardCapturePolicy.swift in Sources */,
+				AA10000000000000000000BF /* ClaudeCloudRelaySetup.swift in Sources */,
+				AA10000000000000000000BD /* ClaudeCloudRelay.swift in Sources */,
 				AA10000000000000000000B7 /* ClipboardPanelPlacement.swift in Sources */,
 				AA10000000000000000000B9 /* HostedContent.swift in Sources */,
 				AA10000000000000000002B1 /* KeychainWritePlan.swift in Sources */,
@@ -807,6 +824,10 @@
 				AA1000000000000000000961 /* AntigravityUsageReport.swift in Sources */,
 				AA1000000000000000000971 /* BuiltInNotchSkin.swift in Sources */,
 				AA1000000000000000000973 /* NotchSkinPrompt.swift in Sources */,
+				AA1000000000000000000975 /* SettingsSearchRanking.swift in Sources */,
+				AA1000000000000000000977 /* LaunchPermissions.swift in Sources */,
+				AA1000000000000000000981 /* AppleNotesMergePolicy.swift in Sources */,
+				AA1000000000000000000979 /* ScreenCapturePolicy.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1011,9 +1032,9 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
 				ENABLE_RESOURCE_ACCESS_CALENDARS = YES;
-				ENABLE_RESOURCE_ACCESS_CAMERA = YES;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
 				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
 				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
@@ -1029,13 +1050,14 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_MetalCaptureEnabled = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Kannu uses AppleScript to control Spotify and Apple Music, to bring the browser tab that is playing to the front when you click the media card, and to bring an agent's Terminal or iTerm2 tab to the front when you click its chat.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Kannu uses AppleScript to control Spotify and Apple Music, to bring the browser tab that is playing to the front when you click the media card, to bring an agent's Terminal or iTerm2 tab to the front when you click its chat, and to keep your notes in sync with Apple Notes when you turn that on.";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Kannu needs Bluetooth access to detect when audio devices connect and display their battery status in the HUD.";
-				INFOPLIST_KEY_NSDesktopFolderUsageDescription = "Kannu needs access to save screenshots to your desktop.";
 				INFOPLIST_KEY_NSDocumentsFolderUsageDescription = "Kannu needs access to save and read shelf dragged files.";
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Kannu needs access to read files in the downloads folder.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Kannu finds nearby devices with LocalSend, so you can send files from the Shelf to them.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSLocationUsageDescription = "Kannu uses your location to display accurate lock screen weather.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Kannu records your voice for the Screen Assistant when you press Record, and never otherwise.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Kannu uses your location to display accurate lock screen weather.";
 				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Kannu lists your incomplete reminders as tasks you can time, when you connect Apple Reminders in Brain › Tasks. It reads them and never changes them.";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1080,9 +1102,9 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
 				ENABLE_RESOURCE_ACCESS_CALENDARS = YES;
-				ENABLE_RESOURCE_ACCESS_CAMERA = YES;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
 				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
 				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
 				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = NO;
@@ -1098,13 +1120,14 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_MetalCaptureEnabled = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Kannu uses AppleScript to control Spotify and Apple Music, to bring the browser tab that is playing to the front when you click the media card, and to bring an agent's Terminal or iTerm2 tab to the front when you click its chat.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Kannu uses AppleScript to control Spotify and Apple Music, to bring the browser tab that is playing to the front when you click the media card, to bring an agent's Terminal or iTerm2 tab to the front when you click its chat, and to keep your notes in sync with Apple Notes when you turn that on.";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Kannu needs Bluetooth access to detect when audio devices connect and display their battery status in the HUD.";
-				INFOPLIST_KEY_NSDesktopFolderUsageDescription = "Kannu needs access to save screenshots to your desktop.";
 				INFOPLIST_KEY_NSDocumentsFolderUsageDescription = "Kannu needs access to save and read shelf dragged files.";
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Kannu needs access to read files in the downloads folder.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Kannu finds nearby devices with LocalSend, so you can send files from the Shelf to them.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSLocationUsageDescription = "Kannu uses your location to display accurate lock screen weather.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Kannu records your voice for the Screen Assistant when you press Record, and never otherwise.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Kannu uses your location to display accurate lock screen weather.";
 				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Kannu lists your incomplete reminders as tasks you can time, when you connect Apple Reminders in Brain › Tasks. It reads them and never changes them.";
 				LD_RUNPATH_SEARCH_PATHS = (

@@ -482,6 +482,10 @@ enum HideNotchOption: String, Defaults.Serializable {
     case never
 }
 
+/// Foundation-only in `ScreenCapturePolicy.swift` so the logic target can pin the rule; the
+/// conformance lives next to its key.
+extension ScreenCaptureVisibility: Defaults.Serializable {}
+
 // Define notification names at file scope
 extension Notification.Name {
     static let mediaControllerChanged = Notification.Name("mediaControllerChanged")
@@ -806,10 +810,16 @@ struct NoteItem: Codable, Identifiable, Defaults.Serializable, Hashable {
     var isPinned: Bool = false
     var imageFileName: String? = nil // Store filename instead of raw data
     var appleNotesId: String? = nil
+    /// Notes' modification date for this note as last read back, after a push or a pull: each side
+    /// counts as changed only once its date passes it (`AppleNotesMergePolicy.decide`).
+    var appleNotesSyncedAt: Date? = nil
+    /// Made in Notes, not in Kannu (`AppleNotesMergePolicy.madeInAppleNotes`). Nil until a sync
+    /// decides; a note made in the notch is `false` from the start.
+    var madeInAppleNotes: Bool? = nil
     
     // Internal property for migration
     private enum CodingKeys: String, CodingKey {
-        case id, title, content, creationDate, modificationDate, colorIndex, isPinned, imageFileName, imageData, appleNotesId
+        case id, title, content, creationDate, modificationDate, colorIndex, isPinned, imageFileName, imageData, appleNotesId, appleNotesSyncedAt, madeInAppleNotes
     }
     
     init(
@@ -821,7 +831,9 @@ struct NoteItem: Codable, Identifiable, Defaults.Serializable, Hashable {
         colorIndex: Int,
         isPinned: Bool = false,
         imageFileName: String? = nil,
-        appleNotesId: String? = nil
+        appleNotesId: String? = nil,
+        appleNotesSyncedAt: Date? = nil,
+        madeInAppleNotes: Bool? = nil
     ) {
         self.id = id
         self.title = title
@@ -832,6 +844,8 @@ struct NoteItem: Codable, Identifiable, Defaults.Serializable, Hashable {
         self.isPinned = isPinned
         self.imageFileName = imageFileName
         self.appleNotesId = appleNotesId
+        self.appleNotesSyncedAt = appleNotesSyncedAt
+        self.madeInAppleNotes = madeInAppleNotes
     }
     
     init(from decoder: Decoder) throws {
@@ -844,6 +858,8 @@ struct NoteItem: Codable, Identifiable, Defaults.Serializable, Hashable {
         colorIndex = try container.decode(Int.self, forKey: .colorIndex)
         isPinned = try container.decode(Bool.self, forKey: .isPinned)
         appleNotesId = try container.decodeIfPresent(String.self, forKey: .appleNotesId)
+        appleNotesSyncedAt = try container.decodeIfPresent(Date.self, forKey: .appleNotesSyncedAt)
+        madeInAppleNotes = try container.decodeIfPresent(Bool.self, forKey: .madeInAppleNotes)
         
         // Migration logic: if imageData exists but imageFileName doesn't, save it to disk
         if let data = try container.decodeIfPresent(Data.self, forKey: .imageData) {
@@ -867,6 +883,17 @@ struct NoteItem: Codable, Identifiable, Defaults.Serializable, Hashable {
         try container.encode(isPinned, forKey: .isPinned)
         try container.encode(imageFileName, forKey: .imageFileName)
         try container.encodeIfPresent(appleNotesId, forKey: .appleNotesId)
+        try container.encodeIfPresent(appleNotesSyncedAt, forKey: .appleNotesSyncedAt)
+        try container.encodeIfPresent(madeInAppleNotes, forKey: .madeInAppleNotes)
+    }
+
+    /// Shown, never edited: a note made in Notes while sync reads the whole account. Kannu would
+    /// rewrite its body as plain text (losing formatting and attachments), so it is edited in Notes.
+    /// Deleting it asks first, since it goes to Recently Deleted in Notes too; Clear Notes leaves it.
+    /// A linked note not yet decided (`madeInAppleNotes` nil, an install from before the field, until
+    /// its first sync) counts as made in Notes: only Kannu's own notes are written back.
+    func isReadOnlyMirror(syncEnabled: Bool, scope: AppleNotesSyncScope) -> Bool {
+        syncEnabled && scope == .wholeAccount && madeInAppleNotes != false && appleNotesId != nil
     }
     
     static let colors: [Color] = [.yellow, .blue, .red, .green, .purple, .orange]
@@ -913,9 +940,21 @@ extension Defaults.Keys {
         // MARK: General
     static let logLevel = Key<LogLevel>("logLevel", default: .none)
     static let menubarIcon = Key<Bool>("menubarIcon", default: true)
+    /// Off tears every notch window down. The menu bar eye is shown whatever `menubarIcon` says
+    /// while this is off, because its menu is the way back.
+    static let showNotch = Key<Bool>("showNotch", default: true)
     /// Set the first (and only) time Kannu registers itself as a login item on the user's
     /// behalf. Its whole job is to guarantee a later opt-out is never overridden.
     static let didAutoEnableLaunchAtLogin = Key<Bool>("didAutoEnableLaunchAtLogin", default: false)
+    /// `OnboardingProgress.currentVersion` once onboarding is finished; 0 until then. An install
+    /// from before it existed is marked done at launch, because `firstLaunch` is already false.
+    static let onboardingCompletedVersion = Key<Int>("onboardingCompletedVersion", default: 0)
+    /// `LaunchPermission` raw values the user pressed Allow for (the request ran).
+    static let askedLaunchPermissions = Key<[String]>("askedLaunchPermissions", default: [])
+    /// `LaunchPermission` raw values the user said Not now to: their features wait for consent.
+    static let deferredLaunchPermissions = Key<[String]>("deferredLaunchPermissions", default: [])
+    /// Clipboard history's files moved from `~/Documents/ClipboardData` to Application Support.
+    static let clipboardDataMigrated = Key<Bool>("clipboardDataMigrated", default: false)
     /// Bundle path the login item was last registered from, so the stale-path repair can fire
     /// only when the app actually moved instead of on every launch.
     static let lastLoginItemBundlePath = Key<String>("lastLoginItemBundlePath", default: "")
@@ -923,7 +962,12 @@ extension Defaults.Keys {
     /// `preferred_screen_name`, which between them could not express "the monitor, while it is
     /// plugged in". See `DisplayPlacementResolver`.
     static let displayPlacement = Key<DisplayPlacement>("displayPlacement", default: .externalTakesOver)
-    static let hideDynamicIslandFromScreenCapture = Key<Bool>("hideDynamicIslandFromScreenCapture", default: false)
+    /// Which Kannu windows stay out of screenshots, recordings and capture-based thumbnails.
+    /// Replaces the `hideDynamicIslandFromScreenCapture` Bool, which `migrateScreenCaptureVisibility`
+    /// reads raw. The old key is never declared again: a declared `Key` registers its default, which
+    /// would make everyone look like they had set it.
+    static let screenCaptureVisibility = Key<ScreenCaptureVisibility>("screenCaptureVisibility", default: .showEverything)
+    static let didMigrateScreenCaptureVisibility = Key<Bool>("didMigrateScreenCaptureVisibility", default: false)
     
         // MARK: Behavior
     /// Seconds the pointer must rest before hover-to-open fires — and, on displays where Kannu
@@ -1527,6 +1571,10 @@ extension Defaults.Keys {
     static let savedNotes = Key<[NoteItem]>("savedNotes", default: [])
     static let enableAppleNotesSync = Key<Bool>("enableAppleNotesSync", default: false)
     static let appleNotesLastSyncDate = Key<Date?>("appleNotesLastSyncDate", default: nil)
+    /// Which Apple Notes sync reads: the Kannu folder unless the user chose the whole account.
+    static let appleNotesSyncScope = Key<AppleNotesSyncScope>("appleNotesSyncScope", default: .kannuFolder)
+    /// Set once the scope has been decided for this install (`NotesManager.migrateSyncScopeIfNeeded`).
+    static let appleNotesSyncScopeMigrated = Key<Bool>("appleNotesSyncScopeMigrated", default: false)
 
     // MARK: Tasks Feature
     // The tasks themselves live in Application Support/Kannu/Tasks/tasks.json (TaskFileStore),
@@ -1656,6 +1704,19 @@ extension Defaults.Keys {
             Defaults[.alwaysShowOverrides] = legacyOverrides.mapValues { !$0 }
         }
         Defaults[.didMigrateNonNotchAlwaysShow] = true
+    }
+
+    /// Only a user who touched the legacy "Hide Kannu during screenshots & recordings" toggle has a
+    /// choice to carry over: on becomes "Hide everything" (what the toggle did), off "Show
+    /// everything". Everyone else keeps the default, "Show everything", which is what the toggle's
+    /// default did, so nobody's screenshots change on update. Reads the legacy key raw, see
+    /// `screenCaptureVisibility`.
+    static func migrateScreenCaptureVisibility() {
+        guard Defaults[.didMigrateScreenCaptureVisibility] == false else { return }
+        if let legacy = UserDefaults.standard.object(forKey: "hideDynamicIslandFromScreenCapture") as? Bool {
+            Defaults[.screenCaptureVisibility] = legacy ? .hideEverything : .showEverything
+        }
+        Defaults[.didMigrateScreenCaptureVisibility] = true
     }
 
     /// Everyone gets the new default, including people who had chosen otherwise.

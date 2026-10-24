@@ -21,16 +21,18 @@ import Defaults
 import SwiftUI
 
 /// All tasks (‹ Tasks): every task Kannu holds — local, Jira and GitLab, synced or paused
-/// (`TasksManager.activeTasks`) — in one order. First a Find row, a search field with one Filter
-/// menu beside it holding the Source, Project, Status and Tag filters; then Add a task, the task
-/// order and its rows (`TaskRowList`); and, folded at the end, Recently closed, the Archive and Tag
-/// colours.
+/// (`TasksManager.activeTasks`) — in one order. One Tasks card: Find, a search field with one
+/// Filter menu beside it holding the Source, Project, Status and Tag filters; Add a task, whose New
+/// Task button opens a sheet with everything the notch's task form takes (`TaskAddRow`,
+/// `NewTaskSheet`); then the rows (`TaskRowList`). Then one folded Section: Recently closed, the
+/// Archive and Tag colours.
 ///
-/// The filters are this page's own, a view filter only: they persist in Defaults
-/// (`tasksListSourceFilter` and the rest) and change nothing anywhere else; Find is never saved.
-/// While either hides anything the list opens with a "Filtered" row, "3 of 12 tasks", whose Show
-/// All clears both. The rows here carry no highlight ids: their search entries land on the
-/// overview's All tasks row.
+/// No total and no task-order row (David, 2026-10-23: "no drag and order tasks or numbering"): the
+/// one count is the "Filtered" row's, "3 of 12 tasks", shown above the rows while a filter or Find
+/// is set, whose Show All clears both. The filters are this page's own, a view filter
+/// only: they persist in Defaults (`tasksListSourceFilter` and the rest) and change nothing
+/// anywhere else; Find is never saved. The rows here carry no highlight ids: their search entries
+/// land on the overview's All tasks row.
 struct AllTasksPage: View {
     @ObservedObject private var manager = TasksManager.shared
     @Default(.enableTimerFeature) private var enableTimerFeature
@@ -49,33 +51,25 @@ struct AllTasksPage: View {
         self.context = context
     }
 
-    private var filter: TaskFilter {
-        TaskFilter(source: sourceFilter, project: TaskFacets.normalizedProjectFilter(projectFilter),
-                   status: statusFilter, tag: tagFilter, query: query)
+    private var filter: TaskFilter { Self.savedFilter(query: query) }
+
+    /// The list's filter as saved now, with Find's `query`: the rows', and New Task's from ⌘N
+    /// (`TasksSettings`), which reads it when pressed. The `@Default`s above are what this page
+    /// observes, so a change redraws it.
+    static func savedFilter(query: String) -> TaskFilter {
+        TaskFilter(source: Defaults[.tasksListSourceFilter],
+                   project: TaskFacets.normalizedProjectFilter(Defaults[.tasksListProjectFilter]),
+                   status: Defaults[.tasksListStatusFilter], tag: Defaults[.tasksListTagFilter], query: query)
     }
 
     var body: some View {
-        Section {
-            findRow
-        }
-        .onAppear {
-            manager.checkReminderPermission()
-            // Recently closed and the Archive read their days from now, not from the last sync.
-            manager.refreshArchive()
-            // A Project filter saved before project keys: rewrite it once, so the menu selects it.
-            let project = TaskFacets.normalizedProjectFilter(projectFilter)
-            if project != projectFilter { projectFilter = project }
-        }
-
-        if case .failed(let reason) = manager.loadState {
-            Section {
-                SettingsErrorText(String(localized: "Couldn't read the task list, so it can't change. \(reason)"))
-            }
-        }
         tasksSection
-        recentlyClosedSection
-        archiveSection
-        tagColorsSection
+        // A Section earns its gap (docs/SETTINGS.md): the folded extras are rows of one Section.
+        Section {
+            recentlyClosedGroup
+            archiveGroup
+            tagColorsGroup
+        }
     }
 
     // MARK: - Find and the filters
@@ -85,6 +79,7 @@ struct AllTasksPage: View {
             HStack(spacing: SettingsMetrics.rowContent) {
                 TextField("Find", text: $query, prompt: Text("Title, key or tag"))
                     .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
                 filterMenu
             }
         } label: {
@@ -165,22 +160,27 @@ struct AllTasksPage: View {
         let rows = manager.listedTasks(filter)
         let total = manager.activeTasks.count
         return Section {
-            // First, so a narrowed list never passes for the whole one.
+            if case .failed(let reason) = manager.loadState {
+                SettingsErrorText(String(localized: "Couldn't read the task list, so it can't change. \(reason)"))
+            }
+            // On the one row, not the Section, so it runs as the page opens and not again as task
+            // rows scroll in and out of the lazy Form.
+            findRow
+                .onAppear {
+                    manager.checkReminderPermission()
+                    // Recently closed and the Archive read their days from now, not from the last sync.
+                    manager.refreshArchive()
+                    // A Project filter saved before project keys: rewrite it once, so the menu selects it.
+                    let project = TaskFacets.normalizedProjectFilter(projectFilter)
+                    if project != projectFilter { projectFilter = project }
+                }
+            TaskAddRow(context: context, listFilter: filter)
+
+            // Above the rows, so a narrowed list never passes for the whole one: the page's one count.
             if filter.isNarrowing {
                 SettingsActionRow("Filtered", description: String(localized: "\(rows.count) of \(total) tasks")) {
                     Button("Show All", action: showAll)
                 }
-            }
-
-            TaskAddRow(context: context)
-
-            LabeledContent {
-                // Filtered, the count is on the Filtered row: one fact, said once.
-                if !filter.isNarrowing {
-                    SettingsValueText(String(localized: "\(total) open"))
-                }
-            } label: {
-                SettingsRowLabel("Task order", description: "Drag to reorder. Right-click a task for more.")
             }
 
             if !enableTimerFeature {
@@ -207,43 +207,42 @@ struct AllTasksPage: View {
             TaskRowList(filter: filter, context: context)
         } header: {
             SettingsSectionHeader("Tasks")
+        } footer: {
+            // The rows' menu is otherwise unseen.
+            SettingsFooter("Right-click a task for more, such as Move to Top.")
         }
     }
 
     // MARK: - Recently closed and Archive
 
     /// Done and gone tasks, for `TaskArchive.closedDays`, then the archive takes them.
-    private var recentlyClosedSection: some View {
+    private var recentlyClosedGroup: some View {
         let closed = manager.recentlyClosedTasks
-        return Section {
-            DisclosureGroup(isExpanded: $showsRecentlyClosed) {
-                if closed.isEmpty {
-                    SettingsNoteRow("Nothing closed lately", description: "Tasks you mark done, and tickets closed in Jira or GitLab, appear here.")
-                }
-                ForEach(closed) { task in
-                    closedRow(task)
-                }
-            } label: {
-                SettingsRowLabel("Recently closed", description: "Moved to the archive after \(TaskArchive.closedDays) days.")
+        return DisclosureGroup(isExpanded: $showsRecentlyClosed) {
+            if closed.isEmpty {
+                SettingsNoteRow("Nothing closed lately", description: "Tasks you mark done, and tickets closed in Jira or GitLab, appear here.")
             }
+            ForEach(closed) { task in
+                closedRow(task)
+            }
+        } label: {
+            SettingsRowLabel("Recently closed", description: "Moved to the archive after \(TaskArchive.closedDays) days.")
         }
     }
 
     /// Archived tasks: out of every other list. A Jira or GitLab task clears itself
     /// `TaskArchive.clearDays` after it was archived, never while it holds time to log.
-    private var archiveSection: some View {
+    private var archiveGroup: some View {
         let archived = manager.archivedTasks
-        return Section {
-            DisclosureGroup(isExpanded: $showsArchive) {
-                if archived.isEmpty {
-                    SettingsNoteRow("The archive is empty", description: "Archived tasks keep their time here.")
-                }
-                ForEach(archived) { task in
-                    archivedRow(task)
-                }
-            } label: {
-                SettingsRowLabel("Archive", description: "Jira and GitLab tasks clear after \(TaskArchive.clearDays) days; yours stay.")
+        return DisclosureGroup(isExpanded: $showsArchive) {
+            if archived.isEmpty {
+                SettingsNoteRow("The archive is empty", description: "Archived tasks keep their time here.")
             }
+            ForEach(archived) { task in
+                archivedRow(task)
+            }
+        } label: {
+            SettingsRowLabel("Archive", description: "Jira and GitLab tasks clear after \(TaskArchive.clearDays) days; yours stay.")
         }
     }
 
@@ -317,27 +316,25 @@ struct AllTasksPage: View {
 
     /// Every tag on any task Kannu holds, done and hidden ones too, with its colour. A colour is
     /// the tag's, shared by every task carrying it (`TasksManager.setTagColor`).
-    private var tagColorsSection: some View {
+    private var tagColorsGroup: some View {
         let tags = TaskFacets.tags(in: manager.tasks)
-        return Section {
-            DisclosureGroup(isExpanded: $showsTagColors) {
-                if tags.isEmpty {
-                    SettingsNoteRow("No tags yet", description: "Tags you add to tasks appear here.")
-                }
-                ForEach(tags, id: \.self) { tag in
-                    LabeledContent {
-                        TaskColorPickerButton(
-                            selection: tagColorBinding(for: tag),
-                            accessibilityLabel: String(localized: "Colour of tag \(tag): \(manager.tagColor(for: tag).localizedName)")
-                        )
-                        .disabled(!manager.isReady)
-                    } label: {
-                        SettingsRowLabel(Text(verbatim: "#\(tag)"))
-                    }
-                }
-            } label: {
-                SettingsRowLabel("Tag colours", description: "A task takes its first tag's colour; untagged ones, their source's.")
+        return DisclosureGroup(isExpanded: $showsTagColors) {
+            if tags.isEmpty {
+                SettingsNoteRow("No tags yet", description: "Tags you add to tasks appear here.")
             }
+            ForEach(tags, id: \.self) { tag in
+                LabeledContent {
+                    TaskColorPickerButton(
+                        selection: tagColorBinding(for: tag),
+                        accessibilityLabel: String(localized: "Colour of tag \(tag): \(manager.tagColor(for: tag).localizedName)")
+                    )
+                    .disabled(!manager.isReady)
+                } label: {
+                    SettingsRowLabel(Text(verbatim: "#\(tag)"))
+                }
+            }
+        } label: {
+            SettingsRowLabel("Tag colours", description: "A task takes its first tag's colour; untagged ones, their source's.")
         }
     }
 

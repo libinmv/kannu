@@ -270,6 +270,10 @@ struct TaskItem: Codable, Identifiable, Equatable {
     var tags: [String]
     /// When a local task's reminder is due. Nil when it has none; never set on a remote task.
     var scheduledAt: Date?
+    /// True when the user turned this task's reminder notification off; the time still shows.
+    /// Nil means on, and keeps the key out of the file, so an older file and an older build read the
+    /// same as before.
+    var reminderMuted: Bool?
     /// When it was marked done, or its source stopped listing it. Nil while it is listed: an
     /// archived remote task the server still lists is never cleared (`TaskArchive`).
     var closedAt: Date?
@@ -291,6 +295,7 @@ struct TaskItem: Codable, Identifiable, Equatable {
         createdAt: Date = Date(),
         tags: [String] = [],
         scheduledAt: Date? = nil,
+        reminderMuted: Bool? = nil,
         closedAt: Date? = nil,
         archivedAt: Date? = nil,
         archivedByUser: Bool = false
@@ -306,12 +311,16 @@ struct TaskItem: Codable, Identifiable, Equatable {
         self.createdAt = createdAt
         self.tags = tags
         self.scheduledAt = scheduledAt
+        self.reminderMuted = reminderMuted == true ? true : nil
         self.closedAt = closedAt
         self.archivedAt = archivedAt
         self.archivedByUser = archivedByUser
     }
 
     var effectiveEstimateSeconds: Int? { localEstimateSeconds ?? remote?.remoteEstimateSeconds }
+
+    /// Whether this task's reminder raises a notification. On unless the user turned it off.
+    var notifiesForReminder: Bool { reminderMuted != true }
 
     /// The longest title kept. Long enough for any issue summary, short enough for one row.
     static let maxTitleLength = 200
@@ -323,6 +332,22 @@ struct TaskItem: Codable, Identifiable, Equatable {
         let joined = words.joined(separator: " ")
         guard joined.count > maxTitleLength else { return joined }
         return String(joined.prefix(maxTitleLength)).trimmingCharacters(in: .whitespaces)
+    }
+
+    /// The key a name typed in the timer tab's bar and a task's title are compared by: the text as
+    /// the bar holds it (`TimerSessionName.cleaned`, at most 40 characters), case and accents
+    /// ignored. "Deep work", "deep  WORK" and "Déep work" share one key, and a longer title is keyed
+    /// by its first 40 characters, the part its session shows. Nil when nothing is left of it.
+    static func nameKey(_ text: String) -> String? {
+        TimerSessionName.cleaned(text)?.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+    }
+
+    /// The task a name typed in the timer tab's bar times: the first active local task, in the
+    /// user's order, with the same `nameKey`. Done, archived, Jira and GitLab tasks never match, so a
+    /// typed name never puts time on an issue the user did not pick.
+    static func reusable(titled typed: String, in tasks: [TaskItem]) -> TaskItem? {
+        guard let key = nameKey(typed) else { return nil }
+        return tasks.first { $0.source == .local && $0.visibility == .active && nameKey($0.title) == key }
     }
 
     /// At most this many tags on one task.
@@ -354,7 +379,7 @@ struct TaskItem: Codable, Identifiable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case id, source, title, localEstimateSeconds, remote, segments, logPolicy, visibility, createdAt
-        case tags, scheduledAt, closedAt, archivedAt, archivedByUser
+        case tags, scheduledAt, reminderMuted, closedAt, archivedAt, archivedByUser
     }
 
     /// A task whose `source` this build does not know: a newer Kannu's, or a tester's after going
@@ -388,6 +413,7 @@ struct TaskItem: Codable, Identifiable, Equatable {
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date(timeIntervalSince1970: 0)
         tags = Self.cleanedTags((try? container.decodeIfPresent([String].self, forKey: .tags)) ?? [])
         scheduledAt = try? container.decodeIfPresent(Date.self, forKey: .scheduledAt)
+        reminderMuted = ((try? container.decodeIfPresent(Bool.self, forKey: .reminderMuted)) ?? nil) == true ? true : nil
         closedAt = try? container.decodeIfPresent(Date.self, forKey: .closedAt)
         archivedAt = try? container.decodeIfPresent(Date.self, forKey: .archivedAt)
         archivedByUser = ((try? container.decodeIfPresent(Bool.self, forKey: .archivedByUser)) ?? nil) ?? false

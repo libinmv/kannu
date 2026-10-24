@@ -23,7 +23,7 @@ import Defaults
 
 /// WebSocket server for Kannu RPC.
 /// Uses Apple's Network.framework (`NWListener`) — no external dependencies.
-/// Accepts only loopback clients on port 9020 for JSON-RPC 2.0 over WebSocket.
+/// Listens on the loopback interface only, port 9020, for JSON-RPC 2.0 over WebSocket.
 @MainActor
 final class ExtensionRPCServer {
     static let shared = ExtensionRPCServer()
@@ -53,6 +53,12 @@ final class ExtensionRPCServer {
         }
 
         let params = NWParameters(tls: nil)
+        // Loopback only. Without this the listener took connections on every interface, so any
+        // machine on the network could open one to port 9020; `handleNewConnection` dropped it
+        // only after accepting. Now nothing off this Mac can connect at all, while 127.0.0.1, ::1
+        // and localhost clients still can (checked with a Network.framework harness: a LAN
+        // address times out). The peer check stays, as a second line.
+        params.requiredInterfaceType = .loopback
         let wsOptions = NWProtocolWebSocket.Options()
         wsOptions.autoReplyPing = true
         params.defaultProtocolStack.applicationProtocols.insert(wsOptions, at: 0)

@@ -24,6 +24,9 @@ import Foundation
 
 class NotchSpaceManager {
     static let shared = NotchSpaceManager()
+    /// Kannu's own top-level space (absolute level Int32.max), shown above every space. Every notch
+    /// window lives here and in no other space, on every hide option:
+    /// `AppDelegate.pinNotchWindows` adds it and takes it out of the desktop and fullscreen spaces.
     let notchSpace: CGSSpace
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?

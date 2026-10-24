@@ -224,6 +224,7 @@ struct ExtensionNotchExperienceTabView: View {
                     .padding(.vertical, 14)
                     .padding(.horizontal, 16)
                 }
+                .ownsVerticalScroll()
             } else {
                 Text("Extension tab unavailable")
                     .font(.system(size: 13, weight: .medium))
@@ -394,6 +395,7 @@ struct ExtensionMinimalisticExperienceView: View {
                     .padding(.top, 10)
                     .padding(.bottom, hasWebContent ? 0 : 10)
                 }
+                .ownsVerticalScroll()
             } else {
                 MinimalisticMusicPlayerView(albumArtNamespace: albumArtNamespace)
             }

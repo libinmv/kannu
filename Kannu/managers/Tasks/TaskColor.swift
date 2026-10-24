@@ -92,6 +92,12 @@ enum TaskColoring {
         colors[source] ?? .glass
     }
 
+    /// The colour `task` shows (`color(tags:tagColors:integration:)`), with every integration's
+    /// colour read once beforehand, so a list of tasks reads Defaults once, not once a row.
+    static func color(of task: TaskItem, tagColors: [String: TaskColor], integrations: [TaskSource: TaskColor]) -> TaskColor {
+        color(tags: task.tags, tagColors: tagColors, integration: integration(for: task.source, colors: integrations))
+    }
+
     /// Tag colours as read from a file: keys cleaned with `key(for:)`, empty keys, unknown colour
     /// names and `.glass` (the default, never stored) dropped. Spellings that clean to one key keep
     /// the first in sorted order, so a load is deterministic.

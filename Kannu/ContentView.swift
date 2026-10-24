@@ -442,6 +442,25 @@ struct ContentView: View {
         !isNonNotchScreen
     }
 
+    /// Show / Hide Notch's eye is playing in this window's closed notch (`NotchEyeRevealView`).
+    /// It takes the closed notch over: live activities, HUDs and the battery surface give way.
+    private var playsNotchEyeHere: Bool {
+        coordinator.notchEye.isAnimating
+            && vm.notchState == .closed
+            && !vm.hideOnClosed
+            && vm.effectiveClosedNotchHeight > 0
+    }
+
+    /// How far each side of the eye reaches beyond the resting notch, within the room the window
+    /// has beside it.
+    private var notchEyeWingWidth: CGFloat {
+        let restingWidth = vm.closedNotchSize.width - 20 + 2 * notchHorizontalPadding
+        let available = (dynamicNotchSize.width - restingWidth) / 2
+        return CGFloat(NotchEyeTimeline.wingWidth(closedHeight: Double(vm.effectiveClosedNotchHeight),
+                                                  closedWidth: Double(vm.closedNotchSize.width),
+                                                  available: Double(available)))
+    }
+
     private var shouldExpandPhysicalNotchForAgent: Bool {
         // `showAgentTrafficLight` implies enableAgentStatusFeature && the monitor's
         // shouldShowTrafficLight (upstream's conditions) plus the hide-until-hover reveal
@@ -548,6 +567,9 @@ struct ContentView: View {
             && !isSneakPeekVisibleOnCurrentScreen
             && !showAgentTrafficLight
             && !timerOwnsClosedNotch
+            // Show / Hide Notch's eye is a reveal: an island parked off-screen would play it
+            // where nobody sees it.
+            && !coordinator.notchEye.isAnimating
     }
 
     /// Whether the fallback top-edge hover detector should run.
@@ -607,7 +629,7 @@ struct ContentView: View {
     private var shouldPaintClosedNotchBackground: Bool {
         if vm.notchState == .open { return true }
         if vm.hideOnClosed { return false }
-        if coordinator.firstLaunch { return true }
+        if coordinator.helloPending { return true }
 
         if idleScheduleManager.isActive || idlePreviewManager.isActive || easterEggManager.isActive {
             return true
@@ -707,7 +729,7 @@ struct ContentView: View {
 
 
     private var activeClosedBatterySurfaceShape: AnyShape? {
-        guard vm.notchState == .closed else { return nil }
+        guard vm.notchState == .closed, !playsNotchEyeHere else { return nil }
         guard isBatteryHUDVisibleOnCurrentScreen else { return nil }
         guard let kind = batteryModel.activeTemporaryHUDKind else { return nil }
 
@@ -756,6 +778,26 @@ struct ContentView: View {
         installRootLifecycleHandlers(on: rootBodyView)
     }
 
+    /// What paints the closed notch's body: the skin and its scrim, or the fill colour.
+    @ViewBuilder
+    private var notchBodyFill: some View {
+        ZStack {
+            if let skin = notchSkinManager.selectedSkinImage {
+                Image(nsImage: skin)
+                    .resizable()
+                    .scaledToFill()
+                if notchSkinScrimOpacity > 0 {
+                    Color.black.opacity(notchSkinScrimOpacity)
+                }
+            } else {
+                notchFillColor
+            }
+            if shouldShowFullNotchShimmer {
+                NotchShimmerView(cornerRadius: closedNotchShimmerCornerRadius)
+            }
+        }
+    }
+
     private var mainLayoutBase: some View {
         NotchLayout()
             .frame(alignment: .top)
@@ -763,20 +805,20 @@ struct ContentView: View {
             .padding([.horizontal, .bottom], vm.notchState == .open ? 12 : 0)
             .background {
                 if shouldPaintClosedNotchBackground {
-                    ZStack {
-                        if let skin = notchSkinManager.selectedSkinImage {
-                            Image(nsImage: skin)
-                                .resizable()
-                                .scaledToFill()
-                            if notchSkinScrimOpacity > 0 {
-                                Color.black.opacity(notchSkinScrimOpacity)
-                            }
-                        } else {
-                            notchFillColor
+                    // Identity both ways: the eye starts and settles inside an animated
+                    // transaction, and a default fade here would cross-fade the fill with itself.
+                    if playsNotchEyeHere {
+                        NotchEyeView(progress: coordinator.notchEye.progress,
+                                     fadesOnly: coordinator.notchEye.fadesOnly,
+                                     wingWidth: notchEyeWingWidth,
+                                     centreIsHardware: isPhysicalNotchScreen && !isDynamicIslandMode,
+                                     eyeColor: notchForegroundColor) {
+                            notchBodyFill
                         }
-                        if shouldShowFullNotchShimmer {
-                            NotchShimmerView(cornerRadius: closedNotchShimmerCornerRadius)
-                        }
+                        .transition(.identity)
+                    } else {
+                        notchBodyFill
+                            .transition(.identity)
                     }
                 }
             }
@@ -889,16 +931,17 @@ struct ContentView: View {
                 ? -(vm.closedNotchSize.height + pillTopOffset + currentShadowPadding + 10)
                 : 0
             )
-            .onAppear(perform: {
-                if coordinator.firstLaunch {
-                    // Single open during first launch; closeHello() handles the timed close.
+            .onChange(of: coordinator.helloPending) { _, pending in
+                // Onboarding's finale: a single open once Finish is pressed; closeHello() handles
+                // the timed close. It used to open on appear at launch, under the onboarding window.
+                if pending {
                     runAfter(1) {
                         withAnimation(vm.animation) {
                             openNotch()
                         }
                     }
                 }
-            })
+            }
             .onChange(of: vm.notchState) { _, newState in
                 // Update smart monitoring based on notch state
                 if enableStatsFeature {
@@ -979,6 +1022,11 @@ struct ContentView: View {
             .contextMenu {
                 Button("Brain") {
                     SettingsWindowController.shared.showWindow()
+                }
+                Divider()
+                // Reaches the closed notch and the minimalistic UI, where the header has no buttons.
+                Button("Hide Notch") {
+                    Defaults[.showNotch] = false
                 }
             }
     }
@@ -1122,12 +1170,7 @@ struct ContentView: View {
                     // outlives the lock (it once let a global click monitor open the notch on
                     // every click after unlock). Not via handleHover(false): that arms a reveal
                     // linger and a close-debounce that could vm.close() during lock.
-                    hoverTask?.cancel()
-                    agentHoverTask?.cancel()
-                    stopHoverClickMonitor()
-                    stopOutsideClickMonitor()
-                    isHovering = false
-                    isHoveringClosedMusicWaveformControl = false
+                    dropHoverState()
                 }
                 syncHiddenEdgeHoverPolling()
                 if locked {
@@ -1138,6 +1181,19 @@ struct ContentView: View {
                     releaseMusicControlWindowUpdates(after: musicControlResumeDelay)
                     enqueueMusicControlWindowSync(forceRefresh: true, delay: 0.05)
                 }
+            }
+            .onChange(of: coordinator.notchEye.isAnimating) { _, animating in
+                // Show / Hide Notch's eye owns the closed notch while it plays: no hover, no
+                // music panel beside it. Dropped like the lock does, for the same reason: the
+                // window may close under the pointer with no hover-exit to follow.
+                if animating {
+                    dropHoverState()
+                    cancelMusicControlWindowSync()
+                    hideMusicControlWindow()
+                } else {
+                    enqueueMusicControlWindowSync(forceRefresh: true, delay: 0.05)
+                }
+                syncHiddenEdgeHoverPolling()
             }
             .onChange(of: lockScreenManager.shouldDelayPostUnlockMusicHUD) { _, deferred in
                 if deferred {
@@ -1201,13 +1257,19 @@ struct ContentView: View {
       func NotchLayout() -> some View {
           VStack(alignment: .leading) {
               VStack(alignment: .leading) {
-                  if coordinator.firstLaunch {
+                  if coordinator.helloPending {
                       Spacer()
                       HelloAnimation().frame(width: 200, height: 80).onAppear(perform: {
                           vm.closeHello()
                       })
                       .padding(.top, 40)
                       Spacer()
+                  } else if playsNotchEyeHere {
+                      NotchEyeSpacer(progress: coordinator.notchEye.progress,
+                                     fadesOnly: coordinator.notchEye.fadesOnly,
+                                     restingWidth: vm.closedNotchSize.width - 20,
+                                     wingWidth: notchEyeWingWidth,
+                                     height: vm.effectiveClosedNotchHeight)
                   } else {
                         let hasMusicMetadata = !musicManager.songTitle.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty
                             || !musicManager.artistName.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty
@@ -1888,6 +1950,11 @@ struct ContentView: View {
         }
     }
 
+    /// The closed notch's music bars: shorter than the shared 14 pt and dimmed, so they sit quietly
+    /// beside the album art.
+    static let closedSpectrumBarHeight: CGFloat = 9
+    static let closedSpectrumOpacity: Double = 0.6
+
     @ViewBuilder
     private func SpectrumVisualizer(
         useMusicVisualizer: Bool,
@@ -1895,14 +1962,17 @@ struct ContentView: View {
     ) -> some View {
         let width = CGFloat(Defaults[.visualizerBarCount]) * 4
         if useMusicVisualizer || forceSpectrum {
+            // Kept subtle beside the album art: shorter bars than the 14 pt the other visualizers
+            // use, and dimmed. David asked for "smaller and dimmer, same place" (2026-10-22).
             Rectangle()
                 .fill((Defaults[.coloredSpectrogram] ? Color(nsColor: musicManager.avgColor) : Color.gray).spectrogramGradient())
                 .frame(width: 50, alignment: .center)
                 .matchedGeometryEffect(id: "spectrum", in: albumArtNamespace)
                 .mask {
-                    AudioVisualizerView(isPlaying: $musicManager.isPlaying)
-                        .frame(width: width, height: 12)
+                    AudioVisualizerView(isPlaying: $musicManager.isPlaying, barHeight: Self.closedSpectrumBarHeight)
+                        .frame(width: width, height: Self.closedSpectrumBarHeight)
                 }
+                .opacity(Self.closedSpectrumOpacity)
         }
     }
 
@@ -2236,7 +2306,7 @@ struct ContentView: View {
         // coordinator.currentView before opening. The region's focus is the explicit one.
         hoverTask?.cancel()
 
-        guard hovering else { return }
+        guard hovering, !coordinator.notchEye.isAnimating else { return }
 
         withAnimation(.bouncy.speed(1.2)) {
             isHovering = true
@@ -2288,7 +2358,7 @@ struct ContentView: View {
             && !isMusicHUDDeferredAfterUnlock
             && !isCurrentScreenExpansionVisible
             && (!musicManager.isPlayerIdle || musicManager.bundleIdentifier != nil)
-            && !coordinator.firstLaunch
+            && !coordinator.helloPending
     }
 
     private func handleClosedMusicWaveformTapIfNeeded() -> Bool {
@@ -2649,8 +2719,21 @@ struct ContentView: View {
     /// Handle hover state changes with debouncing. `dwellSatisfied` is set by the hidden-edge
     /// poll after it already held the pointer for `minimumHoverDuration`; the open then follows
     /// synchronously instead of waiting the same interval a second time.
+    /// Forgets the pointer without the close-debounce `handleHover(false)` arms: for when no
+    /// hover-exit will come, a lock or Show / Hide Notch's eye taking the notch.
+    private func dropHoverState() {
+        hoverTask?.cancel()
+        agentHoverTask?.cancel()
+        stopHoverClickMonitor()
+        stopOutsideClickMonitor()
+        isHovering = false
+        isHoveringClosedMusicWaveformControl = false
+    }
+
     private func handleHover(_ hovering: Bool, dwellSatisfied: Bool = false) {
         hoverTask?.cancel()
+        // The eye drops hover as it starts and takes none until it settles.
+        guard !coordinator.notchEye.isAnimating else { return }
 
         if hovering {
             startHoverClickMonitor()
@@ -2749,7 +2832,7 @@ struct ContentView: View {
     }
 
     private func shouldPreventAutoClose() -> Bool {
-        coordinator.firstLaunch || hasAnyActivePopovers() || vm.isAutoCloseSuppressed || SharingStateManager.shared.preventNotchClose
+        coordinator.helloPending || hasAnyActivePopovers() || vm.isAutoCloseSuppressed || SharingStateManager.shared.preventNotchClose
     }
     
     // Helper to prevent rapid haptic feedback
@@ -2891,16 +2974,20 @@ struct ContentView: View {
     }
 
     private func handleCloseScrollGesture(translation: CGFloat, phase: NSEvent.Phase) {
-        guard vm.notchState == .open, !vm.isScrollGestureActive else { return }
+        guard vm.notchState == .open else { return }
+        // The end, and a gesture the guard turns away, clear the blur and dim the gesture drew on
+        // the tab: checked after the guard, a guard that came on mid-gesture left them stuck.
+        guard phase != .ended, !vm.isScrollGestureActive else {
+            if gestureProgress != .zero {
+                withAnimation(.smooth) {
+                    gestureProgress = .zero
+                }
+            }
+            return
+        }
 
         withAnimation(.smooth) {
             gestureProgress = (translation / Defaults[.gestureSensitivity]) * -20
-        }
-
-        if phase == .ended {
-            withAnimation(.smooth) {
-                gestureProgress = .zero
-            }
         }
 
         if translation > Defaults[.gestureSensitivity] {
@@ -3119,6 +3206,7 @@ struct ContentView: View {
               vm.notchState == .closed,
               !vm.hideOnClosed,
               !lockScreenManager.isLocked,
+              !coordinator.notchEye.isAnimating,
               !isMusicHUDDeferredAfterUnlock,
               !isMusicControlWindowSuppressed else {
             return false

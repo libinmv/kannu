@@ -43,7 +43,7 @@ final class IntegrationSecretRulesTests: XCTestCase {
         .deletingLastPathComponent()   // repo root
     /// Brain › Tasks: the overview and every page below it, and the Connect sheets.
     private static let settingsPaths = ["TasksSettings", "TaskSourcePages", "TaskConnectSheets", "TaskRowList",
-                                        "AllTasksPage", "TaskDetailPage"].map { "Kannu/components/Settings/\($0).swift" }
+                                        "AllTasksPage", "TaskDetailPage", "NewTaskSheet"].map { "Kannu/components/Settings/\($0).swift" }
     private static let tasksDirectory = "Kannu/managers/Tasks"
 
     static let keychainAPIs = ["SecureSecretsStore", "KeychainReader", "SecItem", "CredentialStore", "TaskCredentials", "SecretSlot"]

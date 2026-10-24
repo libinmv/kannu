@@ -122,14 +122,14 @@ final class TaskColorRulesTests: XCTestCase {
 
     func testTheDotScannerCatchesPlantedOffenders() {
         let plain = """
-            private func taskLabel(_ task: TaskItem, now: Date) -> some View {
-                SettingsRowLabel(Text(verbatim: task.title), description: progressText(for: task, now: now))
+            private func taskLabel(_ row: TaskListRows.Row, now: Date) -> some View {
+                SettingsRowLabel(Text(verbatim: row.task.title), description: progressText(for: row.task, now: now))
             }
             """
-        XCTAssertEqual(Self.dotProblems(in: plain), ["taskLabel has no TaskColorDot(color: manager.color(of: task))"])
+        XCTAssertEqual(Self.dotProblems(in: plain), ["taskLabel has no TaskColorDot(color: row.color)"])
         let dotted = """
-            private func taskLabel(_ task: TaskItem, now: Date) -> some View {
-                HStack { TaskColorDot(color: manager.color(of: task)); SettingsRowLabel(Text(task.title)) }
+            private func taskLabel(_ row: TaskListRows.Row, now: Date) -> some View {
+                HStack { TaskColorDot(color: row.color); SettingsRowLabel(Text(row.task.title)) }
             }
             """
         XCTAssertEqual(Self.dotProblems(in: dotted), [])
@@ -207,9 +207,10 @@ extension TaskColorRulesTests {
         return problems
     }
 
-    /// Brain's task label without the colour dot.
+    /// Brain's task label without the colour dot: the row's colour, worked out once per list
+    /// (`TaskListRows`, through `TaskColoring.color(of:tagColors:integrations:)`).
     static func dotProblems(in source: String) -> [String] {
-        let dot = "TaskColorDot(color: manager.color(of: task))"
+        let dot = "TaskColorDot(color: row.color)"
         guard let body = body(of: "func taskLabel(", in: source) else { return ["taskLabel not found"] }
         return body.contains(dot) ? [] : ["taskLabel has no \(dot)"]
     }

@@ -73,7 +73,7 @@ class ClipboardPanel: NSPanel {
         // Allow dragging from any part of the window
         styleMask.insert(.fullSizeContentView)
         
-        ScreenCaptureVisibilityManager.shared.register(self, scope: .panelsOnly)
+        ScreenCaptureVisibilityManager.shared.register(self, scope: .panel)
         
         // Accept mouse moved events for proper hover behavior
         acceptsMouseMovedEvents = true

@@ -208,4 +208,45 @@ final class TaskTimeMathTests: XCTestCase {
         XCTAssertEqual(WorkDuration.format(72 * 60), "1h 12m")
         XCTAssertEqual(WorkDuration.format(26 * 3600 + 60), "26h 1m")
     }
+
+    // MARK: - A running session following its estimate
+
+    func testOnlyAnEstimateLeftAtTheSessionsStartIsFollowed() {
+        XCTAssertNil(Math.followedLength(estimate: 3600, trackedAtStart: nil), "a preset or typed length never follows")
+        XCTAssertNil(Math.followedLength(estimate: nil, trackedAtStart: 600), "a removed estimate leaves the countdown")
+        XCTAssertNil(Math.followedLength(estimate: 600, trackedAtStart: 600), "nothing left: Start would give the default")
+        XCTAssertNil(Math.followedLength(estimate: 300, trackedAtStart: 600))
+        XCTAssertEqual(Math.followedLength(estimate: 7200, trackedAtStart: 600), 6600)
+    }
+
+    func testARetargetKeepsWhatHasRun() {
+        let raised = Math.retargeted(total: 1500, remaining: 900, to: 2400)
+        XCTAssertEqual(raised.total, 2400)
+        XCTAssertEqual(raised.remaining, 1800)
+        XCTAssertEqual(raised.elapsed, 600)
+        XCTAssertFalse(raised.isOver)
+    }
+
+    func testLoweringBelowWhatHasRunIsOvertime() {
+        let lowered = Math.retargeted(total: 1500, remaining: 900, to: 300)
+        XCTAssertEqual(lowered.remaining, -300)
+        XCTAssertEqual(lowered.elapsed, 300, "elapsed stops at the length, as in overtime")
+        XCTAssertTrue(lowered.isOver)
+    }
+
+    func testLandingExactlyOnZeroIsOver() {
+        let landed = Math.retargeted(total: 1500, remaining: 900, to: 600)
+        XCTAssertEqual(landed.remaining, 0)
+        XCTAssertTrue(landed.isOver, "finished at once, so the next tick never rings")
+    }
+
+    func testRaisingOutOfOvertimeCountsDownAgain() {
+        let back = Math.retargeted(total: 1500, remaining: -120, to: 2000)
+        XCTAssertEqual(back.remaining, 380, "1620 s have run")
+        XCTAssertEqual(back.elapsed, 1620)
+        XCTAssertFalse(back.isOver)
+        let still = Math.retargeted(total: 1500, remaining: -120, to: 1600)
+        XCTAssertEqual(still.remaining, -20)
+        XCTAssertTrue(still.isOver)
+    }
 }

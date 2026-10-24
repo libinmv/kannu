@@ -64,9 +64,13 @@ final class LLMUsageManager: ObservableObject {
         // AND refresh token) in a Kannu-owned keychain item. That store is memory-only now,
         // but the code that deleted the item went with it — without this, real token
         // material sits in every upgraded install's keychain forever with no owner.
+        // Off the main thread: this runs from `continueLaunch()`, and a delete of an item a
+        // differently signed build saved can wait on the Keychain's approval dialog.
         if !ud.bool(forKey: "legacyClaudeCredentialCopyRemoved") {
-            _ = KeychainReader.deleteGenericPassword(service: "com.kannu.app.llm-credentials", account: "claude-oauth")
-            ud.set(true, forKey: "legacyClaudeCredentialCopyRemoved")
+            DispatchQueue.global(qos: .utility).async {
+                _ = KeychainReader.deleteGenericPassword(service: "com.kannu.app.llm-credentials", account: "claude-oauth")
+                UserDefaults.standard.set(true, forKey: "legacyClaudeCredentialCopyRemoved")
+            }
         }
     }
 

@@ -23,22 +23,22 @@ import SwiftUI
 /// The task rows of a list — a project, a source with one project or none, Local tasks, All tasks —
 /// in the task order, narrowed by `filter`. A row is the task's colour dot, its title (two lines at
 /// most) and one caption (`TaskRowCaption`), then ▶ or ■ and a › to the task's page. Everything else
-/// a task can do is on its page and on the row's right-click menu, which holds what the ⋯ menu did;
-/// Move Up and Move Down are accessibility actions too, the keyboard path that ⋯ gave.
+/// a task can do is on its page and on the row's right-click menu.
 ///
-/// A row is dragged with `draggable` and dropped on with `dropDestination`, which work inside a
-/// grouped `Form` on macOS, where `ForEach.onMove` never drags. Every move — drag, Move Up and Move
-/// Down — counts only the rows shown, so a filtered drag lands where it was dropped. The rows carry
-/// no highlight ids (docs/SETTINGS.md); each is `.id(task.id)`, so going back scrolls to it.
+/// Rows are not dragged, numbered or stepped up and down (David, 2026-10-23: "no drag and order
+/// tasks or numbering"). The menu's Move to Top is the one move — it picks what the notch's Up next
+/// shows first — and is a named accessibility action too, the keyboard and VoiceOver path.
+///
+/// The rows are worked out once per render (`TaskListRows`: each task's colour, whether it is first
+/// in the whole order, whether it is timed), so a row does O(1) work and holds no observer of its
+/// own. The rows carry no highlight ids (docs/SETTINGS.md); each is `.id(task.id)`, so going back
+/// scrolls to it.
 struct TaskRowList: View {
     @ObservedObject private var manager = TasksManager.shared
+    @Default(.enableTimerFeature) private var enableTimerFeature
     private let filter: TaskFilter
     private let onProjectPage: Bool
     private let context: TasksPageContext
-    /// The row being dragged, once the drag has begun: it says which edge the insertion line takes.
-    @State private var draggingID: UUID?
-    /// The row the pointer is over during a drag.
-    @State private var dropTargetID: UUID?
 
     init(filter: TaskFilter, onProjectPage: Bool = false, context: TasksPageContext) {
         self.filter = filter
@@ -47,70 +47,31 @@ struct TaskRowList: View {
     }
 
     var body: some View {
-        let rows = manager.listedTasks(filter)
-        // The dot column appears only once a listed task has a colour: an all-glass list looks as
-        // it did before colours existed.
-        let showsColorDots = rows.contains { manager.color(of: $0) != .glass }
-        ForEach(rows) { task in
-            draggableRow(task, showsColorDot: showsColorDots)
-                .id(task.id)
+        let list = TaskListRows(
+            manager.listedTasks(filter),
+            tagColors: manager.tagColors,
+            integrationColors: manager.integrationColors,
+            topTaskID: manager.activeTasks.first?.id,
+            timedTaskID: manager.timing?.taskID,
+            timingIsPaused: manager.timing?.isPaused ?? false
+        )
+        let canStart = enableTimerFeature && manager.isReady
+        ForEach(list.rows) { row in
+            taskRow(row, showsColorDot: list.showsColorDots, canStart: canStart)
+                .id(row.id)
         }
-    }
-
-    // MARK: - Drag and drop
-
-    /// A task row that can be dragged onto another, with an insertion line while it is targeted:
-    /// above the row when the dragged task comes from below, below it when it comes from above.
-    private func draggableRow(_ task: TaskItem, showsColorDot: Bool) -> some View {
-        let edge = dropTargetID == task.id ? insertionEdge(onto: task.id) : nil
-        return taskRow(task, showsColorDot: showsColorDot)
-            .draggable(dragPayload(for: task.id))
-            .dropDestination(for: String.self) { items, _ in
-                defer {
-                    draggingID = nil
-                    dropTargetID = nil
-                }
-                guard let id = items.first.flatMap(UUID.init(uuidString:)) else { return false }
-                manager.move(id, onto: task.id, filter: filter)
-                return true
-            } isTargeted: { isTargeted in
-                if isTargeted {
-                    dropTargetID = task.id
-                } else if dropTargetID == task.id {
-                    dropTargetID = nil
-                }
-            }
-            .overlay(alignment: edge == .below ? .bottom : .top) {
-                if edge != nil {
-                    Rectangle()
-                        .fill(Color.accentColor)
-                        .frame(height: 2)
-                        .allowsHitTesting(false)
-                }
-            }
-    }
-
-    /// The drag's payload, the task's id. Evaluated when the drag begins, so it also notes which row
-    /// is moving — after the current update, never during one.
-    private func dragPayload(for id: UUID) -> String {
-        DispatchQueue.main.async { draggingID = id }
-        return id.uuidString
-    }
-
-    /// Where the insertion line goes; a drag Kannu has not seen begin yet shows it on top.
-    private func insertionEdge(onto target: UUID) -> TaskOrdering.DropEdge? {
-        guard let draggingID else { return .above }
-        return manager.dropEdge(dragging: draggingID, onto: target, filter: filter)
     }
 
     // MARK: - Rows
 
     @ViewBuilder
-    private func taskRow(_ task: TaskItem, showsColorDot: Bool) -> some View {
-        let isTimed = manager.timing?.taskID == task.id
+    private func taskRow(_ row: TaskListRows.Row, showsColorDot: Bool, canStart: Bool) -> some View {
+        let task = row.task
+        let isTimed = row.timing != nil
         LabeledContent {
             HStack(spacing: SettingsMetrics.rowContent) {
-                TaskTimingButton(task: task)
+                TaskTimingButton(isTimed: isTimed, canStart: canStart,
+                                 start: { manager.start(task.id) }, stop: { manager.stopTiming() })
                 Button {
                     context.open(.task(task.id))
                 } label: {
@@ -123,28 +84,30 @@ struct TaskRowList: View {
             if isTimed {
                 // Only the row being timed changes on its own, once a minute.
                 TimelineView(.everyMinute) { timeline in
-                    taskLabel(task, now: timeline.date, showsColorDot: showsColorDot)
+                    taskLabel(row, now: timeline.date, showsColorDot: showsColorDot)
                 }
             } else {
-                taskLabel(task, now: Date(), showsColorDot: showsColorDot)
+                taskLabel(row, now: Date(), showsColorDot: showsColorDot)
             }
         }
         .contextMenu {
             Button("Show Details") { context.open(.task(task.id)) }
             Divider()
-            moreItems(for: task, isTimed: isTimed)
+            moreItems(for: task, isFirst: row.isFirst, isTimed: isTimed)
         }
-        .accessibilityAction(named: Text("Move Up")) { manager.moveUp(task.id, filter: filter) }
-        .accessibilityAction(named: Text("Move Down")) { manager.moveDown(task.id, filter: filter) }
+        // The keyboard and VoiceOver path to the one move, offered while the task is not first.
+        .accessibilityActions {
+            if !row.isFirst {
+                Button("Move to Top") { manager.moveToTop(task.id) }
+            }
+        }
     }
 
     @ViewBuilder
-    private func moreItems(for task: TaskItem, isTimed: Bool) -> some View {
-        let order = manager.listedTasks(filter)
-        let position = order.firstIndex { $0.id == task.id }
+    private func moreItems(for task: TaskItem, isFirst: Bool, isTimed: Bool) -> some View {
         // No "…": each acts in place or opens a small sheet (docs/SETTINGS.md).
         Button("Set Estimate") {
-            context.sheet.wrappedValue = .estimate(taskID: task.id, title: task.title, current: task.localEstimateSeconds)
+            context.sheet.wrappedValue = .estimate(taskID: task.id, title: task.title, draft: TaskFormDraft(editing: task))
         }
         Button("Add Time") {
             context.sheet.wrappedValue = .addTime(taskID: task.id, title: task.title)
@@ -162,12 +125,9 @@ struct TaskRowList: View {
             }
         }
         Divider()
+        // The one move: first in the whole order, the notch's Up next shows it first.
         Button("Move to Top") { manager.moveToTop(task.id) }
-            .disabled(position == 0)
-        Button("Move Up") { manager.moveUp(task.id, filter: filter) }
-            .disabled(position == 0)
-        Button("Move Down") { manager.moveDown(task.id, filter: filter) }
-            .disabled(position == order.count - 1)
+            .disabled(isFirst)
         Divider()
         if task.source == .local {
             Button("Mark Done") { manager.markDone(task.id) }
@@ -193,18 +153,16 @@ struct TaskRowList: View {
         }
     }
 
-    /// The task's colour as a dot, then its title and caption (`TasksManager.color(of:)`). No dot
-    /// column while every listed task is glass (`showsColorDot`); in a mixed list a glass task's
+    /// The task's colour as a dot (worked out once, `TaskListRows`), then its title and caption. No
+    /// dot column while every listed task is glass (`showsColorDot`); in a mixed list a glass task's
     /// dot is empty, so the titles still line up. Two lines at most for each.
-    private func taskLabel(_ task: TaskItem, now: Date, showsColorDot: Bool) -> some View {
-        let timing: TaskRowCaption.Timing? = manager.timing.flatMap { timing in
-            timing.taskID == task.id ? (timing.isPaused ? .paused : .running) : nil
-        }
-        let caption = TaskRowCaption(task: task, tracked: manager.trackedSeconds(of: task, now: now), timing: timing,
+    private func taskLabel(_ row: TaskListRows.Row, now: Date, showsColorDot: Bool) -> some View {
+        let task = row.task
+        let caption = TaskRowCaption(task: task, tracked: manager.trackedSeconds(of: task, now: now), timing: row.timing,
                                      now: now, onProjectPage: onProjectPage)
         return HStack(alignment: .firstTextBaseline, spacing: SettingsMetrics.rowContent) {
             if showsColorDot {
-                TaskColorDot(color: manager.color(of: task))
+                TaskColorDot(color: row.color)
             }
             SettingsRowLabel(Text(verbatim: task.title), description: Self.text(of: caption))
                 .lineLimit(2)
@@ -224,77 +182,130 @@ struct TaskRowList: View {
     }
 }
 
-/// ▶ starts timing the task, ■ stops it. Off while the timer is off or the task file is not ready.
+/// ▶ starts timing the task, ■ stops it; off while it cannot start (the timer off, the task file
+/// not ready). Values only — the list or the page passes them — so a row observes nothing.
 struct TaskTimingButton: View {
-    @ObservedObject private var manager = TasksManager.shared
-    @Default(.enableTimerFeature) private var enableTimerFeature
-    let task: TaskItem
+    let isTimed: Bool
+    let canStart: Bool
+    let start: () -> Void
+    let stop: () -> Void
 
     var body: some View {
-        if manager.timing?.taskID == task.id {
-            Button {
-                manager.stopTiming()
-            } label: {
+        if isTimed {
+            Button(action: stop) {
                 Image(systemName: "stop.fill")
                     .imageScale(.large)
             }
             .buttonStyle(.borderless)
             .accessibilityLabel("Stop timing")
         } else {
-            Button {
-                manager.start(task.id)
-            } label: {
+            Button(action: start) {
                 Image(systemName: "play.fill")
                     .imageScale(.large)
             }
             .buttonStyle(.borderless)
-            .disabled(!enableTimerFeature || !manager.isReady)
+            .disabled(!canStart)
             .accessibilityLabel("Start timing")
         }
     }
 }
 
-/// Add a task: a title and an optional estimate, from the presets or Custom. On Local tasks' page
-/// and All tasks.
+/// A typed estimate, as the notch's task form takes it (`TaskFormDraft`): 45m, 1.5h or 2d 3h, with
+/// the presets on a chevron. Text it cannot read turns orange and is never saved; while focused it
+/// shows what it understood ("= 19h"); leaving it writes a readable length the standard way. A
+/// Jira or GitLab task with none of Kannu's shows its source's ("2h from Jira") as the prompt.
+/// Brain's New Task sheet, a task's Time row and the Set Estimate sheet share it.
+struct TaskEstimateField: View {
+    @Binding var draft: TaskFormDraft
+    var onSubmit: () -> Void = {}
+    /// The draft after leaving the field or picking a preset, so a caller saves the value it sees
+    /// rather than reading state just written.
+    var onSettle: (TaskFormDraft) -> Void = { _ in }
+    /// Escape; nil leaves Escape to whatever holds the field (a sheet's Cancel).
+    var onCancel: (() -> Void)?
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: SettingsMetrics.iconGap) {
+            field
+            if focused, let echo = draft.estimateEcho {
+                Text(verbatim: echo)
+                    .settingsDescriptionStyle()
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            Menu {
+                Button(String(localized: "No estimate")) { choose(nil) }
+                ForEach(draft.estimateMenuChoices, id: \.self) { seconds in
+                    Button(WorkDuration.format(seconds)) { choose(seconds) }
+                }
+            } label: {
+                Image(systemName: "chevron.down")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel("Estimate presets")
+        }
+        .onChange(of: focused) { _, isFocused in
+            guard !isFocused else { return }
+            var next = draft
+            next.settleEstimateText()
+            draft = next
+            onSettle(next)
+        }
+    }
+
+    @ViewBuilder
+    private var field: some View {
+        let text = TextField("Estimate", text: Binding(get: { draft.estimateText }, set: { draft.typeEstimate($0) }),
+                             prompt: Text(verbatim: draft.estimatePrompt))
+            .labelsHidden()
+            .textFieldStyle(.roundedBorder)
+            .foregroundStyle(draft.estimateReading == .unreadable ? AnyShapeStyle(.orange) : AnyShapeStyle(.primary))
+            .focused($focused)
+            .onSubmit(onSubmit)
+            .help(Text("Type 45m, 1.5h or 2d 3h"))
+            .accessibilityHint(Text(accessibilityHint))
+        if let onCancel {
+            text.onExitCommand(perform: onCancel)
+        } else {
+            text
+        }
+    }
+
+    /// Why Add or Save waits, or what was understood: VoiceOver cannot see the orange.
+    private var accessibilityHint: String {
+        switch draft.estimateReading {
+        case .unreadable: return String(localized: "Not a length. Type 45m, 1.5h or 2d 3h.")
+        case .length: return draft.estimateEcho ?? String(localized: "Type 45m, 1.5h or 2d 3h")
+        case .none: return String(localized: "Type 45m, 1.5h or 2d 3h")
+        }
+    }
+
+    private func choose(_ seconds: Int?) {
+        var next = draft
+        next.chooseEstimate(seconds)
+        draft = next
+        onSettle(next)
+    }
+}
+
+/// Add a task: one row whose New Task button opens `NewTaskSheet`, which holds every field a task
+/// takes — never fields inline in the list (David, 2026-10-24: "a add task button maybe giving
+/// popup"). A new task goes on top. On Local tasks' page and All tasks; `listFilter` is what the
+/// list shows, so a task it would hide opens on its own page. ⌘N lives on the tab's Form
+/// (`TasksSettings`), since this row may not exist once scrolled away.
 struct TaskAddRow: View {
     @ObservedObject private var manager = TasksManager.shared
     let context: TasksPageContext
+    var listFilter: TaskFilter = .all
 
     var body: some View {
-        LabeledContent {
-            HStack(spacing: SettingsMetrics.rowContent) {
-                TextField("Task title", text: context.newTitle, prompt: Text("What needs doing?"))
-                    .labelsHidden()
-                    .onSubmit(addTask)
-                estimateMenu
-                Button("Add", action: addTask)
-                    .disabled(!manager.isReady || TaskItem.cleanedTitle(context.newTitle.wrappedValue) == nil)
-            }
-        } label: {
-            SettingsRowLabel("Add a task", description: "Title and optional estimate.")
-        }
-    }
-
-    private var estimateMenu: some View {
-        let estimate = context.newEstimate.wrappedValue
-        return Menu {
-            Button(String(localized: "No estimate")) { context.newEstimate.wrappedValue = nil }
-            ForEach(TaskFormDraft.estimateChoices, id: \.self) { seconds in
-                Button(WorkDuration.format(seconds)) { context.newEstimate.wrappedValue = seconds }
-            }
-            Divider()
-            Button(String(localized: "Custom")) { context.sheet.wrappedValue = .customEstimateForNewTask(current: estimate) }
-        } label: {
-            Text(estimate.map(WorkDuration.format) ?? String(localized: "No estimate"))
-        }
-        .fixedSize()
-        .accessibilityLabel("Estimate")
-    }
-
-    private func addTask() {
-        if manager.addTask(title: context.newTitle.wrappedValue, estimateSeconds: context.newEstimate.wrappedValue) != nil {
-            context.newTitle.wrappedValue = ""
-            context.newEstimate.wrappedValue = nil
+        SettingsActionRow("Add a task", description: "Title, estimate, tags and a reminder.") {
+            Button("New Task") { context.sheet.wrappedValue = .newTask(listFilter: listFilter) }
+                .buttonStyle(.borderedProminent)
+                .disabled(!manager.isReady)
         }
     }
 }

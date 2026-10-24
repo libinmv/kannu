@@ -21,9 +21,10 @@ import Foundation
 /// Which task reminders should be waiting with macOS, and what to change after an edit. Pure: the
 /// notification center calls live in `TaskReminders.swift`, which applies `changes`.
 ///
-/// A reminder belongs to a local, active task with a `scheduledAt`. Marking it done, hiding it,
-/// deleting it or clearing its schedule takes it out of `wanted`, and `changes` turns that into a
-/// removal — of the waiting request and of a reminder already shown. A reminder whose time has
+/// A reminder belongs to a local, active task with a `scheduledAt` whose notification the user has
+/// not turned off (`TaskItem.reminderMuted`). Marking it done, hiding it, deleting it, clearing its
+/// schedule or turning its notification off takes it out of `wanted`, and `changes` turns that into
+/// a removal — of the waiting request and of a reminder already shown. A reminder whose time has
 /// passed stays wanted, so one already on screen is left alone. Its identifier is the task's id
 /// behind a fixed prefix, so a later change replaces the request instead of adding a second one.
 ///
@@ -61,7 +62,7 @@ enum TaskReminderPlan {
     /// The reminders the task list asks for, by task, past ones included.
     static func wanted(_ tasks: [TaskItem]) -> [UUID: Reminder] {
         var result: [UUID: Reminder] = [:]
-        for task in tasks where task.source == .local && task.visibility == .active {
+        for task in tasks where task.source == .local && task.visibility == .active && task.notifiesForReminder {
             guard let date = task.scheduledAt else { continue }
             result[task.id] = Reminder(taskID: task.id, title: task.title, date: date)
         }

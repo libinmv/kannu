@@ -67,6 +67,26 @@ enum TaskTimeMath {
         return max(1, defaultMinutes) * 60
     }
 
+    /// The length a running session follows its task's estimate to: what the estimate left when the
+    /// session began. Nil leaves the countdown alone — a session that does not follow (a preset or a
+    /// typed length: no `trackedAtStart`), no estimate, or one at or below what was tracked before the
+    /// session. Start would give that last one the default length; a running countdown never jumps
+    /// to it.
+    static func followedLength(estimate: Int?, trackedAtStart: Int?) -> Int? {
+        guard let estimate, let trackedAtStart, estimate > trackedAtStart else { return nil }
+        return estimate - trackedAtStart
+    }
+
+    /// A running countdown given a new length, keeping what has run (`total - remaining`; the
+    /// timer's elapsed time stops at the length in overtime, so it cannot say). Whole seconds: the
+    /// timer's tick finishes on exactly 0. At or under 0 the session is over: finished, in overtime.
+    static func retargeted(total: Int, remaining: Int, to length: Int)
+        -> (total: Int, remaining: Int, elapsed: Int, isOver: Bool) {
+        let ran = max(0, total - remaining)
+        let left = length - ran
+        return (length, left, min(ran, length), left <= 0)
+    }
+
     /// `seconds` rounded to the nearest 15 minutes, halves up: 7m29s is 0, 7m30s is 15m, 22m30s is
     /// 30m. A total that rounds to 0 makes no log entry and carries over to the next one.
     static func roundedForLog(_ seconds: Int) -> Int {

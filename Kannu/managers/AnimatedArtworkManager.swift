@@ -105,6 +105,9 @@ actor AnimatedArtworkManager {
     private func requestMusicAuthorization() async -> Bool {
         let status = MusicAuthorization.currentStatus
         if status == .authorized { return true }
+        // Never over the onboarding window, and not after a Not now on the music app's row: the
+        // Permissions step asks for it there.
+        guard status != .notDetermined || LaunchPermissionManager.mayTouch(.musicAutomation) else { return false }
 
         let newStatus = await MusicAuthorization.request()
         return newStatus == .authorized

@@ -194,16 +194,57 @@ class ClipboardManager: ObservableObject {
         pinnedItems
     }
     
-    // Directory for storing clipboard data files
-    static let clipboardDataDirectory: URL = {
-        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let clipboardDir = documentsPath.appendingPathComponent("ClipboardData")
-        
-        // Create directory if it doesn't exist
-        try? FileManager.default.createDirectory(at: clipboardDir, withIntermediateDirectories: true)
-        
-        return clipboardDir
-    }()
+    /// Where clipboard history keeps its image files. Application Support needs no permission;
+    /// `~/Documents/ClipboardData`, where they used to live, raised the Documents dialog the first
+    /// time the notch opened, whether or not clipboard history was on.
+    static let clipboardDataDirectory: URL = AppSupportPaths.child("ClipboardData")
+
+    /// Moves an older install's files out of `~/Documents/ClipboardData`, once, off the main thread.
+    /// Only for an install from before the move (`isUpgrade`): it already answered the Documents
+    /// dialog, so this raises none, and a fresh install never touches `~/Documents` at all. Items
+    /// store file names, not paths, so history survives the move.
+    static func migrateLegacyDataIfNeeded(isUpgrade: Bool) {
+        guard !Defaults[.clipboardDataMigrated] else { return }
+        guard isUpgrade,
+              let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        else {
+            // A fresh install has nothing in ~/Documents to move.
+            Defaults[.clipboardDataMigrated] = true
+            return
+        }
+        let legacy = documents.appendingPathComponent("ClipboardData", isDirectory: true)
+        let destination = clipboardDataDirectory
+        DispatchQueue.global(qos: .utility).async {
+            // Marked done only when nothing is left to move: a quit mid-move, or a move that failed,
+            // is retried at the next launch, because history images are read from the new folder only.
+            guard moveLegacyFiles(from: legacy, to: destination) else { return }
+            DispatchQueue.main.async { Defaults[.clipboardDataMigrated] = true }
+        }
+    }
+
+    /// True once nothing is left to move: the old folder is gone, or every file in it reached
+    /// Application Support (a name already there counts as moved). False keeps the move for next time.
+    private static func moveLegacyFiles(from legacy: URL, to destination: URL) -> Bool {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: legacy.path) else { return true }
+        guard let files = try? fileManager.contentsOfDirectory(at: legacy, includingPropertiesForKeys: nil) else {
+            return false
+        }
+        var complete = true
+        for file in files {
+            let target = destination.appendingPathComponent(file.lastPathComponent)
+            guard !fileManager.fileExists(atPath: target.path) else { continue }
+            do {
+                try fileManager.moveItem(at: file, to: target)
+            } catch {
+                complete = false
+            }
+        }
+        if (try? fileManager.contentsOfDirectory(atPath: legacy.path))?.isEmpty == true {
+            try? fileManager.removeItem(at: legacy)
+        }
+        return complete
+    }
     
     private init() {
         lastChangeCount = NSPasteboard.general.changeCount

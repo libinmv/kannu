@@ -20,8 +20,9 @@
 
 import XCTest
 
-/// The order is the array's order. Done and hidden tasks keep their place, so every move steps over
-/// them: one click on Move Up always changes what the user sees.
+/// The order is the array's order. A new task goes on top; Move to Top is the one move (David,
+/// 2026-10-23: "no drag and order tasks or numbering"). Done and hidden tasks keep their place, so
+/// reopening one puts it back where it was.
 final class TaskOrderTests: XCTestCase {
     typealias Order = TaskOrdering
 
@@ -55,53 +56,9 @@ final class TaskOrderTests: XCTestCase {
         XCTAssertEqual(titles(Order.movingToTop(id("A", in: list), in: list)), "A x B C", "already at the top")
     }
 
-    func testMoveUpStepsOverTasksThatAreNotShown() {
-        let list = tasks("A x y B C")
-        XCTAssertEqual(titles(Order.movingUp(id("B", in: list), in: list)), "B A x y C")
-        XCTAssertEqual(titles(Order.movingUp(id("C", in: list), in: list)), "A x y C B")
-        XCTAssertEqual(titles(Order.movingUp(id("A", in: list), in: list)), "A x y B C", "no change at the top")
-    }
-
-    func testMoveDownStepsOverTasksThatAreNotShown() {
-        let list = tasks("A x y B C")
-        XCTAssertEqual(titles(Order.movingDown(id("A", in: list), in: list)), "x y B A C")
-        XCTAssertEqual(Order.active(Order.movingDown(id("A", in: list), in: list)).map(\.title), ["B", "A", "C"])
-        XCTAssertEqual(titles(Order.movingDown(id("C", in: list), in: list)), "A x y B C", "no change at the bottom")
-    }
-
-    func testAMoveOfAnUnknownTaskChangesNothing() {
+    func testMoveToTopOfAnUnknownTaskChangesNothing() {
         let list = tasks("A B")
-        XCTAssertEqual(Order.movingUp(UUID(), in: list), list)
-        XCTAssertEqual(Order.movingDown(UUID(), in: list), list)
         XCTAssertEqual(Order.movingToTop(UUID(), in: list), list)
-    }
-
-    func testADropDownLandsAfterTheTarget() {
-        // The list the user drags in is "A B C"; x sits between A and B in the file.
-        let list = tasks("A x B C")
-        let moved = Order.move(id: id("A", in: list), onto: id("B", in: list), in: list)
-        XCTAssertEqual(Order.active(moved).map(\.title), ["B", "A", "C"])
-        XCTAssertEqual(titles(moved), "x B A C", "the done task keeps its place")
-        // Onto the last row: to the end.
-        XCTAssertEqual(titles(Order.move(id: id("A", in: list), onto: id("C", in: list), in: list)), "x B C A")
-        XCTAssertEqual(Order.dropEdge(dragging: id("A", in: list), onto: id("C", in: list), in: list), .below)
-    }
-
-    func testADropUpLandsBeforeTheTarget() {
-        let list = tasks("A x B C")
-        XCTAssertEqual(titles(Order.move(id: id("C", in: list), onto: id("A", in: list), in: list)), "C A x B")
-        XCTAssertEqual(titles(Order.move(id: id("C", in: list), onto: id("B", in: list), in: list)), "A x C B")
-        XCTAssertEqual(Order.dropEdge(dragging: id("C", in: list), onto: id("A", in: list), in: list), .above)
-    }
-
-    func testADropThatChangesNothing() {
-        let list = tasks("A x B C")
-        XCTAssertEqual(Order.move(id: id("B", in: list), onto: id("B", in: list), in: list), list, "onto itself")
-        XCTAssertNil(Order.dropEdge(dragging: id("B", in: list), onto: id("B", in: list), in: list))
-        XCTAssertEqual(Order.move(id: UUID(), onto: id("B", in: list), in: list), list, "an unknown task")
-        XCTAssertEqual(Order.move(id: id("A", in: list), onto: UUID(), in: list), list, "an unknown target")
-        XCTAssertEqual(Order.move(id: id("x", in: list), onto: id("A", in: list), in: list), list, "a done task is not dragged")
-        XCTAssertEqual(Order.move(id: id("A", in: list), onto: id("x", in: list), in: list), list, "nor dropped on")
     }
 
     func testReopeningPutsATaskBackWhereItWas() {

@@ -120,6 +120,40 @@ final class RegressionGuardTests: XCTestCase {
         XCTAssertFalse(keeps("codex", "executing", alive: true))
     }
 
+    // MARK: - Cloud sessions ride the same ladder (entries 2 and 12)
+
+    /// A cloud session's only news is the relay script's reports, and the script re-sends an
+    /// unchanged colour at most every `refreshIntervalMs`, to stay inside ntfy's shared quota. That
+    /// refresh, plus a minute of delivery delay, must land inside entry 2's active window, or every
+    /// long cloud run drops out of green between refreshes.
+    func testTheCloudRefreshKeepsALongRunGreen() {
+        let lateRefresh = Int64(ClaudeCloudRelaySetup.refreshIntervalMs) + 60_000
+        for raw in ["executing", "thinking"] {
+            let resolved = AgentTrafficLightMapper.resolveHookState(
+                rawState: raw, ageMs: lateRefresh, collapseMs: 5_000, inactiveMs: 5_000)
+            XCTAssertTrue(resolved.state.isActiveRun, "\(raw) must still be green when a late refresh lands")
+        }
+    }
+
+    /// Entry 12 for the cloud: a waiting prompt keeps its yellow only while evidence says it is
+    /// still open. For a cloud card that evidence is a healthy relay stream with no newer report;
+    /// with the stream down the 5-minute clock rules, and an idle notice is always on the clock.
+    func testACloudYellowIsHeldOnlyWhileTheRelayIsListening() {
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        func card(note: String, connected: Bool) -> AgentSessionStatus? {
+            let asked = now.addingTimeInterval(-600)
+            let event = ClaudeCloudRelay.Event(sessionID: "session_A1", state: "awaiting_input", event: "Notification",
+                                               note: note, repo: nil, ts: asked, receivedAt: asked)
+            var snapshot = ClaudeCloudRelay.applying(event, to: .init(), now: now)
+            snapshot.connected = connected
+            return ClaudeCloudRelay.sessions(snapshot: snapshot, staleMinutes: 30, collapseSeconds: 5,
+                                             inactiveSeconds: 5, now: now).first
+        }
+        XCTAssertEqual(card(note: "permission_prompt", connected: true)?.displayState, .awaitingInput)
+        XCTAssertEqual(card(note: "permission_prompt", connected: false)?.displayState, .inactive)
+        XCTAssertEqual(card(note: "idle_prompt", connected: true)?.displayState, .inactive)
+    }
+
     /// Entry 10: a subagent's tool call only moves its chat's count. That publishes the list but
     /// must not bump the reveal pulse, or the island never collapses while a workflow runs.
     func testATurnOnlyChangeIsNoRevealPulse() {

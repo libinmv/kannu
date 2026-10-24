@@ -520,31 +520,64 @@ struct SettingsMoreMenu<Items: View>: View {
 /// so it reads as one control to VoiceOver, "Remove tag writing", and needs no padding of its own —
 /// the bordered button pads itself. The name is the user's own text and renders verbatim.
 ///
+/// Or a tag offered to add (`init(adding:)`, New Task's suggestions): "#planning" for a tag in use,
+/// in its colour, "+ pl" for the typed text as a new tag; "Add tag planning", "Create tag pl".
+///
 /// A pill: a capsule bezel. A `tint` (a tag's colour) shows through that translucent bezel as a
 /// wash under it, so a coloured pill keeps the bezel's glass finish and its text stays the bezel's
 /// own; nil is the plain bezel. Under the bezel rather than over it, so the name is never tinted.
 struct SettingsTagChip: View {
+    /// What a click does.
+    enum Kind {
+        case remove
+        /// A tag already in use, added.
+        case use
+        /// The typed text, added as a new tag.
+        case create
+    }
+
     private let name: String
+    private let kind: Kind
     private let tint: Color?
-    private let remove: () -> Void
+    /// The offer Return would take, ringed in the accent colour.
+    private let isHighlighted: Bool
+    private let action: () -> Void
 
     /// The wash under the bezel: enough to read as the colour, still the bezel's glass.
     private static let tintOpacity: Double = 0.2
 
     init(_ name: String, tint: Color? = nil, remove: @escaping () -> Void) {
         self.name = name
+        kind = .remove
         self.tint = tint
-        self.remove = remove
+        isHighlighted = false
+        action = remove
+    }
+
+    /// A tag offered to add: `kind` is `.use` or `.create`.
+    init(adding name: String, kind: Kind, tint: Color? = nil, isHighlighted: Bool = false, add: @escaping () -> Void) {
+        self.name = name
+        self.kind = kind
+        self.tint = tint
+        self.isHighlighted = isHighlighted
+        action = add
     }
 
     var body: some View {
-        Button(action: remove) {
+        Button(action: action) {
             HStack(spacing: SettingsMetrics.iconGap) {
-                Text(verbatim: "#\(name)")
+                if kind == .create {
+                    Image(systemName: "plus")
+                        .imageScale(.small)
+                        .accessibilityHidden(true)
+                }
+                Text(verbatim: kind == .create ? name : "#\(name)")
                     .lineLimit(1)
-                Image(systemName: "xmark")
-                    .imageScale(.small)
-                    .accessibilityHidden(true)
+                if kind == .remove {
+                    Image(systemName: "xmark")
+                        .imageScale(.small)
+                        .accessibilityHidden(true)
+                }
             }
         }
         .buttonStyle(.bordered)
@@ -556,7 +589,24 @@ struct SettingsTagChip: View {
                     .allowsHitTesting(false)
             }
         }
-        .accessibilityLabel(Text(verbatim: String(localized: "Remove tag \(name)")))
+        .overlay {
+            if isHighlighted {
+                Capsule()
+                    .strokeBorder(Color.accentColor, lineWidth: 2)
+                    .allowsHitTesting(false)
+            }
+        }
+        .accessibilityLabel(accessibilityLabel)
+        // The ring, for VoiceOver: the offer Return takes, as the notch's suggestion rows mark theirs.
+        .accessibilityAddTraits(isHighlighted ? .isSelected : [])
+    }
+
+    private var accessibilityLabel: Text {
+        switch kind {
+        case .remove: return Text(verbatim: String(localized: "Remove tag \(name)"))
+        case .use: return Text(verbatim: String(localized: "Add tag \(name)"))
+        case .create: return Text(verbatim: String(localized: "Create tag \(name)"))
+        }
     }
 }
 

@@ -112,6 +112,45 @@ final class ReleaseWorkflowRulesTests: XCTestCase {
             ? ["\(path) strips disable-library-validation"] : []
     }
 
+    /// A dropped connection while stapling failed the 1.4.0 beta 2 release after Apple had accepted
+    /// the DMG ("The network connection was lost", stapler error 68). The release's Notarize step
+    /// runs `scripts/notarize-dmg.sh`, which now retries the staple before giving up.
+    func testTheStapleIsRetried() throws {
+        let script = try Self.read("scripts/notarize-dmg.sh")
+        XCTAssertEqual(Self.stapleProblems(workflow: try Self.read(Self.workflowPath), script: script), [])
+        let singleShot = script.replacingOccurrences(
+            of: "for attempt in $(seq 1 \"$staple_attempts\"); do\n  if xcrun stapler staple \"$DMG_PATH\"; then",
+            with: "xcrun stapler staple \"$DMG_PATH\"\nfor attempt in 1; do\n  if true; then"
+        )
+        XCTAssertNotEqual(singleShot, script, "the plant did not take")
+        XCTAssertEqual(Self.stapleProblems(workflow: try Self.read(Self.workflowPath), script: singleShot),
+                       ["the staple is not retried"])
+        // The loop kept, but given one attempt: one try is no retry.
+        let oneAttempt = script.replacingOccurrences(of: "staple_attempts=5\n", with: "staple_attempts=1\n")
+        XCTAssertNotEqual(oneAttempt, script, "the plant did not take")
+        XCTAssertEqual(Self.stapleProblems(workflow: try Self.read(Self.workflowPath), script: oneAttempt),
+                       ["the staple is not retried"])
+        XCTAssertEqual(Self.stapleProblems(workflow: "run: xcrun notarytool submit build/Kannu.dmg --wait", script: script),
+                       ["the Notarize step does not run scripts/notarize-dmg.sh"])
+    }
+
+    static func stapleProblems(workflow: String, script: String) -> [String] {
+        var problems: [String] = []
+        if !workflow.contains("./scripts/notarize-dmg.sh \"build/${RELEASE_DMG}\"") {
+            problems.append("the Notarize step does not run scripts/notarize-dmg.sh")
+        }
+        let loop = script.range(of: "for attempt in $(seq 1 \"$staple_attempts\"); do").map { String(script[$0.upperBound...]) } ?? ""
+        let loopBody = loop.components(separatedBy: "\ndone").first ?? ""
+        let staples = script.components(separatedBy: "xcrun stapler staple").count - 1
+        // The loop's count, as the script sets it: at least two tries, or it is no retry.
+        let attempts = script.split(separator: "\n").first { $0.hasPrefix("staple_attempts=") }
+            .flatMap { Int($0.dropFirst("staple_attempts=".count)) } ?? 0
+        if staples != 1 || !loopBody.contains("xcrun stapler staple") || !loopBody.contains("sleep") || attempts < 2 {
+            problems.append("the staple is not retried")
+        }
+        return problems
+    }
+
     // MARK: - Rules
 
     static func problems(in workflow: String) -> [String] {

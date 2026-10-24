@@ -225,7 +225,8 @@ private struct ActiveTimerSection: View {
             }
             
             HStack(spacing: 8) {
-                if !timerManager.isOvertime {
+                // Paused in overtime (from the Tasks popover, or an estimate edit past zero) still needs Resume.
+                if !timerManager.isOvertime || timerManager.isPaused {
                     Button(action: togglePause) {
                         Label(timerManager.isPaused ? String(localized: "Resume") : String(localized: "Pause"), systemImage: timerManager.isPaused ? "play.fill" : "pause.fill")
                             .font(.system(size: 12, weight: .medium))

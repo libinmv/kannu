@@ -203,7 +203,8 @@ struct LockScreenTimerWidget: View {
 
     private var controlButtons: some View {
         HStack(spacing: 10) {
-            if !timerManager.isOvertime {
+            // Paused in overtime (from the Tasks popover, or an estimate edit past zero) still needs Resume.
+            if !timerManager.isOvertime || timerManager.isPaused {
                 CircleButton(
                     icon: pauseIcon,
                     foreground: Color.white.opacity(0.95),

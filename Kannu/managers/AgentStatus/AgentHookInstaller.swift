@@ -180,7 +180,8 @@ final class AgentHookInstaller: ObservableObject {
     /// VS Code Copilot / Codex hook events — see `AgentHookLayout.claudeStyleEvents`.
     private static var claudeStyleEvents: [(event: String, state: String)] { AgentHookLayout.claudeStyleEvents }
 
-    /// Claude Code hook coverage — see `AgentHookLayout.claudeHookEntries`.
+    /// Claude Code hook coverage lives in `AgentHookLayout.claudeHookEntries`, shared with the
+    /// cloud-session relay's settings snippet so the two can never disagree.
     private static var claudeHookEntries: [(event: String, matcher: String?, matcherKey: String, state: String)] {
         AgentHookLayout.claudeHookEntries
     }

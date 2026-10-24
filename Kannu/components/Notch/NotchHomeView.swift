@@ -746,7 +746,7 @@ struct NotchHomeView: View {
     
     var body: some View {
         Group {
-            if !coordinator.firstLaunch {
+            if !coordinator.helloPending {
                 mainContent
             }
         }

@@ -35,6 +35,11 @@ final class LockScreenWeatherManager: ObservableObject {
 
     private init() {
         observeAccessoryChanges()
+        locationProvider.onAuthorized = { [weak self] in
+            Task { @MainActor in
+                _ = await self?.refresh(force: true)
+            }
+        }
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.locationProvider.prepareAuthorization()
@@ -1098,11 +1103,18 @@ private final class LockScreenWeatherLocationProvider: NSObject, CLLocationManag
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        // macOS reports a Location grant as `.authorizedAlways`.
+        wasAuthorized = manager.authorizationStatus == .authorizedAlways
     }
 
+    /// Asks for Location only when `LaunchPermissionManager` allows it: on a fresh install that
+    /// dialog belongs to the onboarding's Permissions step, and after a Not now it waits for the
+    /// user. Until then the weather has no location, as when access is denied. With the widget
+    /// off nothing needs a location, so nothing asks.
     func prepareAuthorization() {
         let status = manager.authorizationStatus
-        if status == .notDetermined {
+        if status == .notDetermined, Defaults[.enableLockScreenWeatherWidget],
+           LaunchPermissionManager.mayTouch(.location) {
             manager.requestWhenInUseAuthorization()
         }
     }
@@ -1133,6 +1145,23 @@ private final class LockScreenWeatherLocationProvider: NSObject, CLLocationManag
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         Task { @MainActor in
             self.flushContinuations(with: nil)
+        }
+    }
+
+    /// Location became available (onboarding's Permissions step, Brain, or System Settings): the
+    /// weather fetched without it is stale now, whatever its age.
+    var onAuthorized: (() -> Void)?
+
+    /// The delegate also reports the status the manager starts with; only a change into an
+    /// allowed status counts, so launch does not fetch twice.
+    private var wasAuthorized: Bool?
+
+    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let authorized = manager.authorizationStatus == .authorizedAlways
+        Task { @MainActor in
+            defer { self.wasAuthorized = authorized }
+            guard authorized, self.wasAuthorized == false else { return }
+            self.onAuthorized?()
         }
     }
 

@@ -107,6 +107,21 @@ final class TimerComposerMetricsTests: XCTestCase {
         XCTAssertEqual(M.goldenSplit(4, spacing: 8).major, 0)
     }
 
+    /// `GoldenRow`'s widths: the minor part first; one view takes it all; more share the major part;
+    /// and an infinite offer (an HStack measuring) gives none, never NaN.
+    func testGoldenWidthsNeverSplitAnInfiniteOffer() {
+        let split = M.goldenSplit(400, spacing: 8)
+        XCTAssertEqual(M.goldenWidths(across: 400, count: 2, spacing: 8), [split.minor, split.major])
+        XCTAssertEqual(M.goldenWidths(across: 400, count: 1, spacing: 8), [400])
+        XCTAssertEqual(M.goldenWidths(across: 400, count: 0, spacing: 8), [])
+        let three = M.goldenWidths(across: 400, count: 3, spacing: 8) ?? []
+        XCTAssertEqual(three.count, 3)
+        XCTAssertEqual(three[0], split.minor)
+        XCTAssertEqual(three[1], three[2])
+        XCTAssertNil(M.goldenWidths(across: .infinity, count: 2, spacing: 8))
+        XCTAssertGreaterThan(split.major, split.minor)
+    }
+
     func testTheSideColumnHeightsNeverGoNegative() {
         XCTAssertEqual(M.sidePageHeight(budget: 2, style: .manualWithPresets), 0)
         XCTAssertEqual(M.sideTaskRowsHeight(count: -1), 0)
@@ -179,5 +194,17 @@ final class TimerComposerMetricsTests: XCTestCase {
     func testTheRulerPointerSitsInsideItsArea() {
         XCTAssertLessThanOrEqual(M.rulerPointerOffset + 12, M.rulerAreaHeight)
         XCTAssertLessThanOrEqual(M.rulerCanvasHeight, M.rulerAreaHeight)
+    }
+
+    /// The typed search's list ends above Start and Reset in both composer styles and above the
+    /// form's buttons, so they stay clickable while it shows. The bar's list hangs from the bar's
+    /// bottom edge, the form's from the title's.
+    func testTheTypedSearchListEndsAboveTheButtons() {
+        let list = M.suggestionListHeight
+        XCTAssertLessThanOrEqual(list, M.nameFieldSpacing + M.composerPadding + M.durationFieldHeight + M.rowSpacing)
+        XCTAssertLessThanOrEqual(list, M.nameFieldSpacing + M.composerPadding + M.rulerAreaHeight + M.rulerControlTopPadding)
+        XCTAssertLessThanOrEqual(list, M.taskFormHeight - M.nameFieldHeight - M.buttonHeight)
+        XCTAssertEqual(M.suggestionRowCount, TaskSearch.suggestionLimit + 1, "the tasks and the New row")
+        XCTAssertGreaterThanOrEqual(M.suggestionRowHeight, 18, "a row of 11 pt text and a chip")
     }
 }

@@ -66,18 +66,21 @@ final class SystemKeyboardBacklightController {
         (try? KeyboardBrightnessSensor.currentLevel()) ?? 0
     }
 
+    /// Seeds listeners with the level at start. No HUD: nobody pressed a key, and the observer
+    /// restarts on every HUD-mode, DDC or Show Notch change, so a HUD here widened the notch into
+    /// a backlight sneak peek each time.
     private func notifyCurrentLevel() {
         workerQueue.async {
             let level = (try? KeyboardBrightnessSensor.currentLevel()) ?? 0
-            self.emitChange(level: level)
+            self.emitChange(level: level, showsHUD: false)
         }
     }
 
-    private func emitChange(level: Float) {
+    private func emitChange(level: Float, showsHUD: Bool = true) {
         guard isRunning else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self, self.isRunning else { return }
-            self.onBacklightChange?(level)
+            if showsHUD { self.onBacklightChange?(level) }
             self.notificationCenter.post(name: .keyboardBacklightDidChange, object: nil, userInfo: ["value": level])
         }
     }

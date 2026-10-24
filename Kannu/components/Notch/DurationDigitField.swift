@@ -65,6 +65,14 @@ struct DurationDigitField: NSViewRepresentable {
         context.coordinator.parent = self
         let ink = NSColor(context.environment.notchForeground)
         if field.ink != ink { field.ink = ink }
+        // SwiftUI's `.disabled` does not reach an AppKit control by itself. Disabled — covered by the
+        // timer tab's typed search (`coveredBySuggestions`) — the box takes neither focus (Tab,
+        // Shift-Tab) nor a click, and shows no I-beam; one being edited lets go first.
+        let enabled = context.environment.isEnabled
+        if field.isEnabled != enabled {
+            if !enabled, field.currentEditor() != nil { field.window?.makeFirstResponder(nil) }
+            field.isEnabled = enabled
+        }
         let shown = TimerDurationDigits.text(value)
         if field.currentEditor() == nil {
             if field.stringValue != shown { field.stringValue = shown }

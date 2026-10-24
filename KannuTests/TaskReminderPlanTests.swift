@@ -180,4 +180,25 @@ final class TaskReminderPlanTests: XCTestCase {
         XCTAssertEqual(Plan.when(morning.addingTimeInterval(20 * 3600), now: morning, calendar: calendar), .tomorrow)
         XCTAssertEqual(Plan.when(morning.addingTimeInterval(50 * 3600), now: morning, calendar: calendar), .later)
     }
+
+    // MARK: - One task's notification off (David, 2026-10-23)
+
+    /// The bell beside a reminder turns that task's notification off and only that task's: it
+    /// leaves the reminders macOS is asked for, the others stay, and turning it back on returns it.
+    func testATaskWhoseNotificationIsOffWantsNoReminder() {
+        let id = UUID()
+        let on = TaskItem(id: id, title: "Quiet", scheduledAt: now.addingTimeInterval(600))
+        var off = on
+        off.reminderMuted = true
+        let loud = task("Loud", at: 900)
+        XCTAssertEqual(Set(Plan.wanted([off, loud]).values.map(\.title)), ["Loud"])
+
+        let turnedOff = Plan.changes(from: Plan.wanted([on, loud]), to: Plan.wanted([off, loud]), now: now)
+        XCTAssertEqual(turnedOff.remove, [Plan.identifier(for: id)], "turning it off takes back the waiting request")
+        XCTAssertTrue(turnedOff.add.isEmpty, "the other task's reminder is untouched")
+
+        let turnedOn = Plan.changes(from: Plan.wanted([off, loud]), to: Plan.wanted([on, loud]), now: now)
+        XCTAssertEqual(turnedOn.add.map(\.taskID), [id], "turning it back on sends it again")
+        XCTAssertTrue(turnedOn.remove.isEmpty)
+    }
 }

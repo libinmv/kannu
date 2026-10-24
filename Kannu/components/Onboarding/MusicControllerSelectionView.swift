@@ -25,10 +25,11 @@ import Defaults
 
 
 struct MusicControllerSelectionView: View {
-    let onContinue: () -> Void
+    /// Hands the choice back without applying it: switching to Spotify or Apple Music talks to the
+    /// app at once, which raises the Automation dialog. The Permissions step asks for that, and
+    /// onboarding applies the source when it finishes.
+    let onContinue: (MediaControllerType) -> Void
 
-    @Default(.mediaController) var mediaController
-    
     private var availableMediaControllers: [MediaControllerType] {
         if MusicManager.shared.isNowPlayingDeprecated {
             return MediaControllerType.allCases.filter { $0 != .nowPlaying }
@@ -70,12 +71,7 @@ struct MusicControllerSelectionView: View {
             Spacer()
 
             Button("Continue", action: {
-                self.mediaController = self.selectedMediaController
-                NotificationCenter.default.post(
-                    name: Notification.Name.mediaControllerChanged,
-                    object: nil
-                )
-                onContinue()
+                onContinue(selectedMediaController)
             })
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
@@ -150,6 +146,6 @@ extension MediaControllerType {
 }
 
 #Preview {
-    MusicControllerSelectionView(onContinue: {})
+    MusicControllerSelectionView(onContinue: { _ in })
         .frame(width: 400, height: 600)
 }

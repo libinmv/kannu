@@ -67,6 +67,25 @@ enum KeychainReadPolicy {
     }
 }
 
+/// One legacy plaintext secret's move from Defaults into Kannu's Keychain item, decided from a
+/// silent read of that item (`SecureSecretsStore.migrateFromDefaultsIfNeeded`). An item that is
+/// already there wins, readable or not, and the plaintext copy goes; the legacy value is stored
+/// only where nothing is; anything else (a locked keychain, say) waits for the next launch.
+enum LegacySecretMigration {
+    enum Step: Equatable {
+        case store
+        case clearLegacy
+        case retryNextLaunch
+    }
+
+    static func step(existingValue: String?, needsApproval: Bool, itemNotFound: Bool) -> Step {
+        if let existingValue, !existingValue.isEmpty { return .clearLegacy }
+        if needsApproval { return .clearLegacy }
+        if itemNotFound || existingValue != nil { return .store }
+        return .retryNextLaunch
+    }
+}
+
 /// One credential read shared by everything a refresh does.
 ///
 /// A Cursor refresh asks for its token from the quota guard, usage-summary, the connect fallback, the

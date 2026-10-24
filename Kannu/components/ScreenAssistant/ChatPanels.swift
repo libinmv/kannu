@@ -70,7 +70,7 @@ class ChatMessagesPanel: NSPanel {
             .fullScreenAuxiliary
         ]
         
-        ScreenCaptureVisibilityManager.shared.register(self, scope: .panelsOnly)
+        ScreenCaptureVisibilityManager.shared.register(self, scope: .panel)
         
         acceptsMouseMovedEvents = true
     }
@@ -157,7 +157,7 @@ class ChatInputPanel: NSPanel {
             .fullScreenAuxiliary
         ]
         
-        ScreenCaptureVisibilityManager.shared.register(self, scope: .panelsOnly)
+        ScreenCaptureVisibilityManager.shared.register(self, scope: .panel)
         
         acceptsMouseMovedEvents = true
     }
@@ -796,7 +796,7 @@ struct ScreenshotPopoverBackground: NSViewRepresentable {
         
         DispatchQueue.main.async {
             guard let window = view.window else { return }
-            ScreenCaptureVisibilityManager.shared.register(window, scope: .panelsOnly)
+            ScreenCaptureVisibilityManager.shared.register(window, scope: .panel)
         }
         
         return view
@@ -804,7 +804,7 @@ struct ScreenshotPopoverBackground: NSViewRepresentable {
     
     func updateNSView(_ nsView: NSView, context: Context) {
         if let window = nsView.window {
-            ScreenCaptureVisibilityManager.shared.register(window, scope: .panelsOnly)
+            ScreenCaptureVisibilityManager.shared.register(window, scope: .panel)
         }
     }
     

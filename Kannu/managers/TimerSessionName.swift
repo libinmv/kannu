@@ -56,3 +56,42 @@ enum TimerSessionName {
         return name == currentName ? nil : name
     }
 }
+
+/// A task picked from the timer tab's typed search for the next session (`TimerTaskSuggestions`).
+/// It lasts while the bar still says `name`: editing the text, or clearing it, drops the pick.
+///
+/// Pure, in the logic target.
+struct TimerSessionPick: Equatable {
+    /// The picked task; nil for the New row: keep the typed text as a new task, even when a task
+    /// with that title exists.
+    let taskID: UUID?
+    /// What the bar says while the pick lasts.
+    let name: String
+    /// What the user had typed when they picked; the bar gets it back if the task goes away.
+    let typed: String
+
+    var isNew: Bool { taskID == nil }
+
+    /// This pick while the bar still says `name`; nil once the text changed.
+    func kept(typed text: String) -> TimerSessionPick? {
+        text == name ? self : nil
+    }
+}
+
+/// How a session started from the timer tab's bar runs (David, 2026-10-23): plain with tasks off,
+/// or with nothing typed or picked; a picked task, timed as it is; or a typed name timed as a task,
+/// reusing one with that title except after the New row.
+///
+/// Pure, in the logic target.
+enum TimerTypedStart: Equatable {
+    case plain
+    case pickedTask(UUID)
+    case typed(reuse: Bool)
+
+    static func route(tasksAvailable: Bool, typed: String, pick: TimerSessionPick?) -> TimerTypedStart {
+        guard tasksAvailable else { return .plain }
+        if let taskID = pick?.taskID { return .pickedTask(taskID) }
+        guard TimerSessionName.cleaned(typed) != nil else { return .plain }
+        return .typed(reuse: pick == nil)
+    }
+}
